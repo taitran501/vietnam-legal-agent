@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     redis_url: str = Field(default="redis://localhost:6379/0")
     cache_ttl_seconds: int = Field(default=3600)       # exact-match cache TTL
     semantic_cache_threshold: float = Field(default=0.95)  # cosine similarity
+    corpus_version: str = Field(
+        default="epr-corpus-v1",
+        description="Version included in bounded answer-cache keys after corpus changes",
+    )
+    database_url: str | None = Field(
+        default=None,
+        description="Optional production PostgreSQL URL for agent case state and traces",
+    )
 
     # ── Persistent Chat History ─────────────────────────────────────────────
     history_enabled: bool = Field(

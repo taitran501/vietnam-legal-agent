@@ -2,7 +2,7 @@
  * API request/response type definitions
  */
 
-import type { SourceDocument } from './chat';
+import type { SourceDocument, WorkflowMetadata } from './chat';
 
 export interface ChatRequest {
   query: string;
@@ -11,13 +11,25 @@ export interface ChatRequest {
 }
 
 export interface SSEEvent {
-  type: 'status' | 'response_chunk' | 'response_complete' | 'error';
+  type: 'status' | 'workflow_step' | 'response_chunk' | 'response_complete' | 'error';
   message?: string;
   chunk?: string;
   text?: string;
   documents?: SourceDocument[];
   source?: string;
   stage?: string;
+  step?: number;
+  action?: string;
+  status?: string;
+  trace_id?: string;
+  task_type?: string;
+  assessment?: Record<string, unknown> | null;
+  checklist?: Array<Record<string, unknown>>;
+  assumptions?: string[];
+  missing_facts?: string[];
+  citations?: Array<Record<string, unknown>>;
+  termination_reason?: string;
+  metadata?: WorkflowMetadata;
 }
 
 export interface SessionInfo {
