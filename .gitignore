@@ -19,6 +19,7 @@ qdrant_db/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.deepeval/
 
 # OS files
 .DS_Store
@@ -44,6 +45,11 @@ frontend-react/node_modules/
 dist/
 build/
 *.egg-info/
+
+# Generated evaluation, audit, and indexing artifacts
+artifacts/
+tests/eval/results_*.json
+tests/eval/*_report.json
 
 # Local runtime state and conversation data
 data/*.sqlite3
