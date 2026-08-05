@@ -36,6 +36,7 @@ Thumbs.db
 
 # Dependencies
 .venv/
+.venv_baseline/
 node_modules/
 frontend-react/node_modules/
 

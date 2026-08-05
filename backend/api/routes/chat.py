@@ -20,7 +20,7 @@ from fastapi import APIRouter, Request
 from sse_starlette.sse import EventSourceResponse
 
 from backend.api.schemas import ChatRequest
-from backend.core.pipeline import optimized_chatbot_pipeline
+from epr_agent.api.routes import stream_chat_events as agentic_stream_chat
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -47,7 +47,7 @@ async def chat(request: Request, body: ChatRequest):
 
     async def _event_generator():
         try:
-            async for event in optimized_chatbot_pipeline(
+            async for event in agentic_stream_chat(
                 query=body.query,
                 user_id=user_id,
                 conversation_id=conversation_id,
