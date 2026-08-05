@@ -1,0 +1,270 @@
+{
+  "version": "1.0",
+  "description": "Golden test dataset for EPR Legal Chatbot — Nghị định 08/2022/NĐ-CP",
+  "cases": [
+    {
+      "id": "cc_001",
+      "query": "xin chào",
+      "category": "chitchat",
+      "expected_route": "chitchat",
+      "expected_keywords": [],
+      "notes": "Greeting — must route to chitchat"
+    },
+    {
+      "id": "cc_002",
+      "query": "cảm ơn bạn nhiều lắm",
+      "category": "chitchat",
+      "expected_route": "chitchat",
+      "expected_keywords": [],
+      "notes": "Gratitude — must route to chitchat"
+    },
+    {
+      "id": "cc_003",
+      "query": "bạn là ai vậy?",
+      "category": "chitchat",
+      "expected_route": "chitchat",
+      "expected_keywords": [],
+      "notes": "Identity question — must route to chitchat"
+    },
+    {
+      "id": "cc_004",
+      "query": "tạm biệt nhé",
+      "category": "chitchat",
+      "expected_route": "chitchat",
+      "expected_keywords": [],
+      "notes": "Farewell — must route to chitchat"
+    },
+    {
+      "id": "cc_005",
+      "query": "hôm nay trời đẹp quá",
+      "category": "chitchat",
+      "expected_route": "chitchat",
+      "expected_keywords": [],
+      "notes": "Off-topic small talk — must route to chitchat"
+    },
+    {
+      "id": "faq_001",
+      "query": "Các đối tượng nào phải thực hiện trách nhiệm tái chế?",
+      "category": "faq",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["nhà sản xuất", "nhập khẩu", "tái chế", "Nghị định"],
+      "notes": "Core FAQ — direct match to FAQ entry"
+    },
+    {
+      "id": "faq_002",
+      "query": "Bao bì thương phẩm là gì?",
+      "category": "faq",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["bao bì", "trực tiếp", "ngoài"],
+      "notes": "FAQ definition of commercial packaging"
+    },
+    {
+      "id": "faq_003",
+      "query": "Khi nào nhà sản xuất phải bắt đầu thực hiện trách nhiệm tái chế?",
+      "category": "faq",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["lộ trình", "2024", "nhà sản xuất"],
+      "notes": "FAQ about implementation timeline"
+    },
+    {
+      "id": "faq_004",
+      "query": "Trường hợp nào không phải thực hiện trách nhiệm tái chế?",
+      "category": "faq",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["xuất khẩu", "tạm nhập", "nghiên cứu"],
+      "notes": "FAQ about exemptions from recycling responsibility"
+    },
+    {
+      "id": "faq_005",
+      "query": "Dầu nhớt có phải là đối tượng tái chế bắt buộc không?",
+      "category": "faq",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["dầu nhớt", "tái chế"],
+      "notes": "FAQ about lubricant oil recycling obligation"
+    },
+    {
+      "id": "faq_006",
+      "query": "Nhà sản xuất có thể lựa chọn hình thức nào để thực hiện nghĩa vụ tái chế?",
+      "category": "faq",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["tự tổ chức", "đóng góp", "quỹ"],
+      "notes": "FAQ about two options for fulfilling recycling obligation"
+    },
+    {
+      "id": "faq_007",
+      "query": "Tỷ lệ tái chế bắt buộc đối với bao bì nhựa là bao nhiêu?",
+      "category": "faq",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["tỷ lệ", "tái chế", "bao bì"],
+      "notes": "FAQ about mandatory recycling rate for plastic packaging"
+    },
+    {
+      "id": "faq_008",
+      "query": "Cách tính mức đóng góp tài chính vào Quỹ bảo vệ môi trường Việt Nam?",
+      "category": "faq",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["đóng góp", "quỹ", "tài chính"],
+      "notes": "FAQ about financial contribution formula"
+    },
+    {
+      "id": "faq_009",
+      "query": "Báo cáo kết quả tái chế phải nộp cho cơ quan nào và vào thời điểm nào?",
+      "category": "faq",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["báo cáo", "nộp"],
+      "notes": "FAQ about reporting deadline and recipient"
+    },
+    {
+      "id": "faq_010",
+      "query": "Điện thoại di động có thuộc danh mục sản phẩm phải tái chế không?",
+      "category": "faq",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["điện thoại", "tái chế"],
+      "notes": "FAQ about mobile phones as recycling-obligated product"
+    },
+    {
+      "id": "legal_001",
+      "query": "Điều 77 Nghị định 08/2022 quy định những gì về trách nhiệm tái chế?",
+      "category": "legal",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["Điều 77", "tái chế", "nhà sản xuất"],
+      "notes": "Core legal article on EPR recycling obligation"
+    },
+    {
+      "id": "legal_002",
+      "query": "Trách nhiệm xử lý sản phẩm ắc quy và pin sau khi hết vòng đời sử dụng?",
+      "category": "legal",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["ắc quy", "pin", "xử lý"],
+      "notes": "Legal article on battery end-of-life disposal"
+    },
+    {
+      "id": "legal_003",
+      "query": "Cơ sở tái chế phải đáp ứng các điều kiện pháp lý nào?",
+      "category": "legal",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["tái chế", "điều kiện", "cơ sở"],
+      "notes": "Legal requirements for recycling facility operators"
+    },
+    {
+      "id": "legal_004",
+      "query": "Trách nhiệm của Bộ Tài nguyên và Môi trường trong quản lý EPR là gì?",
+      "category": "legal",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["Bộ Tài nguyên", "môi trường"],
+      "notes": "State management responsibility for EPR oversight"
+    },
+    {
+      "id": "legal_005",
+      "query": "Phương tiện giao thông nào bắt buộc tái chế và lộ trình áp dụng từ năm nào?",
+      "category": "legal",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["phương tiện giao thông", "2027", "tái chế"],
+      "notes": "Legal timeline for vehicle EPR obligation starting 2027"
+    },
+    {
+      "id": "legal_006",
+      "query": "Hệ số đóng góp tài chính Fs trong nghĩa vụ EPR được tính như thế nào?",
+      "category": "legal",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["tài chính", "tái chế"],
+      "notes": "Legal formula for financial contribution coefficient"
+    },
+    {
+      "id": "legal_007",
+      "query": "Nhà sản xuất không thực hiện đúng nghĩa vụ tái chế thì bị xử lý thế nào?",
+      "category": "legal",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["vi phạm", "xử phạt"],
+      "notes": "Penalties for non-compliance with EPR obligations"
+    },
+    {
+      "id": "legal_008",
+      "query": "Thủ tục đăng ký kế hoạch tái chế hàng năm theo Nghị định 08/2022?",
+      "category": "legal",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["đăng ký", "kế hoạch", "tái chế"],
+      "notes": "Annual recycling plan registration procedure"
+    },
+    {
+      "id": "legal_009",
+      "query": "Quy cách tái chế bắt buộc đối với săm lốp theo quy định pháp luật?",
+      "category": "legal",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["săm lốp", "quy cách", "tái chế"],
+      "notes": "Mandatory recycling specification standards for tires"
+    },
+    {
+      "id": "legal_010",
+      "query": "Điều kiện để được công nhận là đơn vị tái chế được uỷ quyền xử lý EPR?",
+      "category": "legal",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["cơ sở", "xử lý", "chất thải"],
+      "notes": "Certification conditions for state-authorized EPR recycling facilities"
+    },
+    {
+      "id": "edge_001",
+      "query": "asdfjkl;qwerty",
+      "category": "edge",
+      "expected_route": "chitchat",
+      "expected_keywords": [],
+      "notes": "Gibberish input — must not crash, should route to chitchat"
+    },
+    {
+      "id": "edge_002",
+      "query": "EPR",
+      "category": "edge",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["EPR", "tái chế"],
+      "notes": "Single keyword — should retrieve relevant definition"
+    },
+    {
+      "id": "edge_003",
+      "query": "Tôi muốn biết về EPR nhưng chưa biết bắt đầu từ đâu",
+      "category": "edge",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["EPR", "tái chế"],
+      "notes": "Vague interest in EPR — should provide a helpful overview"
+    },
+    {
+      "id": "edge_004",
+      "query": "Điều 77, điều 78, điều 79 của Nghị định 08 quy định gì?",
+      "category": "edge",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["tái chế"],
+      "notes": "Multi-article query — should retrieve and summarise"
+    },
+    {
+      "id": "edge_005",
+      "query": "Công ty tôi nhập khẩu pin lithium từ nước ngoài, chúng tôi phải thực hiện nghĩa vụ gì?",
+      "category": "edge",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": ["nhập khẩu", "pin", "tái chế"],
+      "notes": "Real-world importer scenario — should give actionable guidance"
+    },
+    {
+      "id": "web_001",
+      "query": "Tiêu chuẩn ISO 14001 liên quan đến EPR Việt Nam như thế nào?",
+      "category": "web_search",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": [],
+      "notes": "ISO 14001 not in law corpus — should fall through to web fallback (Tavily) or graceful miss message"
+    },
+    {
+      "id": "web_002",
+      "query": "Các quốc gia Đông Nam Á đang áp dụng mô hình EPR nào hiệu quả nhất năm 2024?",
+      "category": "web_search",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": [],
+      "notes": "Comparative SEA policy question — outside corpus, should trigger web fallback or graceful miss"
+    },
+    {
+      "id": "web_003",
+      "query": "Chi phí tuân thủ EPR trung bình cho doanh nghiệp vừa và nhỏ tại Việt Nam là bao nhiêu?",
+      "category": "web_search",
+      "expected_route": "vectorstore_faq",
+      "expected_keywords": [],
+      "notes": "Cost/market data not in legal corpus — should fall through to web search or honest miss reply"
+    }
+  ]
+}

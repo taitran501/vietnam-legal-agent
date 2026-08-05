@@ -1,0 +1,298 @@
+[
+  {
+    "collection": "law_collection",
+    "queries": 15,
+    "top1_pass": 15,
+    "top3_pass": 15,
+    "top1_rate": 1.0,
+    "top3_rate": 1.0,
+    "latency_avg_ms": 4791.29,
+    "latency_p95_ms": 10741.79,
+    "latency_max_ms": 15401.74,
+    "rows": [
+      {
+        "query": "sản phẩm nào bắt buộc phải tái chế theo luật",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 5445.43,
+        "docs_count": 10,
+        "top_dieu": "Điều 78. Tỷ lệ tái chế, quy cách tái chế bắt buộc",
+        "top_source": "lexical"
+      },
+      {
+        "query": "điều 77 quy định gì",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 15401.74,
+        "docs_count": 10,
+        "top_dieu": "Điều 77. Đối tượng, lộ trình thực hiện trách nhiệm tái chế",
+        "top_source": "explicit"
+      },
+      {
+        "query": "điều 78 quy định gì",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 4205.47,
+        "docs_count": 10,
+        "top_dieu": "Điều 78. Tỷ lệ tái chế, quy cách tái chế bắt buộc",
+        "top_source": "explicit"
+      },
+      {
+        "query": "điều 79 nói về gì",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 3090.02,
+        "docs_count": 10,
+        "top_dieu": "Điều 79. Hình thức thực hiện trách nhiệm tái chế",
+        "top_source": "explicit"
+      },
+      {
+        "query": "tỷ lệ tái chế dầu nhớt là bao nhiêu",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 1669.84,
+        "docs_count": 10,
+        "top_dieu": "Phụ lục XXII. Sản phẩm, bao bì phải thực hiện trách nhiệm tái chế — Dầu nhớt",
+        "top_source": "lexical"
+      },
+      {
+        "query": "tỷ lệ tái chế ắc quy là bao nhiêu",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 2014.0,
+        "docs_count": 10,
+        "top_dieu": "Phụ lục XXII. Sản phẩm, bao bì phải thực hiện trách nhiệm tái chế — Ắc quy",
+        "top_source": "lexical"
+      },
+      {
+        "query": "bao bì pet cứng có tỷ lệ tái chế bao nhiêu",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 2603.94,
+        "docs_count": 10,
+        "top_dieu": "Phụ lục XXII. Sản phẩm, bao bì phải thực hiện trách nhiệm tái chế — Bao bì PET cứng",
+        "top_source": "lexical"
+      },
+      {
+        "query": "đối tượng nào phải thực hiện trách nhiệm tái chế",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 2602.26,
+        "docs_count": 10,
+        "top_dieu": "Điều 77. Đối tượng, lộ trình thực hiện trách nhiệm tái chế",
+        "top_source": "lexical"
+      },
+      {
+        "query": "lộ trình thực hiện trách nhiệm tái chế",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 10741.79,
+        "docs_count": 10,
+        "top_dieu": "Điều 77. Đối tượng, lộ trình thực hiện trách nhiệm tái chế",
+        "top_source": "lexical"
+      },
+      {
+        "query": "quy cách tái chế bắt buộc là gì",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 5593.87,
+        "docs_count": 10,
+        "top_dieu": "Điều 78. Tỷ lệ tái chế, quy cách tái chế bắt buộc",
+        "top_source": "lexical"
+      },
+      {
+        "query": "chi phí tái chế được xác định như thế nào",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 3737.96,
+        "docs_count": 10,
+        "top_dieu": "Điều 81. Đóng góp tài chính vào Quỹ bảo vệ môi trường Việt Nam để hỗ trợ tái chế sản phẩm, bao bì",
+        "top_source": "lexical"
+      },
+      {
+        "query": "phụ lục xxii quy định những nhóm sản phẩm nào",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 3065.28,
+        "docs_count": 10,
+        "top_dieu": "Điều 79. Hình thức thực hiện trách nhiệm tái chế",
+        "top_source": "lexical"
+      },
+      {
+        "query": "nhà sản xuất có thể tự tổ chức tái chế hay đóng quỹ",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 4392.4,
+        "docs_count": 10,
+        "top_dieu": "Điều 81. Đóng góp tài chính vào Quỹ bảo vệ môi trường Việt Nam để hỗ trợ tái chế sản phẩm, bao bì",
+        "top_source": "lexical"
+      },
+      {
+        "query": "đóng góp tài chính hỗ trợ tái chế quy định ở điều nào",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 3479.83,
+        "docs_count": 10,
+        "top_dieu": "Điều 84. Đóng góp tài chính vào Quỹ Bảo vệ môi trường Việt Nam để hỗ trợ hoạt động xử lý chất thải",
+        "top_source": "lexical"
+      },
+      {
+        "query": "hội đồng epr quốc gia ở điều nào",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 3825.53,
+        "docs_count": 10,
+        "top_dieu": "Điều 88. Hội đồng EPR quốc gia",
+        "top_source": "lexical"
+      }
+    ]
+  },
+  {
+    "collection": "law_collection_doc_v2",
+    "queries": 15,
+    "top1_pass": 15,
+    "top3_pass": 15,
+    "top1_rate": 1.0,
+    "top3_rate": 1.0,
+    "latency_avg_ms": 2977.32,
+    "latency_p95_ms": 7446.13,
+    "latency_max_ms": 7779.87,
+    "rows": [
+      {
+        "query": "sản phẩm nào bắt buộc phải tái chế theo luật",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 7779.87,
+        "docs_count": 10,
+        "top_dieu": "Điều 78. Tỷ lệ tái chế, quy cách tái chế bắt buộc",
+        "top_source": "lexical"
+      },
+      {
+        "query": "điều 77 quy định gì",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 7446.13,
+        "docs_count": 10,
+        "top_dieu": "Điều 77. Đối tượng, lộ trình thực hiện trách nhiệm tái chế",
+        "top_source": "explicit"
+      },
+      {
+        "query": "điều 78 quy định gì",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 3529.21,
+        "docs_count": 10,
+        "top_dieu": "Điều 78. Tỷ lệ tái chế, quy cách tái chế bắt buộc",
+        "top_source": "explicit"
+      },
+      {
+        "query": "điều 79 nói về gì",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 2048.47,
+        "docs_count": 10,
+        "top_dieu": "Điều 79. Hình thức thực hiện trách nhiệm tái chế",
+        "top_source": "explicit"
+      },
+      {
+        "query": "tỷ lệ tái chế dầu nhớt là bao nhiêu",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 2209.78,
+        "docs_count": 10,
+        "top_dieu": "Phụ lục XXII. Sản phẩm, bao bì phải thực hiện trách nhiệm tái chế — Dầu nhớt",
+        "top_source": "lexical"
+      },
+      {
+        "query": "tỷ lệ tái chế ắc quy là bao nhiêu",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 3138.19,
+        "docs_count": 10,
+        "top_dieu": "Phụ lục XXII. Sản phẩm, bao bì phải thực hiện trách nhiệm tái chế — Ắc quy",
+        "top_source": "lexical"
+      },
+      {
+        "query": "bao bì pet cứng có tỷ lệ tái chế bao nhiêu",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 3220.99,
+        "docs_count": 10,
+        "top_dieu": "Phụ lục XXII. Sản phẩm, bao bì phải thực hiện trách nhiệm tái chế — Bao bì PET cứng",
+        "top_source": "lexical"
+      },
+      {
+        "query": "đối tượng nào phải thực hiện trách nhiệm tái chế",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 2128.22,
+        "docs_count": 10,
+        "top_dieu": "Điều 77. Đối tượng, lộ trình thực hiện trách nhiệm tái chế",
+        "top_source": "lexical"
+      },
+      {
+        "query": "lộ trình thực hiện trách nhiệm tái chế",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 2266.21,
+        "docs_count": 10,
+        "top_dieu": "Điều 77. Đối tượng, lộ trình thực hiện trách nhiệm tái chế",
+        "top_source": "lexical"
+      },
+      {
+        "query": "quy cách tái chế bắt buộc là gì",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 1968.81,
+        "docs_count": 10,
+        "top_dieu": "Điều 78. Tỷ lệ tái chế, quy cách tái chế bắt buộc",
+        "top_source": "lexical"
+      },
+      {
+        "query": "chi phí tái chế được xác định như thế nào",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 1409.76,
+        "docs_count": 10,
+        "top_dieu": "Điều 81. Đóng góp tài chính vào Quỹ bảo vệ môi trường Việt Nam để hỗ trợ tái chế sản phẩm, bao bì",
+        "top_source": "lexical"
+      },
+      {
+        "query": "phụ lục xxii quy định những nhóm sản phẩm nào",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 2094.02,
+        "docs_count": 10,
+        "top_dieu": "Điều 79. Hình thức thực hiện trách nhiệm tái chế",
+        "top_source": "lexical"
+      },
+      {
+        "query": "nhà sản xuất có thể tự tổ chức tái chế hay đóng quỹ",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 2006.32,
+        "docs_count": 10,
+        "top_dieu": "Điều 81. Đóng góp tài chính vào Quỹ bảo vệ môi trường Việt Nam để hỗ trợ tái chế sản phẩm, bao bì",
+        "top_source": "lexical"
+      },
+      {
+        "query": "đóng góp tài chính hỗ trợ tái chế quy định ở điều nào",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 1357.05,
+        "docs_count": 10,
+        "top_dieu": "Điều 84. Đóng góp tài chính vào Quỹ Bảo vệ môi trường Việt Nam để hỗ trợ hoạt động xử lý chất thải",
+        "top_source": "lexical"
+      },
+      {
+        "query": "hội đồng epr quốc gia ở điều nào",
+        "top1_hit": true,
+        "top3_hit": true,
+        "latency_ms": 2056.77,
+        "docs_count": 10,
+        "top_dieu": "Điều 88. Hội đồng EPR quốc gia",
+        "top_source": "lexical"
+      }
+    ]
+  }
+]

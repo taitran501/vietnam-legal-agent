@@ -1,0 +1,85 @@
+"""
+SSE streaming chat endpoint.
+
+POST /chat
+  Body : ChatRequest  (JSON)
+  Returns: text/event-stream
+
+Each SSE event is a JSON object matching the pipeline yield format:
+  {"type": "status"|"response_chunk"|"response_complete", ...}
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import uuid
+
+from fastapi import APIRouter, Request
+from sse_starlette.sse import EventSourceResponse
+
+from backend.api.schemas import ChatRequest
+from backend.core.pipeline import optimized_chatbot_pipeline
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+
+@router.post("/chat", tags=["chat"])
+async def chat(request: Request, body: ChatRequest):
+    """Stream chatbot responses as Server-Sent Events."""
+    # Canonical identifier moving forward: conversation_id.
+    # Backward compatibility: accept legacy session_id if conversation_id is missing.
+    conversation_id = body.conversation_id or body.session_id or str(uuid.uuid4())
+
+    # User scope for durable history: API key hash set by auth middleware.
+    # Fallback keeps local development functional when auth is disabled.
+    user_id = getattr(request.state, "api_key_hash", None) or "dev-local"
+    
+    # Log session creation for audit trail
+    logger.info(
+        "Chat request: user_id=%s, conversation_id=%s, query_length=%d",
+        user_id,
+        conversation_id,
+        len(body.query),
+    )
+
+    async def _event_generator():
+        try:
+            async for event in optimized_chatbot_pipeline(
+                query=body.query,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                legacy_session_id=body.session_id,
+                faq_threshold=body.faq_threshold,
+            ):
+                # CRITICAL: Check if client disconnected
+                if await request.is_disconnected():
+                    logger.info(
+                        "Client disconnected, stopping pipeline for conversation=%s",
+                        conversation_id,
+                    )
+                    return  # Stop immediately, don't waste LLM calls
+                yield {"data": json.dumps(event, ensure_ascii=False)}
+        except asyncio.CancelledError:
+            # Client disconnected mid-stream
+            logger.info("Stream cancelled for conversation=%s", conversation_id)
+            return
+        except Exception as exc:
+            logger.exception("Pipeline error: %s", exc)
+            yield {
+                "data": json.dumps({
+                    "type": "error",
+                    "message": "Internal server error. Please try again.",
+                })
+            }
+
+    return EventSourceResponse(
+        _event_generator(),
+        headers={
+            "X-Conversation-ID": conversation_id,
+            # Backward compatibility for current clients.
+            "X-Session-ID": conversation_id,
+        },
+    )

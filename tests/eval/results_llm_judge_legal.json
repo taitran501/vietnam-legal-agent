@@ -1,0 +1,299 @@
+[
+  {
+    "case_id": "legal_001",
+    "query": "Điều 77 Nghị định 08/2022 quy định những gì về trách nhiệm tái chế?",
+    "category": "legal",
+    "notes": "Core legal article on EPR recycling obligation",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "faq",
+    "expected_keywords": [
+      "Điều 77",
+      "tái chế",
+      "nhà sản xuất"
+    ],
+    "found_keywords": [
+      "Điều 77",
+      "tái chế",
+      "nhà sản xuất"
+    ],
+    "missing_keywords": [],
+    "keyword_hit_rate": 1.0,
+    "faithfulness": 5,
+    "faithfulness_reason": "Mọi thông tin trong câu trả lời đều có căn cứ rõ ràng trong tài liệu tham khảo.",
+    "relevance": 5,
+    "relevance_reason": "Câu trả lời hoàn toàn đúng trọng tâm, giải đáp chính xác nội dung về trách nhiệm tái chế theo Điều 77 Nghị định 08/2022.",
+    "completeness": 4,
+    "completeness_reason": "Câu trả lời bao phủ hầu hết các khía cạnh quan trọng về trách nhiệm tái chế theo Điều 77, nhưng có thể bổ sung thêm thông tin về quy trình hoặc yêu cầu cụ thể hơn liên quan đến trách nhiệm tái chế.",
+    "total_ms": 23209.028500001295,
+    "error": null
+  },
+  {
+    "case_id": "legal_002",
+    "query": "Trách nhiệm xử lý sản phẩm ắc quy và pin sau khi hết vòng đời sử dụng?",
+    "category": "legal",
+    "notes": "Legal article on battery end-of-life disposal",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "web_search",
+    "expected_keywords": [
+      "ắc quy",
+      "pin",
+      "xử lý"
+    ],
+    "found_keywords": [
+      "xử lý"
+    ],
+    "missing_keywords": [
+      "ắc quy",
+      "pin"
+    ],
+    "keyword_hit_rate": 0.3333333333333333,
+    "faithfulness": 0,
+    "faithfulness_reason": "Không có tài liệu nào được truy xuất để kiểm tra.",
+    "relevance": 2,
+    "relevance_reason": "Câu trả lời chỉ liên quan một phần nhỏ đến trách nhiệm xử lý sản phẩm ắc quy và pin, chủ yếu tập trung vào quy định EPR mà không đề cập cụ thể đến sản phẩm ắc quy và pin.",
+    "completeness": 3,
+    "completeness_reason": "Câu trả lời đề cập đến trách nhiệm xử lý sản phẩm ắc quy và pin thông qua khung pháp lý EPR, nhưng không cung cấp thông tin cụ thể về các quy định liên quan đến ắc quy và pin, do đó chỉ bao phủ khoảng nửa các khía cạnh quan trọng.",
+    "total_ms": 26537.391499994555,
+    "error": null
+  },
+  {
+    "case_id": "legal_003",
+    "query": "Cơ sở tái chế phải đáp ứng các điều kiện pháp lý nào?",
+    "category": "legal",
+    "notes": "Legal requirements for recycling facility operators",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "faq",
+    "expected_keywords": [
+      "tái chế",
+      "điều kiện",
+      "cơ sở"
+    ],
+    "found_keywords": [
+      "tái chế",
+      "điều kiện",
+      "cơ sở"
+    ],
+    "missing_keywords": [],
+    "keyword_hit_rate": 1.0,
+    "faithfulness": 5,
+    "faithfulness_reason": "Mọi thông tin trong câu trả lời đều có căn cứ rõ ràng trong tài liệu, bao gồm các điều kiện pháp lý và quy định liên quan đến cơ sở tái chế.",
+    "relevance": 5,
+    "relevance_reason": "Câu trả lời hoàn toàn đúng trọng tâm, giải đáp chính xác các điều kiện pháp lý mà cơ sở tái chế phải đáp ứng.",
+    "completeness": 4,
+    "completeness_reason": "Câu trả lời bao phủ hầu hết các khía cạnh quan trọng về điều kiện pháp lý cho cơ sở tái chế, nhưng có thể thiếu một số chi tiết cụ thể về các quy định pháp lý cụ thể hoặc các loại giấy phép cần thiết.",
+    "total_ms": 23871.08569999691,
+    "error": null
+  },
+  {
+    "case_id": "legal_004",
+    "query": "Trách nhiệm của Bộ Tài nguyên và Môi trường trong quản lý EPR là gì?",
+    "category": "legal",
+    "notes": "State management responsibility for EPR oversight",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "web_search",
+    "expected_keywords": [
+      "Bộ Tài nguyên",
+      "môi trường"
+    ],
+    "found_keywords": [
+      "Bộ Tài nguyên",
+      "môi trường"
+    ],
+    "missing_keywords": [],
+    "keyword_hit_rate": 1.0,
+    "faithfulness": 0,
+    "faithfulness_reason": "Không có tài liệu nào được truy xuất để kiểm tra.",
+    "relevance": 1,
+    "relevance_reason": "Câu trả lời không trực tiếp giải đáp trách nhiệm của Bộ Tài nguyên và Môi trường trong quản lý EPR, mà chỉ cung cấp thông tin tham khảo không liên quan đến câu hỏi.",
+    "completeness": 1,
+    "completeness_reason": "Câu trả lời rất sơ lược, không cung cấp thông tin cụ thể về trách nhiệm của Bộ Tài nguyên và Môi trường trong quản lý EPR, chỉ liệt kê các tài liệu tham khảo mà không có nội dung chính.",
+    "total_ms": 28031.221299999743,
+    "error": null
+  },
+  {
+    "case_id": "legal_005",
+    "query": "Phương tiện giao thông nào bắt buộc tái chế và lộ trình áp dụng từ năm nào?",
+    "category": "legal",
+    "notes": "Legal timeline for vehicle EPR obligation starting 2027",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "web_search",
+    "expected_keywords": [
+      "phương tiện giao thông",
+      "2027",
+      "tái chế"
+    ],
+    "found_keywords": [
+      "2027",
+      "tái chế"
+    ],
+    "missing_keywords": [
+      "phương tiện giao thông"
+    ],
+    "keyword_hit_rate": 0.6666666666666666,
+    "faithfulness": 0,
+    "faithfulness_reason": "Không có tài liệu nào được truy xuất để kiểm tra.",
+    "relevance": 2,
+    "relevance_reason": "Câu trả lời chỉ đề cập một phần nhỏ đến trách nhiệm tái chế của một số sản phẩm mà không trực tiếp trả lời câu hỏi về phương tiện giao thông cụ thể nào bắt buộc tái chế.",
+    "completeness": 3,
+    "completeness_reason": "Câu trả lời cung cấp thông tin về trách nhiệm tái chế của một số loại sản phẩm và lộ trình áp dụng, nhưng không nêu rõ các phương tiện giao thông cụ thể nào bắt buộc tái chế.",
+    "total_ms": 23896.89940000244,
+    "error": null
+  },
+  {
+    "case_id": "legal_006",
+    "query": "Hệ số đóng góp tài chính Fs trong nghĩa vụ EPR được tính như thế nào?",
+    "category": "legal",
+    "notes": "Legal formula for financial contribution coefficient",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "legal",
+    "expected_keywords": [
+      "tài chính",
+      "tái chế"
+    ],
+    "found_keywords": [
+      "tài chính",
+      "tái chế"
+    ],
+    "missing_keywords": [],
+    "keyword_hit_rate": 1.0,
+    "faithfulness": 4,
+    "faithfulness_reason": "Hầu hết thông tin trong câu trả lời đều có căn cứ từ tài liệu, nhưng có một số chi tiết nhỏ về cách tính toán và điều chỉnh hệ số Fs không được nêu rõ trong tài liệu.",
+    "relevance": 5,
+    "relevance_reason": "Câu trả lời hoàn toàn đúng trọng tâm, giải thích rõ ràng cách tính hệ số đóng góp tài chính Fs trong nghĩa vụ EPR.",
+    "completeness": 4,
+    "completeness_reason": "Câu trả lời bao phủ hầu hết các khía cạnh quan trọng về hệ số đóng góp tài chính Fs trong nghĩa vụ EPR, nhưng có thể thiếu một số chi tiết nhỏ về cách thức điều chỉnh hệ số này.",
+    "total_ms": 30750.17530000332,
+    "error": null
+  },
+  {
+    "case_id": "legal_007",
+    "query": "Nhà sản xuất không thực hiện đúng nghĩa vụ tái chế thì bị xử lý thế nào?",
+    "category": "legal",
+    "notes": "Penalties for non-compliance with EPR obligations",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "faq",
+    "expected_keywords": [
+      "vi phạm",
+      "xử phạt"
+    ],
+    "found_keywords": [
+      "vi phạm"
+    ],
+    "missing_keywords": [
+      "xử phạt"
+    ],
+    "keyword_hit_rate": 0.5,
+    "faithfulness": 5,
+    "faithfulness_reason": "Mọi thông tin trong câu trả lời đều có căn cứ rõ ràng trong tài liệu tham khảo.",
+    "relevance": 5,
+    "relevance_reason": "Câu trả lời hoàn toàn đúng trọng tâm, giải đáp chính xác câu hỏi về xử lý vi phạm của nhà sản xuất không thực hiện nghĩa vụ tái chế.",
+    "completeness": 4,
+    "completeness_reason": "Câu trả lời bao phủ hầu hết các khía cạnh quan trọng về xử lý vi phạm nghĩa vụ tái chế, nhưng có thể bổ sung thêm thông tin về các biện pháp khắc phục cụ thể.",
+    "total_ms": 25308.65420000191,
+    "error": null
+  },
+  {
+    "case_id": "legal_008",
+    "query": "Thủ tục đăng ký kế hoạch tái chế hàng năm theo Nghị định 08/2022?",
+    "category": "legal",
+    "notes": "Annual recycling plan registration procedure",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "faq",
+    "expected_keywords": [
+      "đăng ký",
+      "kế hoạch",
+      "tái chế"
+    ],
+    "found_keywords": [
+      "đăng ký",
+      "kế hoạch",
+      "tái chế"
+    ],
+    "missing_keywords": [],
+    "keyword_hit_rate": 1.0,
+    "faithfulness": 4,
+    "faithfulness_reason": "Câu trả lời chủ yếu dựa trên thông tin từ tài liệu, nhưng thiếu chi tiết về nội dung cụ thể cần có trong kế hoạch tái chế.",
+    "relevance": 5,
+    "relevance_reason": "Câu trả lời hoàn toàn đúng trọng tâm, giải đáp chính xác thủ tục đăng ký kế hoạch tái chế hàng năm theo Nghị định 08/2022.",
+    "completeness": 3,
+    "completeness_reason": "Câu trả lời đề cập đến thời hạn và yêu cầu đăng ký kế hoạch tái chế nhưng thiếu thông tin chi tiết về nội dung cụ thể cần có trong kế hoạch và các bước thực hiện thủ tục.",
+    "total_ms": 22788.925500004552,
+    "error": null
+  },
+  {
+    "case_id": "legal_009",
+    "query": "Quy cách tái chế bắt buộc đối với săm lốp theo quy định pháp luật?",
+    "category": "legal",
+    "notes": "Mandatory recycling specification standards for tires",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "faq",
+    "expected_keywords": [
+      "săm lốp",
+      "quy cách",
+      "tái chế"
+    ],
+    "found_keywords": [
+      "săm lốp",
+      "quy cách",
+      "tái chế"
+    ],
+    "missing_keywords": [],
+    "keyword_hit_rate": 1.0,
+    "faithfulness": 5,
+    "faithfulness_reason": "Mọi thông tin trong câu trả lời đều có căn cứ rõ ràng trong tài liệu, bao gồm quy cách tái chế bắt buộc và tỷ lệ thu hồi nguyên liệu tối thiểu.",
+    "relevance": 5,
+    "relevance_reason": "Câu trả lời hoàn toàn đúng trọng tâm, giải đáp chính xác quy cách tái chế bắt buộc đối với săm lốp theo quy định pháp luật.",
+    "completeness": 4,
+    "completeness_reason": "Câu trả lời bao phủ hầu hết các khía cạnh quan trọng về quy cách tái chế bắt buộc đối với săm lốp, nhưng có thể bổ sung thêm thông tin về các giải pháp tái chế cụ thể và các quy định liên quan khác.",
+    "total_ms": 23592.761100000644,
+    "error": null
+  },
+  {
+    "case_id": "legal_010",
+    "query": "Điều kiện để được công nhận là đơn vị tái chế được uỷ quyền xử lý EPR?",
+    "category": "legal",
+    "notes": "Certification conditions for state-authorized EPR recycling facilities",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "web_search",
+    "expected_keywords": [
+      "cơ sở",
+      "xử lý",
+      "chất thải"
+    ],
+    "found_keywords": [
+      "cơ sở",
+      "xử lý",
+      "chất thải"
+    ],
+    "missing_keywords": [],
+    "keyword_hit_rate": 1.0,
+    "faithfulness": 0,
+    "faithfulness_reason": "Không có tài liệu nào được truy xuất để kiểm tra.",
+    "relevance": 2,
+    "relevance_reason": "Câu trả lời chỉ liên quan một phần nhỏ đến câu hỏi về điều kiện công nhận đơn vị tái chế được ủy quyền xử lý EPR, chủ yếu cung cấp thông tin chung về EPR mà không nêu rõ điều kiện cụ thể.",
+    "completeness": 2,
+    "completeness_reason": "Câu trả lời chỉ đề cập sơ lược đến các quy định liên quan đến EPR mà không cung cấp thông tin cụ thể về điều kiện để được công nhận là đơn vị tái chế được ủy quyền, thiếu nhiều nội dung trọng tâm.",
+    "total_ms": 24706.837599995197,
+    "error": null
+  }
+]

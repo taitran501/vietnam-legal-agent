@@ -1,0 +1,133 @@
+[
+  {
+    "case_id": "edge_001",
+    "query": "asdfjkl;qwerty",
+    "category": "edge",
+    "notes": "Gibberish input — must not crash, should route to chitchat",
+    "expected_route": "chitchat",
+    "actual_route": "chitchat",
+    "route_correct": true,
+    "source": "chitchat",
+    "expected_keywords": [],
+    "found_keywords": [],
+    "missing_keywords": [],
+    "keyword_hit_rate": 1.0,
+    "faithfulness": null,
+    "relevance": null,
+    "completeness": null,
+    "total_ms": 16987.439099997573,
+    "error": null
+  },
+  {
+    "case_id": "edge_002",
+    "query": "EPR",
+    "category": "edge",
+    "notes": "Single keyword — should retrieve relevant definition",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "faq",
+    "expected_keywords": [
+      "EPR",
+      "tái chế"
+    ],
+    "found_keywords": [
+      "EPR",
+      "tái chế"
+    ],
+    "missing_keywords": [],
+    "keyword_hit_rate": 1.0,
+    "faithfulness": 5,
+    "faithfulness_reason": "Mọi thông tin trong câu trả lời đều có căn cứ rõ ràng trong tài liệu, bao gồm định nghĩa EPR và tầm quan trọng của nó.",
+    "relevance": 5,
+    "relevance_reason": "Câu trả lời hoàn toàn đúng trọng tâm, giải thích rõ ràng về EPR và lý do tại sao nó quan trọng.",
+    "completeness": 4,
+    "completeness_reason": "Câu trả lời bao phủ hầu hết các khía cạnh quan trọng về EPR, bao gồm định nghĩa, quy định pháp lý và tầm quan trọng, nhưng có thể bổ sung thêm một số chi tiết về cách thức thực hiện và lợi ích cụ thể hơn.",
+    "total_ms": 24216.997999996238,
+    "error": null
+  },
+  {
+    "case_id": "edge_003",
+    "query": "Tôi muốn biết về EPR nhưng chưa biết bắt đầu từ đâu",
+    "category": "edge",
+    "notes": "Vague interest in EPR — should provide a helpful overview",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "legal",
+    "expected_keywords": [
+      "EPR",
+      "tái chế"
+    ],
+    "found_keywords": [
+      "EPR",
+      "tái chế"
+    ],
+    "missing_keywords": [],
+    "keyword_hit_rate": 1.0,
+    "faithfulness": 2,
+    "faithfulness_reason": "Phần lớn thông tin trong câu trả lời không có trong tài liệu hoặc không chính xác, vì không có điều khoản cụ thể nào được nêu trong tài liệu để hỗ trợ cho các điểm được liệt kê.",
+    "relevance": 5,
+    "relevance_reason": "Câu trả lời hoàn toàn đúng trọng tâm, cung cấp thông tin chi tiết và hướng dẫn cụ thể về cách bắt đầu tìm hiểu về EPR.",
+    "completeness": 4,
+    "completeness_reason": "Câu trả lời bao phủ hầu hết các khía cạnh quan trọng về EPR, nhưng có thể thiếu một số thông tin chi tiết về cách thức thực hiện và tác động cụ thể của EPR trong thực tiễn.",
+    "total_ms": 33974.77110000182,
+    "error": null
+  },
+  {
+    "case_id": "edge_004",
+    "query": "Điều 77, điều 78, điều 79 của Nghị định 08 quy định gì?",
+    "category": "edge",
+    "notes": "Multi-article query — should retrieve and summarise",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "legal",
+    "expected_keywords": [
+      "tái chế"
+    ],
+    "found_keywords": [
+      "tái chế"
+    ],
+    "missing_keywords": [],
+    "keyword_hit_rate": 1.0,
+    "faithfulness": 4,
+    "faithfulness_reason": "Hầu hết thông tin trong câu trả lời có căn cứ từ tài liệu, nhưng có một số chi tiết nhỏ không được xác minh rõ ràng trong tài liệu.",
+    "relevance": 5,
+    "relevance_reason": "Câu trả lời hoàn toàn đúng trọng tâm, giải đáp chính xác nội dung của Điều 77, 78, và 79 của Nghị định 08.",
+    "completeness": 5,
+    "completeness_reason": "Câu trả lời bao phủ đầy đủ tất cả các khía cạnh quan trọng của Điều 77, 78, và 79 của Nghị định 08, cung cấp thông tin chi tiết về trách nhiệm tái chế, tỷ lệ tái chế, và hình thức thực hiện trách nhiệm tái chế.",
+    "total_ms": 34063.83579999965,
+    "error": null
+  },
+  {
+    "case_id": "edge_005",
+    "query": "Công ty tôi nhập khẩu pin lithium từ nước ngoài, chúng tôi phải thực hiện nghĩa vụ gì?",
+    "category": "edge",
+    "notes": "Real-world importer scenario — should give actionable guidance",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "web_search",
+    "expected_keywords": [
+      "nhập khẩu",
+      "pin",
+      "tái chế"
+    ],
+    "found_keywords": [
+      "nhập khẩu",
+      "pin",
+      "tái chế"
+    ],
+    "missing_keywords": [],
+    "keyword_hit_rate": 1.0,
+    "faithfulness": 0,
+    "faithfulness_reason": "Không có tài liệu nào được truy xuất để kiểm tra.",
+    "relevance": 2,
+    "relevance_reason": "Câu trả lời chỉ liên quan một phần nhỏ đến nghĩa vụ của công ty khi nhập khẩu pin lithium, chủ yếu cung cấp thông tin về EPR mà không trực tiếp giải đáp câu hỏi.",
+    "completeness": 3,
+    "completeness_reason": "Câu trả lời cung cấp thông tin về nghĩa vụ tái chế theo quy định EPR nhưng không nêu rõ các nghĩa vụ cụ thể mà công ty cần thực hiện khi nhập khẩu pin lithium.",
+    "total_ms": 31856.7952999947,
+    "error": null
+  }
+]

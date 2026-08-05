@@ -1,0 +1,55 @@
+.env
+__pycache__/
+*.py[cod]
+*.so
+.Python
+venv/
+env/
+ENV/
+qdrant_db/
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+*.log.*
+
+# Build cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+.idea/*
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Dependencies
+.venv/
+node_modules/
+frontend-react/node_modules/
+
+# Build output
+dist/
+build/
+*.egg-info/
+
+# Local runtime state and conversation data
+data/*.sqlite3
+data/*.db
+*.sqlite3
+*.db
+
+# Environment
+.env.local
+.env.*.local

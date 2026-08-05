@@ -1,0 +1,308 @@
+[
+  {
+    "case_id": "legal_001",
+    "query": "Điều 77 Nghị định 08/2022 quy định những gì về trách nhiệm tái chế?",
+    "category": "legal",
+    "notes": "Core legal article on EPR recycling obligation",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "legal",
+    "expected_keywords": [
+      "Điều 77",
+      "tái chế",
+      "nhà sản xuất"
+    ],
+    "found_keywords": [
+      "Điều 77",
+      "tái chế",
+      "nhà sản xuất"
+    ],
+    "missing_keywords": [],
+    "keyword_hit_rate": 1.0,
+    "faithfulness": null,
+    "faithfulness_reason": "",
+    "relevance": null,
+    "relevance_reason": "",
+    "completeness": null,
+    "completeness_reason": "",
+    "final_text": "Theo Điều 77 [1] của Nghị định số 08/2022/NĐ-CP, quy định về trách nhiệm tái chế sản phẩm và bao bì của tổ chức và cá nhân sản xuất, nhập khẩu. Cụ thể:\n\n1. **Đối tượng và lộ trình thực hiện trách nhiệm tái chế:** Tổ chức và cá nhân sản xuất, nhập khẩu các sản phẩm và bao bì quy định tại Cột 3 Phụ lục XXII phải thực hiện trách nhiệm tái chế theo tỷ lệ và quy cách tái chế bắt buộc quy định tại Điều 78 của Nghị định này.\n\n2. **Loại sản phẩm và bao bì cần tái chế:** Bao gồm các loại sản phẩm như thực phẩm, mỹ phẩm, thuốc, phân bón, chế phẩm tẩy rửa, xi măng và nhiều loại khác.\n\n3. **Nghĩa vụ và quyền lợi:** Nhà sản xuất, nhập khẩu phải chịu trách nhiệm về chất lượng và ghi nhãn sản phẩm theo quy định của pháp luật về chất lượng sản phẩm. Các đối tượng không phải thực hiện trách nhiệm tái chế bao gồm các trường hợp như xuất khẩu, doanh thu dưới mức quy định, hoặc thu hồi và tái sử dụng bao bì.\n\n4. **Chế tài xử phạt:** Nếu không tuân thủ quy định về trách nhiệm tái chế, nhà sản xuất, nhập khẩu có thể bị xử phạt theo quy định của pháp luật về bảo vệ môi trường.\n\n📚 Nguồn tham khảo:\n- Điều 77. Đối tượng, lộ trình thực hiện trách nhiệm tái chế — Nghị định số 08/2022/NĐ-CP quy định chi tiết thi hành một số điều của Luật Bảo vệ môi trường\n- Phụ lục XXII. Quy định chung về trách nhiệm tái chế — Nghị định số 08/2022/NĐ-CP quy định chi tiết thi hành một số điều của Luật Bảo vệ môi trường\n- Điều 79. Hình thức thực hiện trách nhiệm tái chế — Nghị định số 08/2022/NĐ-CP quy định chi tiết thi hành một số điều của Luật Bảo vệ môi trường\n- Phụ lục XXII. Sản phẩm, bao bì phải thực hiện trách nhiệm tái chế — Dầu nhớt — Nghị định số 08/2022/NĐ-CP quy định chi tiết thi hành một số điều của Luật Bảo vệ môi trường\n- Phụ lục XXII. Sản phẩm, bao bì phải thực hiện trách nhiệm tái chế — Phương tiện giao thông — Nghị định số 08/2022/NĐ-CP quy định chi tiết thi hành một số điều của Luật Bảo vệ môi trường\n\n---\n\n**💡 Bạn có thể hỏi tiếp:**\n- Có những loại sản phẩm nào được miễn trách nhiệm tái chế?\n- Tỷ lệ tái chế bắt buộc được quy định như thế nào?\n- Các chế tài xử phạt cụ thể đối với vi phạm trách nhiệm tái chế là gì?",
+    "total_ms": 28787.166300000536,
+    "error": null
+  },
+  {
+    "case_id": "legal_002",
+    "query": "Trách nhiệm xử lý sản phẩm ắc quy và pin sau khi hết vòng đời sử dụng?",
+    "category": "legal",
+    "notes": "Legal article on battery end-of-life disposal",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "web_search",
+    "expected_keywords": [
+      "ắc quy",
+      "pin",
+      "xử lý"
+    ],
+    "found_keywords": [
+      "ắc quy",
+      "pin",
+      "xử lý"
+    ],
+    "missing_keywords": [],
+    "keyword_hit_rate": 1.0,
+    "faithfulness": null,
+    "faithfulness_reason": "",
+    "relevance": null,
+    "relevance_reason": "",
+    "completeness": null,
+    "completeness_reason": "",
+    "final_text": "Doanh nghiệp sản xuất và nhập khẩu ắc quy, pin sạc nhiều lần có trách nhiệm tái chế sản phẩm theo quy định tại Điều 54, Luật Bảo vệ môi trường 2020 và Điều 77, Nghị định 08. Đối với pin dùng một lần, doanh nghiệp cũng phải hỗ trợ xử lý theo Điều 55, Luật Bảo vệ môi trường và Điều 83, Nghị định 08. Quy định này sẽ có hiệu lực từ ngày 1/1/2024. ⚠️ Vui lòng đối chiếu với văn bản pháp luật chính thức. Nguồn: https://rethinkingplastics.eu/media/acfupload/QA_EPR_VN_interactive.pdf",
+    "total_ms": 7734.377499997208,
+    "error": null
+  },
+  {
+    "case_id": "legal_003",
+    "query": "Cơ sở tái chế phải đáp ứng các điều kiện pháp lý nào?",
+    "category": "legal",
+    "notes": "Legal requirements for recycling facility operators",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "web_search",
+    "expected_keywords": [
+      "tái chế",
+      "điều kiện",
+      "cơ sở"
+    ],
+    "found_keywords": [
+      "tái chế",
+      "điều kiện",
+      "cơ sở"
+    ],
+    "missing_keywords": [],
+    "keyword_hit_rate": 1.0,
+    "faithfulness": null,
+    "faithfulness_reason": "",
+    "relevance": null,
+    "relevance_reason": "",
+    "completeness": null,
+    "completeness_reason": "",
+    "final_text": "Cơ sở tái chế tại Việt Nam phải đáp ứng các điều kiện theo quy định của Luật Bảo vệ Môi trường 2020, Nghị định 08/2022 và các văn bản hướng dẫn liên quan. Tuy nhiên, hiện tại chưa có tiêu chí cụ thể để xác định các điều kiện này, dẫn đến khó khăn cho các doanh nghiệp trong việc tuân thủ. ⚠️ Vui lòng đối chiếu với văn bản pháp luật chính thức. Nguồn: https://baochinhphu.vn/thuc-thi-epr-can-phu-hop-voi-cac-dieu-kien-cua-viet-nam-102250325213917227.htm",
+    "total_ms": 8672.607599997718,
+    "error": null
+  },
+  {
+    "case_id": "legal_004",
+    "query": "Trách nhiệm của Bộ Tài nguyên và Môi trường trong quản lý EPR là gì?",
+    "category": "legal",
+    "notes": "State management responsibility for EPR oversight",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "legal",
+    "expected_keywords": [
+      "Bộ Tài nguyên",
+      "môi trường"
+    ],
+    "found_keywords": [
+      "Bộ Tài nguyên",
+      "môi trường"
+    ],
+    "missing_keywords": [],
+    "keyword_hit_rate": 1.0,
+    "faithfulness": null,
+    "faithfulness_reason": "",
+    "relevance": null,
+    "relevance_reason": "",
+    "completeness": null,
+    "completeness_reason": "",
+    "final_text": "Bộ Tài nguyên và Môi trường có nhiều trách nhiệm quan trọng trong quản lý EPR theo Nghị định số 08/2022/NĐ-CP:\n\n1. Xây dựng và quản lý Hội đồng EPR quốc gia (Theo Điều 88 [1]): Bộ Tài nguyên và Môi trường chủ trì việc thành lập và ban hành quy chế tổ chức, hoạt động của Hội đồng EPR quốc gia. Hội đồng này có nhiệm vụ tư vấn, giúp Bộ trưởng quản lý, giám sát, hỗ trợ việc thực hiện trách nhiệm của nhà sản xuất, nhập khẩu.\n\n2. Xây dựng và quản lý Hệ thống thông tin EPR quốc gia (Theo Điều 87 [2]): Bộ Tài nguyên và Môi trường có trách nhiệm xây dựng, quản lý và vận hành Hệ thống thông tin EPR quốc gia. Hệ thống này được kết nối với các cơ sở dữ liệu khác để đảm bảo việc đăng ký, báo cáo và kê khai đúng quy định của pháp luật.\n\n3. Hỗ trợ hoạt động tái chế sản phẩm, bao bì (Theo Điều 82 [3]): Bộ Tài nguyên và Môi trường chủ trì, phối hợp với Bộ Tài chính ban hành quy định việc hỗ trợ tài chính cho hoạt động tái chế sản phẩm, bao bì. Tiền đóng góp tài chính vào Quỹ Bảo vệ môi trường Việt Nam được sử dụng để hỗ trợ các hoạt động tái chế sản phẩm, bao bì.\n\n4. Hỗ trợ hoạt động xử lý chất thải (Theo Điều 85 [4]): Bộ Tài nguyên và Môi trường cũng chịu trách nhiệm hỗ trợ hoạt động xử lý chất thải. Quỹ Bảo vệ môi trường Việt Nam tiếp nhận và sử dụng tiền đóng góp tài chính để hỗ trợ hoạt động này, và lãi tiền gửi ngân hàng được sử dụng cho mục đích này.\n\n5. Cung cấp dịch vụ công trực tuyến về môi trường (Theo Điều 166 [5]): Bộ Tài nguyên và Môi trường tổ chức xây dựng và thực hiện việc cung cấp dịch vụ công trực tuyến đối với thủ tục hành chính về môi trường ở cấp trung ương và phối hợp với các cấp tỉnh để đảm bảo tính đồng bộ và kết nối.\n\nNhư vậy, Bộ Tài nguyên và Môi trường đóng vai trò quan trọng trong việc quản lý EPR tại Việt Nam, từ việc tư vấn, giám sát đến hỗ trợ các hoạt động tái chế và xử lý chất thải, cũng như cung cấp dịch vụ công trực tuyến về môi trường.\n\n📚 Nguồn tham khảo:\n- Điều 88. Hội đồng EPR quốc gia — Nghị định số 08/2022/NĐ-CP quy định chi tiết thi hành một số điều của Luật Bảo vệ môi trường\n- Điều 87. Hệ thống thông tin EPR quốc gia — Nghị định số 08/2022/NĐ-CP quy định chi tiết thi hành một số điều của Luật Bảo vệ môi trường\n- Điều 82. Thực hiện hỗ trợ hoạt động tái chế sản phẩm, bao bì — Nghị định số 08/2022/NĐ-CP quy định chi tiết thi hành một số điều của Luật Bảo vệ môi trường\n- Điều 85. Thực hiện hỗ trợ hoạt động xử lý chất thải — Nghị định số 08/2022/NĐ-CP quy định chi tiết thi hành một số điều của Luật Bảo vệ môi trường\n- Điều 166. Trách nhiệm cung cấp dịch vụ công trực tuyến về môi trường — Nghị định số 08/2022/NĐ-CP quy định chi tiết thi hành một số điều của Luật Bảo vệ môi trường\n\n---\n\n**💡 Bạn có thể hỏi tiếp:**\n- Bộ Tài nguyên và Môi trường có vai trò gì trong việc giám sát EPR?\n- Các quy định cụ thể về trách nhiệm của nhà sản xuất trong EPR là gì?\n- Hệ thống thông tin EPR quốc gia hoạt động như thế nào?",
+    "total_ms": 25965.4653999969,
+    "error": null
+  },
+  {
+    "case_id": "legal_005",
+    "query": "Phương tiện giao thông nào bắt buộc tái chế và lộ trình áp dụng từ năm nào?",
+    "category": "legal",
+    "notes": "Legal timeline for vehicle EPR obligation starting 2027",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "legal",
+    "expected_keywords": [
+      "phương tiện giao thông",
+      "2027",
+      "tái chế"
+    ],
+    "found_keywords": [
+      "phương tiện giao thông",
+      "tái chế"
+    ],
+    "missing_keywords": [
+      "2027"
+    ],
+    "keyword_hit_rate": 0.6666666666666666,
+    "faithfulness": null,
+    "faithfulness_reason": "",
+    "relevance": null,
+    "relevance_reason": "",
+    "completeness": null,
+    "completeness_reason": "",
+    "final_text": "Phương tiện giao thông bắt buộc tái chế là xe mô tô 2/3 bánh, xe máy điện, xe ô tô, xe tải, và các loại phương tiện khác theo quy định của Phụ lục XXII của Nghị định số 08/2022/NĐ-CP [1]. Tỷ lệ tái chế bắt buộc đối với phương tiện giao thông này là 95% và quy cách tái chế bắt buộc là tái chế các bộ phận theo quy chuẩn EU, đạt tối thiểu 85% khối lượng phương tiện được tái sử dụng/tái chế [1].\n\nLộ trình áp dụng cho việc tái chế phương tiện giao thông này bắt đầu từ năm ban hành Nghị định số 08/2022/NĐ-CP, tức là từ năm 2022 [1].\n\n📚 Nguồn tham khảo:\n- Phụ lục XXII. Sản phẩm, bao bì phải thực hiện trách nhiệm tái chế — Phương tiện giao thông — Nghị định số 08/2022/NĐ-CP quy định chi tiết thi hành một số điều của Luật Bảo vệ môi trường\n\n---\n\n**💡 Bạn có thể hỏi tiếp:**\n- Có những loại phương tiện nào khác cũng phải tái chế không?\n- Tỷ lệ tái chế 95% có áp dụng cho tất cả các loại phương tiện không?\n- Quy trình tái chế các bộ phận phương tiện giao thông được thực hiện như thế nào?",
+    "total_ms": 13223.184099999344,
+    "error": null
+  },
+  {
+    "case_id": "legal_006",
+    "query": "Hệ số đóng góp tài chính Fs trong nghĩa vụ EPR được tính như thế nào?",
+    "category": "legal",
+    "notes": "Legal formula for financial contribution coefficient",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "web_search",
+    "expected_keywords": [
+      "tài chính",
+      "tái chế"
+    ],
+    "found_keywords": [
+      "tài chính",
+      "tái chế"
+    ],
+    "missing_keywords": [],
+    "keyword_hit_rate": 1.0,
+    "faithfulness": null,
+    "faithfulness_reason": "",
+    "relevance": null,
+    "relevance_reason": "",
+    "completeness": null,
+    "completeness_reason": "",
+    "final_text": "Hệ số đóng góp tài chính Fs trong nghĩa vụ EPR được xác định là định mức chi phí tái chế hợp lý, hợp lệ cho một đơn vị khối lượng sản phẩm hoặc bao bì. Nó bao gồm các chi phí như phân loại, thu gom, vận chuyển, tái chế và chi phí quản lý hành chính hỗ trợ thực hiện tái chế. Định mức này đã được ban hành tại Thông tư số 07/2025/TT-BTNMT. ⚠️ Vui lòng đối chiếu với văn bản pháp luật chính thức. Nguồn: moitruongachau, baochinhphu.",
+    "total_ms": 7812.520699997549,
+    "error": null
+  },
+  {
+    "case_id": "legal_007",
+    "query": "Nhà sản xuất không thực hiện đúng nghĩa vụ tái chế thì bị xử lý thế nào?",
+    "category": "legal",
+    "notes": "Penalties for non-compliance with EPR obligations",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "web_search",
+    "expected_keywords": [
+      "vi phạm",
+      "xử phạt"
+    ],
+    "found_keywords": [
+      "vi phạm",
+      "xử phạt"
+    ],
+    "missing_keywords": [],
+    "keyword_hit_rate": 1.0,
+    "faithfulness": null,
+    "faithfulness_reason": "",
+    "relevance": null,
+    "relevance_reason": "",
+    "completeness": null,
+    "completeness_reason": "",
+    "final_text": "Nếu nhà sản xuất không thực hiện đúng nghĩa vụ tái chế theo quy định của Nghị định 08/2022/NĐ-CP và Luật Bảo vệ Môi trường 2020, họ có thể bị xử lý vi phạm hành chính. Cụ thể, mức xử phạt có thể bao gồm tiền phạt và yêu cầu khắc phục hậu quả, như thực hiện nghĩa vụ tái chế hoặc bồi thường thiệt hại. ⚠️ Vui lòng đối chiếu với văn bản pháp luật chính thức. Nguồn: https://xulymoitruongvietthao.com/epr-la-gi/",
+    "total_ms": 8617.32999999731,
+    "error": null
+  },
+  {
+    "case_id": "legal_008",
+    "query": "Thủ tục đăng ký kế hoạch tái chế hàng năm theo Nghị định 08/2022?",
+    "category": "legal",
+    "notes": "Annual recycling plan registration procedure",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "legal",
+    "expected_keywords": [
+      "đăng ký",
+      "kế hoạch",
+      "tái chế"
+    ],
+    "found_keywords": [
+      "đăng ký",
+      "kế hoạch",
+      "tái chế"
+    ],
+    "missing_keywords": [],
+    "keyword_hit_rate": 1.0,
+    "faithfulness": null,
+    "faithfulness_reason": "",
+    "relevance": null,
+    "relevance_reason": "",
+    "completeness": null,
+    "completeness_reason": "",
+    "final_text": "Theo Điều 80 [1], thủ tục đăng ký kế hoạch tái chế hàng năm theo Nghị định 08/2022 được quy định như sau:\n1. Nhà sản xuất, nhập khẩu phải đăng ký kế hoạch tái chế đối với các sản phẩm, bao bì sản xuất, nhập khẩu được đưa ra thị trường của năm liền trước trước ngày 31 tháng 3 hằng năm. Họ cũng phải báo cáo kết quả tái chế sản phẩm, bao bì của năm trước theo mẫu do Bộ Tài nguyên và Môi trường quy định.\n2. Nhà sản xuất, nhập khẩu bao gồm các sản phẩm như ắc quy, pin, dầu nhớt, săm lốp đã đăng ký và thực hiện kế hoạch tái chế sản phẩm, bao bì trong năm 2024 thì khối lượng sản phẩm, bao bì đã tái chế đáp ứng theo quy định của pháp luật được tính vào kết quả tái chế sản phẩm, bao bì trong năm 2025.\n3. Đơn vị tái chế và bên được ủy quyền cũng có trách nhiệm báo cáo Bộ Tài nguyên và Môi trường kết quả thực hiện tái chế của năm trước trước ngày 31 tháng 3 hằng năm.\n\nNghĩa vụ của nhà sản xuất, nhập khẩu là phải đăng ký kế hoạch tái chế hàng năm và báo cáo kết quả tái chế theo quy định. Họ chịu trách nhiệm trước pháp luật về tính chính xác của thông tin đăng ký kế hoạch tái chế, báo cáo kết quả tái chế. Nếu không tuân thủ thủ tục này, họ có thể bị xử phạt theo quy định của pháp luật.\n\n📚 Nguồn tham khảo:\n- Điều 80. Đăng ký kế hoạch và báo cáo kết quả tái chế — Nghị định số 08/2022/NĐ-CP quy định chi tiết thi hành một số điều của Luật Bảo vệ môi trường.\n\n---\n\n**💡 Bạn có thể hỏi tiếp:**\n- Có mẫu báo cáo kết quả tái chế nào không?\n- Thời hạn cụ thể để nộp kế hoạch tái chế là gì?\n- Những sản phẩm nào không cần đăng ký kế hoạch tái chế?",
+    "total_ms": 17821.467500001745,
+    "error": null
+  },
+  {
+    "case_id": "legal_009",
+    "query": "Quy cách tái chế bắt buộc đối với săm lốp theo quy định pháp luật?",
+    "category": "legal",
+    "notes": "Mandatory recycling specification standards for tires",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "legal",
+    "expected_keywords": [
+      "săm lốp",
+      "quy cách",
+      "tái chế"
+    ],
+    "found_keywords": [
+      "săm lốp",
+      "quy cách",
+      "tái chế"
+    ],
+    "missing_keywords": [],
+    "keyword_hit_rate": 1.0,
+    "faithfulness": null,
+    "faithfulness_reason": "",
+    "relevance": null,
+    "relevance_reason": "",
+    "completeness": null,
+    "completeness_reason": "",
+    "final_text": "Theo quy định của Phụ lục XXII của Nghị định số 08/2022/NĐ-CP về trách nhiệm tái chế, săm lốp phải tuân thủ quy cách tái chế bắt buộc như sau:\n\n- Săm lốp các loại phải tái chế ra các sản phẩm như xốp lốp, chế phẩm đệm đường, chế phẩm sân chơi, v.v.\n- Tỷ lệ tái chế bắt buộc đối với săm lốp là 47%.\n- Để đạt được yêu cầu tái chế, phải thu hồi tối thiểu 40% khối lượng vật liệu từ săm lốp.\n\nVề quy cách tái chế bắt buộc, săm lốp cần được tái chế thành các sản phẩm cụ thể và phải đạt được mức thu hồi vật liệu nhất định để đảm bảo tuân thủ quy định pháp luật về trách nhiệm tái chế.\n\n📚 Nguồn tham khảo:\n- Phụ lục XXII. Sản phẩm, bao bì phải thực hiện trách nhiệm tái chế — Săm lốp — Nghị định số 08/2022/NĐ-CP quy định chi tiết thi hành một số điều của Luật Bảo vệ môi trường.\n\n---\n\n**💡 Bạn có thể hỏi tiếp:**\n- Có những sản phẩm nào được tái chế từ săm lốp?\n- Tỷ lệ tái chế 47% có áp dụng cho tất cả các loại săm lốp không?\n- Quy trình thu hồi vật liệu từ săm lốp diễn ra như thế nào?",
+    "total_ms": 14192.77030000012,
+    "error": null
+  },
+  {
+    "case_id": "legal_010",
+    "query": "Điều kiện để được công nhận là đơn vị tái chế được uỷ quyền xử lý EPR?",
+    "category": "legal",
+    "notes": "Certification conditions for state-authorized EPR recycling facilities",
+    "expected_route": "vectorstore_faq",
+    "actual_route": "vectorstore_faq",
+    "route_correct": true,
+    "source": "web_search",
+    "expected_keywords": [
+      "cơ sở",
+      "xử lý",
+      "chất thải"
+    ],
+    "found_keywords": [
+      "xử lý"
+    ],
+    "missing_keywords": [
+      "cơ sở",
+      "chất thải"
+    ],
+    "keyword_hit_rate": 0.3333333333333333,
+    "faithfulness": null,
+    "faithfulness_reason": "",
+    "relevance": null,
+    "relevance_reason": "",
+    "completeness": null,
+    "completeness_reason": "",
+    "final_text": "Để được công nhận là đơn vị tái chế được ủy quyền xử lý EPR, đơn vị cần đáp ứng các điều kiện theo quy định của pháp luật, tuy nhiên, Nghị định 08 và các văn bản liên quan không quy định rõ các tiêu chí cụ thể để xác định điều này. Do đó, các nhà sản xuất và nhập khẩu thường gặp khó khăn trong việc lựa chọn đơn vị tái chế phù hợp. Bạn có thể tham khảo thêm thông tin từ Hệ thống thông tin EPR quốc gia để tìm đơn vị đáp ứng yêu cầu. ⚠️ Vui lòng đối chiếu với văn bản pháp luật chính thức. Nguồn: https://kpmg.com/vn/vi/home/phan-tich-chuyen-sau/2025/02/key-amendments-to-vietnam-environment-protection-regulations.html",
+    "total_ms": 7040.320700001757,
+    "error": null
+  }
+]
