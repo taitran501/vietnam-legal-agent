@@ -51,6 +51,14 @@ class TerminationReason(StrEnum):
     ERROR = "error"
 
 
+class CaseStatus(StrEnum):
+    """Lifecycle of one conversation-scoped compliance case."""
+
+    COLLECTING = "collecting"
+    READY = "ready"
+    COMPLETED = "completed"
+
+
 @dataclass(slots=True)
 class DocumentRecord:
     """Repository-neutral representation of one retrieved source."""
@@ -135,8 +143,10 @@ class AgentState(TypedDict, total=False):
     history_summary: str
     active_case: dict[str, Any] | None
     task_type: str
+    is_follow_up: bool
     facts: dict[str, str]
     missing_facts: list[str]
+    case_state: dict[str, Any] | None
     follow_up_question: str
     is_epr_scope: bool
 

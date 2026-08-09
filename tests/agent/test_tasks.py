@@ -1,5 +1,10 @@
+import pytest
+from pydantic import ValidationError
+
 from epr_agent.domain.models import TaskType
 from epr_agent.domain.tasks import (
+    ExtractedFacts,
+    TaskUnderstanding,
     build_follow_up_question,
     classify_task,
     extract_facts,
@@ -24,6 +29,7 @@ def test_extract_facts_does_not_infer_unspecified_values():
     assert missing_facts(TaskType.ASSESS_EPR_OBLIGATION, {"business_role": "nhà sản xuất"}) == [
         "product_or_packaging",
         "material",
+        "activity_scope",
     ]
 
 
@@ -42,3 +48,18 @@ def test_follow_up_question_explains_which_facts_are_missing():
     )
     assert "vai trò" in question
     assert "vật liệu" in question
+
+
+def test_structured_understanding_has_a_closed_task_surface():
+    result = TaskUnderstanding(
+        task_type="assess_epr_obligation",
+        is_follow_up=True,
+        standalone_query="Doanh nghiệp sản xuất bao bì nhựa tại Việt Nam có phải thực hiện EPR không?",
+        facts=ExtractedFacts(business_role="nhà sản xuất", material="nhựa"),
+        missing_facts=["product_or_packaging", "unknown"],
+        confidence=0.9,
+    )
+    assert result.task_type == TaskType.ASSESS_EPR_OBLIGATION
+    assert result.missing_facts == ["product_or_packaging"]
+    with pytest.raises(ValidationError):
+        TaskUnderstanding(task_type="free_form_tool_call")
