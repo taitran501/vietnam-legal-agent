@@ -264,9 +264,8 @@ async def _persist_exchange(
             assistant_msg=assistant_msg,
         )
 
-    if settings.history_dual_write_session:
-        sid = legacy_session_id or conversation_id
-        await session_store.append_exchange(sid, user_msg, assistant_msg)
+    # Redis no longer receives a durable conversation copy.  It remains a
+    # short-lived cache/rate-limit layer; SQLAlchemy persistence owns history.
 
 
 # ---------------------------------------------------------------------------

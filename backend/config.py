@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     use_qdrant_cloud: bool = Field(default=False)
     qdrant_cloud_url: str | None = Field(default=None)
     qdrant_api_key: str | None = Field(default=None)
+    qdrant_url: str | None = Field(
+        default=None,
+        description="Optional self-hosted Qdrant endpoint, e.g. http://qdrant:6333",
+    )
     # Local path used when not using cloud
     qdrant_local_path: str = Field(default="./qdrant_db")
 
@@ -48,13 +52,13 @@ class Settings(BaseSettings):
     )
     database_url: str | None = Field(
         default=None,
-        description="Optional production PostgreSQL URL for agent case state and traces",
+        description="PostgreSQL production source of truth; SQLite is used locally when unset",
     )
 
     # ── Persistent Chat History ─────────────────────────────────────────────
     history_enabled: bool = Field(
         default=True,
-        description="Enable account-level persistent chat history store",
+        description="Deprecated compatibility flag; conversations always use durable persistence",
     )
     history_db_path: Path = Field(
         default=BASE_DIR / "data" / "chat_history.sqlite3",
@@ -65,8 +69,8 @@ class Settings(BaseSettings):
         description="How many recent messages to load for model context",
     )
     history_dual_write_session: bool = Field(
-        default=True,
-        description="Keep writing to legacy session store during migration",
+        default=False,
+        description="Deprecated compatibility flag. Durable conversations are never dual-written.",
     )
 
     # ── LangSmith (optional) ─────────────────────────────────────────────────
@@ -209,11 +213,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_qdrant_cloud(self) -> Settings:
-        if self.use_qdrant_cloud:
-            if not self.qdrant_cloud_url or not self.qdrant_api_key:
-                raise ValueError(
-                    "USE_QDRANT_CLOUD=true requires both QDRANT_CLOUD_URL and QDRANT_API_KEY"
-                )
+        if self.use_qdrant_cloud and (not self.qdrant_cloud_url or not self.qdrant_api_key):
+            raise ValueError(
+                "USE_QDRANT_CLOUD=true requires both QDRANT_CLOUD_URL and QDRANT_API_KEY"
+            )
         return self
 
     @model_validator(mode="after")

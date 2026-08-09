@@ -4,15 +4,13 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
+from backend.api.routes import sessions as sessions_routes
+from backend.history import store
 from fastapi import FastAPI, Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.testclient import TestClient
-
-from backend.api.routes import sessions as sessions_routes
-from backend.history import store
 
 
 class _InjectUserMiddleware(BaseHTTPMiddleware):
@@ -29,21 +27,6 @@ def persistent_history_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     db_path = tmp_path / "history_api.sqlite3"
 
     monkeypatch.setattr(store, "_db_path", lambda: db_path)
-    monkeypatch.setattr(
-        sessions_routes,
-        "get_settings",
-        lambda: SimpleNamespace(history_enabled=True),
-    )
-
-    async def _legacy_get_history(_session_id: str):
-        return []
-
-    async def _legacy_clear_session(_session_id: str):
-        return None
-
-    monkeypatch.setattr(sessions_routes.session_store, "get_history", _legacy_get_history)
-    monkeypatch.setattr(sessions_routes.session_store, "clear_session", _legacy_clear_session)
-
     asyncio.run(store.init_history_store())
     return db_path
 
@@ -176,6 +159,10 @@ def test_sessions_crud_archive_pin_messages_and_delete_flow(client: TestClient):
 
     get_after_delete_resp = client.get("/api/v1/sessions/conv-api-1", headers=headers)
     assert get_after_delete_resp.status_code == 404
+    messages_after_delete = client.get("/api/v1/sessions/conv-api-1/messages", headers=headers)
+    assert messages_after_delete.status_code == 404
+    case_after_delete = client.get("/api/v1/sessions/conv-api-1/case", headers=headers)
+    assert case_after_delete.status_code == 404
 
 
 @pytest.mark.integration
@@ -212,3 +199,43 @@ def test_sessions_ownership_enforced_between_users(client: TestClient):
 
     owner_still_can_read = client.get("/api/v1/sessions/conv-owned", headers=owner_headers)
     assert owner_still_can_read.status_code == 200
+
+
+@pytest.mark.integration
+def test_case_workspace_hydrates_updates_and_reopens_collection(client: TestClient):
+    headers = {"x-test-user": "case-owner"}
+    created = client.post(
+        "/api/v1/sessions",
+        headers=headers,
+        json={"title": "EPR case", "session_id": "conv-case"},
+    )
+    assert created.status_code == 200
+
+    empty_case = client.get("/api/v1/sessions/conv-case/case", headers=headers)
+    assert empty_case.status_code == 200
+    assert empty_case.json() is None
+
+    saved = client.patch(
+        "/api/v1/sessions/conv-case/case",
+        headers=headers,
+        json={
+            "task_type": "assess_epr_obligation",
+            "facts": {
+                "business_role": "nhà sản xuất",
+                "product_or_packaging": "bao bì",
+                "material": "nhựa",
+                "activity_scope": "thị trường Việt Nam",
+            },
+        },
+    )
+    assert saved.status_code == 200
+    assert saved.json()["status"] == "ready"
+
+    reopened = client.patch(
+        "/api/v1/sessions/conv-case/case",
+        headers=headers,
+        json={"facts": {"material": ""}},
+    )
+    assert reopened.status_code == 200
+    assert reopened.json()["status"] == "collecting"
+    assert reopened.json()["missing_facts"] == ["material"]

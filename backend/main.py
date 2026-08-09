@@ -115,7 +115,6 @@ async def lifespan(app: FastAPI):
     
     settings = get_settings()
     logger.info("Starting EPR Chatbot backend…")
-    agent_case_store = None
 
     # 1. Verify Redis is reachable
     try:
@@ -132,25 +131,12 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("FAQ indexing failed: %s", exc)
 
-    # 2.5 Initialize persistent chat history store
-    if settings.history_enabled:
-        try:
-            await init_history_store()
-            logger.info("Persistent history store ready at %s", settings.history_db_path)
-        except Exception as exc:
-            logger.warning("Persistent history init failed: %s", exc)
-
-    # Initialize the bounded workflow's active-case and trace tables beside the
-    # conversation history.  The adapter selects local SQLite or production
-    # PostgreSQL from DATABASE_URL.
+    # 2.5 Initialize the single durable conversation/case/run repository.
     try:
-        from epr_agent.infra.case_store import default_case_store
-
-        agent_case_store = default_case_store()
-        await agent_case_store.initialize()
-        logger.info("Agent case/trace store ready")
+        await init_history_store()
+        logger.info("Persistent history store ready at %s", settings.history_db_path)
     except Exception as exc:
-        logger.warning("Agent case/trace store init failed: %s", exc)
+        logger.warning("Persistent history init failed: %s", exc)
 
     # 2.6 Warm retrieval indexes asynchronously so startup doesn't block readiness.
     warmup_task = asyncio.create_task(_warmup_retrieval_indexes_task())
@@ -174,11 +160,12 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
     await close_redis()
-    if agent_case_store is not None and hasattr(agent_case_store, "close"):
-        try:
-            await agent_case_store.close()
-        except Exception as exc:
-            logger.warning("Agent case/trace store close failed: %s", exc)
+    try:
+        from epr_agent.infra.persistence import close_persistence_stores
+
+        await close_persistence_stores()
+    except Exception as exc:
+        logger.warning("Persistence store close failed: %s", exc)
     logger.info("EPR Chatbot backend stopped")
 
 
@@ -220,7 +207,7 @@ import os
 
 _ALLOWED_ORIGINS = [
     o.strip()
-    for o in os.getenv("ALLOWED_ORIGINS", "http://localhost,http://localhost:8501").split(",")
+    for o in os.getenv("ALLOWED_ORIGINS", "http://localhost,http://localhost:3000,http://localhost:8501").split(",")
     if o.strip()
 ]
 
@@ -228,8 +215,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "Accept"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
+    allow_headers=["Content-Type", "Accept", "X-API-Key", "Authorization"],
 )
 
 # Add request ID middleware (must be before other middleware for correlation)

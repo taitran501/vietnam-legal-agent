@@ -11,23 +11,43 @@ Provides:
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from backend.config import get_settings
 from backend.history import (
-    ensure_conversation,
-    list_conversations as list_conversations_persistent,
-    list_messages as list_messages_persistent,
-    get_conversation as get_conversation_persistent,
-    rename_conversation as rename_conversation_persistent,
     archive_conversation as archive_conversation_persistent,
-    pin_conversation as pin_conversation_persistent,
+)
+from backend.history import (
     delete_conversation as delete_conversation_persistent,
 )
-from backend.memory import session_store
+from backend.history import (
+    ensure_conversation,
+)
+from backend.history import (
+    get_case_state as get_case_state_persistent,
+)
+from backend.history import (
+    get_conversation as get_conversation_persistent,
+)
+from backend.history import (
+    list_conversations as list_conversations_persistent,
+)
+from backend.history import (
+    list_messages as list_messages_persistent,
+)
+from backend.history import (
+    pin_conversation as pin_conversation_persistent,
+)
+from backend.history import (
+    rename_conversation as rename_conversation_persistent,
+)
+from backend.history import (
+    save_case_state as save_case_state_persistent,
+)
+from epr_agent.domain.models import TaskType
+from epr_agent.domain.tasks import missing_facts
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -38,7 +58,7 @@ class SessionInfo(BaseModel):
     id: str
     title: str
     created_at: float
-    updated_at: Optional[float] = None
+    updated_at: float | None = None
     message_count: int
     archived: bool = False
     pinned: bool = False
@@ -50,19 +70,19 @@ class SessionDetail(BaseModel):
     title: str
     messages: list[dict]
     created_at: float
-    updated_at: Optional[float] = None
+    updated_at: float | None = None
     message_count: int
 
 
 class UpdateSessionRequest(BaseModel):
     """Request body for updating session."""
-    title: Optional[str] = Field(default=None, max_length=200)
+    title: str | None = Field(default=None, max_length=200)
 
 
 class CreateSessionRequest(BaseModel):
     """Request body for creating a new conversation."""
-    title: Optional[str] = Field(default=None, max_length=200)
-    session_id: Optional[str] = Field(default=None, max_length=128)
+    title: str | None = Field(default=None, max_length=200)
+    session_id: str | None = Field(default=None, max_length=128)
 
 
 class ArchiveSessionRequest(BaseModel):
@@ -79,7 +99,34 @@ class MessagePage(BaseModel):
     """Cursor-paginated message response."""
     conversation_id: str
     messages: list[dict]
-    next_cursor: Optional[int] = None
+    next_cursor: int | None = None
+
+
+class CaseStateResponse(BaseModel):
+    """Conversation-scoped facts used by assessment/checklist workflow runs."""
+
+    task_type: Literal["assess_epr_obligation", "build_compliance_checklist"]
+    status: Literal["collecting", "ready", "completed"]
+    facts: dict[str, str] = Field(default_factory=dict)
+    missing_facts: list[str] = Field(default_factory=list)
+    last_query: str = ""
+    updated_at: float | None = None
+
+
+class UpdateCaseRequest(BaseModel):
+    """User-editable case facts. Server derives status and missing fields."""
+
+    task_type: Literal["assess_epr_obligation", "build_compliance_checklist"] | None = None
+    facts: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("facts")
+    @classmethod
+    def validate_facts(cls, facts: dict[str, str]) -> dict[str, str]:
+        allowed = {"business_role", "product_or_packaging", "material", "activity_scope"}
+        unknown = set(facts) - allowed
+        if unknown:
+            raise ValueError(f"Unknown case facts: {', '.join(sorted(unknown))}")
+        return {key: " ".join(str(value).split())[:160] for key, value in facts.items()}
 
 
 def _current_user_id(request: Request) -> str:
@@ -89,10 +136,6 @@ def _current_user_id(request: Request) -> str:
 @router.post("/sessions", response_model=SessionInfo, tags=["sessions"])
 async def create_session(request: Request, body: CreateSessionRequest):
     """Create a new conversation explicitly (preferred over implicit creation)."""
-    settings = get_settings()
-    if not settings.history_enabled:
-        raise HTTPException(status_code=400, detail="Persistent history is disabled")
-
     user_id = _current_user_id(request)
     conversation_id = await ensure_conversation(
         user_id=user_id,
@@ -125,26 +168,20 @@ async def list_sessions(request: Request, limit: int = 50, offset: int = 0):
     
     Returns session summaries with titles, message counts, and timestamps.
     """
-    settings = get_settings()
-    if settings.history_enabled:
-        user_id = _current_user_id(request)
-        sessions = await list_conversations_persistent(user_id=user_id, limit=limit, offset=offset)
-        return [
-            SessionInfo(
-                id=s["id"],
-                title=s["title"],
-                created_at=s["created_at"],
-                updated_at=s.get("updated_at"),
-                message_count=s.get("message_count", 0),
-                archived=s.get("archived", False),
-                pinned=s.get("pinned", False),
-            )
-            for s in sessions
-        ]
-
-    # Legacy fallback
-    sessions = await session_store.list_sessions(limit=limit, offset=offset)
-    return [SessionInfo(**s) for s in sessions]
+    user_id = _current_user_id(request)
+    sessions = await list_conversations_persistent(user_id=user_id, limit=limit, offset=offset)
+    return [
+        SessionInfo(
+            id=s["id"],
+            title=s["title"],
+            created_at=s["created_at"],
+            updated_at=s.get("updated_at"),
+            message_count=s.get("message_count", 0),
+            archived=s.get("archived", False),
+            pinned=s.get("pinned", False),
+        )
+        for s in sessions
+    ]
 
 
 @router.get("/sessions/{session_id}", response_model=SessionDetail, tags=["sessions"])
@@ -154,33 +191,17 @@ async def get_session(request: Request, session_id: str):
     
     Returns the complete message history with timestamps for reloading a conversation.
     """
-    settings = get_settings()
-    if settings.history_enabled:
-        user_id = _current_user_id(request)
-        conversation = await get_conversation_persistent(user_id=user_id, conversation_id=session_id)
-        if conversation is not None:
-            return SessionDetail(
-                id=conversation["id"],
-                title=conversation["title"],
-                messages=conversation["messages"],
-                created_at=conversation["created_at"],
-                updated_at=conversation.get("updated_at"),
-                message_count=conversation.get("message_count", 0),
-            )
-
-    # Legacy fallback
-    messages = await session_store.get_history(session_id)
-    if not messages:
+    user_id = _current_user_id(request)
+    conversation = await get_conversation_persistent(user_id=user_id, conversation_id=session_id)
+    if conversation is None:
         raise HTTPException(status_code=404, detail="Session not found")
-
-    meta = await session_store.get_session_meta(session_id)
     return SessionDetail(
-        id=session_id,
-        title=meta.get("title", "New Conversation"),
-        messages=messages,
-        created_at=meta.get("created_at", 0),
-        updated_at=meta.get("updated_at"),
-        message_count=len(messages),
+        id=conversation["id"],
+        title=conversation["title"],
+        messages=conversation["messages"],
+        created_at=conversation["created_at"],
+        updated_at=conversation.get("updated_at"),
+        message_count=conversation.get("message_count", 0),
     )
 
 
@@ -189,26 +210,11 @@ async def delete_session(request: Request, session_id: str):
     """
     Delete a conversation and all its messages.
     
-    This permanently removes the conversation from Redis and cannot be undone.
+    This permanently removes the conversation and its case/run state.
     """
-    settings = get_settings()
-    deleted = False
-    legacy_exists = False
-
-    # Check legacy existence before deletion for proper 404 semantics.
-    try:
-        legacy_exists = bool(await session_store.get_history(session_id))
-    except Exception:
-        legacy_exists = False
-
-    if settings.history_enabled:
-        user_id = _current_user_id(request)
-        deleted = await delete_conversation_persistent(user_id=user_id, conversation_id=session_id)
-
-    # Keep legacy cleanup during migration
-    await session_store.clear_session(session_id)
-
-    if settings.history_enabled and not deleted and not legacy_exists:
+    user_id = _current_user_id(request)
+    deleted = await delete_conversation_persistent(user_id=user_id, conversation_id=session_id)
+    if not deleted:
         raise HTTPException(status_code=404, detail="Session not found")
 
     return {"status": "ok", "message": "Session deleted"}
@@ -224,48 +230,27 @@ async def update_session(request: Request, session_id: str, body: UpdateSessionR
     if not body.title:
         raise HTTPException(status_code=400, detail="Title is required")
     
-    settings = get_settings()
-    if settings.history_enabled:
-        user_id = _current_user_id(request)
-        renamed = await rename_conversation_persistent(user_id=user_id, conversation_id=session_id, title=body.title)
-        if renamed:
-            conversation = await get_conversation_persistent(user_id=user_id, conversation_id=session_id)
-            if conversation is None:
-                raise HTTPException(status_code=404, detail="Session not found")
-            return SessionInfo(
-                id=conversation["id"],
-                title=conversation["title"],
-                created_at=conversation["created_at"],
-                updated_at=conversation.get("updated_at"),
-                message_count=conversation.get("message_count", 0),
-                archived=conversation.get("archived", False),
-                pinned=conversation.get("pinned", False),
-            )
-
-    # Legacy fallback
-    messages = await session_store.get_history(session_id)
-    if not messages:
+    user_id = _current_user_id(request)
+    renamed = await rename_conversation_persistent(user_id=user_id, conversation_id=session_id, title=body.title)
+    if not renamed:
         raise HTTPException(status_code=404, detail="Session not found")
-
-    await session_store.set_session_meta(session_id, {"title": body.title})
-    meta = await session_store.get_session_meta(session_id)
-
+    conversation = await get_conversation_persistent(user_id=user_id, conversation_id=session_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Session not found")
     return SessionInfo(
-        id=session_id,
-        title=body.title,
-        created_at=meta.get("created_at", 0),
-        updated_at=meta.get("updated_at"),
-        message_count=len(messages),
+        id=conversation["id"],
+        title=conversation["title"],
+        created_at=conversation["created_at"],
+        updated_at=conversation.get("updated_at"),
+        message_count=conversation.get("message_count", 0),
+        archived=conversation.get("archived", False),
+        pinned=conversation.get("pinned", False),
     )
 
 
 @router.patch("/sessions/{session_id}/archive", response_model=SessionInfo, tags=["sessions"])
 async def archive_session(request: Request, session_id: str, body: ArchiveSessionRequest):
     """Archive or unarchive a conversation."""
-    settings = get_settings()
-    if not settings.history_enabled:
-        raise HTTPException(status_code=400, detail="Persistent history is disabled")
-
     user_id = _current_user_id(request)
     archived = await archive_conversation_persistent(
         user_id=user_id,
@@ -293,10 +278,6 @@ async def archive_session(request: Request, session_id: str, body: ArchiveSessio
 @router.patch("/sessions/{session_id}/pin", response_model=SessionInfo, tags=["sessions"])
 async def pin_session(request: Request, session_id: str, body: PinSessionRequest):
     """Pin or unpin a conversation."""
-    settings = get_settings()
-    if not settings.history_enabled:
-        raise HTTPException(status_code=400, detail="Persistent history is disabled")
-
     user_id = _current_user_id(request)
     pinned = await pin_conversation_persistent(
         user_id=user_id,
@@ -321,41 +302,65 @@ async def pin_session(request: Request, session_id: str, body: PinSessionRequest
     )
 
 
+@router.get("/sessions/{session_id}/case", response_model=CaseStateResponse | None, tags=["case"])
+async def get_session_case(request: Request, session_id: str):
+    """Hydrate the right-side case workspace without loading all chat history."""
+
+    user_id = _current_user_id(request)
+    conversation = await get_conversation_persistent(user_id=user_id, conversation_id=session_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    case_state = await get_case_state_persistent(user_id=user_id, conversation_id=session_id)
+    return CaseStateResponse(**case_state) if case_state is not None else None
+
+
+@router.patch("/sessions/{session_id}/case", response_model=CaseStateResponse, tags=["case"])
+async def update_session_case(request: Request, session_id: str, body: UpdateCaseRequest):
+    """Persist user-edited facts; the server owns readiness and missing fields."""
+
+    user_id = _current_user_id(request)
+    conversation = await get_conversation_persistent(user_id=user_id, conversation_id=session_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    current = await get_case_state_persistent(user_id=user_id, conversation_id=session_id)
+    task_value = body.task_type or (current or {}).get("task_type") or TaskType.ASSESS_EPR_OBLIGATION.value
+    task = TaskType(task_value)
+    if task not in {TaskType.ASSESS_EPR_OBLIGATION, TaskType.BUILD_COMPLIANCE_CHECKLIST}:
+        raise HTTPException(status_code=422, detail="Case workspace supports assessment or checklist only")
+    facts = dict((current or {}).get("facts") or {})
+    facts.update(body.facts)
+    facts = {key: value for key, value in facts.items() if value}
+    state = {
+        "task_type": task.value,
+        "facts": facts,
+        "missing_facts": missing_facts(task, facts),
+        "last_query": (current or {}).get("last_query", ""),
+    }
+    saved = await save_case_state_persistent(user_id=user_id, conversation_id=session_id, state=state)
+    return CaseStateResponse(**saved)
+
+
 @router.get("/sessions/{session_id}/messages", response_model=MessagePage, tags=["sessions"])
 async def list_session_messages(
     request: Request,
     session_id: str,
     limit: int = 50,
-    cursor: Optional[int] = None,
+    cursor: int | None = None,
 ):
     """List conversation messages with cursor pagination."""
-    settings = get_settings()
-    if settings.history_enabled:
-        user_id = _current_user_id(request)
-        page = await list_messages_persistent(
-            user_id=user_id,
-            conversation_id=session_id,
-            limit=limit,
-            cursor=cursor,
-        )
-        return MessagePage(
-            conversation_id=session_id,
-            messages=page.get("messages", []),
-            next_cursor=page.get("next_cursor"),
-        )
-
-    # Legacy fallback without true pagination support.
-    messages = await session_store.get_history(session_id)
-    if not messages:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    normalized = [
-        {
-            "id": idx,
-            "role": m.get("role"),
-            "content": m.get("content"),
-            "timestamp": m.get("timestamp"),
-        }
-        for idx, m in enumerate(messages, start=1)
-    ]
-    return MessagePage(conversation_id=session_id, messages=normalized, next_cursor=None)
+    user_id = _current_user_id(request)
+    page = await list_messages_persistent(
+        user_id=user_id,
+        conversation_id=session_id,
+        limit=limit,
+        cursor=cursor,
+    )
+    if not page.get("messages"):
+        conversation = await get_conversation_persistent(user_id=user_id, conversation_id=session_id)
+        if conversation is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+    return MessagePage(
+        conversation_id=session_id,
+        messages=page.get("messages", []),
+        next_cursor=page.get("next_cursor"),
+    )
