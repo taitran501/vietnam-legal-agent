@@ -64,6 +64,7 @@ _EMBED_TEXT_MAX_CHARS = max(1000, int(os.getenv("EMBED_TEXT_MAX_CHARS", "7000"))
 _SUMMARY_INPUT_MAX_CHARS = max(2000, int(os.getenv("SUMMARY_INPUT_MAX_CHARS", "12000")))
 _CHUNK_SIZE_CHARS = max(500, int(os.getenv("CHUNK_SIZE_CHARS", "1800")))
 _CHUNK_OVERLAP_CHARS = max(100, int(os.getenv("CHUNK_OVERLAP_CHARS", "300")))
+_CHUNKING_STRATEGY = os.getenv("CHUNKING_STRATEGY", "sliding_window").strip().lower()
 
 ZERO_WIDTH_RE = re.compile(r"[\u200B-\u200F\uFEFF]")
 MULTISPACE_RE = re.compile(r"[ \t]{2,}")
@@ -331,8 +332,14 @@ def _parent_id(article: Dict[str, Any]) -> str:
 def chunk_articles(
     articles: List[Dict[str, Any]],
     summaries: List[str],
-) -> tuple[List[Dict[str, Any]], List[str], Dict[str, int]]:
-    """Expand each article into sliding-window chunks while keeping article-level summaries."""
+) -> tuple[List[Dict[str, Any]], List[str], Dict[str, Any]]:
+    """Expand articles using the configured candidate-safe chunking strategy."""
+    if _CHUNKING_STRATEGY == "legal_structure_v1":
+        from scripts.structural_chunking import structural_chunk_articles
+
+        return structural_chunk_articles(articles, summaries, max_chars=_CHUNK_SIZE_CHARS)
+    if _CHUNKING_STRATEGY != "sliding_window":
+        raise ValueError("CHUNKING_STRATEGY must be 'sliding_window' or 'legal_structure_v1'")
     chunked_articles: List[Dict[str, Any]] = []
     chunked_summaries: List[str] = []
     max_chunks_per_article = 0
@@ -451,6 +458,9 @@ def upsert_to_qdrant(articles: List[Dict], summaries: List[str]) -> None:
     if settings.use_qdrant_cloud:
         client = QdrantClient(url=settings.qdrant_cloud_url, api_key=settings.qdrant_api_key)
         logger.info("Connected to Qdrant Cloud at %s", settings.qdrant_cloud_url)
+    elif settings.qdrant_url:
+        client = QdrantClient(url=settings.qdrant_url)
+        logger.info("Connected to self-hosted Qdrant at %s", settings.qdrant_url)
     else:
         local_path = str(ROOT / "qdrant_db")
         client = QdrantClient(path=local_path)
@@ -538,6 +548,13 @@ def upsert_to_qdrant(articles: List[Dict], summaries: List[str]) -> None:
                 "Chunk_Index": article.get("Chunk_Index", 0),
                 "Chunk_Count": article.get("Chunk_Count", 1),
                 "Full_Text_Chars": article.get("Full_Text_Chars", len(article.get("Text", article.get("text", "")))),
+                "Parent_Dieu": article.get("Parent_Dieu", dieu),
+                "Hierarchy": article.get("Hierarchy", ""),
+                "Khoan": article.get("Khoan", ""),
+                "Diem": article.get("Diem", ""),
+                "Source_Start": article.get("Source_Start", 0),
+                "Source_End": article.get("Source_End", len(article.get("Text", article.get("text", "")))),
+                "Chunking_Strategy": article.get("Chunking_Strategy", _CHUNKING_STRATEGY),
                 "Text": article.get("Text", article.get("text", "")),
                 "summary": summary,
                 "embedding_text": batch_embedding_texts[j],
@@ -569,6 +586,7 @@ def main() -> None:
         _CHUNK_OVERLAP_CHARS,
         _SUMMARY_INPUT_MAX_CHARS,
     )
+    logger.info("Chunking strategy: %s; target collection: %s", _CHUNKING_STRATEGY, get_settings().law_collection)
     articles_raw = load_articles()
     validate_index_contract(articles_raw)
     logger.info("Loaded %d raw articles", len(articles_raw))

@@ -1,31 +1,39 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { ChatInput } from '@/components/Chat/ChatInput';
 import { MessageList } from '@/components/Chat/MessageList';
 import { WelcomeScreen } from '@/components/Onboarding/WelcomeScreen';
 import { Sidebar } from '@/components/Layout/Sidebar';
 import { Header } from '@/components/Layout/Header';
 import { ToastContainer } from '@/components/UI/Toast';
+import { WorkflowTimeline } from '@/components/Agent/WorkflowTimeline';
+import { CaseFactsPanel } from '@/components/Case/CaseFactsPanel';
 import { useChatStream } from '@/hooks/useChatStream';
+import { useSessions } from '@/hooks/useSessions';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useChatStore } from '@/state/chatStore';
 import { cn } from '@/lib/cn';
 
 const FAQ_THRESHOLD = 0.75;
 
-function App() {
+function ComplianceWorkspace() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isHealthy, setIsHealthy] = useState(true);
+  const { conversationId } = useParams();
+  const navigate = useNavigate();
   const { sendMessage, stopGeneration, regenerateResponse } = useChatStream();
+  const { loadSession } = useSessions();
   const {
     messages,
     isStreaming,
     streamingContent,
     statusMessage,
     activeSessionId,
+    activeCase,
+    workflowSteps,
     error,
   } = useChatStore();
 
-  // Check backend health
   useEffect(() => {
     const checkHealth = async () => {
       try {
@@ -36,73 +44,55 @@ function App() {
         setIsHealthy(false);
       }
     };
-
     checkHealth();
-    const interval = setInterval(checkHealth, 30000); // Check every 30s
+    const interval = setInterval(checkHealth, 30000);
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (conversationId && conversationId !== activeSessionId) {
+      void loadSession(conversationId);
+    }
+  }, [activeSessionId, conversationId, loadSession]);
+
   const handleSend = (query: string) => {
     let sessionId = activeSessionId;
-    
     if (!sessionId) {
-      // Generate a new session ID if none exists
       sessionId = crypto.randomUUID();
       useChatStore.getState().setActiveSession(sessionId);
+      navigate(`/conversations/${sessionId}`);
     }
-    
-    sendMessage(query, sessionId, FAQ_THRESHOLD);
+    void sendMessage(query, sessionId, FAQ_THRESHOLD);
   };
 
-  const handleSelectSession = (sessionId: string) => {
-    useChatStore.getState().setActiveSession(sessionId);
-  };
-
+  const handleSelectSession = (sessionId: string) => navigate(`/conversations/${sessionId}`);
   const handleRegenerate = () => {
-    if (activeSessionId) {
-      regenerateResponse(activeSessionId, FAQ_THRESHOLD);
-    }
+    if (activeSessionId) void regenerateResponse(activeSessionId, FAQ_THRESHOLD);
   };
 
-  // Keyboard shortcuts
-  useKeyboardShortcuts({
-    onSend: () => {
-      // This will be handled by the input component
-    },
-    onStop: stopGeneration,
-    isStreaming,
-  });
+  useKeyboardShortcuts({ onSend: () => undefined, onStop: stopGeneration, isStreaming });
 
   return (
-    <div className="flex h-screen bg-white dark:bg-gray-900 overflow-hidden">
-      {/* Sidebar */}
+    <div className="flex h-screen overflow-hidden bg-slate-100 text-slate-950">
       <div
         className={cn(
-          'flex min-h-0 flex-shrink-0 flex-col transition-all duration-300 ease-in-out border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900',
+          'flex min-h-0 flex-shrink-0 flex-col border-r border-slate-200 bg-white transition-all duration-300',
           sidebarOpen ? 'w-72' : 'w-0 overflow-hidden'
         )}
       >
         <Sidebar
           onSelectSession={handleSelectSession}
-          onClearAll={() => useChatStore.getState().clearChat()}
+          onClearAll={() => navigate('/')}
+          onNewSession={() => navigate('/')}
         />
       </div>
 
-      {/* Main chat area — min-h-0 lets the message column shrink so inner overflow-y-auto can scroll */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {/* Header */}
-        <Header
-          sidebarOpen={sidebarOpen}
-          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-          isHealthy={isHealthy}
-        />
-
-        {/* Content area */}
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
+        <Header sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} isHealthy={isHealthy} />
+        <WorkflowTimeline steps={workflowSteps} isStreaming={isStreaming} />
         {messages.length === 0 && !isStreaming ? (
-          /* Welcome screen */
           <WelcomeScreen onSendPrompt={handleSend} />
         ) : (
-          /* Message list */
           <MessageList
             messages={messages}
             isStreaming={isStreaming}
@@ -112,20 +102,34 @@ function App() {
             onRegenerate={handleRegenerate}
           />
         )}
+        <div className="max-h-[320px] overflow-y-auto border-t border-slate-200 lg:hidden">
+          <CaseFactsPanel
+            conversationId={activeSessionId}
+            caseState={activeCase}
+            onCaseChange={(caseState) => useChatStore.getState().setActiveCase(caseState)}
+          />
+        </div>
+        <ChatInput onSend={handleSend} onStop={stopGeneration} isStreaming={isStreaming} />
+      </main>
 
-        {/* Input */}
-        <ChatInput
-          onSend={handleSend}
-          onStop={stopGeneration}
-          isStreaming={isStreaming}
-          disabled={!activeSessionId && messages.length > 0}
+      <div className="hidden w-80 min-h-0 shrink-0 lg:block">
+        <CaseFactsPanel
+          conversationId={activeSessionId}
+          caseState={activeCase}
+          onCaseChange={(caseState) => useChatStore.getState().setActiveCase(caseState)}
         />
       </div>
-
-      {/* Toast notifications */}
       <ToastContainer />
     </div>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<ComplianceWorkspace />} />
+      <Route path="/conversations/:conversationId" element={<ComplianceWorkspace />} />
+      <Route path="*" element={<ComplianceWorkspace />} />
+    </Routes>
+  );
+}

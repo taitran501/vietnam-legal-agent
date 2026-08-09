@@ -92,7 +92,7 @@ async def test_assessment_stops_and_asks_for_missing_case_facts():
 
     assert state["task_type"] == "assess_epr_obligation"
     assert state["termination_reason"] == "awaiting_user_input"
-    assert set(state["missing_facts"]) == {"product_or_packaging", "material"}
+    assert set(state["missing_facts"]) == {"product_or_packaging", "material", "activity_scope"}
     assert "retrieve_legal" not in state["action_sequence"]
     assert state["answer"]
 
@@ -102,7 +102,11 @@ async def test_follow_up_resumes_active_case_with_new_fact():
     history = FakeHistory(
         active_case={
             "task_type": "assess_epr_obligation",
-            "facts": {"business_role": "nhà sản xuất", "product_or_packaging": "bao bì"},
+            "facts": {
+                "business_role": "nhà sản xuất",
+                "product_or_packaging": "bao bì",
+                "activity_scope": "thị trường Việt Nam",
+            },
         }
     )
     deps = make_dependencies(legal=[legal_doc()], history=history)

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ChatMessage } from '@/types';
+import type { CaseState, ChatMessage, ResponseSource, SourceDocument, WorkflowMetadata, WorkflowStep } from '@/types';
 
 interface ChatState {
   // Active conversation
@@ -10,6 +10,8 @@ interface ChatState {
   isStreaming: boolean;
   streamingContent: string;
   statusMessage: string;
+  workflowSteps: WorkflowStep[];
+  activeCase: CaseState | null;
   
   // UI state
   isLoading: boolean;
@@ -19,11 +21,19 @@ interface ChatState {
   setActiveSession: (sessionId: string) => void;
   setMessages: (messages: ChatMessage[]) => void;
   addMessage: (message: ChatMessage) => void;
-  updateLastAssistantMessage: (content: string, source?: string, documents?: unknown[]) => void;
+  updateLastAssistantMessage: (
+    content: string,
+    source?: ResponseSource,
+    documents?: SourceDocument[],
+    workflow?: WorkflowMetadata
+  ) => void;
   setStreaming: (isStreaming: boolean) => void;
   setStreamingContent: (content: string) => void;
   appendStreamingContent: (chunk: string) => void;
   setStatusMessage: (message: string) => void;
+  addWorkflowStep: (step: WorkflowStep) => void;
+  setWorkflowSteps: (steps: WorkflowStep[]) => void;
+  setActiveCase: (caseState: CaseState | null) => void;
   setLoading: (isLoading: boolean) => void;
   setError: (error: string | null) => void;
   clearChat: () => void;
@@ -37,6 +47,8 @@ export const useChatStore = create<ChatState>((set) => ({
   isStreaming: false,
   streamingContent: '',
   statusMessage: '',
+  workflowSteps: [],
+  activeCase: null,
   isLoading: false,
   error: null,
 
@@ -52,7 +64,7 @@ export const useChatStore = create<ChatState>((set) => ({
       messages: [...state.messages, message],
     })),
   
-  updateLastAssistantMessage: (content, source, documents) =>
+  updateLastAssistantMessage: (content, source, documents, workflow) =>
     set((state) => {
       const messages = [...state.messages];
       const lastIdx = messages.length - 1;
@@ -60,8 +72,9 @@ export const useChatStore = create<ChatState>((set) => ({
         messages[lastIdx] = {
           ...messages[lastIdx],
           content,
-          source: source as any,
-          documents: documents as any,
+          source,
+          documents,
+          workflow,
         };
       }
       return { messages, streamingContent: '' };
@@ -80,6 +93,12 @@ export const useChatStore = create<ChatState>((set) => ({
   
   setStatusMessage: (message) =>
     set({ statusMessage: message }),
+  addWorkflowStep: (step) =>
+    set((state) => ({
+      workflowSteps: [...state.workflowSteps.filter((item) => item.step !== step.step), step].sort((a, b) => a.step - b.step),
+    })),
+  setWorkflowSteps: (workflowSteps) => set({ workflowSteps }),
+  setActiveCase: (activeCase) => set({ activeCase }),
   
   setLoading: (isLoading) =>
     set({ isLoading }),
@@ -94,6 +113,8 @@ export const useChatStore = create<ChatState>((set) => ({
       isStreaming: false,
       streamingContent: '',
       statusMessage: '',
+      workflowSteps: [],
+      activeCase: null,
       error: null,
     }),
 

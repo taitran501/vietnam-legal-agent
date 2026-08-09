@@ -34,11 +34,13 @@ def _metadata(state: AgentState) -> dict[str, Any]:
         assumptions.append("Kết quả đánh giá là sơ bộ và phụ thuộc vào các facts đã cung cấp.")
     return {
         "task_type": state.get("task_type", TaskType.LEGAL_LOOKUP.value),
+        "case_state": state.get("case_state"),
         "assessment": state.get("assessment"),
         "checklist": checklist,
         "assumptions": assumptions,
         "missing_facts": state.get("missing_facts", []),
         "citations": state.get("citations", []),
+        "evidence_assessment": state.get("evidence_assessment", {}),
         "trace_id": state.get("trace_id", ""),
         "termination_reason": state.get("termination_reason", TerminationReason.ERROR.value),
     }
@@ -52,22 +54,29 @@ class WorkflowRuntime:
         user_id = state["user_id"]
         conversation_id = state["conversation_id"]
         answer = state.get("answer", "")
-        metadata = _metadata(state)
         try:
-            await self.deps.history.save_exchange(
-                user_id,
-                conversation_id,
-                state["query"],
-                answer,
-                metadata,
-            )
             if state.get("awaiting_user_input") and state.get("active_case"):
-                await self.deps.history.save_case(user_id, conversation_id, state["active_case"])
+                saved_case = await self.deps.history.save_case(user_id, conversation_id, state["active_case"])
+                if saved_case is not None:
+                    state["case_state"] = saved_case
             elif state.get("task_type") in {
                 TaskType.ASSESS_EPR_OBLIGATION.value,
                 TaskType.BUILD_COMPLIANCE_CHECKLIST.value,
             }:
                 await self.deps.history.clear_case(user_id, conversation_id)
+                state["case_state"] = {
+                    **dict(state.get("case_state") or {}),
+                    "status": "completed",
+                    "missing_facts": [],
+                }
+
+            await self.deps.history.save_exchange(
+                user_id,
+                conversation_id,
+                state["query"],
+                answer,
+                _metadata(state),
+            )
 
             # Only standalone legal answers from the corpus are reusable.  Case
             # assessments/checklists and web responses are deliberately excluded.

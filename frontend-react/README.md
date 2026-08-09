@@ -1,113 +1,40 @@
-# EPR Chatbot Frontend (React)
+# EPR Compliance Copilot UI
 
-Modern React frontend for the EPR Chatbot application, built with React 18, TypeScript, Vite, and Tailwind CSS.
+React is the primary Vietnamese workspace for the bounded EPR workflow. It is
+not a generic chat shell: the UI surfaces agent progress, an editable case,
+evidence, citations, preliminary assessments, checklists, and safe-stop states.
 
-## 🚀 Features
+## Main capabilities
 
-- ⚡ Fast development with Vite HMR
-- 🎨 Beautiful UI with Tailwind CSS
-- 📱 Responsive design (mobile-first)
-- 💬 Real-time SSE streaming
-- 🔄 Session management
-- ✅ TypeScript for type safety
-- 🎯 Zustand for lightweight state management
+- Conversation history sidebar and route-based conversation URLs.
+- SSE chat with the compatible `status`, `response_chunk`,
+  `response_complete`, and `workflow_step` events.
+- Case Facts panel backed by `GET/PATCH /api/v1/sessions/{id}/case`.
+- Evidence/result cards for missing facts, preliminary assessments, checklists,
+  citations, and no-evidence safe stops.
+- Typed API clients, Zustand state, Vitest component tests, and Playwright
+  workflow tests.
 
-## 📦 Tech Stack
-
-- **Framework:** React 18+ with TypeScript
-- **Build Tool:** Vite 5
-- **Styling:** Tailwind CSS
-- **State Management:** Zustand
-- **HTTP Client:** Axios + Fetch API (for SSE)
-- **Markdown:** react-markdown + remark-gfm (planned)
-
-## 🛠️ Setup
+## Development
 
 ```bash
-# Install dependencies
 npm install
-
-# Copy environment file
 cp .env.example .env
-
-# Start development server
 npm run dev
 ```
 
-## 📁 Project Structure
+`VITE_API_BASE_URL` defaults to `http://localhost:8000`; `VITE_API_KEY` is
+optional for local development and must match the backend API-key configuration
+when authentication is enabled.
 
-```
-src/
-├── api/                    # API client and endpoints
-│   ├── client.ts           # Axios instance
-│   ├── sessions.ts         # Session endpoints
-│   └── feedback.ts         # Feedback endpoints
-├── components/             # React components
-│   ├── Chat/               # Chat-related components
-│   └── Sidebar/            # Sidebar components
-├── hooks/                  # Custom React hooks
-│   ├── useChatStream.ts    # SSE streaming hook
-│   └── useSessions.ts      # Session management hook
-├── state/                  # Zustand stores
-│   ├── chatStore.ts        # Chat state
-│   └── sessionStore.ts     # Session state
-├── types/                  # TypeScript type definitions
-│   ├── chat.ts             # Chat types
-│   └── api.ts              # API types
-├── utils/                  # Utility functions
-│   └── sseParser.ts        # SSE event parser
-├── lib/                    # Shared libraries
-│   ├── utils.ts            # General utilities
-│   └── formatters.ts       # Formatting helpers
-├── App.tsx                 # Main app component
-├── main.tsx                # App entry point
-└── index.css               # Global styles
-```
-
-## 📜 Scripts
+## Validation
 
 ```bash
-npm run dev       # Start development server
-npm run build     # Build for production
-npm run preview   # Preview production build
-npm run lint      # Run ESLint
-npm run format    # Format code with Prettier
+npm run test
+npm run build
+npm run test:e2e
 ```
 
-## 🔗 Backend Integration
-
-The frontend expects the backend API to be running at `http://localhost:8000` (configurable via `VITE_API_BASE_URL` in `.env`).
-
-## 🚧 Development Status
-
-**Phase 1: Foundation** ✅ COMPLETE
-- Project scaffolding
-- Type definitions
-- State management setup
-- Basic components
-- SSE streaming hook
-
-**Phase 2: Core Chat** 🚧 IN PROGRESS
-- Markdown rendering
-- Error boundaries
-- Loading states
-
-**Phase 3: Session Management** ⏳ PLANNED
-- Full session CRUD
-- Auto-title
-- Session search
-
-**Phase 4: Features** ⏳ PLANNED
-- Message actions
-- Export functionality
-- Settings panel
-
-**Phase 5: Polish** ⏳ PLANNED
-- Mobile responsive design
-- Accessibility (WCAG 2.1)
-- Performance optimization
-- Testing
-
-## 📝 License
-
-MIT
+The visible product copy is Vietnamese. The design brief and tokens live in
+`../docs/design/`; a Stitch export is not considered approved until its URL and
+screenshots are added there after design review.

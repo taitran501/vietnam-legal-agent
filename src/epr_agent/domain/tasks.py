@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from pydantic import BaseModel, Field, field_validator
+
 from .models import TaskType
 
 EPR_TERMS = (
@@ -65,6 +67,7 @@ FACT_LABELS = {
     "business_role": "vai trò của doanh nghiệp (nhà sản xuất, nhà nhập khẩu hoặc vai trò khác)",
     "product_or_packaging": "loại sản phẩm hoặc bao bì",
     "material": "vật liệu chính",
+    "activity_scope": "phạm vi hoạt động (ví dụ: thị trường Việt Nam, xuất khẩu, hoặc cả hai)",
 }
 
 _ROLE_PATTERNS: tuple[tuple[str, str], ...] = (
@@ -95,6 +98,50 @@ _MATERIAL_TERMS = (
     "gỗ",
     "hỗn hợp",
 )
+
+_ACTIVITY_SCOPE_PATTERNS: tuple[tuple[str, str], ...] = (
+    (r"chỉ\s*xuất\s*khẩu|xuất\s*khẩu\s*toàn\s*bộ", "chỉ xuất khẩu"),
+    (r"nội\s*địa|tại\s*việt\s*nam|ở\s*việt\s*nam|thị\s*trường\s*việt\s*nam", "thị trường Việt Nam"),
+    (r"cả\s*nội\s*địa\s*(và|lẫn)\s*xuất\s*khẩu|nội\s*địa\s*và\s*xuất\s*khẩu", "nội địa và xuất khẩu"),
+)
+
+
+class ExtractedFacts(BaseModel):
+    """Only explicit facts are accepted from a model or deterministic parser."""
+
+    business_role: str = ""
+    product_or_packaging: str = ""
+    material: str = ""
+    activity_scope: str = ""
+
+    @field_validator("business_role", "product_or_packaging", "material", "activity_scope", mode="before")
+    @classmethod
+    def _clean_value(cls, value: object) -> str:
+        return " ".join(str(value or "").split())[:160]
+
+    def compact(self) -> dict[str, str]:
+        return {key: value for key, value in self.model_dump().items() if value}
+
+
+class TaskUnderstanding(BaseModel):
+    """Validated structured result produced before the planner chooses a tool."""
+
+    task_type: TaskType = TaskType.LEGAL_LOOKUP
+    is_follow_up: bool = False
+    standalone_query: str = ""
+    facts: ExtractedFacts = Field(default_factory=ExtractedFacts)
+    missing_facts: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+    @field_validator("standalone_query", mode="before")
+    @classmethod
+    def _clean_query(cls, value: object) -> str:
+        return " ".join(str(value or "").split())[:3000]
+
+    @field_validator("missing_facts")
+    @classmethod
+    def _allow_known_fact_keys(cls, values: list[str]) -> list[str]:
+        return [value for value in values if value in FACT_LABELS]
 
 
 def _normalise(text: str) -> str:
@@ -168,6 +215,10 @@ def extract_facts(query: str) -> dict[str, str]:
         if value in q:
             facts["material"] = value
             break
+    for pattern, value in _ACTIVITY_SCOPE_PATTERNS:
+        if re.search(pattern, q):
+            facts["activity_scope"] = value
+            break
     return facts
 
 
@@ -179,7 +230,7 @@ def merge_facts(active_case: dict[str, Any] | None, new_facts: dict[str, str]) -
 
 def required_facts(task_type: TaskType) -> tuple[str, ...]:
     if task_type in {TaskType.ASSESS_EPR_OBLIGATION, TaskType.BUILD_COMPLIANCE_CHECKLIST}:
-        return ("business_role", "product_or_packaging", "material")
+        return ("business_role", "product_or_packaging", "material", "activity_scope")
     return ()
 
 
@@ -233,5 +284,32 @@ def build_active_case(task_type: TaskType, facts: dict[str, str], query: str) ->
     return {
         "task_type": task_type.value,
         "facts": dict(facts),
+        "missing_facts": missing_facts(task_type, facts),
         "last_query": query,
     }
+
+
+def deterministic_task_understanding(
+    query: str,
+    history: list[dict[str, Any]] | None,
+    active_case: dict[str, Any] | None,
+) -> TaskUnderstanding:
+    """Safe fallback when a structured model is unavailable or invalid.
+
+    This fallback never expands the allowed task/action surface and is kept for
+    outage handling and deterministic tests, not as the production decision
+    mechanism.
+    """
+
+    task = classify_task(query, history, active_case)
+    standalone = rewrite_follow_up(query, history, active_case)
+    facts = merge_facts(active_case, extract_facts(query))
+    is_follow_up = standalone != " ".join((query or "").split())
+    return TaskUnderstanding(
+        task_type=task,
+        is_follow_up=is_follow_up,
+        standalone_query=standalone,
+        facts=ExtractedFacts(**facts),
+        missing_facts=missing_facts(task, facts),
+        confidence=0.5,
+    )

@@ -4,7 +4,21 @@ import { useChatStore } from '@/state/chatStore';
 import { useSessionStore } from '@/state/sessionStore';
 import * as sessionsApi from '@/api/sessions';
 import { toast } from '@/components/UI/Toast';
-import type { ChatMessage, SourceDocument } from '@/types';
+import type { ChatMessage, ResponseSource, SourceDocument, WorkflowMetadata } from '@/types';
+
+const responseSources: ReadonlySet<ResponseSource> = new Set([
+  'faq',
+  'legal',
+  'chitchat',
+  'web_search',
+  'cache',
+  'follow_up',
+  'error',
+]);
+
+function asResponseSource(value: string | undefined): ResponseSource | undefined {
+  return value && responseSources.has(value as ResponseSource) ? (value as ResponseSource) : undefined;
+}
 
 function titleFromQuery(query: string, maxLen = 72): string {
   const t = query.trim();
@@ -12,7 +26,7 @@ function titleFromQuery(query: string, maxLen = 72): string {
   return t.length <= maxLen ? t : `${t.slice(0, maxLen - 1)}…`;
 }
 
-/** Sync sidebar with Redis after backend persists an exchange. */
+/** Refresh the sidebar after the durable conversation store persists an exchange. */
 async function refreshSessionList(): Promise<void> {
   try {
     const list = await sessionsApi.listSessions(50);
@@ -48,6 +62,9 @@ export function useChatStream() {
     addMessage,
     setStreaming: setStreamingState,
     setError,
+    addWorkflowStep,
+    setWorkflowSteps,
+    setActiveCase,
   } = useChatStore();
 
   const runAssistantStream = useCallback(
@@ -62,12 +79,14 @@ export function useChatStream() {
       setStreamingState(true);
       setStreamingContent('');
       setError(null);
+      setWorkflowSteps([]);
       abortControllerRef.current = new AbortController();
 
       try {
         let fullContent = '';
-        let source = '';
+        let source: ResponseSource | undefined;
         let documents: SourceDocument[] = [];
+        let workflow: WorkflowMetadata = {};
 
         for await (const event of streamChat(
           query,
@@ -77,25 +96,45 @@ export function useChatStream() {
         )) {
           if (event.type === 'status') {
             setStatusMessage(event.message || '');
+          } else if (event.type === 'workflow_step') {
+            addWorkflowStep({
+              step: event.step || 0,
+              action: event.action || 'unknown',
+              status: event.status || 'completed',
+              trace_id: event.trace_id,
+            });
           } else if (event.type === 'response_chunk') {
             const chunk = event.chunk || '';
             fullContent += chunk;
             appendStreamingContent(chunk);
           } else if (event.type === 'response_complete') {
             fullContent = event.text || fullContent;
-            source = event.source || '';
+            source = asResponseSource(event.source);
             documents = (event.documents as SourceDocument[]) || [];
+            workflow = {
+              task_type: event.task_type,
+              case_state: event.case_state,
+              assessment: event.assessment,
+              checklist: event.checklist,
+              assumptions: event.assumptions,
+              missing_facts: event.missing_facts,
+              citations: event.citations,
+              evidence_assessment: event.evidence_assessment,
+              trace_id: event.trace_id,
+              termination_reason: event.termination_reason,
+            };
+            if (event.case_state) setActiveCase(event.case_state);
             break;
           } else if (event.type === 'error') {
             throw new Error(event.message || 'Unknown error occurred');
           }
         }
 
-        updateLastAssistantMessage(fullContent, source, documents);
+        updateLastAssistantMessage(fullContent, source, documents, workflow);
         await refreshSessionList();
-      } catch (error: any) {
-        if (error.name !== 'AbortError') {
-          const errorMessage = error.message || 'Đã có lỗi xảy ra';
+      } catch (error: unknown) {
+        if (!(error instanceof Error && error.name === 'AbortError')) {
+          const errorMessage = error instanceof Error ? error.message : 'Đã có lỗi xảy ra';
           setError(errorMessage);
           toast.error(`Lỗi: ${errorMessage}`);
           updateLastAssistantMessage(`⚠️ ${errorMessage}`, 'error', []);
@@ -107,10 +146,13 @@ export function useChatStream() {
     },
     [
       appendStreamingContent,
+      addWorkflowStep,
       setError,
+      setActiveCase,
       setStatusMessage,
       setStreamingContent,
       setStreamingState,
+      setWorkflowSteps,
       updateLastAssistantMessage,
     ]
   );

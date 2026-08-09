@@ -1,11 +1,24 @@
 services:
-  # ── Redis ───────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: epr_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-epr}
+      POSTGRES_USER: ${POSTGRES_USER:-epr}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-epr_local_dev_only}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   redis:
     image: redis:7-alpine
     container_name: epr_redis
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:6379:6379"   # bind to loopback only — not exposed to LAN
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
@@ -15,7 +28,18 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── FastAPI backend ─────────────────────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:v1.12.1
+    container_name: epr_qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: .
@@ -23,13 +47,20 @@ services:
     container_name: epr_backend
     restart: unless-stopped
     expose:
-      - "8000"                  # internal only; Nginx proxies from outside
+      - "8000"
     env_file:
-      - .env                    # injected at runtime, NOT baked into image
+      - .env
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      DATABASE_URL: postgresql://${POSTGRES_USER:-epr}:${POSTGRES_PASSWORD:-epr_local_dev_only}@postgres:5432/${POSTGRES_DB:-epr}
+      HISTORY_DUAL_WRITE_SESSION: "false"
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
+        condition: service_healthy
+      qdrant:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/health || exit 1"]
@@ -37,7 +68,6 @@ services:
       timeout: 10s
       retries: 3
 
-  # ── Streamlit frontend ──────────────────────────────────────────────────
   frontend:
     build:
       context: .
@@ -45,20 +75,34 @@ services:
     container_name: epr_frontend
     restart: unless-stopped
     expose:
-      - "8501"                  # internal only; Nginx proxies from outside
-    environment:
-      - BACKEND_URL=http://backend:8000
+      - "8080"
     depends_on:
       backend:
         condition: service_healthy
 
-  # ── Nginx reverse proxy ─────────────────────────────────────────────────
+  # Retained only while the React E2E and container acceptance gates are being
+  # completed. It is not part of the default proxy path.
+  frontend-legacy:
+    profiles: ["legacy"]
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    container_name: epr_frontend_legacy
+    restart: unless-stopped
+    expose:
+      - "8501"
+    environment:
+      BACKEND_URL: http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+
   nginx:
     image: nginx:1.27-alpine
     container_name: epr_nginx
     restart: unless-stopped
     ports:
-      - "80:80"                 # the only port exposed to the LAN
+      - "80:80"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
@@ -66,4 +110,6 @@ services:
       - backend
 
 volumes:
+  postgres_data:
   redis_data:
+  qdrant_data:

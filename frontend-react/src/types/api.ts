@@ -2,10 +2,11 @@
  * API request/response type definitions
  */
 
-import type { SourceDocument, WorkflowMetadata } from './chat';
+import type { CaseState, EvidenceAssessment, SourceDocument, WorkflowMetadata } from './chat';
 
 export interface ChatRequest {
   query: string;
+  conversation_id?: string;
   session_id?: string;
   faq_threshold?: number;
 }
@@ -24,10 +25,12 @@ export interface SSEEvent {
   trace_id?: string;
   task_type?: string;
   assessment?: Record<string, unknown> | null;
+  case_state?: CaseState | null;
   checklist?: Array<Record<string, unknown>>;
   assumptions?: string[];
   missing_facts?: string[];
   citations?: Array<Record<string, unknown>>;
+  evidence_assessment?: EvidenceAssessment;
   termination_reason?: string;
   metadata?: WorkflowMetadata;
 }
@@ -44,9 +47,11 @@ export interface SessionDetail {
   id: string;
   title: string;
   messages: Array<{
+    id?: number;
     role: string;
     content: string;
     timestamp: string;
+    metadata?: WorkflowMetadata;
   }>;
   created_at: number;
   updated_at?: number;

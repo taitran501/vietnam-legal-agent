@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from langgraph.graph import END, StateGraph
 
 from epr_agent.agent.planner import BoundedPlanner
+from epr_agent.agent.understanding import StructuredTaskUnderstandingGateway, TaskUnderstandingGateway
 from epr_agent.domain.models import (
     Action,
     AgentState,
@@ -22,17 +23,16 @@ from epr_agent.domain.models import (
 from epr_agent.domain.tasks import (
     build_active_case,
     build_follow_up_question,
-    classify_task,
+    deterministic_task_understanding,
     extract_facts,
     is_epr_scope,
     merge_facts,
     missing_facts,
-    rewrite_follow_up,
 )
 from epr_agent.tools.cache import LegacySemanticAnswerCache, ScopedAnswerCache
 from epr_agent.tools.evidence import EvidenceEvaluator, verify_citations
 from epr_agent.tools.generation import GenerationGateway, LegacyGenerationGateway
-from epr_agent.tools.history import HistoryGateway, LegacyHistoryGateway
+from epr_agent.tools.history import HistoryGateway, UnifiedHistoryGateway
 from epr_agent.tools.retrieval import LegacyRetrievalGateway, RetrievalGateway
 
 
@@ -45,6 +45,7 @@ class WorkflowDependencies:
     generation: GenerationGateway
     planner: BoundedPlanner
     max_history_messages: int = 6
+    understanding: TaskUnderstandingGateway | None = None
 
 
 def default_dependencies() -> WorkflowDependencies:
@@ -54,7 +55,7 @@ def default_dependencies() -> WorkflowDependencies:
 
     settings = get_settings()
     return WorkflowDependencies(
-        history=LegacyHistoryGateway(),
+        history=UnifiedHistoryGateway(),
         cache=ScopedAnswerCache(
             LegacySemanticAnswerCache(),
             corpus_version=str(getattr(settings, "corpus_version", "epr-corpus-v1")),
@@ -67,6 +68,7 @@ def default_dependencies() -> WorkflowDependencies:
         generation=LegacyGenerationGateway(),
         planner=BoundedPlanner(max_retrieval_actions=3, max_repairs=1, max_iterations=12),
         max_history_messages=max(2, int(getattr(settings, "history_context_messages", 6))),
+        understanding=StructuredTaskUnderstandingGateway(),
     )
 
 
@@ -104,16 +106,51 @@ def build_workflow(deps: WorkflowDependencies):
         append_action(state, Action.UNDERSTAND_TASK)
         history = state.get("history", [])
         active_case = state.get("active_case")
-        task = classify_task(state["query"], history, active_case)
-        facts = merge_facts(active_case, extract_facts(state["query"]))
+        if deps.understanding is None:
+            understanding = deterministic_task_understanding(state["query"], history, active_case)
+        else:
+            understanding = await deps.understanding.understand(
+                state["query"],
+                history,
+                state.get("history_summary", ""),
+                active_case,
+            )
+        task = understanding.task_type
+        # An in-progress case owns terse fact-only replies.  This guards
+        # against a model accidentally reclassifying "Vật liệu là nhựa" as a
+        # standalone legal lookup instead of resuming the collection flow.
+        if (
+            active_case
+            and active_case.get("status", "collecting") != "completed"
+            and active_case.get("task_type") in {
+                TaskType.ASSESS_EPR_OBLIGATION.value,
+                TaskType.BUILD_COMPLIANCE_CHECKLIST.value,
+            }
+            and (understanding.is_follow_up or len(state["query"].strip()) < 160)
+        ):
+            task = TaskType(active_case["task_type"])
+        explicit_facts = extract_facts(state["query"])
+        active_facts = dict((active_case or {}).get("facts") or {})
+        # A structured model may normalize an explicit fact, but it cannot add
+        # a fact that is neither in the current user message nor the case.
+        query_lower = " ".join(state["query"].lower().split())
+        for key, value in understanding.facts.compact().items():
+            if value.lower() in query_lower or active_facts.get(key) == value:
+                explicit_facts.setdefault(key, value)
+        facts = merge_facts(active_case, explicit_facts)
         state["task_type"] = task.value
-        state["standalone_query"] = rewrite_follow_up(state["query"], history, active_case)
+        state["is_follow_up"] = understanding.is_follow_up
+        state["standalone_query"] = understanding.standalone_query or state["query"].strip()
         state["facts"] = facts
         state["missing_facts"] = missing_facts(task, facts)
         state["follow_up_question"] = build_follow_up_question(task, state["missing_facts"])
         state["is_epr_scope"] = is_epr_scope(state["standalone_query"], history, active_case)
         if task in {TaskType.ASSESS_EPR_OBLIGATION, TaskType.BUILD_COMPLIANCE_CHECKLIST}:
             state["active_case"] = build_active_case(task, facts, state["query"])
+            state["case_state"] = {
+                **state["active_case"],
+                "status": "ready" if not state["missing_facts"] else "collecting",
+            }
         return state
 
     async def check_cache(state: AgentState) -> AgentState:
@@ -136,6 +173,11 @@ def build_workflow(deps: WorkflowDependencies):
         state["source"] = "follow_up"
         state["awaiting_user_input"] = True
         state["termination_reason"] = TerminationReason.AWAITING_USER_INPUT.value
+        state["case_state"] = {
+            **dict(state.get("active_case") or {}),
+            "status": "collecting",
+            "missing_facts": list(state.get("missing_facts") or []),
+        }
         return state
 
     async def answer_cache(state: AgentState) -> AgentState:
@@ -262,6 +304,12 @@ def build_workflow(deps: WorkflowDependencies):
                     "assumption": "Không suy ra ngưỡng khi chưa có số liệu",
                 },
             ]
+        if task in {TaskType.ASSESS_EPR_OBLIGATION, TaskType.BUILD_COMPLIANCE_CHECKLIST}:
+            state["case_state"] = {
+                **dict(state.get("active_case") or {}),
+                "status": "completed",
+                "missing_facts": [],
+            }
         return state
 
     async def verify(state: AgentState) -> AgentState:
@@ -441,6 +489,8 @@ async def run_workflow(
         "corpus_version": deps.cache.corpus_version,
         "history": [],
         "active_case": None,
+        "case_state": None,
+        "is_follow_up": False,
         "facts": {},
         "missing_facts": [],
         "tool_results": [],

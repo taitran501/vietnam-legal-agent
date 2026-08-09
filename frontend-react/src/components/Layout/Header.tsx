@@ -53,10 +53,10 @@ export function Header({ sidebarOpen, onToggleSidebar, isHealthy }: HeaderProps)
           </div>
           <div>
             <h1 className="text-base font-semibold text-gray-900 dark:text-white leading-tight">
-              Trợ lý EPR
+              EPR Compliance Copilot
             </h1>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              Nghị định 08/2022/NĐ-CP
+              Tra cứu · Đánh giá · Checklist
             </p>
           </div>
         </div>

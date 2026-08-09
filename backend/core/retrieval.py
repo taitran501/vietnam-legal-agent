@@ -172,6 +172,8 @@ def _get_qdrant_client() -> QdrantClient:
             api_key=s.qdrant_api_key,
             timeout=timeout,
         )
+    if s.qdrant_url:
+        return QdrantClient(url=s.qdrant_url, timeout=timeout)
     try:
         return QdrantClient(
             path=s.qdrant_local_path,

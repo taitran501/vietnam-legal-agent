@@ -6,8 +6,8 @@ baseline, while the application boundary moves to `src/epr_agent/`.
 ```text
 request
   -> load recent conversation history + active case
-  -> classify task
-  -> rewrite dependent follow-up into a retrievable query
+  -> structured task understanding
+  -> rewrite a dependent follow-up into a retrievable query
   -> [legal_lookup only] scoped answer-cache lookup
   -> FAQ retrieval
   -> legal hybrid retrieval
@@ -23,15 +23,22 @@ The first workflow supports three tasks:
 - `legal_lookup`: a standalone legal question. Its corpus-backed answer may be
   cached using task type, standalone query and corpus version.
 - `assess_epr_obligation`: a case-specific preliminary assessment. It requires
-  explicit business role, product or packaging, and material facts.
+  explicit business role, product or packaging, material, and activity-scope
+  facts.
 - `build_compliance_checklist`: a case-specific checklist with the same required
   facts. Assessment and checklist output are never answer-cache entries.
 
+Task understanding produces a validated schema with `task_type`,
+`is_follow_up`, `standalone_query`, explicit facts, and missing facts. Its model
+output cannot select tools or transitions: the planner accepts only the
+predeclared actions and falls back safely when structured output fails.
+
 `case_states` stores only the active structured case needed to resume a
 follow-up. It is not a long-term user profile. `agent_runs` records the trace
-id, action sequence, tool latency and termination reason. Local development uses
-the existing SQLite path; setting `DATABASE_URL` to a PostgreSQL URL selects the
-production adapter.
+id, action sequence, tool latency and termination reason. SQLAlchemy persists
+users, conversations, messages, summaries, case states, and runs through one
+repository. SQLite is the local adapter; PostgreSQL is the production source
+of truth.
 
 The planner can record only the actions in `epr_agent.domain.models.Action`.
 The graph allows at most three retrieval actions and one answer repair. It does

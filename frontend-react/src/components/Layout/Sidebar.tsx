@@ -8,12 +8,13 @@ import { Modal } from '@/components/UI/Modal';
 interface SidebarProps {
   onSelectSession: (sessionId: string) => void;
   onClearAll?: () => void;
+  onNewSession?: () => void;
 }
 
 /**
  * Redesigned modern sidebar with search and smooth animations
  */
-export function Sidebar({ onSelectSession, onClearAll }: SidebarProps) {
+export function Sidebar({ onSelectSession, onClearAll, onNewSession }: SidebarProps) {
   const {
     sessions,
     isLoadingSessions,
@@ -34,6 +35,7 @@ export function Sidebar({ onSelectSession, onClearAll }: SidebarProps) {
 
   const handleNewChat = () => {
     createNewSession();
+    onNewSession?.();
   };
 
   const handleSelectSession = async (sessionId: string) => {
