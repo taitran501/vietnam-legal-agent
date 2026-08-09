@@ -1,124 +1,85 @@
-# Legal EPR Assistant
+# EPR Compliance Copilot
 
-Legal EPR Assistant is a Vietnamese legal-information system for questions
-about Extended Producer Responsibility (EPR), the Vietnamese Environmental
-Protection Law, and Decree 08/2022/ND-CP.
+EPR Compliance Copilot is a Vietnamese legal-compliance assistant for
+Extended Producer Responsibility (EPR). It is a bounded workflow, not an
+open-ended tool-using agent: it can look up legal sources, make a preliminary
+EPR assessment, or build an evidence-linked compliance checklist.
 
-The repository contains both the original RAG chatbot and a bounded agentic
-workflow refactor. The refactor keeps the existing API contract while making
-task detection, evidence checks, follow-up questions, and termination rules
-explicit.
+> The application provides document-grounded information, not legal advice.
 
-> This system provides document-grounded information, not legal advice.
-
-## Current workflow
+## Workflow
 
 ```text
 request
   -> load recent conversation context and active case
-  -> classify the task
-  -> rewrite a dependent follow-up when needed
-  -> answer-cache lookup for standalone legal lookup only
-  -> FAQ retrieval
-  -> hybrid legal retrieval
-  -> evidence evaluation
-  -> EPR-scoped web fallback when the corpus is insufficient
-  -> compose an answer, assessment, or checklist
-  -> verify citations
-  -> repair once or stop safely
+  -> structured task understanding
+  -> ask for missing required facts, or retrieve evidence
+  -> FAQ retrieval -> hybrid legal retrieval -> EPR-only web fallback
+  -> compose answer, assessment, or checklist
+  -> verify citations -> repair once or stop safely
 ```
 
-The bounded workflow supports these tasks:
+Supported tasks are `legal_lookup`, `assess_epr_obligation`, and
+`build_compliance_checklist`. The planner has a closed action set, a maximum of
+three retrieval actions, and at most one citation-repair attempt. It never uses
+web search to infer company facts and never returns an assessment or checklist
+when required facts or supported evidence are missing.
 
-- `legal_lookup`: answer a standalone question from the legal corpus.
-- `assess_epr_obligation`: produce a preliminary case assessment after the
-  required business facts are available.
-- `build_compliance_checklist`: produce an evidence-linked checklist.
-- `chitchat`: handle greetings and non-legal conversation without retrieval.
+## Retrieval and safety
 
-The planner can record only a fixed set of actions. A run is limited to three
-retrieval actions and one answer repair. The workflow does not invent missing
-business facts and does not return a case assessment or checklist without
-evidence and citations.
+- FAQ matching uses dense retrieval, keyword support, a threshold, and a
+  top-result margin check.
+- Legal retrieval combines Qdrant dense search with BM25-style lexical search,
+  then merges, deduplicates, and reranks candidates.
+- Evidence and citation checks block unsupported legal claims. Web search is an
+  explicitly labelled, EPR-scoped fallback only when the corpus is insufficient.
+- The candidate structure-aware index splits legislation by `Điều -> Khoản -> Điểm`
+  and retains parent-article, hierarchy, offset, and source-text metadata.
 
-## Retrieval
+See [the retrieval protocol](docs/retrieval/README.md) before creating or
+promoting an index.
 
-- FAQ retrieval uses Qdrant dense search over the FAQ collection, a Vietnamese
-  keyword-overlap boost, a score threshold, and a top-candidate margin check.
-  Strict FAQ matches may be reranked before returning one answer.
-- Legal retrieval runs dense Qdrant search and a lightweight BM25-style
-  lexical search in parallel. Their candidates are merged, deduplicated, and
-  reranked with the current heuristic reranker. The default legal path returns
-  up to ten documents from a candidate pool controlled by `rerank_top_n`.
-- Evidence checks require source metadata and enough retrieved content. An
-  optional relevance checker can add a semantic/LLM gate.
-- Web search is used only as an EPR-scoped fallback after corpus retrieval is
-  insufficient. It is not used to fill missing facts about a business.
+## Persistence and cache
 
-See [docs/rag_pipeline.md](docs/rag_pipeline.md) for the detailed retrieval
-and indexing contract.
+SQLAlchemy is the single repository for `users`, `conversations`, `messages`,
+`conversation_summaries`, `case_states`, and `agent_runs`. PostgreSQL is the
+production source of truth; SQLite uses the same schema for local development.
+The API-key hash scopes each record owner.
 
-## History, case state, and cache
+Recent messages and a compact conversation summary provide short-term context.
+An active case records only explicit facts for the current assessment or
+checklist; it is not a long-term user profile. Redis is limited to answer cache,
+hot context, rate limits, and short-lived feedback. Only independent,
+corpus-backed `legal_lookup` answers are cacheable.
 
-- Conversation history is durably stored in local SQLite at
-  `data/chat_history.sqlite3`; the file is ignored by Git.
-- Each run loads only recent messages plus a short summary. This is the
-  context window for the current conversation, not a general user-profile
-  memory.
-- An active case stores structured facts needed to resume an assessment or
-  checklist across turns. It is separate from chat history.
-- Redis is used for hot session context, answer caching, rate limiting, and
-  cache TTLs. Only `legal_lookup` answers are eligible for the bounded answer
-  cache; case assessments and checklists are not.
-- Local case state and run traces use SQLite. Setting `DATABASE_URL` to a
-  PostgreSQL URL selects the PostgreSQL case/trace adapter for deployment.
+## Interfaces
 
-## Repository layout
+`POST /api/v1/chat` accepts `query` and the canonical `conversation_id`; the
+legacy `session_id` remains supported. Existing SSE event types remain:
+`status`, `response_chunk`, `response_complete`, and `error`. The additional
+`workflow_step` event is optional for older clients.
 
-```text
-backend/                 Existing FastAPI services and legacy RAG components
-src/epr_agent/           Bounded workflow, domain models, tools, and adapters
-data/                    Source FAQ/law data and local runtime database path
-scripts/                 Indexing, ingestion, audit, and migration utilities
-tests/                   Unit, integration, regression, and trajectory tests
-docs/                    English architecture and acceptance documents
-frontend/                Streamlit UI used by the Docker Compose deployment
-frontend-react/          React/TypeScript UI using the same API contract
-```
+The React workspace is the primary UI. It includes conversation history, chat,
+workflow progress, an editable Case Facts panel, evidence/citation cards,
+assessment output, and a checklist. The legacy Streamlit source is retained
+only as a reference while the React deployment is validated. Run
+`docker compose --profile legacy up frontend-legacy` to start it separately;
+it is not part of the default proxy path.
 
-`backend/` remains available as the regression baseline. The `/api/v1/chat`
-route now presents the workflow in `src/epr_agent/` while preserving the
-legacy request fields and SSE event types.
+## Local development
 
-## Local setup
-
-Requirements: Python 3.11, Node.js 18+ for the React UI, Redis, and a local
-or hosted Qdrant instance. OpenAI is used for embeddings and generation;
-Tavily is optional for web fallback.
+Requirements: Python 3.11, Node.js 18+, Redis, and Qdrant. PostgreSQL is
+recommended when exercising the production persistence path.
 
 ```powershell
 Copy-Item .env.example .env
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
-```
-
-Set the required API keys and service URLs in `.env`. Do not commit `.env` or
-any database, cache, Qdrant, or log files.
-
-Build the legal index when the corpus changes:
-
-```powershell
-python -m scripts.build_index
-```
-
-Start the backend:
-
-```powershell
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Start the React UI in a second terminal:
+In another terminal:
 
 ```powershell
 Set-Location frontend-react
@@ -126,51 +87,41 @@ npm install
 npm run dev
 ```
 
-The Streamlit UI can be started with:
+For the container stack, set the required secrets in `.env` and run:
 
 ```powershell
-python -m pip install -r requirements/frontend.txt
-streamlit run frontend/app.py --server.port 8501
+docker compose up --build
 ```
 
-## API and events
+This starts React, FastAPI, PostgreSQL, Redis, and Qdrant. The backend applies
+the Alembic migration at startup. Do not commit `.env`, SQLite databases,
+Qdrant storage, logs, or cache files.
 
-The main endpoint is `POST /api/v1/chat`. It accepts `query` and either
-`conversation_id` or the legacy `session_id`. The response is an SSE stream
-with the existing `status`, `response_chunk`, `response_complete`, and `error`
-events. New workflow progress is exposed through `workflow_step`; completed
-responses may include task type, assessment, checklist, assumptions, missing
-facts, citations, trace ID, and termination reason.
-
-Other useful endpoints include `/api/v1/health`, the session endpoints under
-`/api/v1/sessions`, and `/metrics` for Prometheus-compatible metrics.
-
-## Tests and acceptance
-
-Run the local suite with:
+## Tests
 
 ```powershell
 pytest -q
-ruff check src tests
+ruff check src/epr_agent tests
 mypy src/epr_agent
+
+Set-Location frontend-react
+npm run test
+npm run build
+npm run test:e2e
 ```
 
-The latest local acceptance is recorded in
-[docs/acceptance_report.md](docs/acceptance_report.md). It covers the legacy
-regression suite, bounded-workflow unit tests, trajectory tests, static checks,
-and the React build. Live OpenAI, Qdrant, Redis, and Tavily evaluation must be
-run separately when those services are available.
+The committed source baseline records 49 FAQ entries and 178 legal records in
+[docs/retrieval/baseline_manifest.json](docs/retrieval/baseline_manifest.json).
+It is a corpus manifest, not a live retrieval-quality claim. Live Qdrant,
+OpenAI, Redis, Tavily, and container integration must be measured separately
+before release.
 
-## Deployment notes
+## Design handoff
 
-`docker-compose.yml` retains the Redis, FastAPI, Streamlit, and Nginx
-deployment definitions. Its backend image still follows the legacy copy
-layout, so update the image to install and copy `src/epr_agent/` before
-deploying the new workflow through Docker. For production, use managed
-PostgreSQL for case state and workflow traces, managed Qdrant for the legal
-index, and managed Redis for cache/rate limiting. Run database migrations and
-index versioning as part of deployment rather than committing generated
-runtime artifacts.
+The English Stitch prompt pack and design tokens are in
+[docs/design](docs/design/README.md). Visible product copy is Vietnamese. A
+Stitch export URL and screenshots still require explicit design review before
+they can be claimed as approved design artifacts.
 
 ## License
 
