@@ -1,0 +1,12 @@
+{
+  "manifest_version": 1,
+  "corpus_version": "law-f03ad59846bb",
+  "law_records": 178,
+  "faq_records": 49,
+  "law_sha256": "f03ad59846bbbfe1435d412684964609182895fac3d25049dd123252d0a5731c",
+  "faq_sha256": "60c6835446210325ffb3b2115579067676b6d88ba0daf9a863b6f6446aadf471",
+  "legal_anchor_count": 178,
+  "chunking_strategy": "sliding_window",
+  "metrics": null,
+  "notes": "Metrics are populated only by --run-retrieval against a named collection."
+}
