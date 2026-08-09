@@ -3,7 +3,7 @@ import { streamChat } from '@/utils/sseParser';
 import { useChatStore } from '@/state/chatStore';
 import { useSessionStore } from '@/state/sessionStore';
 import * as sessionsApi from '@/api/sessions';
-import { toast } from '@/components/UI/Toast';
+import { toast } from '@/state/toastStore';
 import type { ChatMessage, ResponseSource, SourceDocument, WorkflowMetadata } from '@/types';
 
 const responseSources: ReadonlySet<ResponseSource> = new Set([

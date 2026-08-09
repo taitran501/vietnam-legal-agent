@@ -35,6 +35,8 @@ when required facts or supported evidence are missing.
   explicitly labelled, EPR-scoped fallback only when the corpus is insufficient.
 - The candidate structure-aware index splits legislation by `Điều -> Khoản -> Điểm`
   and retains parent-article, hierarchy, offset, and source-text metadata.
+- The audited candidate collection passed the same live 16-query gate as the
+  baseline: P@1/NDCG@3/Recall@5 `0.9375` and explicit-article hit@3 `1.0`.
 
 See [the retrieval protocol](docs/retrieval/README.md) before creating or
 promoting an index.
@@ -61,10 +63,8 @@ legacy `session_id` remains supported. Existing SSE event types remain:
 
 The React workspace is the primary UI. It includes conversation history, chat,
 workflow progress, an editable Case Facts panel, evidence/citation cards,
-assessment output, and a checklist. The legacy Streamlit source is retained
-only as a reference while the React deployment is validated. Run
-`docker compose --profile legacy up frontend-legacy` to start it separately;
-it is not part of the default proxy path.
+assessment output, and a checklist. React is the only runtime frontend; the
+retired Streamlit implementation remains recoverable from `legacy-v1.0.0`.
 
 ## Local development
 
@@ -77,6 +77,12 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+The cross-encoder is optional and is not installed in the normal API image:
+
+```powershell
+python -m pip install -e ".[cross-encoder]"
 ```
 
 In another terminal:
@@ -101,7 +107,7 @@ Qdrant storage, logs, or cache files.
 
 ```powershell
 pytest -q
-ruff check src/epr_agent tests
+ruff check src/epr_agent tests/agent tests/trajectory tests/tools
 mypy src/epr_agent
 
 Set-Location frontend-react
@@ -112,16 +118,18 @@ npm run test:e2e
 
 The committed source baseline records 49 FAQ entries and 178 legal records in
 [docs/retrieval/baseline_manifest.json](docs/retrieval/baseline_manifest.json).
-It is a corpus manifest, not a live retrieval-quality claim. Live Qdrant,
-OpenAI, Redis, Tavily, and container integration must be measured separately
-before release.
+Named local Qdrant baseline and candidate results, collection audits, and the
+promotion decision are committed under [docs/retrieval](docs/retrieval/README.md).
+The 33-case live golden run is reported separately from deterministic CI because
+its generated answer text and latency depend on the configured model service.
 
 ## Design handoff
 
-The English Stitch prompt pack and design tokens are in
-[docs/design](docs/design/README.md). Visible product copy is Vietnamese. A
-Stitch export URL and screenshots still require explicit design review before
-they can be claimed as approved design artifacts.
+The reviewed Stitch export is preserved as
+[`stitch_legal_assistant_system.zip`](docs/design/stitch_legal_assistant_system.zip),
+and [the selection record](docs/design/stitch_selection.md) explains which
+screens, responsive states, drawers, and interaction patterns were implemented.
+Visible product copy is Vietnamese; repository documentation is English.
 
 ## License
 

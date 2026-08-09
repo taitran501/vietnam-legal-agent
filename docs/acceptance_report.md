@@ -1,51 +1,81 @@
-# Refactor validation record
+# Refactor acceptance record
 
-Date: 2026-08-10. Environment: Windows local development, Python 3.11.9 and
-Node.js local toolchain.
+Validation date: 2026-08-10. Local environment: Windows, Python 3.11.9,
+Node.js 20-compatible toolchain, Docker Desktop, local OpenAI-backed generation,
+and file-backed Qdrant collections.
 
 ## Frozen baseline
 
-- Legacy import commit: `8f5deae` (`chore: import legacy EPR chatbot baseline`)
-- Baseline tag: `legacy-v1.0.0`
-- Historical baseline run: `161 passed, 1 skipped`
-- Golden legal-lookup cases: `tests/eval/test_cases.json` (33 cases)
+- Legacy import commit: `8f5deae` (`chore: import legacy EPR chatbot baseline`).
+- Baseline tag: `legacy-v1.0.0`.
+- Historical legacy test snapshot: 161 passed, 1 skipped.
+- Golden lookup dataset: `tests/eval/test_cases.json` with 33 cases.
+- Source corpus: 49 FAQ entries and 178 legal records.
 
-## Checks completed for this refactor
+## Product acceptance
 
-- Python compile check passed for `src/epr_agent` and `backend`.
-- Focused persistence, workflow, SSE, session/case API, structural chunking,
-  retrieval-manifest, and 12 deterministic trajectory tests: **36 passed**.
-- Scoped Ruff check passed for the new/changed bounded-workflow, persistence,
-  session API, retrieval scripts, and related tests.
-- Alembic upgrade passed against a new temporary SQLite database.
-- `docker compose config --quiet` passed for React, FastAPI, PostgreSQL, Redis,
-  Qdrant, Nginx, and the optional legacy Streamlit profile.
-- React Vitest: **3 passed**.
-- React Playwright trajectories: **2 passed** (missing-facts stop and
-  no-evidence safe stop).
-- React ESLint completed with **0 errors** and 7 existing warnings in legacy
-  Toast/Markdown modules; the new compliance-workflow UI files have no lint
-  findings.
-- React production build passed. Vite reports a non-blocking large-chunk
-  warning (about 1.06 MB before gzip).
-- The source manifest confirms 49 FAQ records and 178 legal records. No live
-  retrieval score is claimed until a named Qdrant collection is evaluated.
+- The existing `POST /api/v1/chat` request fields and SSE events remain
+  compatible. `workflow_step` is additive.
+- One closed LangGraph workflow supports legal lookup, preliminary EPR
+  assessment, compliance checklist generation, and bounded chitchat.
+- An assessment or checklist with any required case fact missing terminates as
+  `awaiting_user_input`; web search cannot fill company facts.
+- Claim-level citation verification blocks unsupported legal output and permits
+  at most one repair.
+- A run permits at most three retrieval actions and records its trace id, action
+  sequence, tool latency, and termination reason.
+- SQLAlchemy/Alembic owns users, conversations, messages, summaries, active
+  cases, and agent runs. PostgreSQL is the deployment source of truth and
+  SQLite uses the same schema locally.
+- The React workspace implements the reviewed Stitch states: expanded and
+  collapsed history navigation, responsive mobile/tablet layouts, real workflow
+  progress, clarification and safe-stop states, case facts, source drawer,
+  assessment, and checklist output.
 
-## Checks still required before release
+## Automated verification
 
-- The complete Python suite did not collect in the current global interpreter:
-  it has LangChain 1.3.14 while the project locks LangChain 0.3.7, so the
-  legacy import `langchain.chains` is unavailable. This is an environment
-  dependency mismatch, not a failing refactor assertion.
-- A clean temporary virtual environment was created, but package installation
-  was blocked by the configured package registry failing to provide the required
-  `numpy<2` distribution. Re-run `python -m pip install -e ".[dev]"` in a clean
-  environment with a working package index, then run `pytest -q` and
-  `mypy src/epr_agent`.
-- Build and exercise the actual Compose containers; only Compose syntax and the
-  Alembic migration were verified locally.
-- Run the 33 golden cases and live retrieval benchmark against a configured
-  Qdrant/OpenAI environment. Promote the structure-aware collection only if the
-  gates in `docs/retrieval/README.md` pass.
-- Attach an approved Stitch export URL and desktop/mobile screenshots in
-  `docs/design/` before claiming design approval.
+- Python suite: 233 passed, 1 skipped (234 collected).
+- Mypy: success for all 22 files in `src/epr_agent`.
+- Scoped Ruff checks: passed for the bounded workflow, API, retrieval tooling,
+  trajectories, and new regression files.
+- Alembic: upgraded a fresh SQLite database successfully.
+- React Vitest: 3 files, 5 tests passed.
+- Playwright: 9 of 9 browser tests passed, including real FastAPI + LangGraph +
+  SSE lookup and multi-turn case-resume flows.
+- React lint and production build: passed. Vite reports only a non-blocking
+  bundle-size warning (about 1.07 MB before gzip, 366 KB gzip).
+- Docker: backend and frontend images built successfully; the full React,
+  FastAPI, PostgreSQL, Redis, Qdrant, and Nginx stack became healthy; `/` and
+  `/api/v1/health` returned HTTP 200.
+
+## Retrieval evidence
+
+| Collection | Points | P@1 | NDCG@3 | Recall@5 | Explicit article hit@3 | Audit |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `law_collection_baseline_v1` | 461 | 0.9375 | 0.9375 | 0.9375 | 1.0 | Passed |
+| `law_collection_legal_structure_v2` | 1,989 | 0.9375 | 0.9375 | 0.9375 | 1.0 | Passed |
+
+Both rows use the same 16-query live dense + BM25-style + heuristic-rerank
+protocol. The structure-aware candidate also passed schema, hygiene, duplicate,
+legal-anchor, source-metadata, and deterministic offline gates. It is marked
+`promotable: true`; the baseline remains available for rollback.
+
+The 33-case golden runner now supports `--isolated-state`, which removes
+history/cache side effects while keeping live routing, retrieval, and generation.
+This prevents Redis or an old SQLite history file from contaminating a release
+comparison. LLM-as-judge and Tavily are intentionally disabled in this snapshot;
+nightly/release evaluation owns those variable-cost checks.
+
+The final isolated live snapshot passed its configured release gate: 33/33
+routes correct, 84.03% average keyword hit rate, 10.106 s p95 latency, and no
+pipeline errors. The gate used routing >= 90%, keyword hit >= 80%, and p95 <=
+15 s. Generated answers remain model-dependent, so this snapshot is reported
+separately from deterministic PR tests.
+
+## Deployment boundary
+
+No remaining code path is required for the scoped V1 implementation. A real
+deployment must still provide production secrets, run Alembic against
+PostgreSQL, publish the approved candidate collection (or explicitly keep the
+baseline), set the matching `CORPUS_VERSION`, and run the gated live evaluation.
+Those are release operations, not local artifacts committed to Git.

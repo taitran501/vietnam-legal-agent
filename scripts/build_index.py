@@ -17,8 +17,8 @@ The resulting collection is used at runtime by backend/core/retrieval.py.
 
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import logging
 import os
 import re
@@ -27,7 +27,7 @@ import time
 import unicodedata
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Bootstrap path so we can import backend modules
@@ -37,6 +37,7 @@ sys.path.insert(0, str(ROOT))
 
 # Load .env so OPENAI_API_KEY and other vars are available to all libraries
 from dotenv import load_dotenv
+
 load_dotenv(ROOT / ".env")
 
 from backend.config import get_settings
@@ -48,7 +49,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-BATCH_SIZE = 5          # articles summarised per LLM call
+SUMMARY_BATCH_SIZE = 5  # articles summarised per LLM call
+EMBED_BATCH_SIZE = max(1, int(os.getenv("EMBED_BATCH_SIZE", "32")))
 VECTOR_DIM = 1536       # text-embedding-3-small
 
 _SUMMARISE_PROMPT = """Tóm tắt quy định pháp luật Việt Nam sau đây thành 3-4 đoạn văn bằng tiếng Việt.
@@ -65,6 +67,7 @@ _SUMMARY_INPUT_MAX_CHARS = max(2000, int(os.getenv("SUMMARY_INPUT_MAX_CHARS", "1
 _CHUNK_SIZE_CHARS = max(500, int(os.getenv("CHUNK_SIZE_CHARS", "1800")))
 _CHUNK_OVERLAP_CHARS = max(100, int(os.getenv("CHUNK_OVERLAP_CHARS", "300")))
 _CHUNKING_STRATEGY = os.getenv("CHUNKING_STRATEGY", "sliding_window").strip().lower()
+_SUMMARY_CACHE_VERSION = "legal-summary-v1"
 
 ZERO_WIDTH_RE = re.compile(r"[\u200B-\u200F\uFEFF]")
 MULTISPACE_RE = re.compile(r"[ \t]{2,}")
@@ -77,7 +80,7 @@ ENUM_FIX_RE = re.compile(r"(?<=\d)\.(?=[A-Za-zÀ-ỹà-ỹ])")
 # Load law data
 # ---------------------------------------------------------------------------
 
-def load_articles() -> List[Dict[str, Any]]:
+def load_articles() -> list[dict[str, Any]]:
     settings = get_settings()
     law_json_path = Path(os.getenv("LAW_JSON_PATH", str(settings.law_data_path))).resolve()
     logger.info("Loading %s…", law_json_path)
@@ -137,12 +140,23 @@ def _clean_legal_text(text: Any) -> str:
     return t.strip()
 
 
-def normalise_articles(articles: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], Dict[str, int]]:
+def _clean_structural_source(text: Any) -> str:
+    """Normalize OCR noise while retaining line starts used by legal list markers."""
+    if text is None:
+        return ""
+    source = unicodedata.normalize("NFKC", str(text))
+    source = ZERO_WIDTH_RE.sub("", source)
+    source = source.replace("\r\n", "\n").replace("\r", "\n").replace("\t", " ")
+    lines = [MULTISPACE_RE.sub(" ", line.strip()) for line in source.split("\n")]
+    return "\n".join(line for line in lines if line).strip()
+
+
+def normalise_articles(articles: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """
     Normalize headings/text before summarization + embedding.
     Returns (cleaned_articles, stats).
     """
-    cleaned_articles: List[Dict[str, Any]] = []
+    cleaned_articles: list[dict[str, Any]] = []
     stats = {
         "records_in": len(articles),
         "records_out": 0,
@@ -187,13 +201,14 @@ def normalise_articles(articles: List[Dict[str, Any]]) -> tuple[List[Dict[str, A
             "Mục": muc,
             "Pages": pages,
             "Text": text,
+            "_Structural_Text": _clean_structural_source(src_text),
         })
 
     stats["records_out"] = len(cleaned_articles)
     return cleaned_articles, stats
 
 
-def validate_index_contract(articles: List[Dict[str, Any]]) -> None:
+def validate_index_contract(articles: list[dict[str, Any]]) -> None:
     """Validate minimal legal index schema before embedding/upsert.
 
     This keeps the build pipeline robust by failing early when the source
@@ -202,7 +217,7 @@ def validate_index_contract(articles: List[Dict[str, Any]]) -> None:
     if not articles:
         raise ValueError("law.json contains no records to index")
 
-    bad_rows: List[str] = []
+    bad_rows: list[str] = []
     for idx, article in enumerate(articles, start=1):
         if not isinstance(article, dict):
             bad_rows.append(f"row {idx}: not an object")
@@ -232,37 +247,139 @@ def validate_index_contract(articles: List[Dict[str, Any]]) -> None:
 # Summarise articles
 # ---------------------------------------------------------------------------
 
-def summarise_articles(articles: List[Dict[str, Any]]) -> List[str]:
-    """Return one summary string per article (same order)."""
-    from langchain_core.prompts import PromptTemplate
+def _summary_cache_path() -> Path:
+    configured = os.getenv("SUMMARY_CACHE_PATH", "artifacts/index_summary_cache.json").strip()
+    return (ROOT / configured).resolve() if not Path(configured).is_absolute() else Path(configured)
+
+
+def _summary_cache_key(article: dict[str, Any]) -> str:
+    prepared = _prepare_summary_input(article.get("Text", article.get("text", "")))
+    payload = f"{_SUMMARY_CACHE_VERSION}\n{_SUMMARISE_PROMPT}\n{prepared}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _load_summary_cache(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Ignoring unreadable summary cache %s: %s", path, exc)
+        return {}
+    entries = payload.get("entries", {}) if isinstance(payload, dict) else {}
+    if not isinstance(entries, dict):
+        return {}
+    return {str(key): str(value) for key, value in entries.items() if str(value).strip()}
+
+
+def _save_summary_cache(path: Path, entries: dict[str, str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    payload = {
+        "version": _SUMMARY_CACHE_VERSION,
+        "entries": entries,
+    }
+    temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    temp_path.replace(path)
+
+
+def _summary_seed_collection(articles: list[dict[str, Any]]) -> dict[str, str]:
+    """Reuse article summaries from an existing collection for controlled reindexing."""
+    collection = os.getenv("SUMMARY_SOURCE_COLLECTION", "").strip()
+    if not collection:
+        return {}
+
+    from qdrant_client import QdrantClient
+
+    settings = get_settings()
+    if settings.use_qdrant_cloud:
+        client = QdrantClient(url=settings.qdrant_cloud_url, api_key=settings.qdrant_api_key)
+    elif settings.qdrant_url:
+        client = QdrantClient(url=settings.qdrant_url)
+    else:
+        client = QdrantClient(path=str(ROOT / "qdrant_db"))
+
+    parent_to_summary: dict[str, str] = {}
+    offset = None
+    try:
+        while True:
+            points, offset = client.scroll(
+                collection_name=collection,
+                limit=256,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            for point in points:
+                payload = point.payload or {}
+                parent_id = str(payload.get("Parent_Id") or "")
+                summary = str(payload.get("summary") or "").strip()
+                if parent_id and summary:
+                    parent_to_summary.setdefault(parent_id, summary)
+            if offset is None:
+                break
+    finally:
+        client.close()
+
+    seeded: dict[str, str] = {}
+    for article in articles:
+        summary = parent_to_summary.get(_parent_id(article))
+        if summary:
+            seeded[_summary_cache_key(article)] = summary
+    logger.info(
+        "Reused %d/%d article summaries from collection '%s'",
+        len(seeded),
+        len(articles),
+        collection,
+    )
+    return seeded
+
+
+def summarise_articles(articles: list[dict[str, Any]]) -> list[str]:
+    """Return one cached or generated summary per article in source order."""
+    cache_path = _summary_cache_path()
+    cache = _load_summary_cache(cache_path)
+    cache.update(_summary_seed_collection(articles))
+    keys = [_summary_cache_key(article) for article in articles]
+    missing_indices = [index for index, key in enumerate(keys) if key not in cache]
+
+    if not missing_indices:
+        logger.info("Summary cache hit for all %d articles", len(articles))
+        _save_summary_cache(cache_path, cache)
+        return [cache[key] for key in keys]
+
     from langchain_core.output_parsers import StrOutputParser
+    from langchain_core.prompts import PromptTemplate
 
     llm = get_llm_fast()                  # gpt-3.5-turbo, cheap
     prompt = PromptTemplate.from_template(_SUMMARISE_PROMPT)
     chain = prompt | llm | StrOutputParser()
 
-    summaries: List[str] = []
-    total = len(articles)
-    for i in range(0, total, BATCH_SIZE):
-        batch = articles[i: i + BATCH_SIZE]
+    total = len(missing_indices)
+    logger.info("Generating %d missing summaries (%d cache hits)", total, len(articles) - total)
+    for i in range(0, total, SUMMARY_BATCH_SIZE):
+        batch_indices = missing_indices[i: i + SUMMARY_BATCH_SIZE]
+        batch = [articles[index] for index in batch_indices]
         batch_texts = [_prepare_summary_input(a.get("Text", a.get("text", ""))) for a in batch]
 
         logger.info("Summarising articles %d–%d / %d", i + 1, i + len(batch), total)
         try:
             results = chain.batch([{"text": t} for t in batch_texts])
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - preserve indexing with source-text fallback
             logger.warning("Batch summarisation failed (%s); using truncated legal text", exc)
             results = batch_texts
 
-        summaries.extend(results)
+        for article_index, summary in zip(batch_indices, results):
+            cache[keys[article_index]] = str(summary)
+        _save_summary_cache(cache_path, cache)
         # Polite rate-limit backoff
-        if i + BATCH_SIZE < total:
+        if i + SUMMARY_BATCH_SIZE < total:
             time.sleep(1)
 
-    return summaries
+    return [cache[key] for key in keys]
 
 
-def _article_field(article: Dict[str, Any], *keys: str) -> str:
+def _article_field(article: dict[str, Any], *keys: str) -> str:
     """Return the first non-empty string field from an article dict."""
     for key in keys:
         value = article.get(key)
@@ -282,7 +399,7 @@ def _prepare_summary_input(text: Any) -> str:
     return f"{head}\n...\n{tail}"
 
 
-def _split_text_sliding_window(text: str, *, size: int, overlap: int) -> List[str]:
+def _split_text_sliding_window(text: str, *, size: int, overlap: int) -> list[str]:
     """Split text into overlapping chunks, trying to break at paragraph/newline boundaries."""
     raw = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
     if not raw.strip():
@@ -291,8 +408,7 @@ def _split_text_sliding_window(text: str, *, size: int, overlap: int) -> List[st
     if len(raw) <= size:
         return [" ".join(raw.split())]
 
-    chunks: List[str] = []
-    step = max(1, size - overlap)
+    chunks: list[str] = []
     start = 0
     text_len = len(raw)
 
@@ -317,7 +433,7 @@ def _split_text_sliding_window(text: str, *, size: int, overlap: int) -> List[st
     return chunks
 
 
-def _parent_id(article: Dict[str, Any]) -> str:
+def _parent_id(article: dict[str, Any]) -> str:
     """Stable parent id for all chunks of the same legal article."""
     dieu = _article_field(article, "Điều", "Dieu", "Điều_Number")
     chuong = _article_field(article, "Chương", "Chuong", "Chương_Number")
@@ -325,14 +441,14 @@ def _parent_id(article: Dict[str, Any]) -> str:
     pages = _article_field(article, "Pages")
     text = _article_field(article, "Text", "text")
     fp = hashlib.sha1(text.encode("utf-8")).hexdigest()[:16] if text else ""
-    seed = "|".join([dieu, chuong, muc, pages, fp])
+    seed = f"{dieu}|{chuong}|{muc}|{pages}|{fp}"
     return str(uuid.uuid5(uuid.NAMESPACE_URL, seed))
 
 
 def chunk_articles(
-    articles: List[Dict[str, Any]],
-    summaries: List[str],
-) -> tuple[List[Dict[str, Any]], List[str], Dict[str, Any]]:
+    articles: list[dict[str, Any]],
+    summaries: list[str],
+) -> tuple[list[dict[str, Any]], list[str], dict[str, Any]]:
     """Expand articles using the configured candidate-safe chunking strategy."""
     if _CHUNKING_STRATEGY == "legal_structure_v1":
         from scripts.structural_chunking import structural_chunk_articles
@@ -340,8 +456,8 @@ def chunk_articles(
         return structural_chunk_articles(articles, summaries, max_chars=_CHUNK_SIZE_CHARS)
     if _CHUNKING_STRATEGY != "sliding_window":
         raise ValueError("CHUNKING_STRATEGY must be 'sliding_window' or 'legal_structure_v1'")
-    chunked_articles: List[Dict[str, Any]] = []
-    chunked_summaries: List[str] = []
+    chunked_articles: list[dict[str, Any]] = []
+    chunked_summaries: list[str] = []
     max_chunks_per_article = 0
 
     for article, summary in zip(articles, summaries):
@@ -378,7 +494,7 @@ def chunk_articles(
     return chunked_articles, chunked_summaries, stats
 
 
-def _build_embedding_text(article: Dict[str, Any], summary: str) -> str:
+def _build_embedding_text(article: dict[str, Any], summary: str) -> str:
     """
     Build a richer embedding string than summary-only indexing.
 
@@ -415,7 +531,7 @@ def _build_embedding_text(article: Dict[str, Any], summary: str) -> str:
 def _stable_point_id(
     *,
     settings,
-    article: Dict[str, Any],
+    article: dict[str, Any],
     fallback_seq: int,
 ) -> str:
     """Build deterministic, collision-safe point id for Qdrant."""
@@ -450,10 +566,10 @@ def _stable_point_id(
 # Qdrant upsert
 # ---------------------------------------------------------------------------
 
-def upsert_to_qdrant(articles: List[Dict], summaries: List[str]) -> None:
+def upsert_to_qdrant(articles: list[dict], summaries: list[str]) -> None:
     settings = get_settings()
     from qdrant_client import QdrantClient
-    from qdrant_client.models import Distance, PointStruct, VectorParams, HnswConfigDiff
+    from qdrant_client.models import Distance, HnswConfigDiff, PointStruct, VectorParams
 
     if settings.use_qdrant_cloud:
         client = QdrantClient(url=settings.qdrant_cloud_url, api_key=settings.qdrant_api_key)
@@ -470,6 +586,15 @@ def upsert_to_qdrant(articles: List[Dict], summaries: List[str]) -> None:
 
     # Create collection with optimized HNSW parameters for 1M+ scale
     existing = {c.name for c in client.get_collections().collections}
+    recreate_collection = os.getenv("RECREATE_COLLECTION", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    if collection in existing and recreate_collection:
+        logger.info("Recreating explicitly selected collection %s", collection)
+        client.delete_collection(collection_name=collection)
+        existing.remove(collection)
     if collection not in existing:
         logger.info("Creating collection %s with HNSW M=%d, ef_construct=%d", 
                     collection, settings.hnsw_m, settings.hnsw_ef_construct)
@@ -493,7 +618,7 @@ def upsert_to_qdrant(articles: List[Dict], summaries: List[str]) -> None:
                     ef_construct=settings.hnsw_ef_construct,
                 ),
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - local Qdrant may not support runtime HNSW updates
             logger.debug("HNSW config update skipped (collection may not support runtime updates): %s", exc)
 
     # Ensure payload indexes for filtered queries (Dieu, Chuong, Muc stored at root level)
@@ -506,15 +631,15 @@ def upsert_to_qdrant(articles: List[Dict], summaries: List[str]) -> None:
                 field_schema=PayloadSchemaType.KEYWORD,
             )
         logger.info("Payload indexes ensured for Dieu, Chuong, Muc")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - payload indexes are an optional optimization
         logger.debug("Payload index creation skipped: %s", exc)
 
     embedder = get_embeddings()
     total = len(articles)
 
-    for i in range(0, total, BATCH_SIZE):
-        batch_articles = articles[i: i + BATCH_SIZE]
-        batch_summaries = summaries[i: i + BATCH_SIZE]
+    for i in range(0, total, EMBED_BATCH_SIZE):
+        batch_articles = articles[i: i + EMBED_BATCH_SIZE]
+        batch_summaries = summaries[i: i + EMBED_BATCH_SIZE]
 
         logger.info("Embedding + upserting articles %d–%d / %d", i + 1, i + len(batch_articles), total)
 

@@ -34,7 +34,7 @@ import uuid
 import warnings
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # Suppress noisy LangChain/OpenAI compatibility warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="langchain_openai")
@@ -50,9 +50,12 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from dotenv import load_dotenv
+
 load_dotenv(ROOT / ".env")
 
-from backend.core.pipeline import optimized_chatbot_pipeline
+from backend.core import pipeline as pipeline_module
+
+optimized_chatbot_pipeline = pipeline_module.optimized_chatbot_pipeline
 
 CASES_FILE = Path(__file__).parent / "test_cases.json"
 
@@ -65,14 +68,14 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PipelineResult:
     query: str
-    stages_hit: List[str] = field(default_factory=list)
+    stages_hit: list[str] = field(default_factory=list)
     inferred_route: str = ""          # "chitchat" | "vectorstore_faq"
     source: str = ""                  # cache / faq / legal / chitchat
     final_text: str = ""
-    documents: List[Dict] = field(default_factory=list)
+    documents: list[dict] = field(default_factory=list)
     total_ms: float = 0.0
-    stage_ms: Dict[str, float] = field(default_factory=dict)
-    error: Optional[str] = None
+    stage_ms: dict[str, float] = field(default_factory=dict)
+    error: str | None = None
 
 
 @dataclass
@@ -88,22 +91,22 @@ class CaseScore:
     # Source
     source: str
     # Keywords
-    expected_keywords: List[str]
-    found_keywords: List[str]
-    missing_keywords: List[str]
+    expected_keywords: list[str]
+    found_keywords: list[str]
+    missing_keywords: list[str]
     keyword_hit_rate: float
     # LLM scores (None if --no-llm-eval or chitchat/edge)
-    faithfulness: Optional[int] = None
+    faithfulness: int | None = None
     faithfulness_reason: str = ""
-    relevance: Optional[int] = None
+    relevance: int | None = None
     relevance_reason: str = ""
-    completeness: Optional[int] = None
+    completeness: int | None = None
     completeness_reason: str = ""
     # Answer text (for debugging keyword misses)
     final_text: str = ""
     # Timing
     total_ms: float = 0.0
-    error: Optional[str] = None
+    error: str | None = None
 
 
 # ── Pipeline runner ───────────────────────────────────────────────────────────
@@ -140,7 +143,7 @@ async def _run_pipeline(query: str, *, skip_cache: bool = False) -> PipelineResu
                 result.documents = event.get("documents", [])
                 result.source = event.get("source", "")
 
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - each case records failures instead of aborting the run
         result.error = str(exc)
 
     result.total_ms = (time.perf_counter() - wall_start) * 1000
@@ -163,7 +166,7 @@ async def _run_pipeline(query: str, *, skip_cache: bool = False) -> PipelineResu
 
 # ── Scoring ───────────────────────────────────────────────────────────────────
 
-def _check_keywords(answer: str, keywords: List[str]):
+def _check_keywords(answer: str, keywords: list[str]):
     answer_lower = answer.lower()
     found = [kw for kw in keywords if kw.lower() in answer_lower]
     missing = [kw for kw in keywords if kw.lower() not in answer_lower]
@@ -171,7 +174,7 @@ def _check_keywords(answer: str, keywords: List[str]):
 
 
 def score_case(
-    case: Dict[str, Any],
+    case: dict[str, Any],
     result: PipelineResult,
     *,
     llm_eval: bool = True,
@@ -214,7 +217,7 @@ def score_case(
     )
 
     if should_llm_eval:
-        from tests.eval.evaluators import eval_faithfulness, eval_relevance, eval_completeness
+        from tests.eval.evaluators import eval_completeness, eval_faithfulness, eval_relevance
 
         f = eval_faithfulness(case["query"], result.final_text, result.documents)
         cs.faithfulness = f.score
@@ -234,13 +237,13 @@ def score_case(
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 async def run_all_cases(
-    cases: List[Dict],
+    cases: list[dict],
     *,
     llm_eval: bool,
     verbose: bool,
     skip_cache: bool = False,
-) -> List[CaseScore]:
-    scores: List[CaseScore] = []
+) -> list[CaseScore]:
+    scores: list[CaseScore] = []
 
     for i, case in enumerate(cases, 1):
         cid = case["id"]
@@ -283,7 +286,7 @@ async def run_all_cases(
 
 # ── Report ────────────────────────────────────────────────────────────────────
 
-def print_report(scores: List[CaseScore], *, llm_eval: bool) -> None:
+def print_report(scores: list[CaseScore], *, llm_eval: bool) -> None:
     cats = {}
     for cs in scores:
         cats.setdefault(cs.category, []).append(cs)
@@ -294,9 +297,103 @@ def print_report(scores: List[CaseScore], *, llm_eval: bool) -> None:
 
     print()
     print("=" * 60)
+    print("  EPR CHATBOT EVALUATION REPORT")
+    print("=" * 60)
+
+    print()
+    print("ROUTING ACCURACY")
+    print("-" * 40)
+    for cat, cat_scores in sorted(cats.items()):
+        correct = sum(1 for s in cat_scores if s.route_correct)
+        pct = correct / len(cat_scores) * 100
+        icon = "✅" if pct == 100 else ("⚠️" if pct >= 70 else "❌")
+        print(f"  {icon} {cat:12s}  {correct}/{len(cat_scores)}  ({pct:.0f}%)")
+    total_pct = route_correct / total * 100 if total else 0.0
+    icon = "✅" if total_pct >= 90 else ("⚠️" if total_pct >= 70 else "❌")
+    print(f"  {icon} {'TOTAL':12s}  {route_correct}/{total}  ({total_pct:.0f}%)")
+
+    kw_cases = [s for s in scores if s.expected_keywords]
+    if kw_cases:
+        print()
+        print("KEYWORD PRESENCE")
+        print("-" * 40)
+        avg_hit = sum(s.keyword_hit_rate for s in kw_cases) / len(kw_cases)
+        full_hit = sum(1 for s in kw_cases if s.keyword_hit_rate >= 1.0)
+        print(f"  Average hit rate : {avg_hit:.1%}")
+        print(f"  Full match (100%): {full_hit}/{len(kw_cases)}")
+
+    llm_scored = [s for s in scores if s.faithfulness is not None and s.faithfulness >= 0]
+    if llm_scored:
+        print()
+        print("LLM-AS-JUDGE (scale 0–5)")
+        print("-" * 40)
+        avg_f = sum(float(s.faithfulness) for s in llm_scored) / len(llm_scored)
+        avg_r = sum(float(s.relevance) for s in llm_scored) / len(llm_scored)
+        avg_c = sum(float(s.completeness) for s in llm_scored) / len(llm_scored)
+        print(f"  Faithfulness  : {avg_f:.2f} / 5.0  (n={len(llm_scored)})")
+        print(f"  Relevance     : {avg_r:.2f} / 5.0")
+        print(f"  Completeness  : {avg_c:.2f} / 5.0")
+    elif llm_eval:
+        print()
+        print("LLM-AS-JUDGE : no scored cases (all chitchat or errors)")
+
+    ok_scores = [s for s in scores if not s.error]
+    if ok_scores:
+        latencies = sorted(s.total_ms for s in ok_scores)
+        p50 = latencies[int(len(latencies) * 0.50)]
+        p95 = latencies[min(int(len(latencies) * 0.95), len(latencies) - 1)]
+        avg = sum(latencies) / len(latencies)
+        print()
+        print("LATENCY")
+        print("-" * 40)
+        print(f"  Average : {avg:.0f} ms")
+        print(f"  p50     : {p50:.0f} ms")
+        print(f"  p95     : {p95:.0f} ms")
+        print(f"  Min     : {latencies[0]:.0f} ms")
+        print(f"  Max     : {latencies[-1]:.0f} ms")
+
+        source_counts: dict[str, int] = {}
+        for score in ok_scores:
+            source = score.source or "unknown"
+            source_counts[source] = source_counts.get(source, 0) + 1
+        print()
+        print("SOURCE DISTRIBUTION")
+        print("-" * 40)
+        for source, count in sorted(source_counts.items(), key=lambda item: -item[1]):
+            print(f"  {source:12s} : {count} ({count/len(ok_scores):.0%})")
+
+    failures = [s for s in scores if not s.route_correct or s.keyword_hit_rate < 0.5]
+    if failures:
+        print()
+        print("CASES NEEDING ATTENTION")
+        print("-" * 40)
+        for score in failures:
+            route_issue = (
+                ""
+                if score.route_correct
+                else f"route: expected {score.expected_route!r} got {score.actual_route!r}"
+            )
+            keyword_issue = (
+                ""
+                if score.keyword_hit_rate >= 0.5
+                else f"missing keywords: {score.missing_keywords}"
+            )
+            issues = " | ".join(issue for issue in (route_issue, keyword_issue) if issue)
+            print(f"  [{score.case_id}] {score.query[:55]}")
+            print(f"    → {issues}")
+
+    if errors:
+        print()
+        print("ERRORS")
+        print("-" * 40)
+        for score in errors:
+            print(f"  [{score.case_id}] {score.error}")
+
+    print()
+    print("=" * 60)
 
 
-def _compute_summary_metrics(scores: List[CaseScore]) -> Dict[str, float]:
+def _compute_summary_metrics(scores: list[CaseScore]) -> dict[str, float]:
     """Compute aggregate metrics used by the quality gate."""
     total = len(scores) or 1
     route_accuracy = sum(1 for s in scores if s.route_correct) / total
@@ -330,10 +427,10 @@ def _compute_summary_metrics(scores: List[CaseScore]) -> Dict[str, float]:
     }
 
 
-def _run_quality_gate(scores: List[CaseScore], args) -> bool:
+def _run_quality_gate(scores: list[CaseScore], args) -> bool:
     """Return True if all configured quality gates pass."""
     summary = _compute_summary_metrics(scores)
-    failures: List[str] = []
+    failures: list[str] = []
 
     if summary["route_accuracy"] < args.min_routing_accuracy:
         failures.append(
@@ -374,98 +471,6 @@ def _run_quality_gate(scores: List[CaseScore], args) -> bool:
 
     print("  status           : PASS")
     return True
-    print("  EPR CHATBOT EVALUATION REPORT")
-    print("=" * 60)
-
-    # ── Routing accuracy ────────────────────────────────────────
-    print()
-    print("ROUTING ACCURACY")
-    print("-" * 40)
-    for cat, cat_scores in sorted(cats.items()):
-        correct = sum(1 for s in cat_scores if s.route_correct)
-        pct = correct / len(cat_scores) * 100
-        icon = "✅" if pct == 100 else ("⚠️" if pct >= 70 else "❌")
-        print(f"  {icon} {cat:12s}  {correct}/{len(cat_scores)}  ({pct:.0f}%)")
-    total_pct = route_correct / total * 100
-    icon = "✅" if total_pct >= 90 else ("⚠️" if total_pct >= 70 else "❌")
-    print(f"  {icon} {'TOTAL':12s}  {route_correct}/{total}  ({total_pct:.0f}%)")
-
-    # ── Keyword hit rate ─────────────────────────────────────────
-    kw_cases = [s for s in scores if s.expected_keywords]
-    if kw_cases:
-        print()
-        print("KEYWORD PRESENCE")
-        print("-" * 40)
-        avg_hit = sum(s.keyword_hit_rate for s in kw_cases) / len(kw_cases)
-        full_hit = sum(1 for s in kw_cases if s.keyword_hit_rate >= 1.0)
-        print(f"  Average hit rate : {avg_hit:.1%}")
-        print(f"  Full match (100%): {full_hit}/{len(kw_cases)}")
-
-    # ── LLM evaluation ──────────────────────────────────────────
-    llm_scored = [s for s in scores if s.faithfulness is not None and s.faithfulness >= 0]
-    if llm_scored:
-        print()
-        print("LLM-AS-JUDGE (scale 0–5)")
-        print("-" * 40)
-        avg_f = sum(s.faithfulness for s in llm_scored) / len(llm_scored)
-        avg_r = sum(s.relevance for s in llm_scored) / len(llm_scored)
-        avg_c = sum(s.completeness for s in llm_scored) / len(llm_scored)
-        print(f"  Faithfulness  : {avg_f:.2f} / 5.0  (n={len(llm_scored)})")
-        print(f"  Relevance     : {avg_r:.2f} / 5.0")
-        print(f"  Completeness  : {avg_c:.2f} / 5.0")
-    elif llm_eval:
-        print()
-        print("LLM-AS-JUDGE : no scored cases (all chitchat or errors)")
-
-    # ── Latency ─────────────────────────────────────────────────
-    ok_scores = [s for s in scores if not s.error]
-    if ok_scores:
-        latencies = sorted(s.total_ms for s in ok_scores)
-        p50 = latencies[int(len(latencies) * 0.50)]
-        p95 = latencies[min(int(len(latencies) * 0.95), len(latencies) - 1)]
-        avg = sum(latencies) / len(latencies)
-        print()
-        print("LATENCY")
-        print("-" * 40)
-        print(f"  Average : {avg:.0f} ms")
-        print(f"  p50     : {p50:.0f} ms")
-        print(f"  p95     : {p95:.0f} ms")
-        print(f"  Min     : {latencies[0]:.0f} ms")
-        print(f"  Max     : {latencies[-1]:.0f} ms")
-
-    # ── Source distribution ──────────────────────────────────────
-    if ok_scores:
-        source_counts: Dict[str, int] = {}
-        for s in ok_scores:
-            source_counts[s.source or "unknown"] = source_counts.get(s.source or "unknown", 0) + 1
-        print()
-        print("SOURCE DISTRIBUTION")
-        print("-" * 40)
-        for src, cnt in sorted(source_counts.items(), key=lambda x: -x[1]):
-            print(f"  {src:12s} : {cnt} ({cnt/len(ok_scores):.0%})")
-
-    # ── Failures ─────────────────────────────────────────────────
-    failures = [s for s in scores if not s.route_correct or s.keyword_hit_rate < 0.5]
-    if failures:
-        print()
-        print("CASES NEEDING ATTENTION")
-        print("-" * 40)
-        for s in failures:
-            route_str = "" if s.route_correct else f"route: expected {s.expected_route!r} got {s.actual_route!r}"
-            kw_str = "" if s.keyword_hit_rate >= 0.5 else f"missing keywords: {s.missing_keywords}"
-            issues = " | ".join(x for x in [route_str, kw_str] if x)
-            print(f"  [{s.case_id}] {s.query[:55]}")
-            print(f"    → {issues}")
-
-    if errors:
-        print()
-        print("ERRORS")
-        print("-" * 40)
-        for s in errors:
-            print(f"  [{s.case_id}] {s.error}")
-
-    print()
-    print("=" * 60)
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -483,6 +488,14 @@ def _parse_args():
         help="Skip semantic cache lookup so retrieval runs every time (needed for faithfulness LLM judge)",
     )
     p.add_argument(
+        "--isolated-state",
+        action="store_true",
+        help=(
+            "Disable history and cache writes for a reproducible golden run while "
+            "keeping live routing, retrieval, and generation enabled"
+        ),
+    )
+    p.add_argument(
         "--quality-gate",
         action="store_true",
         help="Fail with non-zero exit code if quality thresholds are not met",
@@ -494,8 +507,32 @@ def _parse_args():
     return p.parse_args()
 
 
+def _enable_isolated_state() -> None:
+    """Remove persistence/cache side effects from a live retrieval evaluation."""
+
+    async def _ensure_conversation(_user_id: str, conversation_id: str, **_kwargs) -> str:
+        return conversation_id
+
+    async def _empty_history(**_kwargs) -> list[dict]:
+        return []
+
+    async def _ignore_exchange(*_args, **_kwargs) -> None:
+        return None
+
+    async def _ignore_cache_store(*_args, **_kwargs) -> None:
+        return None
+
+    pipeline_module.ensure_conversation = _ensure_conversation
+    pipeline_module.get_recent_history = _empty_history
+    pipeline_module._persist_exchange = _ignore_exchange
+    pipeline_module.semantic_cache.store = _ignore_cache_store
+
+
 def main():
     args = _parse_args()
+
+    if args.isolated_state:
+        _enable_isolated_state()
 
     # Load test cases
     with open(CASES_FILE, encoding="utf-8") as f:
@@ -520,14 +557,17 @@ def main():
             "(cache responses have no `documents` for the judge).\n"
         )
 
-    scores = asyncio.run(
-        run_all_cases(
-            cases,
-            llm_eval=llm_eval,
-            verbose=args.verbose,
-            skip_cache=args.no_cache,
+    try:
+        scores = asyncio.run(
+            run_all_cases(
+                cases,
+                llm_eval=llm_eval,
+                verbose=args.verbose,
+                skip_cache=args.no_cache,
+            )
         )
-    )
+    finally:
+        pipeline_module.retrieval.close_qdrant_client()
 
     print_report(scores, llm_eval=llm_eval)
 

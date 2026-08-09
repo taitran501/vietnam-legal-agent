@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from epr_agent.domain.models import AgentState
 from epr_agent.infra.persistence import PersistenceStore, get_persistence_store
 
 
@@ -40,7 +41,7 @@ class HistoryGateway(Protocol):
 
     async def get_case(self, user_id: str, conversation_id: str) -> dict[str, Any] | None: ...
 
-    async def record_run(self, state: dict[str, Any], started_at: float, ended_at: float) -> None: ...
+    async def record_run(self, state: AgentState, started_at: float, ended_at: float) -> None: ...
 
 
 class UnifiedHistoryGateway:
@@ -94,8 +95,8 @@ class UnifiedHistoryGateway:
     async def get_case(self, user_id: str, conversation_id: str) -> dict[str, Any] | None:
         return await (await self._resolve_store()).get_case(user_id, conversation_id)
 
-    async def record_run(self, state: dict[str, Any], started_at: float, ended_at: float) -> None:
-        await (await self._resolve_store()).record_run(state, started_at, ended_at)
+    async def record_run(self, state: AgentState, started_at: float, ended_at: float) -> None:
+        await (await self._resolve_store()).record_run(dict(state), started_at, ended_at)
 
 
 # This alias preserves prior imports while intentionally removing the old

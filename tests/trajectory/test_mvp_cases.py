@@ -56,16 +56,16 @@ def deps(*, active_case=None, with_evidence=True):
 
 
 CASES = [
-    ("assessment_full_1", "Tôi là nhà sản xuất bao bì nhựa, có phải thực hiện EPR không?", "answer_complete", "assess_epr_obligation", True, None),
-    ("assessment_full_2", "Doanh nghiệp tôi là nhà nhập khẩu chai nhựa, có phải tuân thủ EPR không?", "answer_complete", "assess_epr_obligation", True, None),
-    ("assessment_full_3", "Công ty tôi sản xuất pin nhựa, có phải thực hiện EPR không?", "answer_complete", "assess_epr_obligation", True, None),
+    ("assessment_full_1", "Tôi là nhà sản xuất bao bì nhựa tại thị trường Việt Nam, có phải thực hiện EPR không?", "answer_complete", "assess_epr_obligation", True, None),
+    ("assessment_full_2", "Doanh nghiệp tôi là nhà nhập khẩu chai nhựa vào thị trường Việt Nam, có phải tuân thủ EPR không?", "answer_complete", "assess_epr_obligation", True, None),
+    ("assessment_full_3", "Công ty tôi sản xuất pin nhựa tại Việt Nam, có phải thực hiện EPR không?", "answer_complete", "assess_epr_obligation", True, None),
     ("assessment_missing_1", "Tôi là nhà sản xuất, có phải thực hiện EPR không?", "awaiting_user_input", "assess_epr_obligation", False, None),
     ("assessment_missing_2", "Tôi là nhà sản xuất bao bì, có phải thực hiện EPR không?", "awaiting_user_input", "assess_epr_obligation", False, None),
     ("assessment_missing_3", "Tôi là nhà sản xuất nhựa, có phải thực hiện EPR không?", "awaiting_user_input", "assess_epr_obligation", False, None),
-    ("resume_assessment", "Vật liệu là nhựa", "answer_complete", "assess_epr_obligation", True, {"task_type": "assess_epr_obligation", "facts": {"business_role": "nhà sản xuất", "product_or_packaging": "bao bì"}}),
-    ("resume_checklist", "Vật liệu là giấy", "answer_complete", "build_compliance_checklist", True, {"task_type": "build_compliance_checklist", "facts": {"business_role": "nhà nhập khẩu", "product_or_packaging": "bao bì"}}),
-    ("checklist_full_1", "Lập checklist tuân thủ EPR cho nhà sản xuất bao bì nhựa", "answer_complete", "build_compliance_checklist", True, None),
-    ("checklist_full_2", "Các bước cần làm EPR cho nhà nhập khẩu chai nhựa", "answer_complete", "build_compliance_checklist", True, None),
+    ("resume_assessment", "Vật liệu là nhựa", "answer_complete", "assess_epr_obligation", True, {"task_type": "assess_epr_obligation", "facts": {"business_role": "nhà sản xuất", "product_or_packaging": "bao bì", "activity_scope": "thị trường Việt Nam"}}),
+    ("resume_checklist", "Vật liệu là giấy", "answer_complete", "build_compliance_checklist", True, {"task_type": "build_compliance_checklist", "facts": {"business_role": "nhà nhập khẩu", "product_or_packaging": "bao bì", "activity_scope": "thị trường Việt Nam"}}),
+    ("checklist_full_1", "Lập checklist tuân thủ EPR cho nhà sản xuất bao bì nhựa tại thị trường Việt Nam", "answer_complete", "build_compliance_checklist", True, None),
+    ("checklist_full_2", "Các bước cần làm EPR cho nhà nhập khẩu chai nhựa vào thị trường Việt Nam", "answer_complete", "build_compliance_checklist", True, None),
     ("evidence_fallback", "EPR và trách nhiệm tái chế hiện nay quy định thế nào?", "web_fallback", "legal_lookup", False, None),
     ("out_of_scope", "Quy định về chứng khoán là gì?", "out_of_scope", "legal_lookup", False, None),
 ]

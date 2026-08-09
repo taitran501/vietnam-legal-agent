@@ -1,10 +1,19 @@
 import type { WorkflowMetadata } from '@/types';
+import { Icon } from '@/components/UI/Icon';
 
 interface WorkflowResultCardProps {
+  onOpenCase?: () => void;
   workflow?: WorkflowMetadata;
 }
 
-export function WorkflowResultCard({ workflow }: WorkflowResultCardProps) {
+const missingFactLabels: Record<string, string> = {
+  business_role: 'vai trò doanh nghiệp',
+  product_or_packaging: 'sản phẩm hoặc bao bì',
+  material: 'vật liệu chính',
+  activity_scope: 'phạm vi hoạt động',
+};
+
+export function WorkflowResultCard({ onOpenCase, workflow }: WorkflowResultCardProps) {
   if (!workflow) return null;
   const safeStop = ['insufficient_evidence', 'out_of_scope', 'citation_verification_failed'].includes(
     workflow.termination_reason || ''
@@ -12,49 +21,90 @@ export function WorkflowResultCard({ workflow }: WorkflowResultCardProps) {
   const hasAssessment = Boolean(workflow.assessment);
   const hasChecklist = Boolean(workflow.checklist?.length);
   const hasMissingFacts = Boolean(workflow.missing_facts?.length);
+  const hasAssumptions = Boolean(workflow.assumptions?.length);
 
-  const hasCitations = Boolean(workflow.citations?.length);
-  if (!safeStop && !hasAssessment && !hasChecklist && !hasMissingFacts && !hasCitations) return null;
+  if (!safeStop && !hasAssessment && !hasChecklist && !hasMissingFacts && !hasAssumptions) return null;
 
   return (
-    <section className="mt-4 space-y-3" aria-label="Kết quả workflow">
+    <section className="mt-5 space-y-3" aria-label="Kết quả workflow">
       {hasMissingFacts && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
-          <p className="font-semibold">Cần bổ sung thông tin</p>
-          <p className="mt-1">Hoàn thiện các trường được đánh dấu trong Hồ sơ trường hợp trước khi hệ thống kết luận.</p>
+        <div className="rounded-lg border border-[#cad5ec] bg-[#f3f6fc] p-4 text-sm text-[#29354b]">
+          <div className="flex items-start gap-3">
+            <Icon className="mt-0.5 shrink-0 text-[#555e74]" name="info" size={19} />
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">Cần thêm thông tin để tiếp tục</p>
+              <p className="mt-1 leading-6">
+                Vui lòng bổ sung {workflow.missing_facts?.map((fact) => missingFactLabels[fact] || fact).join(', ')}.
+              </p>
+              {onOpenCase && (
+                <button
+                  className="mt-3 inline-flex items-center gap-2 rounded-md bg-[#555e74] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#3e475b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#555e74] focus-visible:ring-offset-2"
+                  onClick={onOpenCase}
+                  type="button"
+                >
+                  <Icon name="case" size={15} />
+                  Bổ sung trong bảng thông tin
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
+
       {safeStop && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-950">
-          <p className="font-semibold">Hệ thống đã dừng an toàn</p>
-          <p className="mt-1">Chưa có đủ bằng chứng được kiểm chứng để đưa ra kết luận pháp lý.</p>
+        <div className="rounded-lg border border-[#ead6b8] bg-[#fff8ea] p-4 text-sm text-[#714b18]">
+          <div className="flex items-start gap-3">
+            <Icon className="mt-0.5 shrink-0" name="alert" size={19} />
+            <div>
+              <p className="font-semibold">Chưa đủ căn cứ để trả lời chắc chắn</p>
+              <p className="mt-1 leading-6">
+                Trợ lý đã dừng để tránh đưa ra kết luận không được nguồn hiện có hỗ trợ. Bạn có thể thu hẹp câu hỏi hoặc thử lại sau.
+              </p>
+            </div>
+          </div>
         </div>
       )}
+
       {hasAssessment && (
-        <div className="rounded-xl border border-teal-200 bg-teal-50/60 p-3 text-sm text-slate-800">
-          <p className="font-semibold text-teal-950">Đánh giá sơ bộ</p>
-          <p className="mt-1">Kết quả dựa trên facts đã cung cấp và các nguồn hiển thị bên dưới; không thay thế tư vấn pháp lý.</p>
+        <div className="rounded-lg border border-[#b9ddd7] bg-[#f0faf8] p-4 text-sm text-[#254b47]">
+          <div className="flex items-start gap-3">
+            <Icon className="mt-0.5 shrink-0 text-[#006a63]" name="scale" size={19} />
+            <div>
+              <p className="font-semibold text-[#005c55]">Đánh giá sơ bộ</p>
+              <p className="mt-1 leading-6">
+                Kết quả dựa trên thông tin đã cung cấp và các nguồn hiển thị cùng câu trả lời; không thay thế tư vấn pháp lý.
+              </p>
+            </div>
+          </div>
         </div>
       )}
+
       {hasChecklist && (
-        <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-800">
-          <p className="font-semibold">Checklist tuân thủ</p>
-          <ol className="mt-2 list-decimal space-y-1.5 pl-5">
+        <div className="rounded-lg border border-[#d9e1df] bg-white p-4 text-sm text-[#3e4947]">
+          <div className="flex items-center gap-2 font-semibold text-[#172033]">
+            <Icon className="text-[#006a63]" name="check" size={18} />
+            Checklist đề xuất
+          </div>
+          <ol className="mt-3 space-y-2.5">
             {workflow.checklist?.map((item, index) => (
-              <li key={index}>{String(item.item || item.action || 'Hạng mục cần thực hiện')}</li>
+              <li className="flex items-start gap-2.5 leading-6" key={index}>
+                <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[#80d5cb] text-[10px] font-semibold text-[#006a63]">
+                  {index + 1}
+                </span>
+                <span>{String(item.item || item.action || 'Hạng mục cần thực hiện')}</span>
+              </li>
             ))}
           </ol>
         </div>
       )}
-      {hasCitations && (
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-          <p className="font-semibold text-slate-900">Nguồn đã kiểm tra</p>
-          <ul className="mt-1.5 space-y-1">
-            {workflow.citations?.map((citation, index) => (
-              <li key={index}>[{String(citation.index || index + 1)}] {String(citation.label || citation.document_id || 'Nguồn pháp lý')}</li>
-            ))}
+
+      {hasAssumptions && (
+        <details className="rounded-lg border border-[#d9e1df] bg-[#f7faf8] px-4 py-3 text-sm text-[#53615e]">
+          <summary className="cursor-pointer font-semibold text-[#3e4947]">Giả định đang sử dụng</summary>
+          <ul className="mt-2 list-disc space-y-1.5 pl-5 leading-6">
+            {workflow.assumptions?.map((assumption, index) => <li key={index}>{assumption}</li>)}
           </ul>
-        </div>
+        </details>
       )}
     </section>
   );

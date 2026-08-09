@@ -36,6 +36,7 @@ async def chat(request: Request, body: ChatRequest):
     # User scope for durable history: API key hash set by auth middleware.
     # Fallback keeps local development functional when auth is disabled.
     user_id = getattr(request.state, "api_key_hash", None) or "dev-local"
+    runtime = getattr(request.app.state, "workflow_runtime", None)
     
     # Log session creation for audit trail
     logger.info(
@@ -53,6 +54,7 @@ async def chat(request: Request, body: ChatRequest):
                 conversation_id=conversation_id,
                 legacy_session_id=body.session_id,
                 faq_threshold=body.faq_threshold,
+                runtime=runtime,
             ):
                 # CRITICAL: Check if client disconnected
                 if await request.is_disconnected():
@@ -66,8 +68,8 @@ async def chat(request: Request, body: ChatRequest):
             # Client disconnected mid-stream
             logger.info("Stream cancelled for conversation=%s", conversation_id)
             return
-        except Exception as exc:
-            logger.exception("Pipeline error: %s", exc)
+        except Exception:
+            logger.exception("Pipeline error")
             yield {
                 "data": json.dumps({
                     "type": "error",

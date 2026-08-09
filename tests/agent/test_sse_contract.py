@@ -68,3 +68,8 @@ async def test_stream_preserves_legacy_events_and_adds_workflow_metadata():
     assert complete["trace_id"]
     assert complete["termination_reason"] == "answer_complete"
     assert complete["citations"]
+    first_step = next(index for index, event in enumerate(events) if event["type"] == "workflow_step")
+    response_chunk = next(index for index, event in enumerate(events) if event["type"] == "response_chunk")
+    assert first_step < response_chunk
+    steps = [event for event in events if event["type"] == "workflow_step"]
+    assert [event["step"] for event in steps] == list(range(1, len(steps) + 1))

@@ -26,7 +26,6 @@ from pydantic import BaseModel, Field
 from backend.config import get_settings
 from backend.core.llm_instances import get_llm_router
 
-
 # ---------------------------------------------------------------------------
 # 2-way router: epr_query | chitchat
 # ---------------------------------------------------------------------------
@@ -103,6 +102,16 @@ _CHITCHAT_EXACT = {
     "ban ten gi",
 }
 
+_CHITCHAT_PHRASES = (
+    "cam on",
+    "tam biet",
+    "ban la ai",
+    "ban ten gi",
+    "ban co the lam gi",
+    "ban lam duoc gi",
+    "hom nay troi",
+)
+
 
 def _normalize_vi(text: str) -> str:
     lowered = (text or "").strip().lower()
@@ -122,11 +131,23 @@ def _fast_route_query(question: str) -> Literal["epr_query", "chitchat"] | None:
     if q in _CHITCHAT_EXACT:
         return "chitchat"
 
+    if any(phrase in q for phrase in _CHITCHAT_PHRASES):
+        return "chitchat"
+
     if any(re.search(pattern, q) for pattern in _LEGAL_HINT_PATTERNS):
         return "epr_query"
 
     if any(keyword in q for keyword in _LEGAL_HINT_KEYWORDS):
         return "epr_query"
+
+    # Reject obvious keyboard-noise strings without sending them through legal
+    # retrieval. This stays deliberately narrow so ordinary English queries do
+    # not become false chitchat matches.
+    ascii_letters = re.findall(r"[a-z]", q)
+    if len(ascii_letters) >= 8 and not re.search(r"\s", q):
+        vowel_ratio = sum(letter in "aeiou" for letter in ascii_letters) / len(ascii_letters)
+        if vowel_ratio < 0.25:
+            return "chitchat"
 
     # Very short non-informational utterances.
     if len(q) <= 6 and re.search(r"[a-zA-ZÀ-ỹ]", q):

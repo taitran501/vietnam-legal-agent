@@ -1,77 +1,52 @@
-import { cn } from '@/lib/cn';
+import { Icon } from '@/components/UI/Icon';
 
 interface HeaderProps {
-  sidebarOpen: boolean;
-  onToggleSidebar: () => void;
+  hasActiveCase?: boolean;
   isHealthy: boolean;
+  onOpenCase?: () => void;
+  onOpenMobileNav: () => void;
 }
 
-/**
- * Modern header with status indicators
- */
-export function Header({ sidebarOpen, onToggleSidebar, isHealthy }: HeaderProps) {
+export function Header({ hasActiveCase = false, isHealthy, onOpenCase, onOpenMobileNav }: HeaderProps) {
   return (
-    <header className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl sticky top-0 z-10">
-      <div className="flex items-center gap-3">
-        {/* Sidebar toggle */}
+    <header className="z-20 flex h-16 shrink-0 items-center justify-between border-b border-[#d9e1df] bg-[#fcfcfa]/95 px-3 backdrop-blur sm:px-5">
+      <div className="flex min-w-0 items-center gap-2.5">
         <button
-          onClick={onToggleSidebar}
-          className={cn(
-            'p-2 rounded-lg transition-all duration-200 hover:bg-gray-100 dark:hover:bg-gray-800',
-            'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-          )}
-          aria-label={sidebarOpen ? 'Đóng sidebar' : 'Mở sidebar'}
+          aria-label="Mở lịch sử trò chuyện"
+          className="rounded-md p-2 text-[#53615e] transition-colors hover:bg-[#e7eceb] hover:text-[#172033] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] md:hidden"
+          onClick={onOpenMobileNav}
+          type="button"
         >
-          <svg
-            className="w-5 h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            {sidebarOpen ? (
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M11 19l-7-7 7-7m8 14l-7-7 7-7"
-              />
-            ) : (
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M13 5l7 7-7 7M5 5l7 7-7 7"
-              />
-            )}
-          </svg>
+          <Icon name="menu" size={21} />
         </button>
-
-        {/* Logo and title */}
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white text-lg shadow-lg shadow-green-500/20">
-            ⚖️
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h1 className="truncate text-sm font-semibold text-[#172033] sm:text-base">Trợ lý pháp lý</h1>
+            <span className="rounded-full bg-[#e7eceb] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#006a63]">
+              EPR
+            </span>
           </div>
-          <div>
-            <h1 className="text-base font-semibold text-gray-900 dark:text-white leading-tight">
-              EPR Compliance Copilot
-            </h1>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Tra cứu · Đánh giá · Checklist
-            </p>
-          </div>
+          <p className="hidden text-[11px] text-[#667085] sm:block">Tra cứu · Làm rõ · Chuẩn bị bước tiếp theo</p>
         </div>
       </div>
 
-      {/* Status indicators */}
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-50 dark:bg-gray-800">
-          <div
-            className={cn(
-              'w-2 h-2 rounded-full',
-              isHealthy ? 'bg-green-500 animate-pulse' : 'bg-red-500'
-            )}
-          />
-          <span className="text-xs text-gray-600 dark:text-gray-400 font-medium">
+      <div className="flex shrink-0 items-center gap-2">
+        {hasActiveCase && (
+          <button
+            className="inline-flex items-center gap-2 rounded-md px-2.5 py-2 text-xs font-semibold text-[#005c55] transition-colors hover:bg-[#e7eceb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] sm:text-sm"
+            onClick={onOpenCase}
+            type="button"
+          >
+            <Icon name="case" size={17} />
+            <span className="hidden sm:inline">Thông tin tình huống</span>
+          </button>
+        )}
+        <div
+          className="inline-flex items-center gap-2 rounded-full border border-[#d9e1df] bg-white px-2.5 py-1.5"
+          title={isHealthy ? 'Hệ thống sẵn sàng' : 'Không thể kết nối tới máy chủ'}
+        >
+          <span className={`h-2 w-2 rounded-full ${isHealthy ? 'bg-[#1d8b66]' : 'bg-[#ba1a1a]'}`} />
+          <span className="hidden text-[11px] font-medium text-[#667085] sm:inline">
             {isHealthy ? 'Sẵn sàng' : 'Ngoại tuyến'}
           </span>
         </div>

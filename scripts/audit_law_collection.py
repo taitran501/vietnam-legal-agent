@@ -29,7 +29,6 @@ from typing import Any
 
 from qdrant_client import QdrantClient
 
-
 ZERO_WIDTH_RE = re.compile(r"[\u200B-\u200F\uFEFF]")
 MULTISPACE_RE = re.compile(r"[ \t]{2,}")
 MULTIBLANK_RE = re.compile(r"\n{3,}")
@@ -80,7 +79,7 @@ def _build_qdrant_client(env: dict[str, str], project_root: Path) -> tuple[Qdran
 
     local_path = env.get("QDRANT_LOCAL_PATH", "./qdrant_db")
     resolved = (project_root / local_path).resolve() if local_path.startswith(".") else Path(local_path).resolve()
-    return QdrantClient(path=str(resolved), timeout=30), f"local:{resolved}"
+    return QdrantClient(path=str(resolved), timeout=30), f"local:{local_path}"
 
 
 def _scroll_all_points(client: QdrantClient, collection: str) -> list[Any]:
@@ -156,6 +155,7 @@ def _run_retrieval_sanity_check(project_root: Path) -> dict[str, Any]:
 
 def run_audit(project_root: Path, collection: str, run_retrieval_check: bool) -> dict[str, Any]:
     env = _parse_env_file(project_root / ".env")
+    env.update({key: value for key, value in os.environ.items() if isinstance(value, str)})
     client, target = _build_qdrant_client(env, project_root)
 
     collections = {c.name for c in client.get_collections().collections}
@@ -163,6 +163,7 @@ def run_audit(project_root: Path, collection: str, run_retrieval_check: bool) ->
         raise ValueError(f"Collection '{collection}' not found in {target}. Available={sorted(collections)}")
 
     points = _scroll_all_points(client, collection)
+    client.close()
 
     missing = Counter()
     hygiene = Counter()
@@ -214,7 +215,12 @@ def run_audit(project_root: Path, collection: str, run_retrieval_check: bool) ->
             hygiene["multi_blankline"] += 1
 
         normalized = _normalise_text(text)
-        digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()
+        parent_dieu = str(payload.get("Parent_Dieu") or dieu).strip().lower()
+        hierarchy = str(payload.get("Hierarchy") or "").strip().lower()
+        source_start = str(payload.get("Source_Start", ""))
+        source_end = str(payload.get("Source_End", ""))
+        provenance = f"{parent_dieu}|{hierarchy}|{source_start}|{source_end}|{normalized}"
+        digest = hashlib.sha1(provenance.encode("utf-8")).hexdigest()
         exact_hashes[digest] += 1
 
         combined = f"{dieu}\n{chuong}\n{muc}\n{text}".lower()
@@ -244,7 +250,7 @@ def run_audit(project_root: Path, collection: str, run_retrieval_check: bool) ->
     if run_retrieval_check:
         try:
             report["retrieval_sanity"] = _run_retrieval_sanity_check(project_root)
-        except Exception as exc:  # noqa: WPS440
+        except Exception as exc:  # noqa: BLE001 - optional live sanity check is reported, not fatal
             report["retrieval_sanity"] = {
                 "enabled": True,
                 "error": str(exc),
@@ -299,4 +305,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

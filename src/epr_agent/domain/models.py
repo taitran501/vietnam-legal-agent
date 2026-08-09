@@ -151,6 +151,9 @@ class AgentState(TypedDict, total=False):
     is_epr_scope: bool
 
     cached_answer: str | None
+    cached_evidence: list[dict[str, Any]]
+    cached_citations: list[dict[str, Any]]
+    cached_source: str
     cache_key: str
     web_answer: str
     faq_hit: bool

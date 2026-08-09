@@ -1,125 +1,92 @@
 import { useState } from 'react';
-import type { ChatMessage } from '@/types';
+import type { ChatMessage, SourceDocument } from '@/types';
 import { formatTimestamp } from '@/lib/formatters';
 import { MarkdownRenderer } from '@/utils/markdown';
 import { MessageActions } from './MessageActions';
 import { SourceDocuments } from './SourceDocuments';
 import { WorkflowResultCard } from '@/components/Agent/WorkflowResultCard';
-import { cn } from '@/lib/cn';
+import { Icon } from '@/components/UI/Icon';
 
 interface ChatMessageProps {
   message: ChatMessage;
+  onOpenCase?: () => void;
+  onOpenSources: (documents: SourceDocument[], citations: Array<Record<string, unknown>>) => void;
   onRegenerate?: () => void;
 }
 
-/**
- * Redesigned message bubble with markdown rendering and actions
- */
-export function ChatMessageComponent({ message, onRegenerate }: ChatMessageProps) {
+const sourceLabels: Record<string, string> = {
+  faq: 'Câu hỏi thường gặp',
+  legal: 'Kho văn bản',
+  chitchat: 'Hội thoại',
+  web_search: 'Nguồn web bổ sung',
+  cache: 'Câu trả lời đã xác minh',
+  follow_up: 'Đang làm rõ',
+};
+
+export function ChatMessageComponent({ message, onOpenCase, onOpenSources, onRegenerate }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(message.content);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy:', err);
-    }
-  };
+  if (isUser) {
+    return (
+      <article className="px-4 py-5 sm:px-6">
+        <div className="mx-auto flex w-full max-w-[820px] justify-end">
+          <div className="max-w-[88%] sm:max-w-[76%]">
+            <div className="rounded-xl rounded-tr-sm border border-[#e1e6e4] bg-[#f1f4f3] px-4 py-3 text-[15px] leading-6 text-[#172033]">
+              <p className="whitespace-pre-wrap break-words">{message.content}</p>
+            </div>
+            <p className="mt-1.5 text-right text-[11px] text-[#84908d]">{formatTimestamp(message.timestamp)}</p>
+          </div>
+        </div>
+      </article>
+    );
+  }
 
   return (
-    <div
-      className={cn(
-        'group py-4 animate-in fade-in slide-in-from-bottom-2 duration-300',
-        isUser ? 'bg-white dark:bg-gray-900' : 'bg-gray-50 dark:bg-gray-800/50'
-      )}
-    >
-      <div className="max-w-4xl mx-auto px-4">
-        <div className="flex gap-4">
-          {/* Avatar */}
-          <div
-            className={cn(
-              'flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-lg',
-              isUser
-                ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white'
-                : 'bg-gradient-to-br from-green-500 to-emerald-600 text-white'
-            )}
-          >
-            {isUser ? (
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path
-                  fillRule="evenodd"
-                  d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            ) : (
-              <span className="text-base">⚖️</span>
-            )}
+    <article className="group px-4 py-5 motion-safe:animate-[messageIn_240ms_ease-out] sm:px-6">
+      <div className="mx-auto w-full max-w-[820px]">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#0f766e] text-white">
+            <Icon name="scale" size={17} />
+          </span>
+          <div>
+            <p className="text-sm font-semibold text-[#005c55]">Trợ lý pháp lý</p>
+            <p className="text-[11px] text-[#84908d]">{formatTimestamp(message.timestamp)}</p>
+          </div>
+        </div>
+
+        <div className="ml-0 mt-3 sm:ml-[42px]">
+          <div className="legal-prose max-w-none text-[15px] leading-7 text-[#262d2c] sm:text-base">
+            <MarkdownRenderer content={message.content} />
           </div>
 
-          {/* Message content */}
-          <div className="flex-1 min-w-0">
-            {/* Sender name */}
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                {isUser ? 'Bạn' : 'Trợ lý EPR'}
-              </span>
-              <span className="text-xs text-gray-500 dark:text-gray-400">
-                {formatTimestamp(message.timestamp)}
-              </span>
-            </div>
+          <WorkflowResultCard onOpenCase={onOpenCase} workflow={message.workflow} />
+          <SourceDocuments
+            citations={message.workflow?.citations}
+            documents={message.documents || []}
+            onOpen={onOpenSources}
+          />
 
-            {/* Message text with markdown */}
-            <div
-              className={cn(
-                'text-[15px] text-gray-900 dark:text-gray-100 leading-relaxed',
-                'prose prose-gray dark:prose-invert max-w-none',
-                'prose-p:my-1 prose-ul:my-1 prose-ol:my-1',
-                'prose-code:text-sm prose-pre:text-sm'
-              )}
-            >
-              {isUser ? (
-                <p className="whitespace-pre-wrap break-words">{message.content}</p>
-              ) : (
-                <MarkdownRenderer content={message.content} />
+          <div className="mt-3 flex min-h-8 flex-wrap items-center justify-between gap-2 border-t border-[#edf0ef] pt-2">
+            <div className="text-[11px] text-[#667085]">
+              {message.source && message.source !== 'error' && (
+                <span>{sourceLabels[message.source] || message.source}</span>
               )}
             </div>
-
-            {/* Source documents */}
-            {message.documents && message.documents.length > 0 && (
-              <SourceDocuments documents={message.documents} />
-            )}
-            {!isUser && <WorkflowResultCard workflow={message.workflow} />}
-
-            {/* Metadata and actions */}
-            <div className="mt-2 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                {message.source && message.source !== 'error' && (
-                  <span className="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full capitalize">
-                    {message.source}
-                  </span>
-                )}
-                {message.documents && message.documents.length > 0 && (
-                  <span>{message.documents.length} tài liệu tham khảo</span>
-                )}
-              </div>
-
-              {/* Message actions - visible on hover */}
-              <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                <MessageActions
-                  message={message}
-                  onCopy={handleCopy}
-                  copied={copied}
-                  onRegenerate={onRegenerate}
-                />
-              </div>
+            <div className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+              <MessageActions
+                copied={copied}
+                message={message}
+                onCopy={() => {
+                  setCopied(true);
+                  window.setTimeout(() => setCopied(false), 2000);
+                }}
+                onRegenerate={onRegenerate}
+              />
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </article>
   );
 }

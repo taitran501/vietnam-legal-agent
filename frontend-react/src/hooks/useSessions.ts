@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSessionStore } from '@/state/sessionStore';
 import { useChatStore } from '@/state/chatStore';
 import * as sessionsApi from '@/api/sessions';
-import { toast } from '@/components/UI/Toast';
+import { toast } from '@/state/toastStore';
 import type { ChatMessage } from '@/types';
 
 /**
@@ -12,10 +12,12 @@ export function useSessions() {
   const {
     sessions,
     isLoadingSessions,
+    hasLoadedSessions,
     setSessions,
     removeSession,
     updateSession,
     setLoading,
+    setLoaded,
   } = useSessionStore();
 
   const { setActiveSession, setMessages, setActiveCase, clearChat } = useChatStore();
@@ -25,6 +27,8 @@ export function useSessions() {
    * Load session list
    */
   const loadSessions = useCallback(async () => {
+    const current = useSessionStore.getState();
+    if (current.isLoadingSessions || current.hasLoadedSessions) return;
     setLoading(true);
     try {
       const apiList = await sessionsApi.listSessions(50);
@@ -39,13 +43,13 @@ export function useSessions() {
       const pendingIds = new Set(pendingLocal.map((s) => s.id));
       const fromApi = apiList.filter((s) => !pendingIds.has(s.id));
       setSessions([...pendingLocal, ...fromApi]);
+      setLoaded(true);
     } catch (error) {
       console.error('Failed to load sessions:', error);
-      toast.error('Không thể tải danh sách cuộc trò chuyện');
     } finally {
       setLoading(false);
     }
-  }, [setLoading, setSessions]);
+  }, [setLoaded, setLoading, setSessions]);
 
   /**
    * Load session details
@@ -154,8 +158,8 @@ export function useSessions() {
 
   // Load sessions on mount
   useEffect(() => {
-    loadSessions();
-  }, [loadSessions]);
+    if (!hasLoadedSessions) void loadSessions();
+  }, [hasLoadedSessions, loadSessions]);
 
   return {
     sessions: filteredSessions,
