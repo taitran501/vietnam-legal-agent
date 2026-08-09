@@ -26,7 +26,7 @@ export function parseSSEEvent(line: string): SSEEvent | null {
  */
 export async function* streamChat(
   query: string,
-  sessionId: string,
+  conversationId: string,
   faqThreshold = 0.75,
   signal?: AbortSignal
 ): AsyncGenerator<SSEEvent> {
@@ -36,10 +36,13 @@ export async function* streamChat(
   
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(import.meta.env.VITE_API_KEY ? { 'X-API-Key': import.meta.env.VITE_API_KEY } : {}),
+    },
     body: JSON.stringify({
       query,
-      session_id: sessionId,
+      conversation_id: conversationId,
       faq_threshold: faqThreshold,
     }),
     signal,

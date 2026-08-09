@@ -1,4 +1,14 @@
-export type { ChatMessage, ResponseSource, SourceDocument, Conversation, WorkflowMetadata } from './chat';
+export type {
+  ChatMessage,
+  ResponseSource,
+  SourceDocument,
+  Conversation,
+  WorkflowMetadata,
+  CaseFacts,
+  CaseState,
+  EvidenceAssessment,
+  WorkflowStep,
+} from './chat';
 export type {
   ChatRequest,
   SSEEvent,

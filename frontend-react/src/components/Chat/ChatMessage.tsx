@@ -4,6 +4,7 @@ import { formatTimestamp } from '@/lib/formatters';
 import { MarkdownRenderer } from '@/utils/markdown';
 import { MessageActions } from './MessageActions';
 import { SourceDocuments } from './SourceDocuments';
+import { WorkflowResultCard } from '@/components/Agent/WorkflowResultCard';
 import { cn } from '@/lib/cn';
 
 interface ChatMessageProps {
@@ -91,6 +92,7 @@ export function ChatMessageComponent({ message, onRegenerate }: ChatMessageProps
             {message.documents && message.documents.length > 0 && (
               <SourceDocuments documents={message.documents} />
             )}
+            {!isUser && <WorkflowResultCard workflow={message.workflow} />}
 
             {/* Metadata and actions */}
             <div className="mt-2 flex items-center justify-between">

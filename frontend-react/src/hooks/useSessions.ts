@@ -18,7 +18,7 @@ export function useSessions() {
     setLoading,
   } = useSessionStore();
 
-  const { setActiveSession, setMessages, clearChat } = useChatStore();
+  const { setActiveSession, setMessages, setActiveCase, clearChat } = useChatStore();
   const [searchQuery, setSearchQuery] = useState('');
 
   /**
@@ -64,15 +64,17 @@ export function useSessions() {
           role: msg.role as 'user' | 'assistant',
           content: msg.content,
           timestamp: msg.timestamp,
+          workflow: (msg.metadata || undefined) as ChatMessage['workflow'],
         }));
 
         setMessages(messages);
+        setActiveCase(await sessionsApi.getCaseState(sessionId));
       } catch (error) {
         console.error('Failed to load session:', error);
         toast.error('Không thể tải cuộc trò chuyện');
       }
     },
-    [setActiveSession, setMessages]
+    [setActiveCase, setActiveSession, setMessages]
   );
 
   /**
