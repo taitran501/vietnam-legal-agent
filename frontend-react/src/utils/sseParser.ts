@@ -1,14 +1,22 @@
 import type { SSEEvent } from '@/types';
 
 /**
- * Parse SSE event stream from response
+ * Parse one complete SSE frame from a response stream.
+ *
+ * The server currently serialises each JSON event on one ``data:`` line, but
+ * this parser also accepts standard multi-line SSE data and CRLF framing.
  */
-export function parseSSEEvent(line: string): SSEEvent | null {
-  if (!line.startsWith('data: ')) {
+export function parseSSEEvent(frame: string): SSEEvent | null {
+  const dataLines = frame
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).replace(/^ /, ''));
+
+  if (dataLines.length === 0) {
     return null;
   }
 
-  const raw = line.slice(6).trim();
+  const raw = dataLines.join('\n').trim();
   if (!raw) {
     return null;
   }
@@ -16,7 +24,7 @@ export function parseSSEEvent(line: string): SSEEvent | null {
   try {
     return JSON.parse(raw) as SSEEvent;
   } catch {
-    console.error('Failed to parse SSE event:', raw);
+    // A malformed or partial frame must not terminate a healthy stream.
     return null;
   }
 }
@@ -38,6 +46,8 @@ export async function* streamChat(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      'Cache-Control': 'no-cache',
       ...(import.meta.env.VITE_API_KEY ? { 'X-API-Key': import.meta.env.VITE_API_KEY } : {}),
     },
     body: JSON.stringify({
@@ -49,7 +59,9 @@ export async function* streamChat(
   });
 
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    const payload = await response.text();
+    const event = parseSSEEvent(payload);
+    throw new Error(event?.message || `HTTP ${response.status}: ${response.statusText}`);
   }
 
   const reader = response.body?.getReader();
@@ -66,11 +78,11 @@ export async function* streamChat(
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || ''; // Keep incomplete line in buffer
+      const frames = buffer.split(/\r?\n\r?\n/);
+      buffer = frames.pop() || ''; // Keep an incomplete frame in the buffer.
 
-      for (const line of lines) {
-        const event = parseSSEEvent(line);
+      for (const frame of frames) {
+        const event = parseSSEEvent(frame);
         if (event) {
           yield event;
         }

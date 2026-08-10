@@ -100,6 +100,14 @@ stored data to its owner.
 Existing SSE events remain compatible; `response_complete` adds route, corpus,
 embedding, evidence-status, available-action, and termination metadata.
 
+The React client consumes this `POST` stream with `fetch` and a
+`ReadableStream` so it can send the API key header and cancel a running request.
+It renders `status` and `workflow_step` events while the workflow runs. Legal
+answer chunks are emitted progressively only after citation verification has
+passed; this prevents an unverified legal claim from appearing in the UI. The
+API sends keepalive pings and no-transform headers, and Nginx disables proxy
+buffering for `/api/`.
+
 `GET /api/v1/health` is process liveness. `GET /api/v1/ready` checks database,
 Redis, Qdrant, OpenAI configuration, collection alias, point count, corpus
 SHA, schema, and embedding profile. It returns `503` while the legal corpus is

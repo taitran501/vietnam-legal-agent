@@ -67,7 +67,7 @@ export function MessageList({
                   </span>
                   <p className="text-sm font-semibold text-[#005c55]">Trợ lý pháp lý</p>
                 </div>
-                <div className="ml-0 mt-3 whitespace-pre-wrap break-words text-[15px] leading-7 text-[#262d2c] typing-cursor sm:ml-[42px] sm:text-base">
+                <div data-testid="streaming-answer" className="ml-0 mt-3 whitespace-pre-wrap break-words text-[15px] leading-7 text-[#262d2c] typing-cursor sm:ml-[42px] sm:text-base">
                   {streamingContent}
                 </div>
               </div>

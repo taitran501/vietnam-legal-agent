@@ -25,6 +25,12 @@ function titleFromQuery(query: string, maxLen = 72): string {
   return t.length <= maxLen ? t : `${t.slice(0, maxLen - 1)}…`;
 }
 
+function waitForNextPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
+}
+
 /** Refresh the sidebar after the durable conversation store persists an exchange. */
 async function refreshSessionList(): Promise<void> {
   try {
@@ -80,9 +86,9 @@ export function useChatStream() {
       setError(null);
       setWorkflowSteps([]);
       abortControllerRef.current = new AbortController();
+      let fullContent = '';
 
       try {
-        let fullContent = '';
         let source: ResponseSource | undefined;
         let documents: SourceDocument[] = [];
         let workflow: WorkflowMetadata = {};
@@ -106,6 +112,10 @@ export function useChatStream() {
             const chunk = event.chunk || '';
             fullContent += chunk;
             appendStreamingContent(chunk);
+            // SSE frames can arrive together over localhost. Waiting for a
+            // frame lets React paint each verified chunk instead of batching
+            // the entire answer into one visual update.
+            await waitForNextPaint();
           } else if (event.type === 'response_complete') {
             fullContent = event.text || fullContent;
             source = asResponseSource(event.source);
@@ -141,7 +151,11 @@ export function useChatStream() {
         updateLastAssistantMessage(fullContent, source, documents, workflow);
         await refreshSessionList();
       } catch (error: unknown) {
-        if (!(error instanceof Error && error.name === 'AbortError')) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          updateLastAssistantMessage(
+            fullContent || 'Đã dừng xử lý trước khi có câu trả lời hoàn chỉnh.',
+          );
+        } else {
           const errorMessage = error instanceof Error ? error.message : 'Đã có lỗi xảy ra';
           setError(errorMessage);
           toast.error(`Lỗi: ${errorMessage}`);

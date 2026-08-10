@@ -126,12 +126,18 @@ dependencies = WorkflowDependencies(
     cache=ScopedAnswerCache(InMemoryAnswerCache(), corpus_version="browser-e2e"),
     retrieval=StaticRetrievalGateway(legal_documents=[legal_document]),
     evidence=EvidenceEvaluator(min_chars=20),
-    generation=StaticGenerationGateway("Theo Điều 77 [1], nhà sản xuất và nhập khẩu phải đối chiếu trách nhiệm tái chế."),
+    generation=StaticGenerationGateway(
+        "Theo Điều 77 [1], nhà sản xuất và nhập khẩu phải đối chiếu trách nhiệm tái chế. " * 8
+    ),
     planner=BoundedPlanner(max_retrieval_actions=3, max_repairs=1, max_iterations=12),
 )
 
 app = FastAPI(title="EPR deterministic browser acceptance")
-app.state.workflow_runtime = WorkflowRuntime(dependencies)
+app.state.workflow_runtime = WorkflowRuntime(
+    dependencies,
+    answer_chunk_size=90,
+    answer_chunk_delay_s=0.04,
+)
 app.include_router(chat_router, prefix="/api/v1")
 
 
