@@ -31,12 +31,13 @@ mark a live gate complete from mocks or deterministic doubles.
 
 | Check | Result | Notes |
 | --- | --- | --- |
-| Python tests | pass | 326 tests collected; the complete local `pytest` process exited with code 0. This includes the 60 understanding/retrieval manifest contracts and 40 V3 trajectories. |
+| Python tests | pass | 326 tests collected: 325 passed and 1 skipped. This includes the 60 understanding/retrieval manifest contracts and 40 V3 trajectories. |
 | Repository Ruff | pass | `ruff check .` passes. The unused legacy semantic cache and its tests were removed; mechanical lint fixes retain existing runtime behaviour. |
 | `mypy src/epr_agent` | pass | Success for 28 source files. |
-| React | pass | Vitest: 5 tests in 3 files; ESLint passed; production build passed. Vite reports only a non-blocking 1.07 MB pre-gzip chunk warning. |
-| Playwright | pass | 9/9 browser flows: desktop/mobile/tablet behaviour, missing facts, safe stop, evidence drawer, SSE lookup, and case resume. |
+| React | pass | Vitest: 7 tests in 4 files; ESLint passed; production build passed. Vite reports only a non-blocking 1.07 MB pre-gzip chunk warning. |
+| Playwright | pass | 11/11 browser flows: desktop/mobile/tablet behaviour, missing facts, safe stop, evidence drawer, progressive SSE lookup, user cancellation, and case resume. |
 | Docker Compose | pass | Backend rebuilt; `/api/v1/ready` returned 200 with PostgreSQL, Redis, Qdrant, and OpenAI configuration all ready. |
+| SSE through Docker/Nginx | pass | One real local request produced 13 `response_chunk` events and one `response_complete`; the response had `Cache-Control: no-cache, no-transform`, while Nginx proxy buffering was disabled. |
 | Indexer idempotence | pass | Second indexer run audited the existing target and confirmed the alias without an embedding request. |
 
 ### Canonical audit

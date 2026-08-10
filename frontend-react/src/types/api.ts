@@ -15,6 +15,8 @@ export interface SSEEvent {
   type: 'status' | 'workflow_step' | 'response_chunk' | 'response_complete' | 'error';
   message?: string;
   chunk?: string;
+  chunk_index?: number;
+  chunk_count?: number;
   text?: string;
   documents?: SourceDocument[];
   source?: string;

@@ -26,6 +26,12 @@ from epr_agent.api.routes import stream_chat_events as agentic_stream_chat
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache, no-transform",
+    "X-Accel-Buffering": "no",
+    "Connection": "keep-alive",
+}
+
 
 @router.post("/chat", tags=["chat"])
 async def chat(request: Request, body: ChatRequest):
@@ -53,7 +59,7 @@ async def chat(request: Request, body: ChatRequest):
                     ensure_ascii=False,
                 )
             }
-        return EventSourceResponse(_not_ready(), status_code=503)
+        return EventSourceResponse(_not_ready(), status_code=503, headers=_SSE_HEADERS)
     
     # Log session creation for audit trail
     logger.info(
@@ -97,8 +103,10 @@ async def chat(request: Request, body: ChatRequest):
     return EventSourceResponse(
         _event_generator(),
         headers={
+            **_SSE_HEADERS,
             "X-Conversation-ID": conversation_id,
             # Backward compatibility for current clients.
             "X-Session-ID": conversation_id,
         },
+        ping=15,
     )

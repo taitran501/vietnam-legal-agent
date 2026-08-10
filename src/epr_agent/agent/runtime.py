@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import re
 import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -37,6 +39,40 @@ _ACTION_STATUS = {
     "finish": "Workflow đã hoàn tất.",
     "safe_stop": "Workflow đã dừng an toàn.",
 }
+
+
+def split_verified_answer_for_stream(answer: str, *, max_chunk_chars: int = 180) -> list[str]:
+    """Split an already verified answer into display-sized SSE chunks.
+
+    The workflow intentionally does not emit legal claims while citation
+    verification is still pending.  Once the verifier has accepted the final
+    answer, this helper preserves the exact text while producing enough
+    bounded chunks for the client to render progressive output.
+    """
+
+    if not answer:
+        return []
+    if max_chunk_chars < 1:
+        raise ValueError("max_chunk_chars must be positive")
+
+    chunks: list[str] = []
+    current = ""
+    for token in re.findall(r"\S+(?:\s+|$)", answer):
+        # A long URL or legal identifier should never block streaming.
+        while len(token) > max_chunk_chars:
+            if current:
+                chunks.append(current)
+                current = ""
+            chunks.append(token[:max_chunk_chars])
+            token = token[max_chunk_chars:]
+        if current and len(current) + len(token) > max_chunk_chars:
+            chunks.append(current)
+            current = token
+        else:
+            current += token
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 def _documents_for_api(state: AgentState) -> list[dict[str, Any]]:
@@ -81,8 +117,16 @@ def _metadata(state: AgentState) -> dict[str, Any]:
 
 
 class WorkflowRuntime:
-    def __init__(self, deps: WorkflowDependencies) -> None:
+    def __init__(
+        self,
+        deps: WorkflowDependencies,
+        *,
+        answer_chunk_size: int = 180,
+        answer_chunk_delay_s: float = 0.015,
+    ) -> None:
         self.deps = deps
+        self.answer_chunk_size = answer_chunk_size
+        self.answer_chunk_delay_s = max(answer_chunk_delay_s, 0.0)
 
     async def _persist(self, state: AgentState, *, started_at: float) -> None:
         user_id = state["user_id"]
@@ -204,7 +248,24 @@ class WorkflowRuntime:
             }
             answer = state.get("answer", "")
             if answer:
-                yield {"type": "response_chunk", "chunk": answer, "stage": "streaming"}
+                chunks = split_verified_answer_for_stream(answer, max_chunk_chars=self.answer_chunk_size)
+                yield {
+                    "type": "status",
+                    "message": "Đã xác minh trích dẫn. Đang hiển thị câu trả lời…",
+                    "stage": "streaming",
+                }
+                for index, chunk in enumerate(chunks, start=1):
+                    yield {
+                        "type": "response_chunk",
+                        "chunk": chunk,
+                        "chunk_index": index,
+                        "chunk_count": len(chunks),
+                        "stage": "streaming",
+                    }
+                    # Give the browser a chance to paint each chunk even when
+                    # the server and client are on the same local machine.
+                    if index < len(chunks) and self.answer_chunk_delay_s:
+                        await asyncio.sleep(self.answer_chunk_delay_s)
             yield {
                 "type": "response_complete",
                 "text": answer,
