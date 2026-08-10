@@ -159,6 +159,28 @@ async def test_v4_missing_facts_stop_before_retrieval(case: dict[str, object]) -
 
 
 @pytest.mark.asyncio
+async def test_v4_case_state_keeps_presentation_schema_after_persistence() -> None:
+    app, history, _ = runtime()
+    state = await app.run(
+        query="Tôi là nhà sản xuất bao bì nhựa tại Việt Nam, có phải thực hiện EPR không?",
+        user_id="ui-schema-user",
+        conversation_id="ui-schema-case",
+        intent_hint="case_assessment",
+    )
+
+    fields = state["case_state"]["fields"]
+    by_key = {field["key"]: field for field in fields}
+    assert {"business_role", "object_kind", "product_group", "material"}.issubset(by_key)
+    assert {"market_placement", "activity_purpose", "packaged_goods_category"}.issubset(by_key)
+    assert by_key["business_role"]["label"] == "Vai trò doanh nghiệp"
+    assert by_key["business_role"]["value"] == "manufacturer"
+    assert by_key["business_role"]["options"][0]["label"] == "Nhà sản xuất"
+    assert by_key["material"]["options"]
+    assert by_key["market_placement"]["missing"] is True
+    assert history.saved_cases[0]["fields"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("case", EXEMPTION_CASES[:4], ids=lambda case: case["id"])
 async def test_v4_exemptions_are_deterministic_assessment_results(case: dict[str, object]) -> None:
     app, _, _ = runtime()

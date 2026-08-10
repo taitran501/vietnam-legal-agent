@@ -105,6 +105,7 @@ export interface EvidenceAssessment {
 export interface WorkflowStep {
   step: number;
   action: string;
+  label?: string;
   status: string;
   trace_id?: string;
   pipeline_version?: string;

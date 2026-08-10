@@ -20,4 +20,18 @@ describe('WorkflowTimeline', () => {
     await user.click(screen.getByRole('button', { name: /Tìm văn bản liên quan/i }));
     expect(screen.getByText('Hiểu yêu cầu')).toBeInTheDocument();
   });
+
+  it('shows the meaningful phase summary after a fast safe stop', () => {
+    render(
+      <WorkflowTimeline
+        isStreaming={false}
+        steps={[
+          { step: 1, action: 'understand', label: 'Hiểu yêu cầu', status: 'completed' },
+          { step: 2, action: 'collect_information', label: 'Thu thập thông tin · còn thiếu 3 thông tin', status: 'completed' },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText(/Đã hoàn tất 2 bước · Thu thập thông tin · còn thiếu 3 thông tin/)).toBeInTheDocument();
+  });
 });

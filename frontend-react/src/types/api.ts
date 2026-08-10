@@ -27,6 +27,7 @@ export interface SSEEvent {
   stage?: string;
   step?: number;
   action?: string;
+  label?: string;
   status?: string;
   sequence?: number;
   trace_id?: string;

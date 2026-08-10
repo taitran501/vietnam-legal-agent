@@ -125,6 +125,25 @@ def _case_payload(case: CaseStateV4) -> dict[str, Any]:
     return payload
 
 
+def _hydrate_persisted_case(raw: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Rebuild presentation fields after the generic persistence layer returns a case.
+
+    ``case_states`` deliberately stores facts and workflow state, not UI metadata.
+    The stream response still needs the route-owned field definitions; otherwise the
+    frontend falls back to raw database keys such as ``business_role``.
+    """
+
+    if raw is None or raw.get("schema_version") != "v4":
+        return raw
+    payload = dict(raw)
+    facts = _fact_values(cast(dict[str, Any] | None, raw.get("facts")))
+    payload["fields"] = [
+        field.model_dump()
+        for field in case_fields(facts, list(raw.get("missing_facts") or []))
+    ]
+    return payload
+
+
 def _metadata_v4(state: AgentState) -> dict[str, Any]:
     data = _metadata(state)
     data.update(
@@ -524,7 +543,9 @@ class V4WorkflowRuntime(WorkflowRuntime):
                 # Keep a ready case when corpus evidence is incomplete.  The
                 # user can return after an index update; it is not a decision.
                 saved_case = await self.deps.history.save_case(user_id, conversation_id, active_case)
-                state["case_state"] = saved_case
+                state["case_state"] = _hydrate_persisted_case(saved_case) or state.get("case_state")
+                if state.get("case_state"):
+                    state["active_case"] = state["case_state"]
             elif active_case and outcome == WorkflowOutcome.COMPLETED.value:
                 await self.deps.history.save_case(user_id, conversation_id, active_case)
                 await self.deps.history.clear_case(user_id, conversation_id)
@@ -557,6 +578,16 @@ class V4WorkflowRuntime(WorkflowRuntime):
             }
 
         yield emit({"type": "status", "message": "Đang hiểu yêu cầu…", "stage": "understand"})
+        # Emit the first real phase before the bounded workflow starts.  This
+        # keeps the UI responsive while the route/fact extraction work is
+        # running, without inventing artificial delays or fake retrieval.
+        yield emit({
+            "type": "workflow_step",
+            "step": 1,
+            "action": Action.UNDERSTAND_TASK.value,
+            "label": "Hiểu yêu cầu",
+            "status": "running",
+        })
         state = await self._execute(**request_kwargs)
         state["run_ended_at"] = datetime.now(UTC).isoformat()
         state["run_duration_ms"] = round((time.perf_counter() - started) * 1000, 2)
@@ -570,6 +601,8 @@ class V4WorkflowRuntime(WorkflowRuntime):
                 continue
             seen.add(phase)
             step += 1
+            if phase == "collect_information" and state.get("missing_facts"):
+                label = f"{label} · còn thiếu {len(state['missing_facts'])} thông tin"
             yield emit({"type": "workflow_step", "step": step, "action": phase, "label": label, "status": "completed"})
         if state.get("outcome") == WorkflowOutcome.NEEDS_INFORMATION.value:
             yield emit({"type": "input_required", "question": state.get("answer", ""), "missing_facts": state.get("missing_facts", []), "case_state": state.get("case_state")})

@@ -34,7 +34,10 @@ export function WorkflowTimeline({ isStreaming, statusMessage, steps }: Workflow
 
   if (!isStreaming && steps.length === 0) return null;
 
-  const currentLabel = current ? labels[current.action] || current.action : statusMessage || 'Đang chuẩn bị ngữ cảnh';
+  const currentLabel = current?.label || (current ? labels[current.action] || current.action : statusMessage || 'Đang chuẩn bị ngữ cảnh');
+  const completedSummary = steps.length
+    ? `Đã hoàn tất ${steps.length} bước · ${currentLabel}`
+    : 'Đã hoàn tất xử lý';
 
   return (
     <section className="shrink-0 border-b border-[#e5e9e7] bg-[#f7faf8]" aria-label="Tiến trình xử lý">
@@ -53,7 +56,7 @@ export function WorkflowTimeline({ isStreaming, statusMessage, steps }: Workflow
             </span>
           )}
           <span aria-live="polite" className="min-w-0 flex-1 truncate font-medium text-[#3e4947]">
-            {isStreaming ? currentLabel : `Đã hoàn tất ${steps.length} bước`}
+            {isStreaming ? currentLabel : completedSummary}
           </span>
           <Icon className={`transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} name="chevronDown" size={15} />
         </button>

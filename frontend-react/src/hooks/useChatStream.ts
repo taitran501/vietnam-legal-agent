@@ -113,6 +113,7 @@ export function useChatStream() {
             addWorkflowStep({
               step: event.step || 0,
               action: event.action || 'unknown',
+              label: event.label,
               status: event.status || 'completed',
               trace_id: event.trace_id,
             });

@@ -155,10 +155,19 @@ async def test_v4_sse_emits_case_update_and_input_required_before_completion():
     assert [event["sequence"] for event in events] == list(range(1, len(events) + 1))
     assert {event["trace_id"] for event in events} == {events[0]["trace_id"]}
     assert {event["pipeline_version"] for event in events} == {"pipeline-v4"}
+    steps = [event for event in events if event["type"] == "workflow_step"]
+    assert steps[0]["action"] == "understand_task"
+    assert steps[0]["status"] == "running"
+    assert any("còn thiếu 3 thông tin" in str(event.get("label")) for event in steps)
     complete = next(event for event in events if event["type"] == "response_complete")
     assert complete["outcome"] == "needs_information"
     assert complete["result_type"] == "none"
     assert complete["pipeline_version"] == "pipeline-v4"
+    assert {field["label"] for field in complete["case_state"]["fields"]} >= {
+        "Vai trò doanh nghiệp",
+        "Phạm vi đưa ra thị trường",
+        "Mục đích sản xuất hoặc nhập khẩu",
+    }
 
 
 @pytest.mark.asyncio

@@ -39,6 +39,7 @@ export function Header({ hasActiveCase = false, readiness, onOpenCase, onOpenMob
       <div className="flex shrink-0 items-center gap-2">
         {hasActiveCase && (
           <button
+            aria-label="Mở thông tin tình huống"
             className="inline-flex items-center gap-2 rounded-md px-2.5 py-2 text-xs font-semibold text-[#005c55] transition-colors hover:bg-[#e7eceb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] sm:text-sm"
             onClick={onOpenCase}
             type="button"

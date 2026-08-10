@@ -88,4 +88,31 @@ describe('CaseFactsPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Tiếp tục đánh giá' }));
     expect(onContinue).toHaveBeenCalledWith({ business_role: 'manufacturer', market_placement: 'vietnam_market' });
   });
+
+  it('keeps persisted keys out of the visible case panel when field metadata is absent', () => {
+    render(
+      <CaseFactsPanel
+        conversationId="case-3"
+        caseState={caseState({
+          fields: undefined,
+          facts: {
+            business_role: 'manufacturer',
+            object_kind: 'commercial_packaging',
+            material: 'plastic',
+          },
+          missing_facts: [],
+          status: 'ready',
+        })}
+        onCaseChange={vi.fn()}
+        onContinue={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Thông tin đã xác nhận')).toBeInTheDocument();
+    expect(screen.getByLabelText('Vai trò doanh nghiệp')).toHaveValue('manufacturer');
+    expect(screen.getByLabelText('Loại đối tượng')).toHaveValue('commercial_packaging');
+    expect(screen.getByLabelText('Vật liệu hoặc quy cách')).toHaveValue('plastic');
+    expect(screen.queryByText('business_role')).not.toBeInTheDocument();
+    expect(screen.queryByText('commercial_packaging')).not.toBeInTheDocument();
+  });
 });

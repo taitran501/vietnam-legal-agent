@@ -50,6 +50,19 @@ _PACKAGED_CATEGORIES = {
     "xi măng": "xi_mang",
 }
 
+_CASE_FIELD_HELP_TEXT = {
+    "business_role": "Chọn vai trò doanh nghiệp chịu trách nhiệm về sản phẩm hoặc bao bì.",
+    "object_kind": "Xác định đối tượng đang được đánh giá.",
+    "product_group": "Chọn nhóm sản phẩm hoặc bao bì thuộc phạm vi EPR.",
+    "packaged_goods_category": "Chọn nhóm hàng hóa được đóng gói bên trong bao bì.",
+    "material": "Chọn vật liệu chính hoặc quy cách cần đối chiếu.",
+    "market_placement": "Cho biết sản phẩm có được đưa ra thị trường Việt Nam hay không.",
+    "activity_purpose": "Chọn mục đích kinh doanh hoặc nghiên cứu, học tập, thử nghiệm.",
+    "annual_revenue_vnd": "Nhập doanh thu bán sản phẩm liên quan trong một năm, tính bằng VNĐ.",
+    "reused_by_producer": "Chỉ chọn Có nếu doanh nghiệp tự thu hồi và tiếp tục tái sử dụng bao bì.",
+    "recovery_rate": "Nhập tỷ lệ thu hồi, đóng gói lại và tiếp tục đưa ra thị trường.",
+}
+
 
 def _normalise(value: str) -> str:
     return " ".join((value or "").lower().split())
@@ -158,6 +171,7 @@ def case_fields(facts: dict[str, FactValue], missing: list[str]) -> list[CaseFie
         "object_kind": [("product", "Sản phẩm"), ("commercial_packaging", "Bao bì thương phẩm"), ("raw_material", "Nguyên liệu"), ("production_waste", "Chất thải sản xuất")],
         "product_group": [("bao_bi", "Bao bì"), ("ac_quy", "Ắc quy"), ("pin", "Pin"), ("dau_nhot", "Dầu nhớt"), ("sam_lop", "Săm lốp"), ("dien_tu", "Điện - điện tử"), ("phuong_tien", "Phương tiện")],
         "packaged_goods_category": [("thuc_pham", "Thực phẩm"), ("my_pham", "Mỹ phẩm"), ("thuoc", "Thuốc"), ("phan_bon_thuc_an_thu_y", "Phân bón/thức ăn chăn nuôi/thuốc thú y"), ("che_pham_tay_rua", "Chế phẩm tẩy rửa"), ("xi_mang", "Xi măng"), ("other", "Khác")],
+        "material": [("plastic", "Nhựa"), ("pet", "Nhựa PET"), ("pe_pp", "Nhựa PE/PP"), ("paper", "Giấy"), ("glass", "Thủy tinh"), ("metal", "Kim loại"), ("rubber", "Cao su")],
         "market_placement": [("vietnam_market", "Đưa ra thị trường Việt Nam"), ("export_only", "Chỉ xuất khẩu"), ("temporary_import_reexport", "Tạm nhập - tái xuất")],
         "activity_purpose": [("commercial", "Kinh doanh thương mại"), ("research_study_test", "Nghiên cứu/học tập/thử nghiệm")],
         "reused_by_producer": [("yes", "Có"), ("no", "Không")],
@@ -178,6 +192,7 @@ def case_fields(facts: dict[str, FactValue], missing: list[str]) -> list[CaseFie
             required=key in required,
             missing=key in missing,
             value=_value(facts, key),
+            help_text=_CASE_FIELD_HELP_TEXT.get(key, ""),
         ))
     return result
 
