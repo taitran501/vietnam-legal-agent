@@ -50,8 +50,8 @@ mark a live gate complete from mocks or deterministic doubles.
 
 ## Live V3 retrieval gates
 
-These gates are intentionally unfilled until the versioned V3 index has been
-built from the canonical corpus with `text-embedding-3-small`.
+These gates were measured after the versioned V3 index was built from the
+canonical corpus with `text-embedding-3-small`.
 
 | Field | Result |
 | --- | --- |
