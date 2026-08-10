@@ -80,12 +80,13 @@ and the real V4 collection:
 
 ```powershell
 Set-Location ..
+$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 .venv_acceptance\Scripts\python.exe -m tests.eval.run_eval `
   --live --live-url http://127.0.0.1 --suite e2e `
-  --output data/eval/v4-live.json
+  --output "data/eval/v4-live-$stamp.json"
 ```
 
-The report records the evaluated commit SHA, corpus and Appendix hashes,
+The timestamped report records its UTC generation time, evaluated commit SHA, corpus and Appendix hashes,
 rule-pack version, embedding profile, per-case traces, metrics, failures, and
 p95 latency. A live report is acceptance evidence only after the configured
 thresholds are checked: route macro-F1 ≥ 0.95, explicit-anchor and mandatory

@@ -18,6 +18,7 @@ import subprocess
 import sys
 import time
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -297,6 +298,7 @@ async def run(suite: str, *, live: bool, limit: int | None) -> dict[str, Any]:
         "manifest_version": MANIFEST["version"],
         "pipeline_version": "pipeline-v4",
         "mode": "live" if live else "deterministic",
+        "generated_at_utc": datetime.now(UTC).isoformat(),
         "embedding_profile": MANIFEST["embedding_profile"],
         "rule_pack_version": EPR_RULE_PACK_VERSION,
         "git_sha": _git_sha(),
