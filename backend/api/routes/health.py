@@ -21,16 +21,26 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
     from backend.memory.session_store import get_redis
 
     settings = get_settings()
-    dependencies = {"qdrant": "ok", "redis": "ok", "openai": "ok"}
+    dependencies = {"database": "ok", "qdrant": "ok", "redis": "ok", "openai": "ok"}
     corpus: dict[str, Any] = {
         "corpus_id": settings.corpus_id,
         "corpus_version": settings.corpus_version,
+        "corpus_sha": "",
         "index_schema_version": settings.index_schema_version,
+        "embedding_profile": settings.embedding_profile,
+        "embedding_dimensions": settings.embedding_dimensions,
         "collection": settings.law_collection,
         "points_count": 0,
         "status": "missing",
     }
     try:
+        from scripts.canonical_corpus import corpus_sha256
+
+        expected_sha = corpus_sha256(
+            law_path=settings.law_data_path,
+            manifest_path=settings.corpus_manifest_path,
+        )
+        corpus["corpus_sha"] = expected_sha
         from backend.core.retrieval import _get_qdrant_client
 
         client = _get_qdrant_client()
@@ -40,8 +50,12 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
         payload = dict(points[0].payload or {}) if points else {}
         if (
             corpus["points_count"] > 0
+            and payload.get("Corpus_ID") == settings.corpus_id
             and payload.get("Corpus_Version") == settings.corpus_version
+            and payload.get("Corpus_SHA256") == expected_sha
             and payload.get("Index_Schema_Version") == settings.index_schema_version
+            and payload.get("Embedding_Profile") == settings.embedding_profile
+            and int(payload.get("Embedding_Dimensions") or 0) == settings.embedding_dimensions
         ):
             corpus["status"] = "ready"
         else:
@@ -50,8 +64,19 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
         logger.info("Legal corpus is not ready: %s", exc)
         dependencies["qdrant"] = "error"
     try:
+        from sqlalchemy import text
+
+        from backend.history.store import _store
+
+        store = await _store()
+        async with store.engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
+    except Exception as exc:  # noqa: BLE001 - readiness reports dependencies without raising
+        logger.info("Database is not ready: %s", exc)
+        dependencies["database"] = "error"
+    try:
         await (await get_redis()).ping()
-    except Exception:
+    except Exception:  # noqa: BLE001 - readiness must not expose dependency errors
         dependencies["redis"] = "error"
     if not settings.openai_api_key:
         dependencies["openai"] = "error"
@@ -66,58 +91,13 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
 
 @router.get("/health", response_model=HealthResponse, tags=["ops"])
 async def health() -> HealthResponse:
-    """Ping Qdrant, Redis, and OpenAI; return their status.
+    """Process liveness only; dependency readiness belongs to ``/ready``."""
 
-    SECURITY: Only returns 'ok' or 'error' — never exposes infrastructure details
-    like connection strings, hostnames, or stack traces to clients.
-    Detailed errors are logged internally for debugging.
-    """
-    from backend.config import get_settings
-    from backend.memory.session_store import get_redis
-    from backend.core.retrieval import _get_qdrant_client
-
-    settings = get_settings()
-
-    # Qdrant
-    qdrant_status = "ok"
-    try:
-        client = _get_qdrant_client()
-        client.get_collections()
-    except Exception as exc:
-        logger.error("Qdrant health check failed: %s", exc)
-        qdrant_status = "error"  # Generic message only — no infrastructure details
-
-    # Redis
-    redis_status = "ok"
-    try:
-        r = await get_redis()
-        await r.ping()
-    except Exception as exc:
-        logger.error("Redis health check failed: %s", exc)
-        redis_status = "error"  # Generic message only
-    
-    # OpenAI API - lightweight check (list models)
-    openai_status = "ok"
-    try:
-        from backend.core.llm_instances import get_llm_smart
-        llm = get_llm_smart()
-        # Just verify we can create an instance - don't actually call API on startup
-        # A real check would be: await llm.aget_num_tokens("test") but that costs tokens
-        # Instead, we'll check if the API key is configured
-        import os
-        if not os.getenv("OPENAI_API_KEY"):
-            openai_status = "error"
-            logger.warning("OpenAI API key not configured")
-    except Exception as exc:
-        logger.error("OpenAI health check failed: %s", exc)
-        openai_status = "error"  # Generic message only
-
-    overall = "ok" if all(s == "ok" for s in [qdrant_status, redis_status, openai_status]) else "degraded"
     return HealthResponse(
-        status=overall,
-        qdrant=qdrant_status,
-        redis=redis_status,
-        openai=openai_status,
+        status="ok",
+        qdrant="not_checked",
+        redis="not_checked",
+        openai="not_checked",
     )
 
 

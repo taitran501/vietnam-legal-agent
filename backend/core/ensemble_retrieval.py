@@ -15,28 +15,30 @@ Speed targets:
 
 from __future__ import annotations
 
-import random
 import logging
 import math
+import random
 import re
 import threading
 import time
 from abc import ABC, abstractmethod
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from functools import lru_cache
-from typing import Dict, List, Set, Callable, TypeVar
+from typing import TypeVar
 
 from langchain_core.documents import Document
 
 from backend.api import metrics
 from backend.config import get_settings
 from backend.core.llm_instances import get_embeddings
-from backend.core.legal_parser import parse_legal_query
 from backend.core.retrieval import (
     _get_law_vectorstore,
     _get_qdrant_client,
 )
+from epr_agent.domain.legal import LegalAnchor, explicit_anchors, normalise_embedding_text
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +97,7 @@ def _doc_label(doc: Document) -> str:
     )
 
 
-def _debug_top_docs(stage: str, query: str, docs: List[Document], limit: int = 5) -> None:
+def _debug_top_docs(stage: str, query: str, docs: list[Document], limit: int = 5) -> None:
     """Log a compact trace of the top docs for one retrieval stage."""
     if not docs:
         logger.info("%s trace for query=%r: no docs", stage, query)
@@ -118,16 +120,19 @@ def _debug_top_docs(stage: str, query: str, docs: List[Document], limit: int = 5
 # Article Index for O(1) lookup (used only for explicit article mentions)
 # ---------------------------------------------------------------------------
 
-_article_index: Dict[str, List[str]] = {}  # article_name -> [point_id, ...]
+_article_index: dict[str, list[str]] = {}  # article_name -> [point_id, ...]
+_anchor_index: dict[str, list[str]] = {}  # article/clause/point exact key -> [point_id, ...]
 _index_built = False
 _article_index_lock = threading.Lock()
-_lexical_corpus: List[dict] = []
+_article_index_collection = ""
+_lexical_corpus: list[dict] = []
 _lexical_index_built = False
 _lexical_index_lock = threading.Lock()
-_global_idf: Dict[str, float] = {}
+_lexical_index_collection = ""
+_global_idf: dict[str, float] = {}
 
 
-def _canonical_article_keys(label: str) -> List[str]:
+def _canonical_article_keys(label: str) -> list[str]:
     """Return exact and shortened keys for article headings."""
     label = str(label or "").strip()
     if not label:
@@ -145,21 +150,27 @@ def _canonical_article_keys(label: str) -> List[str]:
     return keys
 
 
+def _anchor_key(article: str, clause: str = "", point: str = "") -> str:
+    return "|".join(" ".join(str(value or "").casefold().split()) for value in (article, clause, point))
+
+
 def _build_article_index():
     """Build in-memory index mapping article names to point IDs.
 
     Only used when user explicitly mentions "Điều X" or "Chương Y".
     Built once at startup, O(N) cost.
     """
-    global _article_index, _index_built
+    global _anchor_index, _article_index, _index_built, _article_index_collection
 
-    if _index_built:
+    collection = _get_law_vectorstore().collection_name
+    if _index_built and _article_index_collection == collection:
         return
 
     with _article_index_lock:
-        if _index_built:
+        if _index_built and _article_index_collection == collection:
             return
-
+        _article_index = {}
+        _anchor_index = {}
         client = _get_qdrant_client()
         vs = _get_law_vectorstore()
 
@@ -167,7 +178,7 @@ def _build_article_index():
         while True:
             records, next_offset = _with_qdrant_retry(
                 "scroll(article_index)",
-                lambda: client.scroll(
+                lambda offset=offset: client.scroll(
                     collection_name=vs.collection_name,
                     limit=500,
                     offset=offset,
@@ -188,6 +199,8 @@ def _build_article_index():
                         if key not in _article_index:
                             _article_index[key] = []
                         _article_index[key].append(record.id)
+                    anchor_key = _anchor_key(dieu, payload.get("Khoan", ""), payload.get("Diem", ""))
+                    _anchor_index.setdefault(anchor_key, []).append(record.id)
                 if chuong:
                     chuong_key = f"chuong:{chuong}"
                     if chuong_key not in _article_index:
@@ -198,11 +211,12 @@ def _build_article_index():
                 break
             offset = next_offset
 
+        _article_index_collection = vs.collection_name
         _index_built = True
         logger.info("Article index built: %d entries", len(_article_index))
 
 
-def _get_point_ids_for_articles(article_names: List[str]) -> List[str]:
+def _get_point_ids_for_articles(article_names: list[str]) -> list[str]:
     """Get point IDs for given article names using O(1) index lookup."""
     _build_article_index()
 
@@ -222,17 +236,61 @@ def _get_point_ids_for_articles(article_names: List[str]) -> List[str]:
     return unique_ids
 
 
+def _round_robin_anchor_ids(groups: list[list[str]], *, limit: int) -> list[str]:
+    """Allocate explicit-retrieval capacity fairly across named anchors."""
+
+    selected: list[str] = []
+    seen: set[str] = set()
+    cursors = [0] * len(groups)
+    while len(selected) < limit:
+        progressed = False
+        for group_index, group in enumerate(groups):
+            while cursors[group_index] < len(group) and group[cursors[group_index]] in seen:
+                cursors[group_index] += 1
+            if cursors[group_index] >= len(group):
+                continue
+            point_id = group[cursors[group_index]]
+            cursors[group_index] += 1
+            seen.add(point_id)
+            selected.append(point_id)
+            progressed = True
+            if len(selected) >= limit:
+                break
+        if not progressed:
+            break
+    return selected
+
+
+def _get_point_ids_for_anchors(anchors: list[LegalAnchor], *, limit: int = 20) -> list[str]:
+    """Resolve the most specific declared legal anchors before semantic search."""
+
+    _build_article_index()
+    groups: list[list[str]] = []
+    for anchor in anchors:
+        if not anchor.article:
+            continue
+        full_key = _anchor_key(anchor.article, anchor.clause, anchor.point)
+        exact = _anchor_index.get(full_key, []) if (anchor.clause or anchor.point) else []
+        # A clause/point can be absent because the raw source did not label it
+        # cleanly. In that case Article chunks are candidates only; the V3
+        # evidence gate later rejects them if the requested address is missing.
+        groups.append(exact or _get_point_ids_for_articles([anchor.article]))
+    return _round_robin_anchor_ids(groups, limit=limit)
+
+
 def _build_lexical_index() -> None:
     """Build an in-memory lexical index for lightweight BM25-style retrieval."""
-    global _lexical_corpus, _lexical_index_built, _global_idf
+    global _lexical_corpus, _lexical_index_built, _global_idf, _lexical_index_collection
 
-    if _lexical_index_built:
+    collection = _get_law_vectorstore().collection_name
+    if _lexical_index_built and _lexical_index_collection == collection:
         return
 
     with _lexical_index_lock:
-        if _lexical_index_built:
+        if _lexical_index_built and _lexical_index_collection == collection:
             return
-
+        _lexical_corpus = []
+        _global_idf = {}
         client = _get_qdrant_client()
         vs = _get_law_vectorstore()
 
@@ -241,7 +299,7 @@ def _build_lexical_index() -> None:
         while True:
             batch, next_offset = _with_qdrant_retry(
                 "scroll(lexical_index)",
-                lambda: client.scroll(
+                lambda offset=offset: client.scroll(
                     collection_name=vs.collection_name,
                     limit=500,
                     offset=offset,
@@ -257,18 +315,17 @@ def _build_lexical_index() -> None:
             offset = next_offset
 
         doc_freq: Counter[str] = Counter()
-        corpus: List[dict] = []
+        corpus: list[dict] = []
         for record in records:
             payload = record.payload or {}
-            full_text = " ".join(
+            full_text = str(payload.get("lexical_text") or " ".join(
                 str(part) for part in (
                     payload.get("Dieu", ""),
                     payload.get("Chuong", ""),
                     payload.get("Muc", ""),
-                    payload.get("summary", ""),
                     payload.get("Text", ""),
                 ) if part
-            )
+            ))
             tokens = _tokenize_vietnamese(full_text)
             if not tokens:
                 continue
@@ -298,6 +355,7 @@ def _build_lexical_index() -> None:
             }
 
         _lexical_corpus = corpus
+        _lexical_index_collection = vs.collection_name
         _lexical_index_built = True
         logger.info("Lexical index built: %d docs", len(_lexical_corpus))
 
@@ -314,7 +372,7 @@ def warmup_retrieval_indexes() -> None:
             len(_lexical_corpus),
             len(_article_index),
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - cold-start failure must not prevent the API starting
         logger.warning("Retrieval index warmup failed: %s", exc)
 
 
@@ -325,18 +383,18 @@ def warmup_retrieval_indexes() -> None:
 # Vietnamese stop words for scoring
 _VIET_STOP_WORDS = {
     "là", "và", "của", "cho", "với", "trong", "có", "được", "không",
-    "các", "những", "về", "để", "tại", "này", "đó", "này", "cái",
+    "các", "những", "về", "để", "tại", "này", "đó", "cái",
     "một", "theo", "khi", "như", "từ", "đến", "vào", "ra", "lên",
     "xuống", "qua", "lại", "còn", "đã", "đang", "sẽ", "thì",
     "người", "tổ", "chức", "cá", "nhân", "thực", "hiện",
     "tôi", "mình", "ta", "bạn", "chúng", "họ", "anh", "chị",
     "công", "ty", "giờ", "phải", "cần", "gì", "nào", "đâu",
     "quy", "định", "liên", "quan", "điều", "chương", "mục",
-    "nghị", "định", "luật", "bảo", "vệ", "môi", "trường",
+    "nghị", "luật", "bảo", "vệ", "môi", "trường",
 }
 
 
-def _tokenize_vietnamese(text: str) -> Set[str]:
+def _tokenize_vietnamese(text: str) -> set[str]:
     """Tokenize Vietnamese text into meaningful keywords (excluding stop words)."""
     text = text.lower()
     # Split on whitespace and punctuation
@@ -436,19 +494,17 @@ def _intent_heading_score(query: str, doc: Document) -> float:
     if asks_subject_scope and "phụ lục xxii" in heading and not matched_product:
         score -= 0.45
 
-    if any(marker in heading for marker in _GENERIC_HEADING_MARKERS):
-        if "thi hành" not in q and "sửa đổi" not in q and "chuyển tiếp" not in q:
-            score -= 0.55
+    if any(marker in heading for marker in _GENERIC_HEADING_MARKERS) and "thi hành" not in q and "sửa đổi" not in q and "chuyển tiếp" not in q:
+        score -= 0.55
 
     # Strongly demote broad terminal clauses for specific EPR questions.
-    if "điều 169" in heading and "điều khoản thi hành" in heading:
-        if any(kw in q for kw in ("tỷ lệ", "quy cách", "đối tượng", "trách nhiệm", "tái chế")):
-            score -= 0.75
+    if "điều 169" in heading and "điều khoản thi hành" in heading and any(kw in q for kw in ("tỷ lệ", "quy cách", "đối tượng", "trách nhiệm", "tái chế")):
+        score -= 0.75
 
     return max(-1.0, min(1.0, score))
 
 
-def _extract_query_phrases(text: str, max_phrases: int = 8) -> List[str]:
+def _extract_query_phrases(text: str, max_phrases: int = 8) -> list[str]:
     """
     Extract meaningful multi-word phrases from the query.
 
@@ -459,8 +515,8 @@ def _extract_query_phrases(text: str, max_phrases: int = 8) -> List[str]:
     """
     raw_tokens = re.findall(r"[\w]+", text.lower(), re.UNICODE)
     filtered = [t for t in raw_tokens if t not in _VIET_STOP_WORDS and len(t) > 2]
-    phrases: List[str] = []
-    seen: Set[str] = set()
+    phrases: list[str] = []
+    seen: set[str] = set()
 
     for size in range(5, 1, -1):
         if len(filtered) < size:
@@ -483,7 +539,7 @@ def _normalize_text(text: str) -> str:
     return " ".join(text.split())
 
 
-def _extract_ordered_phrases(text: str, max_phrases: int = 8) -> List[str]:
+def _extract_ordered_phrases(text: str, max_phrases: int = 8) -> list[str]:
     """
     Extract short ordered phrases without removing stop words.
 
@@ -492,8 +548,8 @@ def _extract_ordered_phrases(text: str, max_phrases: int = 8) -> List[str]:
     stripped for keyword-only scoring.
     """
     tokens = re.findall(r"[\w]+", text.lower(), re.UNICODE)
-    candidates: List[tuple[int, str]] = []
-    seen: Set[str] = set()
+    candidates: list[tuple[int, str]] = []
+    seen: set[str] = set()
     for size in range(5, 2, -1):
         if len(tokens) < size:
             continue
@@ -534,7 +590,7 @@ def _normalize_lexical_score(score: float) -> float:
     return score / (score + 4.0)
 
 
-def _salient_query_tokens(query_tokens: Set[str], limit: int = 3) -> List[str]:
+def _salient_query_tokens(query_tokens: set[str], limit: int = 3) -> list[str]:
     """Return the rarest query tokens as high-signal anchors for reranking."""
     if not query_tokens:
         return []
@@ -546,7 +602,7 @@ def _salient_query_tokens(query_tokens: Set[str], limit: int = 3) -> List[str]:
     return ranked[:limit]
 
 
-def _weighted_token_ratio(tokens: Set[str], text_tokens: Set[str]) -> float:
+def _weighted_token_ratio(tokens: set[str], text_tokens: set[str]) -> float:
     """Compute an IDF-weighted token coverage ratio in [0, 1]."""
     if not tokens:
         return 0.0
@@ -557,7 +613,7 @@ def _weighted_token_ratio(tokens: Set[str], text_tokens: Set[str]) -> float:
     return weighted_hits / weighted_total
 
 
-def _bm25_score(query_tokens: List[str], doc: dict, k1: float = 1.5, b: float = 0.75) -> float:
+def _bm25_score(query_tokens: list[str], doc: dict, k1: float = 1.5, b: float = 0.75) -> float:
     """Compute a lightweight BM25 score for one document."""
     if not query_tokens:
         return 0.0
@@ -746,14 +802,14 @@ class BaseReranker(ABC):
     name: str
 
     @abstractmethod
-    def rerank(self, query: str, docs: List[Document], top_k: int) -> List[Document]:
+    def rerank(self, query: str, docs: list[Document], top_k: int) -> list[Document]:
         raise NotImplementedError
 
 
 class HeuristicReranker(BaseReranker):
     name = "heuristic"
 
-    def rerank(self, query: str, docs: List[Document], top_k: int) -> List[Document]:
+    def rerank(self, query: str, docs: list[Document], top_k: int) -> list[Document]:
         if not docs:
             return []
 
@@ -797,15 +853,19 @@ class CrossEncoderReranker(BaseReranker):
     def __init__(self, model_name: str):
         self.model_name = model_name
         self._model = None
+        self.unavailable_reason: str | None = None
 
     def _ensure_model(self):
         if self._model is not None:
             return self._model
+        if self.unavailable_reason is not None:
+            raise RuntimeError(self.unavailable_reason)
 
         try:
             from sentence_transformers import CrossEncoder  # type: ignore
         except Exception as exc:
-            raise RuntimeError("sentence-transformers is required for cross-encoder reranking") from exc
+            self.unavailable_reason = "sentence-transformers is required for cross-encoder reranking"
+            raise RuntimeError(self.unavailable_reason) from exc
 
         self._model = CrossEncoder(self.model_name)
         return self._model
@@ -823,7 +883,7 @@ class CrossEncoderReranker(BaseReranker):
         content = " ".join(doc.page_content.split())[:480]
         return f"{header}\n{content}".strip()
 
-    def rerank(self, query: str, docs: List[Document], top_k: int) -> List[Document]:
+    def rerank(self, query: str, docs: list[Document], top_k: int) -> list[Document]:
         if not docs:
             return []
 
@@ -852,10 +912,10 @@ class CrossEncoderReranker(BaseReranker):
 def _run_rerank_with_timeout(
     reranker: BaseReranker,
     query: str,
-    docs: List[Document],
+    docs: list[Document],
     top_k: int,
     timeout_ms: int,
-) -> List[Document]:
+) -> list[Document]:
     timeout_s = max(0.01, timeout_ms / 1000.0)
     future = _RERANK_EXECUTOR.submit(reranker.rerank, query, docs, top_k)
     return future.result(timeout=timeout_s)
@@ -889,19 +949,22 @@ class _EnsembleRetriever:
         self.lexical_k = max(candidate_k, 15)
         self._heuristic_reranker = HeuristicReranker()
         self._cross_encoder_reranker = CrossEncoderReranker(settings.cross_encoder_model_name)
+        # Shadow ranking is optional telemetry.  If its local dependency is
+        # absent, detect that once and keep the active heuristic ranking quiet.
+        self._cross_encoder_shadow_available = True
 
-    def invoke(self, query: str) -> List[Document]:
+    def invoke(self, query: str) -> list[Document]:
         """Retrieve documents using semantic-first approach."""
         started = time.perf_counter()
-        stage_ms: Dict[str, float] = {}
+        stage_ms: dict[str, float] = {}
 
         # Step 1: Run semantic + lexical retrieval in parallel.
-        def _timed_semantic() -> tuple[List[Document], float]:
+        def _timed_semantic() -> tuple[list[Document], float]:
             stage_started = time.perf_counter()
             docs = self._retrieve_semantic(query, k=self.semantic_k)
             return docs, (time.perf_counter() - stage_started) * 1000
 
-        def _timed_lexical() -> tuple[List[Document], float]:
+        def _timed_lexical() -> tuple[list[Document], float]:
             stage_started = time.perf_counter()
             docs = self._retrieve_lexical(query, k=self.lexical_k)
             return docs, (time.perf_counter() - stage_started) * 1000
@@ -917,34 +980,29 @@ class _EnsembleRetriever:
         stage_ms["semantic"] = round(semantic_ms, 1)
         stage_ms["lexical"] = round(lexical_ms, 1)
 
-        # Step 2: Check for explicit article mentions (SECONDARY boost)
+        # Step 2: Parse every explicit anchor before an LLM can rewrite it.
         stage_started = time.perf_counter()
-        legal_filter = parse_legal_query(query)
+        anchors = explicit_anchors(query)
         stage_ms["parse"] = round((time.perf_counter() - stage_started) * 1000, 1)
-        explicit_articles = []
-
-        if legal_filter.dieu_text:
-            # User explicitly mentioned "Điều X"
-            explicit_articles.append(legal_filter.dieu_text)
+        explicit_articles = [anchor.article for anchor in anchors if anchor.article]
 
         rule_docs = []
-        if explicit_articles:
+        if anchors:
             stage_started = time.perf_counter()
-            rule_docs = self._retrieve_explicit_articles(explicit_articles)
+            rule_docs = self._retrieve_explicit_anchors(anchors)
             stage_ms["explicit"] = round((time.perf_counter() - stage_started) * 1000, 1)
         else:
             stage_ms["explicit"] = 0.0
 
         # Step 3: Merge results
         stage_started = time.perf_counter()
-        if rule_docs:
-            # User mentioned specific articles → merge with boost
-            final_docs = self._merge_with_explicit_boost(
-                semantic_docs, lexical_docs, rule_docs, query
-            )
-        else:
-            # Hybrid semantic + lexical retrieval — re-rank by relevance
-            final_docs = self._rerank_hybrid(semantic_docs, lexical_docs, query)
+        final_docs = self._fuse_and_rerank(
+            semantic_docs,
+            lexical_docs,
+            rule_docs,
+            query,
+            explicit_articles,
+        )
         stage_ms["rerank_merge"] = round((time.perf_counter() - stage_started) * 1000, 1)
 
         stage_ms["total"] = round((time.perf_counter() - started) * 1000, 1)
@@ -975,7 +1033,7 @@ class _EnsembleRetriever:
             return False
         return random.random() * 100 < rollout
 
-    def _annotate_shadow_ranks(self, final_docs: List[Document], shadow_docs: List[Document]) -> None:
+    def _annotate_shadow_ranks(self, final_docs: list[Document], shadow_docs: list[Document]) -> None:
         shadow_rank_map = {
             _doc_identity(doc): idx
             for idx, doc in enumerate(shadow_docs, start=1)
@@ -986,7 +1044,33 @@ class _EnsembleRetriever:
             doc.metadata["retrieval_debug"]["shadow_rank"] = shadow_rank_map.get(_doc_identity(doc))
             doc.metadata["retrieval_debug"]["shadow_engine"] = self._cross_encoder_reranker.name
 
-    def _rerank_candidates(self, query: str, candidates: List[Document]) -> List[Document]:
+    def _select_with_explicit_coverage(
+        self,
+        ranked: list[Document],
+        explicit_articles: list[str],
+        *,
+        limit: int,
+    ) -> list[Document]:
+        """Reserve one ranked chunk per named Article before filling top-k."""
+
+        selected: list[Document] = []
+        for article in explicit_articles:
+            match = next((document for document in ranked if self._matches_article(document, article)), None)
+            if match is not None and match not in selected:
+                selected.append(match)
+        for document in ranked:
+            if len(selected) >= limit:
+                break
+            if document not in selected:
+                selected.append(document)
+        return selected[:limit]
+
+    def _rerank_candidates(
+        self,
+        query: str,
+        candidates: list[Document],
+        explicit_articles: list[str],
+    ) -> list[Document]:
         if not candidates:
             return []
 
@@ -995,7 +1079,12 @@ class _EnsembleRetriever:
         rerank_candidates = candidates[:candidate_limit]
 
         started = time.perf_counter()
-        heuristic_docs = self._heuristic_reranker.rerank(query, rerank_candidates, top_k=self.k)
+        heuristic_ranked = self._heuristic_reranker.rerank(query, rerank_candidates, top_k=candidate_limit)
+        heuristic_docs = self._select_with_explicit_coverage(
+            heuristic_ranked,
+            explicit_articles,
+            limit=self.k,
+        )
         heuristic_ms = (time.perf_counter() - started) * 1000
         metrics.track_rerank_latency_ms("apply", self._heuristic_reranker.name, heuristic_ms)
         for doc in heuristic_docs:
@@ -1019,7 +1108,7 @@ class _EnsembleRetriever:
                     self._cross_encoder_reranker,
                     query,
                     rerank_candidates,
-                    self.k,
+                    candidate_limit,
                     settings.rerank_timeout_ms,
                 )
                 cross_ms = (time.perf_counter() - started) * 1000
@@ -1031,7 +1120,7 @@ class _EnsembleRetriever:
                     doc.metadata["retrieval_debug"]["cross_encoder_latency_ms"] = round(cross_ms, 2)
                     doc.metadata["retrieval_debug"]["cross_encoder_timeout"] = False
                     doc.metadata["retrieval_debug"]["rerank_fallback"] = False
-                return cross_docs
+                return self._select_with_explicit_coverage(cross_docs, explicit_articles, limit=self.k)
             except FutureTimeoutError:
                 metrics.track_rerank_timeout(self._cross_encoder_reranker.name)
                 metrics.track_rerank_fallback("timeout", self._cross_encoder_reranker.name, self._heuristic_reranker.name)
@@ -1045,7 +1134,7 @@ class _EnsembleRetriever:
                     doc.metadata["retrieval_debug"]["rerank_fallback"] = True
                 if settings.rerank_fallback_on_timeout:
                     return heuristic_docs
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - optional cross-encoder must fall back safely
                 metrics.track_rerank_fallback("error", self._cross_encoder_reranker.name, self._heuristic_reranker.name)
                 logger.warning("Cross-encoder apply failed, fallback to heuristic: %s", exc)
                 for doc in heuristic_docs:
@@ -1054,14 +1143,14 @@ class _EnsembleRetriever:
                     doc.metadata["retrieval_debug"]["rerank_fallback"] = True
                 return heuristic_docs
 
-        if run_shadow:
+        if run_shadow and self._cross_encoder_shadow_available:
             try:
                 started = time.perf_counter()
                 shadow_docs = _run_rerank_with_timeout(
                     self._cross_encoder_reranker,
                     query,
                     rerank_candidates,
-                    self.k,
+                    candidate_limit,
                     settings.rerank_timeout_ms,
                 )
                 shadow_ms = (time.perf_counter() - started) * 1000
@@ -1081,27 +1170,34 @@ class _EnsembleRetriever:
                 for doc in heuristic_docs:
                     doc.metadata.setdefault("retrieval_debug", {})
                     doc.metadata["retrieval_debug"]["cross_encoder_shadow_timeout"] = True
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - shadow telemetry must not affect ranking
                 metrics.track_rerank_fallback("shadow_error", self._cross_encoder_reranker.name, self._heuristic_reranker.name)
-                logger.warning("Cross-encoder shadow failed for query=%r: %s", query, exc)
+                if self._cross_encoder_reranker.unavailable_reason is not None:
+                    self._cross_encoder_shadow_available = False
+                    logger.info(
+                        "Cross-encoder shadow disabled for this process: %s",
+                        self._cross_encoder_reranker.unavailable_reason,
+                    )
+                else:
+                    logger.warning("Cross-encoder shadow failed for query=%r: %s", query, exc)
                 for doc in heuristic_docs:
                     doc.metadata.setdefault("retrieval_debug", {})
                     doc.metadata["retrieval_debug"]["cross_encoder_shadow_error"] = str(exc)
 
         return heuristic_docs
 
-    def _retrieve_semantic(self, query: str, k: int = 15) -> List[Document]:
+    def _retrieve_semantic(self, query: str, k: int = 15) -> list[Document]:
         """Primary retrieval: semantic vector search."""
         try:
             settings = get_settings()
             vs = _get_law_vectorstore()
             client = _get_qdrant_client()
-            query_vector = get_embeddings().embed_query(query)
+            query_vector = get_embeddings().embed_query(normalise_embedding_text(query))
 
             try:
                 from qdrant_client.models import SearchParams
                 search_params = SearchParams(hnsw_ef=settings.search_ef)
-            except Exception:
+            except Exception:  # noqa: BLE001 - older Qdrant clients may not expose SearchParams
                 search_params = None
 
             def _query_points():
@@ -1147,15 +1243,15 @@ class _EnsembleRetriever:
                 )
             _debug_top_docs("semantic", query, docs)
             return docs
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - retriever failure becomes an evidence-safe stop
             logger.warning("Semantic retrieval failed: %s", exc)
             return []
 
-    def _retrieve_lexical(self, query: str, k: int = 15) -> List[Document]:
+    def _retrieve_lexical(self, query: str, k: int = 15) -> list[Document]:
         """Secondary retrieval: lightweight BM25-style lexical matching."""
         try:
             _build_lexical_index()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - lexical failure leaves dense candidates available
             logger.warning("Lexical index build failed: %s", exc)
             return []
         query_tokens = [
@@ -1175,37 +1271,37 @@ class _EnsembleRetriever:
 
         scored.sort(key=lambda item: item[1], reverse=True)
 
-        docs: List[Document] = []
+        docs: list[Document] = []
         for doc, score in scored[:k]:
             payload = doc["payload"]
+            metadata = dict(payload)
+            metadata.update(
+                {
+                    "filter_matched": False,
+                    "explicit_match": False,
+                    "lexical_score": score,
+                    "retrieval_source": "lexical",
+                    "_id": doc["id"],
+                }
+            )
             docs.append(
                 Document(
                     page_content=payload.get("Text", ""),
-                    metadata={
-                        "Dieu": payload.get("Dieu", ""),
-                        "Chuong": payload.get("Chuong", ""),
-                        "Muc": payload.get("Muc", ""),
-                        "summary": payload.get("summary", ""),
-                        "filter_matched": False,
-                        "explicit_match": False,
-                        "lexical_score": score,
-                        "retrieval_source": "lexical",
-                        "_id": doc["id"],
-                    },
+                    metadata=metadata,
                 )
             )
 
         _debug_top_docs("lexical", query, docs)
         return docs
 
-    def _retrieve_explicit_articles(self, article_names: List[str]) -> List[Document]:
-        """Secondary retrieval: direct lookup for explicitly mentioned articles."""
+    def _retrieve_explicit_anchors(self, anchors: list[LegalAnchor]) -> list[Document]:
+        """Direct metadata lookup for named Article/Clause/Point addresses."""
         vs = _get_law_vectorstore()
         client = vs.client
         collection = vs.collection_name
 
         try:
-            point_ids = _get_point_ids_for_articles(article_names[:5])
+            point_ids = _get_point_ids_for_anchors(anchors[:5], limit=20)
             if not point_ids:
                 return []
 
@@ -1213,7 +1309,7 @@ class _EnsembleRetriever:
                 "retrieve(explicit_articles)",
                 lambda: client.retrieve(
                     collection_name=collection,
-                    ids=point_ids[:20],
+                    ids=point_ids,
                     with_payload=True,
                     with_vectors=False,
                 ),
@@ -1224,100 +1320,134 @@ class _EnsembleRetriever:
 
             docs = []
             for point in points:
-                doc = Document(
-                    page_content=point.payload.get("Text", ""),
-                    metadata={
-                        "Dieu": point.payload.get("Dieu", ""),
-                        "Chuong": point.payload.get("Chuong", ""),
-                        "Muc": point.payload.get("Muc", ""),
+                payload = dict(point.payload or {})
+                is_exact = any(
+                    _anchor_key(
+                        str(payload.get("Dieu") or ""),
+                        str(payload.get("Khoan") or ""),
+                        str(payload.get("Diem") or ""),
+                    )
+                    == _anchor_key(anchor.article, anchor.clause, anchor.point)
+                    for anchor in anchors
+                )
+                metadata = dict(payload)
+                metadata.update(
+                    {
                         "filter_matched": True,
-                        "explicit_match": True,  # Mark for boost
+                        "explicit_match": is_exact or any(
+                            anchor.article.casefold() in str(payload.get("Parent_Dieu") or payload.get("Dieu") or "").casefold()
+                            for anchor in anchors
+                            if anchor.article and not (anchor.clause or anchor.point)
+                        ),
+                        "explicit_anchor_match": is_exact,
                         "retrieval_source": "explicit",
-                    },
+                        "_id": point.id,
+                    }
+                )
+                doc = Document(
+                    page_content=payload.get("Text", ""),
+                    metadata=metadata,
                 )
                 docs.append(doc)
 
-            _debug_top_docs("explicit", " | ".join(article_names), docs)
+            _debug_top_docs("explicit", " | ".join(anchor.key() for anchor in anchors), docs)
             return docs
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - exact lookup failure must not fabricate an anchor
             logger.warning("Explicit article retrieval failed: %s", exc)
             return []
 
-    def _merge_with_explicit_boost(
+    @staticmethod
+    def _article_label(document: Document) -> str:
+        return str(document.metadata.get("Parent_Dieu") or document.metadata.get("Dieu") or "")
+
+    @staticmethod
+    def _matches_article(document: Document, article: str) -> bool:
+        return article.lower() in _EnsembleRetriever._article_label(document).lower()
+
+    def _fuse_and_rerank(
         self,
-        semantic_docs: List[Document],
-        lexical_docs: List[Document],
-        rule_docs: List[Document],
+        semantic_docs: list[Document],
+        lexical_docs: list[Document],
+        rule_docs: list[Document],
         query: str,
-    ) -> List[Document]:
+        explicit_articles: list[str],
+    ) -> list[Document]:
+        """Fuse dense, BM25, and exact candidates by stable chunk identity.
+
+        V3 intentionally deduplicates at chunk level.  A legal article can
+        contain several relevant Khoản/Điểm units, so using ``Điều`` as a key
+        silently lost evidence for compare and checklist routes.
         """
-        Merge semantic + explicit article results, then re-rank.
 
-        Explicit matches get priority boost in scoring.
-        """
-        # Combine both lists (dedup by Dieu)
-        seen_dieu: Set[str] = set()
-        all_docs: List[Document] = []
+        merged: dict[str, Document] = {}
 
-        # Add explicit matches first (they'll get boosted in re-ranking)
-        for doc in rule_docs:
-            dieu = doc.metadata.get("Dieu", "")
-            if dieu not in seen_dieu:
-                seen_dieu.add(dieu)
-                all_docs.append(doc)
+        def add_candidates(documents: list[Document], source: str) -> None:
+            for rank, candidate in enumerate(documents, start=1):
+                key = _doc_identity(candidate)
+                if key not in merged:
+                    merged[key] = Document(page_content=candidate.page_content, metadata=dict(candidate.metadata))
+                target = merged[key]
+                target.metadata.update({key: value for key, value in candidate.metadata.items() if value not in (None, "")})
+                target.metadata[f"{source}_rank"] = rank
+                if source == "explicit":
+                    target.metadata["explicit_match"] = True
 
-        # Add lexical docs next so exact keyword matches survive candidate generation
-        for doc in lexical_docs:
-            dieu = doc.metadata.get("Dieu", "")
-            if dieu not in seen_dieu:
-                seen_dieu.add(dieu)
-                all_docs.append(doc)
+        add_candidates(semantic_docs, "dense")
+        add_candidates(lexical_docs, "bm25")
+        add_candidates(rule_docs, "explicit")
 
-        # Add semantic docs not already included
-        for doc in semantic_docs:
-            dieu = doc.metadata.get("Dieu", "")
-            if dieu not in seen_dieu:
-                seen_dieu.add(dieu)
-                all_docs.append(doc)
+        candidates = list(merged.values())
+        for document in candidates:
+            dense_rank = document.metadata.get("dense_rank")
+            bm25_rank = document.metadata.get("bm25_rank")
+            explicit_rank = document.metadata.get("explicit_rank")
+            rrf = sum(1.0 / (60.0 + float(rank)) for rank in (dense_rank, bm25_rank, explicit_rank) if rank)
+            document.metadata["rrf_score"] = round(rrf, 8)
+            document.metadata["combined_score"] = round(rrf, 8)
+            document.metadata["score"] = round(rrf, 8)
 
-        # Re-rank all candidates with speed-first policy.
-        final_docs = self._rerank_candidates(query, all_docs)
+        candidates.sort(
+            key=lambda document: (
+                0 if any(self._matches_article(document, article) for article in explicit_articles) else 1,
+                -float(document.metadata.get("rrf_score") or 0.0),
+            )
+        )
+        reranked = self._rerank_candidates(query, candidates, explicit_articles)
+        final_docs = self._diversify(reranked, explicit_articles)
         _debug_top_docs("final", query, final_docs)
         return final_docs
 
-    def _rerank_hybrid(
-        self,
-        semantic_docs: List[Document],
-        lexical_docs: List[Document],
-        query: str,
-    ) -> List[Document]:
-        """Merge semantic and lexical candidates, then re-rank by relevance score."""
-        seen_dieu: Set[str] = set()
-        all_docs: List[Document] = []
+    def _diversify(self, documents: list[Document], explicit_articles: list[str]) -> list[Document]:
+        """Keep no more than two chunks per article after relevance ranking."""
 
-        for doc in lexical_docs:
-            dieu = doc.metadata.get("Dieu", "")
-            if dieu not in seen_dieu:
-                seen_dieu.add(dieu)
-                all_docs.append(doc)
+        selected: list[Document] = []
+        counts: Counter[str] = Counter()
 
-        for doc in semantic_docs:
-            dieu = doc.metadata.get("Dieu", "")
-            if dieu not in seen_dieu:
-                seen_dieu.add(dieu)
-                all_docs.append(doc)
+        # Multi-anchor questions must retain a representative chunk per anchor.
+        for article in explicit_articles:
+            match = next((doc for doc in documents if self._matches_article(doc, article)), None)
+            if match is not None and match not in selected:
+                selected.append(match)
+                counts[self._article_label(match)] += 1
 
-        final_docs = self._rerank_candidates(query, all_docs)
-        _debug_top_docs("final", query, final_docs)
-        return final_docs
+        for document in documents:
+            if document in selected:
+                continue
+            article = self._article_label(document) or _doc_identity(document)
+            if counts[article] >= 2:
+                document.metadata["rejection_reason"] = "diversity_cap_per_article"
+                continue
+            counts[article] += 1
+            selected.append(document)
+        return selected
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
-def retrieve_legal_ensemble(query: str, k: int = 10) -> List[Document]:
+def retrieve_legal_ensemble(query: str, k: int = 10) -> list[Document]:
     """
     Retrieve legal documents using semantic-first ensemble.
 

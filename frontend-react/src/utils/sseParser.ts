@@ -27,7 +27,8 @@ export function parseSSEEvent(line: string): SSEEvent | null {
 export async function* streamChat(
   query: string,
   conversationId: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  mode: 'auto' | 'research_web' = 'auto',
 ): AsyncGenerator<SSEEvent> {
   // Use relative URL for Vite proxy, or full URL if needed
   const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
@@ -42,6 +43,7 @@ export async function* streamChat(
     body: JSON.stringify({
       query,
       conversation_id: conversationId,
+      mode,
     }),
     signal,
   });

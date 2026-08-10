@@ -33,8 +33,8 @@ def _to_record(document: Any, *, source: str, index: int) -> DocumentRecord:
     )
 
 
-class LegacyRetrievalGateway:
-    """Call the versioned hybrid legal retriever without leaking Qdrant objects upward."""
+class QdrantLegalRetrievalGateway:
+    """Call the versioned V3 hybrid retriever without leaking Qdrant objects upward."""
 
     async def legal(self, query: str) -> list[DocumentRecord]:
         from backend.config import get_settings

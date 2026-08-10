@@ -4,6 +4,7 @@ import { TraceDrawer } from './TraceDrawer';
 
 interface WorkflowResultCardProps {
   onOpenCase?: () => void;
+  onResearch?: () => void;
   workflow?: WorkflowMetadata;
 }
 
@@ -14,7 +15,7 @@ const missingFactLabels: Record<string, string> = {
   activity_scope: 'phạm vi hoạt động',
 };
 
-export function WorkflowResultCard({ onOpenCase, workflow }: WorkflowResultCardProps) {
+export function WorkflowResultCard({ onOpenCase, onResearch, workflow }: WorkflowResultCardProps) {
   if (!workflow) return null;
   const safeStop = ['insufficient_evidence', 'out_of_scope', 'citation_verification_failed'].includes(
     workflow.termination_reason || ''
@@ -62,6 +63,15 @@ export function WorkflowResultCard({ onOpenCase, workflow }: WorkflowResultCardP
               <p className="mt-1 leading-6">
                 Trợ lý đã dừng để tránh đưa ra kết luận không được nguồn hiện có hỗ trợ. Bạn có thể thu hẹp câu hỏi hoặc thử lại sau.
               </p>
+              {workflow.available_actions?.includes('research_web') && onResearch && (
+                <button
+                  className="mt-3 rounded-md border border-[#ad7b36] bg-white px-3 py-2 text-xs font-semibold text-[#714b18] hover:bg-[#fff1d7] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ad7b36]"
+                  onClick={onResearch}
+                  type="button"
+                >
+                  Tìm nguồn công khai
+                </button>
+              )}
             </div>
           </div>
         </div>

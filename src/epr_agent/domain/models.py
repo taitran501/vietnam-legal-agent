@@ -25,6 +25,7 @@ class Action(StrEnum):
     """The only actions a planner or graph may record."""
 
     LOAD_CONTEXT = "load_context"
+    VALIDATE_INPUT = "validate_input"
     UNDERSTAND_TASK = "understand_task"
     CHECK_CACHE = "check_cache"
     ANSWER_CACHE = "answer_cache"
@@ -44,6 +45,8 @@ class TerminationReason(StrEnum):
     CACHE_HIT = "cache_hit"
     AWAITING_USER_INPUT = "awaiting_user_input"
     WEB_FALLBACK = "web_fallback"
+    RESEARCH_COMPLETE = "research_complete"
+    INVALID_INPUT = "invalid_input"
     INSUFFICIENT_EVIDENCE = "insufficient_evidence"
     OUT_OF_SCOPE = "out_of_scope"
     CITATION_VERIFICATION_FAILED = "citation_verification_failed"
@@ -138,6 +141,14 @@ class AgentState(TypedDict, total=False):
     corpus_id: str
     pipeline_version: str
     corpus_version: str
+    corpus_sha: str
+    embedding_profile: str
+    mode: str
+    route: str
+    source_scope: str
+    available_actions: list[str]
+    evidence_status: str
+    clarification_required: bool
     run_started_at: str
     run_ended_at: str
     run_duration_ms: float
@@ -161,6 +172,7 @@ class AgentState(TypedDict, total=False):
     cache_key: str
     web_answer: str
     explicit_articles: list[str]
+    explicit_anchor_details: list[dict[str, str]]
     citation_error: str
     evidence: list[dict[str, Any]]
     evidence_assessment: dict[str, Any]

@@ -46,5 +46,11 @@ def get_llm_stream() -> ChatOpenAI:
 
 @lru_cache(maxsize=1)
 def get_embeddings() -> OpenAIEmbeddings:
-    """text-embedding-3-small — used by all vector stores."""
-    return OpenAIEmbeddings(model="text-embedding-3-small")
+    """Configured embedding profile used by every legal vector collection."""
+
+    from backend.config import get_settings
+
+    settings = get_settings()
+    if settings.embedding_model != "text-embedding-3-small" or settings.embedding_dimensions != 1536:
+        raise ValueError("unsupported_embedding_profile: expected text-embedding-3-small/1536")
+    return OpenAIEmbeddings(model=settings.embedding_model, dimensions=settings.embedding_dimensions)

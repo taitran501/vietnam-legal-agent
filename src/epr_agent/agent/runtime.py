@@ -22,6 +22,7 @@ from epr_agent.domain.models import AgentState, TaskType, TerminationReason
 logger = logging.getLogger(__name__)
 
 _ACTION_STATUS = {
+    "validate_input": "Đã kiểm tra nội dung câu hỏi.",
     "load_context": "Đã nạp lịch sử và trạng thái tình huống.",
     "understand_task": "Đã hiểu yêu cầu và kiểm tra thông tin đầu vào.",
     "check_cache": "Đã kiểm tra câu trả lời có thể tái sử dụng.",
@@ -58,6 +59,13 @@ def _metadata(state: AgentState) -> dict[str, Any]:
         assumptions.append("Kết quả đánh giá là sơ bộ và phụ thuộc vào các facts đã cung cấp.")
     return {
         "task_type": state.get("task_type", TaskType.LEGAL_LOOKUP.value),
+        "route": state.get("route", "legal_lookup"),
+        "source_scope": state.get("source_scope", "legal_corpus"),
+        "corpus_version": state.get("corpus_version", ""),
+        "corpus_sha": state.get("corpus_sha", ""),
+        "embedding_profile": state.get("embedding_profile", ""),
+        "evidence_status": state.get("evidence_status", "not_evaluated"),
+        "available_actions": state.get("available_actions", []),
         "case_state": state.get("case_state"),
         "assessment": state.get("assessment"),
         "checklist": checklist,
@@ -67,7 +75,7 @@ def _metadata(state: AgentState) -> dict[str, Any]:
         "evidence_assessment": state.get("evidence_assessment", {}),
         "trace_id": state.get("trace_id", ""),
         "corpus_id": state.get("corpus_id", "epr"),
-        "pipeline_version": state.get("pipeline_version", "legal-first-v2"),
+        "pipeline_version": state.get("pipeline_version", "pipeline-v3"),
         "termination_reason": state.get("termination_reason", TerminationReason.ERROR.value),
     }
 
@@ -109,6 +117,7 @@ class WorkflowRuntime:
             # assessments/checklists and web responses are deliberately excluded.
             cacheable = (
                 state.get("task_type") == TaskType.LEGAL_LOOKUP.value
+                and state.get("route") == "legal_lookup"
                 and state.get("source") == "legal"
                 and state.get("termination_reason") == TerminationReason.ANSWER_COMPLETE.value
                 and bool(state.get("citation_valid"))
@@ -123,6 +132,7 @@ class WorkflowRuntime:
                     evidence=list(state.get("evidence") or []),
                     citations=list(state.get("citations") or []),
                     source=str(state.get("source") or ""),
+                    route="legal_lookup",
                 )
         except Exception as exc:  # noqa: BLE001 - persistence must not lose a verified response
             # Persistence failures should be observable but must not turn a
@@ -222,6 +232,7 @@ async def stream_chat(
     user_id: str,
     conversation_id: str,
     legacy_session_id: str = "",
+    mode: str = "auto",
     runtime: WorkflowRuntime | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Public SSE event generator used by the compatibility API route."""
@@ -232,5 +243,6 @@ async def stream_chat(
         user_id=user_id,
         conversation_id=conversation_id,
         legacy_session_id=legacy_session_id,
+        mode=mode,
     ):
         yield event

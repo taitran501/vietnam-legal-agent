@@ -7,21 +7,21 @@ Start with:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
-import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from backend.config import get_settings
-from backend.memory.session_store import close_redis, get_redis
-from backend.history import init_history_store
-from backend.api.middleware import RateLimitMiddleware, RateLimiter
 from backend.api import metrics as metrics_module
 from backend.api.auth import APIKeyMiddleware, get_valid_api_keys
+from backend.api.middleware import RateLimiter, RateLimitMiddleware
+from backend.config import get_settings
+from backend.history import init_history_store
+from backend.memory.session_store import close_redis, get_redis
 
 logger = logging.getLogger(__name__)
 
@@ -118,30 +118,22 @@ async def lifespan(app: FastAPI):
         r = await get_redis()
         await r.ping()
         logger.info("Redis connected at %s", settings.redis_url)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - Redis is an optional degraded dependency at startup
         logger.warning("Redis not available: %s — session store will degrade gracefully", exc)
 
     # 2. Initialize the single durable conversation/case/run repository.
     try:
         await init_history_store()
         logger.info("Persistent history store ready at %s", settings.history_db_path)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - persistence failure is reported without blocking shutdown
         logger.warning("Persistent history init failed: %s", exc)
 
     # 2.5 Warm retrieval indexes asynchronously; readiness still guards requests.
     warmup_task = asyncio.create_task(_warmup_retrieval_indexes_task())
 
-    # 3. Start background cache cleanup task
-    cleanup_task = asyncio.create_task(_periodic_cache_cleanup())
-
     yield
 
     # Shutdown
-    cleanup_task.cancel()
-    try:
-        await cleanup_task
-    except asyncio.CancelledError:
-        pass
     if not warmup_task.done():
         warmup_task.cancel()
         try:
@@ -153,7 +145,7 @@ async def lifespan(app: FastAPI):
         from epr_agent.infra.persistence import close_persistence_stores
 
         await close_persistence_stores()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - shutdown must close remaining resources
         logger.warning("Persistence store close failed: %s", exc)
     logger.info("EPR Chatbot backend stopped")
 
@@ -166,21 +158,8 @@ async def _warmup_retrieval_indexes_task() -> None:
         await asyncio.to_thread(warmup_retrieval_indexes)
     except asyncio.CancelledError:
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - readiness, not warmup, owns request safety
         logger.warning("Retrieval index warmup failed: %s", exc)
-
-
-async def _periodic_cache_cleanup():
-    """Run cache cleanup every hour."""
-    from backend.cache.semantic_cache import cleanup_expired, CLEANUP_INTERVAL
-    while True:
-        try:
-            await asyncio.sleep(CLEANUP_INTERVAL)
-            await cleanup_expired()
-        except asyncio.CancelledError:
-            break
-        except Exception as exc:
-            logger.warning("Cache cleanup failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -235,9 +214,9 @@ app.add_middleware(metrics_module.MetricsMiddleware)
 
 # Register routers
 from backend.api.routes.chat import router as chat_router
+from backend.api.routes.feedback import router as feedback_router
 from backend.api.routes.health import router as health_router
 from backend.api.routes.sessions import router as sessions_router
-from backend.api.routes.feedback import router as feedback_router
 from backend.api.routes.traces import router as traces_router
 
 app.include_router(chat_router, prefix="/api/v1")

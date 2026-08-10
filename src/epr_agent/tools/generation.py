@@ -10,6 +10,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Protocol
 
+from pydantic import BaseModel, Field
+
 from epr_agent.domain.models import DocumentRecord, TaskType
 
 
@@ -18,9 +20,39 @@ class GenerationGateway(Protocol):
 
     async def answer(self, task_type: str, query: str, documents: list[DocumentRecord], facts: dict[str, str]) -> str: ...
 
-    async def web(self, query: str) -> tuple[str, DocumentRecord | None]: ...
+    async def web(self, query: str) -> tuple[str, list[DocumentRecord]]: ...
 
     async def repair(self, answer: str, documents: list[DocumentRecord], task_type: str) -> str: ...
+
+
+class LegalAnswerClaim(BaseModel):
+    """A claim that is anchored to one or more selected evidence chunks."""
+
+    text: str = Field(min_length=1, max_length=2200)
+    evidence_indices: list[int] = Field(min_length=1)
+
+
+class LegalRouteAnswer(BaseModel):
+    """Route-specific, source-faithful answer contract for legal retrieval."""
+
+    claims: list[LegalAnswerClaim] = Field(min_length=1, max_length=6)
+
+    def render(self, documents: list[DocumentRecord]) -> str:
+        answer_lines = ["### Trả lời"]
+        for claim in self.claims:
+            citations = " ".join(f"[{index}]" for index in claim.evidence_indices)
+            answer_lines.append(f"{claim.text} {citations}".strip())
+
+        answer_lines.extend(["", "### Nguồn tham khảo:"])
+        cited_indices = sorted({index for claim in self.claims for index in claim.evidence_indices})
+        for index in cited_indices:
+            document = documents[index - 1]
+            metadata = document.metadata or {}
+            anchor = str(metadata.get("Dieu") or metadata.get("Parent_Dieu") or metadata.get("legal_anchor") or "Văn bản pháp luật")
+            title = str(metadata.get("source_title") or metadata.get("Document_Number") or "")
+            label = f"{anchor} — {title}".rstrip(" —")
+            answer_lines.append(f"- [{index}] {label}")
+        return "\n\n".join(answer_lines[:1]) + "\n\n" + "\n\n".join(answer_lines[1:])
 
 
 def _as_langchain_documents(documents: list[DocumentRecord]) -> list[Any]:
@@ -29,7 +61,7 @@ def _as_langchain_documents(documents: list[DocumentRecord]) -> list[Any]:
     return [Document(page_content=doc.content, metadata=doc.metadata) for doc in documents]
 
 
-class LegacyGenerationGateway:
+class EvidenceGenerationGateway:
     async def chitchat(self, query: str, history: list[dict[str, Any]]) -> str:
         from backend.core.generation import chitchat_response
 
@@ -47,24 +79,56 @@ class LegacyGenerationGateway:
         if task == TaskType.BUILD_COMPLIANCE_CHECKLIST:
             return self._compose_checklist(query, facts, documents)
 
-        from backend.core.generation import stream_legal_answer
+        return self._compose_legal_route_answer(documents)
 
-        langchain_documents = _as_langchain_documents(documents)
-        chunks = [chunk async for chunk in stream_legal_answer(query, langchain_documents)]
-        return "".join(chunks)
+    async def web(self, query: str) -> tuple[str, list[DocumentRecord]]:
+        """Run explicit Tavily research and preserve each returned source.
 
-    async def web(self, query: str) -> tuple[str, DocumentRecord | None]:
-        from backend.core.generation import web_fallback
+        The previous fallback manufactured one ``example.invalid`` document
+        from an already-synthesised answer.  This route instead returns the
+        actual title/URL/snippet so the response can be checked structurally.
+        """
 
-        answer = await asyncio.to_thread(web_fallback, query)
-        if not answer:
-            return "", None
-        return answer, DocumentRecord(
-            content=answer,
-            document_id="web-fallback-1",
-            source="web",
-            metadata={"source": "web_search", "query": query, "title": "Nguồn web", "url": "https://example.invalid/epr"},
-        )
+        from backend.config import get_settings
+
+        key = (get_settings().tavily_api_key or "").strip()
+        if not key or key.startswith("your-"):
+            return "", []
+
+        def _search() -> list[dict[str, Any]]:
+            from tavily import TavilyClient  # type: ignore[import-untyped]
+
+            result = TavilyClient(api_key=key).search(
+                query=query,
+                search_depth="advanced",
+                max_results=5,
+                include_answer=False,
+            )
+            return list(result.get("results") or [])
+
+        results = await asyncio.to_thread(_search)
+        documents: list[DocumentRecord] = []
+        for index, result in enumerate(results, start=1):
+            title = str(result.get("title") or "").strip()
+            url = str(result.get("url") or "").strip()
+            content = str(result.get("content") or "").strip()
+            if not title or not url or not content:
+                continue
+            documents.append(
+                DocumentRecord(
+                    content=content[:4000],
+                    document_id=f"web:{index}:{url}",
+                    source="web",
+                    metadata={"source": "web_research", "query": query, "title": title, "url": url},
+                )
+            )
+        if not documents:
+            return "", []
+        lines = ["Tôi đã tìm thấy các nguồn công khai để bạn đối chiếu:"]
+        for index, document in enumerate(documents, start=1):
+            lines.append(f"- [{index}] {document.metadata['title']} — {document.metadata['url']}")
+        lines.append("Kết quả web chỉ để tham khảo; hãy ưu tiên văn bản pháp luật chính thức trước khi áp dụng.")
+        return "\n".join(lines), documents
 
     async def repair(self, answer: str, documents: list[DocumentRecord], task_type: str) -> str:
         """Return a source-only safe answer when the generated citations fail."""
@@ -102,6 +166,34 @@ class LegacyGenerationGateway:
             "4. Lưu hồ sơ chứng minh số lượng, vật liệu và phương án thực hiện để kiểm tra nội bộ [1]."
         )
 
+    @staticmethod
+    def _compose_legal_route_answer(documents: list[DocumentRecord]) -> str:
+        """Render selected legal chunks without adding unsupported interpretation.
+
+        The prior legacy prompt encouraged a general LLM answer, which could
+        add penalties, thresholds, or exceptions that were absent from the
+        retrieved chunks. V3's legal lookup contract is extractive-first: each
+        displayed claim is source text tied to its exact chunk ID. The bounded
+        verifier still runs after this formatter as an independent gate.
+        """
+
+        claims: list[LegalAnswerClaim] = []
+        for index, document in enumerate(documents, start=1):
+            metadata = document.metadata or {}
+            anchor = str(metadata.get("Dieu") or metadata.get("Parent_Dieu") or metadata.get("legal_anchor") or "văn bản được truy xuất")
+            source_text = " ".join((document.content or "").split()).strip()
+            if not source_text:
+                continue
+            claims.append(
+                LegalAnswerClaim(
+                    text=f"Theo {anchor}, văn bản quy định: {source_text}",
+                    evidence_indices=[index],
+                )
+            )
+        if not claims:
+            return ""
+        return LegalRouteAnswer(claims=claims).render(documents)
+
 
 class StaticGenerationGateway:
     """Injectable generation double for graph and trajectory tests."""
@@ -118,19 +210,26 @@ class StaticGenerationGateway:
     async def answer(self, task_type: str, query: str, documents: list[DocumentRecord], facts: dict[str, str]) -> str:
         self.calls.append(f"answer:{task_type}")
         if TaskType(task_type) == TaskType.ASSESS_EPR_OBLIGATION:
-            return LegacyGenerationGateway._compose_assessment(query, facts, documents)
+            return EvidenceGenerationGateway._compose_assessment(query, facts, documents)
         if TaskType(task_type) == TaskType.BUILD_COMPLIANCE_CHECKLIST:
-            return LegacyGenerationGateway._compose_checklist(query, facts, documents)
+            return EvidenceGenerationGateway._compose_checklist(query, facts, documents)
         return self.answer_text
 
-    async def web(self, query: str) -> tuple[str, DocumentRecord | None]:
+    async def web(self, query: str) -> tuple[str, list[DocumentRecord]]:
         self.calls.append("web")
-        return self.web_text, DocumentRecord(
-            content=self.web_text,
-            document_id="web-1",
-            source="web",
-            metadata={"source": "web_search", "query": query, "title": "Nguồn web", "url": "https://example.invalid/epr"},
-        )
+        return self.web_text, [
+            DocumentRecord(
+                content="Nguồn công khai mô phỏng dùng riêng cho test.",
+                document_id="web-test-1",
+                source="web",
+                metadata={
+                    "source": "web_research",
+                    "query": query,
+                    "title": "Nguồn công khai kiểm thử",
+                    "url": "https://vanban.chinhphu.vn/",
+                },
+            )
+        ]
 
     async def repair(self, answer: str, documents: list[DocumentRecord], task_type: str) -> str:
         self.calls.append("repair")

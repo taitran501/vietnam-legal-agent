@@ -46,11 +46,15 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = Field(default=3600)       # exact-match cache TTL
     semantic_cache_threshold: float = Field(default=0.95)  # cosine similarity
     corpus_version: str = Field(
-        default="epr-law-structure-v2",
+        default="epr-law-structure-v3",
         description="Version included in bounded answer-cache keys after corpus changes",
     )
     corpus_id: str = Field(default="epr")
-    index_schema_version: str = Field(default="legal-structure-v1")
+    index_schema_version: str = Field(default="legal-structure-v2")
+    embedding_profile: str = Field(default="openai-text-embedding-3-small-v1")
+    embedding_model: str = Field(default="text-embedding-3-small")
+    embedding_dimensions: int = Field(default=1536, ge=1)
+    chunking_profile: str = Field(default="legal-structure-v2")
     auto_index_law: bool = Field(default=False)
     enable_trace_debug_api: bool = Field(default=False)
     database_url: str | None = Field(
@@ -97,6 +101,7 @@ class Settings(BaseSettings):
     # ── Data paths ───────────────────────────────────────────────────────────
     faq_data_path: Path = Field(default=BASE_DIR / "data" / "faq.json")
     law_data_path: Path = Field(default=BASE_DIR / "data" / "law.json")
+    corpus_manifest_path: Path = Field(default=BASE_DIR / "data" / "corpus_manifest.json")
     # Full title for every chunk in law_collection (shown to the LLM for exact citations)
     law_citation_label: str = Field(
         default=(
@@ -124,8 +129,8 @@ class Settings(BaseSettings):
         description="Run relevance gate before legal generation",
     )
     enable_web_fallback: bool = Field(
-        default=True,
-        description="Allow EPR-scoped web fallback when legal retrieval misses",
+        default=False,
+        description="Deprecated. Web research is an explicit route and is never an automatic fallback.",
     )
     web_fallback_timeout_seconds: float = Field(
         default=6.0,
@@ -146,6 +151,12 @@ class Settings(BaseSettings):
     min_legal_evidence_chars: int = Field(
         default=160,
         description="Minimum combined characters from top legal docs required by evidence guardrail",
+    )
+    min_legal_rerank_score: float = Field(
+        default=0.40,
+        ge=0.0,
+        le=1.0,
+        description="Minimum V3 heuristic rerank score for unanchored legal evidence",
     )
     legal_context_max_docs: int = Field(
         default=3,
@@ -182,7 +193,7 @@ class Settings(BaseSettings):
         description="Fallback to heuristic rerank when cross-encoder times out/errors",
     )
     cross_encoder_shadow_mode: bool = Field(
-        default=False,
+        default=True,
         description="Run cross-encoder in shadow mode without impacting user ranking",
     )
     cross_encoder_rollout_percent: int = Field(
@@ -190,7 +201,7 @@ class Settings(BaseSettings):
         description="Percent of requests where cross-encoder ranking is applied to users",
     )
     cross_encoder_model_name: str = Field(
-        default="cross-encoder/ms-marco-MiniLM-L-6-v2",
+        default="cross-encoder/mmarco-mMiniLMv2-L12-H384-v1",
         description="Cross-encoder model for reranking",
     )
 
@@ -205,6 +216,15 @@ class Settings(BaseSettings):
         if self.use_qdrant_cloud and (not self.qdrant_cloud_url or not self.qdrant_api_key):
             raise ValueError(
                 "USE_QDRANT_CLOUD=true requires both QDRANT_CLOUD_URL and QDRANT_API_KEY"
+            )
+        if (
+            self.embedding_profile != "openai-text-embedding-3-small-v1"
+            or self.embedding_model != "text-embedding-3-small"
+            or self.embedding_dimensions != 1536
+        ):
+            raise ValueError(
+                "Pipeline V3 requires embedding profile openai-text-embedding-3-small-v1 "
+                "(text-embedding-3-small, 1536 dimensions)"
             )
         return self
 

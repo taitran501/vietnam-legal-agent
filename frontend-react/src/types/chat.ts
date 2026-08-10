@@ -34,6 +34,13 @@ export interface SourceDocument {
 
 export interface WorkflowMetadata {
   task_type?: string;
+  route?: string;
+  source_scope?: string;
+  corpus_version?: string;
+  corpus_sha?: string;
+  embedding_profile?: string;
+  evidence_status?: string;
+  available_actions?: string[];
   case_state?: CaseState | null;
   assessment?: Record<string, unknown> | null;
   checklist?: Array<Record<string, unknown>>;

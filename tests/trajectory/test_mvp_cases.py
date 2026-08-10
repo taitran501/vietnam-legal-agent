@@ -38,7 +38,12 @@ class HistoryDouble:
 def law_doc():
     return DocumentRecord(
         content="Tài liệu pháp luật EPR dùng để đối chiếu nghĩa vụ, sản phẩm, vật liệu và hình thức thực hiện. " * 4,
-        metadata={"Dieu": "Điều 77", "source": "Nghị định 08/2022/NĐ-CP", "Corpus_Version": "epr-law-structure-v2"},
+        metadata={
+            "Dieu": "Điều 77", "source": "Nghị định 08/2022/NĐ-CP",
+            "source_file": "data/08_2022_ND-CP_479457.doc",
+            "Corpus_Version": "epr-law-structure-v2", "Corpus_SHA256": "a" * 64,
+            "Embedding_Profile": "openai-text-embedding-3-small-v1", "legal_anchor": "Điều 77",
+        },
         document_id="law-77",
         source="legal",
     )
@@ -66,7 +71,7 @@ CASES = [
     ("resume_checklist", "Vật liệu là giấy", "answer_complete", "build_compliance_checklist", True, {"task_type": "build_compliance_checklist", "facts": {"business_role": "nhà nhập khẩu", "product_or_packaging": "bao bì", "activity_scope": "thị trường Việt Nam"}}),
     ("checklist_full_1", "Lập checklist tuân thủ EPR cho nhà sản xuất bao bì nhựa tại thị trường Việt Nam", "answer_complete", "build_compliance_checklist", True, None),
     ("checklist_full_2", "Các bước cần làm EPR cho nhà nhập khẩu chai nhựa vào thị trường Việt Nam", "answer_complete", "build_compliance_checklist", True, None),
-    ("evidence_fallback", "EPR và trách nhiệm tái chế hiện nay quy định thế nào?", "web_fallback", "legal_lookup", False, None),
+    ("evidence_fallback", "EPR và trách nhiệm tái chế hiện nay quy định thế nào?", "insufficient_evidence", "legal_lookup", False, None),
     ("out_of_scope", "Quy định về chứng khoán là gì?", "out_of_scope", "legal_lookup", False, None),
 ]
 
@@ -86,5 +91,6 @@ async def test_mvp_trajectory(case_id, query, reason, task, with_evidence, activ
         assert state["missing_facts"]
     if reason == "answer_complete":
         assert state["citation_valid"] is True
-    if reason == "web_fallback":
-        assert state["source"] == "web_search"
+    if reason == "insufficient_evidence":
+        assert state["source"] == "error"
+        assert "retrieve_web" not in state["action_sequence"]

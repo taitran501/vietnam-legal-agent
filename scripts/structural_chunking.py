@@ -78,7 +78,43 @@ def _bounded_piece(text: str, start: int, end: int, clause: str, point: str, max
     return pieces
 
 
-def structural_chunks(text: str, *, max_chars: int = 1800) -> list[StructuralChunk]:
+def _merge_short_neighbors(chunks: list[StructuralChunk], *, min_chars: int) -> list[StructuralChunk]:
+    """Merge short adjacent units while retaining the enclosing article offsets.
+
+    Legal points can be only a sentence long.  They are useful evidence but too
+    sparse for dense retrieval on their own, so V3 merges them with the next
+    adjacent unit in the same Điều.  When labels differ, the combined chunk
+    deliberately drops the overly-specific clause/point label and remains
+    addressable through its parent Điều and source offsets.
+    """
+
+    if min_chars <= 0 or len(chunks) < 2:
+        return chunks
+    merged: list[StructuralChunk] = []
+    index = 0
+    while index < len(chunks):
+        current = chunks[index]
+        if len(current.text) >= min_chars or index + 1 >= len(chunks):
+            merged.append(current)
+            index += 1
+            continue
+        following = chunks[index + 1]
+        clause = current.clause if current.clause == following.clause else ""
+        point = current.point if current.point == following.point else ""
+        merged.append(
+            StructuralChunk(
+                text=f"{current.text} {following.text}".strip(),
+                source_start=current.source_start,
+                source_end=following.source_end,
+                clause=clause,
+                point=point,
+            )
+        )
+        index += 2
+    return merged
+
+
+def structural_chunks(text: str, *, max_chars: int = 1800, min_chars: int = 0) -> list[StructuralChunk]:
     """Split one Điều into clause/point-aware chunks with original offsets."""
 
     raw = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
@@ -92,11 +128,16 @@ def structural_chunks(text: str, *, max_chars: int = 1800) -> list[StructuralChu
         if clause:
             current_clause = clause
         chunks.extend(_bounded_piece(raw, start, end, clause or current_clause, point, max_chars))
-    return chunks
+    return _merge_short_neighbors(chunks, min_chars=min_chars)
 
 
 def structural_chunk_articles(
-    articles: list[dict[str, Any]], summaries: list[str], *, max_chars: int = 1800
+    articles: list[dict[str, Any]],
+    summaries: list[str],
+    *,
+    max_chars: int = 1800,
+    min_chars: int = 0,
+    strategy: str = "legal_structure_v1",
 ) -> tuple[list[dict[str, Any]], list[str], dict[str, int | float]]:
     """Expand source articles without losing hierarchy or citation provenance."""
 
@@ -105,7 +146,7 @@ def structural_chunk_articles(
     max_chunks = 0
     for article, summary in zip(articles, summaries):
         source = _article_value(article, "_Structural_Text", "Text", "text")
-        pieces = structural_chunks(source, max_chars=max_chars)
+        pieces = structural_chunks(source, max_chars=max_chars, min_chars=min_chars)
         if not pieces:
             continue
         max_chunks = max(max_chunks, len(pieces))
@@ -125,11 +166,12 @@ def structural_chunk_articles(
                     "Diem": piece.point,
                     "Source_Start": piece.source_start,
                     "Source_End": piece.source_end,
+                    "_Parent_Source_Text": source,
                     "Original_Text": source[piece.source_start:piece.source_end].strip(),
                     "Chunk_Index": index,
                     "Chunk_Count": len(pieces),
                     "Full_Text_Chars": len(source),
-                    "Chunking_Strategy": "legal_structure_v1",
+                    "Chunking_Strategy": strategy,
                 }
             )
             output_summaries.append(summary)
@@ -138,5 +180,5 @@ def structural_chunk_articles(
         "chunked_records": len(output_articles),
         "avg_chunks_per_article": round(len(output_articles) / max(1, len(articles)), 2),
         "max_chunks_per_article": max_chunks,
-        "strategy": "legal_structure_v1",
+        "strategy": strategy,
     }

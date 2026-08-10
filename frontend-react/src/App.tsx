@@ -102,6 +102,11 @@ function LegalAssistantWorkspace() {
     if (activeSessionId && isHealthy) void regenerateResponse(activeSessionId);
   };
 
+  const handleResearch = (query: string) => {
+    if (!activeSessionId || !isHealthy || !query.trim()) return;
+    void sendMessage(query, activeSessionId, 'research_web');
+  };
+
   const handleOpenSources = (
     documents: SourceDocument[],
     citations: Array<Record<string, unknown>>
@@ -181,6 +186,7 @@ function LegalAssistantWorkspace() {
               isStreaming={isStreaming}
               messages={messages}
               onOpenCase={activeCase ? () => setCaseDrawerOpen(true) : undefined}
+              onResearch={handleResearch}
               onOpenSources={handleOpenSources}
               onRegenerate={handleRegenerate}
               statusMessage={statusMessage}

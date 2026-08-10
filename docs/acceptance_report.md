@@ -1,81 +1,62 @@
-# Refactor acceptance record
+# Pipeline V3 acceptance record
 
-Validation date: 2026-08-10. Local environment: Windows, Python 3.11.9,
-Node.js 20-compatible toolchain, Docker Desktop, local OpenAI-backed generation,
-and file-backed Qdrant collections.
+This document separates reproducible local checks from live checks that require
+the configured OpenAI embedding service and a real Qdrant collection. Do not
+mark a live gate complete from mocks or deterministic doubles.
 
-## Frozen baseline
+## Baseline
 
-- Legacy import commit: `8f5deae` (`chore: import legacy EPR chatbot baseline`).
-- Baseline tag: `legacy-v1.0.0`.
-- Historical legacy test snapshot: 161 passed, 1 skipped.
-- Golden lookup dataset: `tests/eval/test_cases.json` with 33 cases.
-- Source corpus: 49 FAQ entries and 178 legal records.
+- Legacy baseline tag: `legacy-v1.0.0`.
+- Historical source extraction: 49 FAQ records and 178 raw legal records.
+- V3 source policy: FAQ is UI/evaluation-only; untraceable Appendix rows are
+  excluded from the production corpus.
+- V3 embedding profile: `openai-text-embedding-3-small-v1` (`1536` dimensions).
 
-## Product acceptance
+## Implemented local contracts
 
-- The existing `POST /api/v1/chat` request fields and SSE events remain
-  compatible. `workflow_step` is additive.
-- One closed LangGraph workflow supports legal lookup, preliminary EPR
-  assessment, compliance checklist generation, and bounded chitchat.
-- An assessment or checklist with any required case fact missing terminates as
-  `awaiting_user_input`; web search cannot fill company facts.
-- Claim-level citation verification blocks unsupported legal output and permits
-  at most one repair.
-- A run permits at most three retrieval actions and records its trace id, action
-  sequence, tool latency, and termination reason.
-- SQLAlchemy/Alembic owns users, conversations, messages, summaries, active
-  cases, and agent runs. PostgreSQL is the deployment source of truth and
-  SQLite uses the same schema locally.
-- The React workspace implements the reviewed Stitch states: expanded and
-  collapsed history navigation, responsive mobile/tablet layouts, real workflow
-  progress, clarification and safe-stop states, case facts, source drawer,
-  assessment, and checklist output.
+- Canonical `LegalDocument`/`LegalChunk`, source hash, structure-aware chunks,
+  provenance/offset/duplicate audit, and versioned index aliasing.
+- Bounded route contracts for lookup, explanation/comparison, assessment,
+  checklist, explicit web research, chitchat, and out-of-scope stop.
+- Shared legal retrieval contract: exact anchor, dense + lexical candidates,
+  RRF, rerank, diversity, and route-specific evidence limits.
+- Explicit web route only; no FAQ runtime route/source and no automatic web
+  fallback.
+- Strict legal evidence gate; structural citation verification plus one batch
+  claim-support verifier; one repair maximum.
+- Readiness endpoint, source/profile metadata in SSE, owner-scoped trace API,
+  and a debug-only React trace drawer.
 
-## Local verification
+## Local evidence
 
-- Python suite: 233 passed, 1 skipped (234 collected).
-- Mypy: success for all 22 files in `src/epr_agent`.
-- Scoped Ruff checks: passed for the bounded workflow, API, retrieval tooling,
-  trajectories, and new regression files.
-- Alembic: upgraded a fresh SQLite database successfully.
-- React Vitest: 3 files, 5 tests passed.
-- Playwright: 9 of 9 browser tests passed, including real FastAPI + LangGraph +
-  SSE lookup and multi-turn case-resume flows.
-- React lint and production build: passed. Vite reports only a non-blocking
-  bundle-size warning (about 1.07 MB before gzip, 366 KB gzip).
-- Docker: backend and frontend images built successfully; the full React,
-  FastAPI, PostgreSQL, Redis, Qdrant, and Nginx stack became healthy; `/` and
-  `/api/v1/health` returned HTTP 200.
+Record the command output from the final candidate commit below.
 
-## Retrieval evidence
+| Check | Result | Notes |
+| --- | --- | --- |
+| `pytest -q` | pending final run | Includes workflow, corpus, API, trace, and V3 manifests |
+| `ruff check ...` | pending final run | Backend, core, scripts, agent, and tests |
+| `mypy src/epr_agent` | pending final run | Typed agent core |
+| React Vitest/lint/build | pending final run | No browser E2E claim without a run |
+| Docker Compose smoke | pending final run | Includes one-shot indexer and `/ready` |
 
-| Collection | Points | P@1 | NDCG@3 | Recall@5 | Explicit article hit@3 | Audit |
-| --- | ---: | ---: | ---: | ---: | ---: | --- |
-| `law_collection_baseline_v1` | 461 | 0.9375 | 0.9375 | 0.9375 | 1.0 | Passed |
-| `law_collection_legal_structure_v2` | 1,989 | 0.9375 | 0.9375 | 0.9375 | 1.0 | Passed |
+## Live V3 retrieval gates
 
-Both rows use the same 16-query live dense + BM25-style + heuristic-rerank
-protocol. The structure-aware candidate also passed schema, hygiene, duplicate,
-legal-anchor, source-metadata, and deterministic offline gates. It is marked
-`promotable: true`; the baseline remains available for rollback.
+These gates are intentionally unfilled until the versioned V3 index has been
+built from the canonical corpus with `text-embedding-3-small`.
 
-The 33-case golden runner now supports `--isolated-state`, which removes
-history/cache side effects while keeping live routing, retrieval, and generation.
-This prevents Redis or an old SQLite history file from contaminating a release
-comparison. LLM-as-judge and Tavily are intentionally disabled in this snapshot.
-Run those variable-cost checks manually only when a release candidate needs them.
+| Field | Result |
+| --- | --- |
+| Commit SHA | pending |
+| Corpus SHA | pending |
+| Collection target / alias | pending |
+| Embedding profile | `openai-text-embedding-3-small-v1` |
+| Explicit-article Hit@1 | pending, required 1.0 |
+| Multi-anchor coverage@5 | pending, required 1.0 |
+| P@1 | pending, required >= 0.9375 |
+| NDCG@3 | pending, required >= 0.9375 |
+| Recall@5 | pending, required >= 0.9375 |
+| E2E p95 | pending, required <= 15 s |
 
-The final isolated live snapshot passed its configured release gate: 33/33
-routes correct, 84.03% average keyword hit rate, 10.106 s p95 latency, and no
-pipeline errors. The gate used routing >= 90%, keyword hit >= 80%, and p95 <=
-15 s. Generated answers remain model-dependent, so this snapshot is reported
-separately from deterministic local tests.
-
-## Deployment boundary
-
-No remaining code path is required for the scoped V1 implementation. A real
-deployment must still provide production secrets, run Alembic against
-PostgreSQL, publish the approved candidate collection (or explicitly keep the
-baseline), set the matching `CORPUS_VERSION`, and run the gated live evaluation.
-Those are release operations, not local artifacts committed to Git.
+Merge to `main` requires every mandatory local and live gate above to be
+recorded as passing. A collection or evaluation failure must leave the prior
+alias and baseline intact.

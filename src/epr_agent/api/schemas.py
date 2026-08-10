@@ -9,6 +9,13 @@ from pydantic import BaseModel, Field
 
 class WorkflowMetadata(BaseModel):
     task_type: str = "legal_lookup"
+    route: str = "legal_lookup"
+    source_scope: str = "legal_corpus"
+    corpus_version: str = ""
+    corpus_sha: str = ""
+    embedding_profile: str = ""
+    evidence_status: str = "not_evaluated"
+    available_actions: list[str] = Field(default_factory=list)
     case_state: dict[str, Any] | None = None
     assessment: dict[str, Any] | None = None
     checklist: list[dict[str, Any]] = Field(default_factory=list)
@@ -27,6 +34,13 @@ class ResponseCompleteEvent(BaseModel):
     source: str
     stage: str = "complete"
     task_type: str = "legal_lookup"
+    route: str = "legal_lookup"
+    source_scope: str = "legal_corpus"
+    corpus_version: str = ""
+    corpus_sha: str = ""
+    embedding_profile: str = ""
+    evidence_status: str = "not_evaluated"
+    available_actions: list[str] = Field(default_factory=list)
     case_state: dict[str, Any] | None = None
     assessment: dict[str, Any] | None = None
     checklist: list[dict[str, Any]] = Field(default_factory=list)

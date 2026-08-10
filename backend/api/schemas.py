@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import re
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 
 class ChatRequest(BaseModel):
-    query: str = Field(..., min_length=1, max_length=2000, description="User's question")
+    query: str = Field(..., min_length=1, max_length=3000, description="User's question")
     conversation_id: str = Field(
         default="",
         min_length=0,
@@ -16,6 +17,10 @@ class ChatRequest(BaseModel):
         description="Persistent conversation identifier (preferred)",
     )
     session_id: str = Field(default="", min_length=0, max_length=128, description="Session identifier (empty = auto-generated UUID)")
+    mode: Literal["auto", "research_web"] = Field(
+        default="auto",
+        description="Explicit workflow mode. Web research is never selected automatically.",
+    )
 
     @field_validator("conversation_id", "session_id")
     @classmethod

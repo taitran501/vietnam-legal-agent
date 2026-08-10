@@ -1,91 +1,48 @@
-# Retrieval benchmark and candidate-index protocol
+# Pipeline V3 retrieval evaluation
 
-The repository freezes both source data and measured collection results. The
-source corpus contains 49 FAQ entries and 178 legal records.
+This directory keeps the historical V1/V2 benchmark artifacts as a baseline
+record. They are **not** an acceptance claim for Pipeline V3: V3 uses a new
+canonical corpus contract, a new collection identity, fixed embeddings, and a
+different retrieval contract.
 
-## Accepted local snapshot
+## V3 collection protocol
 
-| Collection | Strategy | Points | P@1 | NDCG@3 | Recall@5 | Article hit@3 |
-| --- | --- | ---: | ---: | ---: | ---: | ---: |
-| `law_collection_baseline_v1` | sliding window | 461 | 0.9375 | 0.9375 | 0.9375 | 1.0 |
-| `law_collection_legal_structure_v2` | `Điều -> Khoản -> Điểm` | 1,989 | 0.9375 | 0.9375 | 0.9375 | 1.0 |
+1. Update `data/corpus_manifest.json` and the source extraction only after the
+   official source can be audited.
+2. Run `python -m scripts.ensure_law_index` against a new versioned collection.
+   It computes the corpus SHA, performs the canonical source/chunk audit, and
+   atomically switches the `law_collection` alias only after the index audit
+   succeeds.
+3. Use `GET /api/v1/ready` to confirm the alias, point count, corpus SHA,
+   schema, and `openai-text-embedding-3-small-v1` profile agree with runtime.
+4. Run the V3 retrieval suite before promotion. Record the resulting corpus
+   SHA, index target, commit SHA, profile, and metrics in the acceptance report.
 
-The values are from the same 16-query live dense + BM25-style hybrid +
-heuristic-rerank protocol. Both collection audits passed. The candidate has no
-metric regression, has complete explicit-article hit@3, preserves source
-metadata, and is marked `promotable: true` in
-`candidate_legal_structure_v1.json`.
+The indexer must be idempotent: a complete collection with matching corpus SHA,
+schema, chunking profile, model, and dimensions exits without embedding calls.
+It never overwrites a previous collection; rollback means retargeting the alias
+to a verified older collection.
 
-For a manual live run, set `LIVE_EVAL_QUERY_BUDGET=16`; the benchmark enforces
-that value as a hard cap on variable-cost retrieval calls.
+## Required V3 gates
 
-Committed evidence:
+| Gate | Required result |
+| --- | --- |
+| Canonical chunk audit | 100% provenance, unique chunk IDs, valid offsets |
+| Explicit Article retrieval | Hit@1 = 100% |
+| Multi-Article retrieval | coverage@5 = 100% |
+| P@1 / NDCG@3 / Recall@5 | each at least 0.9375 |
+| FAQ runtime source/action | 0 occurrences |
+| Citation support | every legal claim structurally and semantically verified |
+| Readiness | missing/mismatched corpus returns HTTP 503 |
 
-- `baseline_manifest.json`: source hashes, deterministic offline metrics, live
-  baseline metrics, and baseline audit summary.
-- `baseline_collection_audit.json`: named baseline collection audit.
-- `candidate_legal_structure_v1.json`: candidate metrics and promotion checks.
-- `candidate_collection_audit.json`: named candidate collection audit.
+## Historical artifacts
 
-## Reproduce the baseline
+`baseline_manifest.json`, `candidate_legal_structure_v1.json`, and their audit
+files document the earlier 16-query experiment. They remain useful as a
+historical regression reference but must not be compared directly with V3 until
+the same V3 corpus contract and test manifest are used.
 
-Create or refresh the source manifest:
-
-```powershell
-python -m scripts.retrieval_benchmark
-```
-
-Audit and benchmark a configured baseline collection:
-
-```powershell
-$env:LAW_COLLECTION = "law_collection_baseline_v1"
-python -m scripts.audit_law_collection --output docs/retrieval/baseline_collection_audit.json
-python -m scripts.retrieval_benchmark `
-  --run-retrieval `
-  --collection $env:LAW_COLLECTION `
-  --collection-audit docs/retrieval/baseline_collection_audit.json `
-  --output docs/retrieval/baseline_manifest.json
-```
-
-## Build a structure-aware candidate
-
-Always use a new collection. Never overwrite the production collection.
-
-```powershell
-$env:LAW_COLLECTION = "law_collection_legal_structure_v2"
-$env:CORPUS_VERSION = "epr-law-structure-v2"
-$env:CHUNKING_STRATEGY = "legal_structure_v1"
-$env:SUMMARY_SOURCE_COLLECTION = "law_collection_baseline_v1"
-$env:SUMMARY_CACHE_PATH = "artifacts/index/summary_cache.json"
-$env:EMBED_BATCH_SIZE = "32"
-$env:RECREATE_COLLECTION = "true"
-python -m scripts.build_index
-python -m scripts.audit_law_collection --output docs/retrieval/candidate_collection_audit.json
-python -m scripts.retrieval_benchmark `
-  --run-retrieval `
-  --collection $env:LAW_COLLECTION `
-  --chunking-strategy $env:CHUNKING_STRATEGY `
-  --baseline docs/retrieval/baseline_manifest.json `
-  --collection-audit docs/retrieval/candidate_collection_audit.json `
-  --output docs/retrieval/candidate_legal_structure_v1.json
-```
-
-The builder reuses exact summaries from the baseline collection or the local
-summary cache and batches embeddings. Structure-aware chunks retain the parent
-article, heading hierarchy, character offsets, and original source text.
-
-## Promotion and rollback
-
-Promote only if all checks are true:
-
-- P@1, NDCG@3, and Recall@5 do not decrease.
-- Explicit article hit@3 is 1.0.
-- The named live collection audit passes schema, hygiene, duplicate, legal-anchor,
-  and source-metadata checks.
-- The benchmark actually queried the named collection; offline-only metrics are
-  insufficient.
-
-After publishing the collection, update `LAW_COLLECTION` and `CORPUS_VERSION`
-together so answer-cache keys cannot cross corpus versions. Keep the previous
-collection and version available for rollback. Cross-encoder reranking remains
-optional and should run in shadow mode before it affects user ranking.
+The deterministic V3 test manifests live in
+`tests/eval/pipeline_v3_manifest.py`. The live runner should write generated
+reports under ignored `artifacts/`; only a reviewed, concise acceptance result
+belongs in `docs/acceptance_report.md`.

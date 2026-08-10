@@ -60,18 +60,35 @@ class CachedAnswer:
         )
 
 
-class LegacySemanticAnswerCache:
-    """Adapter around the existing Redis/Qdrant answer cache."""
+class RedisExactAnswerCache:
+    """V3 answer cache with an exact, corpus-scoped Redis key.
+
+    The legacy semantic cache was built for generic chat answers.  Similar
+    legal questions such as ``Điều 77`` and ``Điều 78`` can have highly similar
+    embeddings but require different evidence, so V3 deliberately never calls
+    it.  ``ScopedAnswerCache.build_key`` already includes the normalized-query
+    digest and corpus identity; Redis is only the durable TTL store.
+    """
 
     async def lookup(self, key: str) -> str | None:
-        from backend.cache.semantic_cache import lookup
+        from backend.memory.session_store import get_redis
 
-        return await lookup(key)
+        try:
+            value = await (await get_redis()).get(key)
+        except Exception:  # noqa: BLE001 - cache degradation is always a miss
+            return None
+        if isinstance(value, bytes):
+            return value.decode("utf-8")
+        return str(value) if value is not None else None
 
     async def store(self, key: str, answer: str) -> None:
-        from backend.cache.semantic_cache import store
+        from backend.config import get_settings
+        from backend.memory.session_store import get_redis
 
-        await store(key, answer)
+        try:
+            await (await get_redis()).set(key, answer, ex=get_settings().cache_ttl_seconds)
+        except Exception:  # noqa: BLE001 - cache writes must never fail a run
+            return
 
 
 class InMemoryAnswerCache:
@@ -94,26 +111,42 @@ class ScopedAnswerCache:
         *,
         corpus_id: str = "epr",
         corpus_version: str = "epr-corpus-v1",
-        policy_version: str = "legal-only-v2",
+        corpus_sha: str = "",
+        embedding_profile: str = "openai-text-embedding-3-small-v1",
+        policy_version: str = "legal-only-v3-exact",
     ) -> None:
         self.backend = backend
         self.corpus_id = corpus_id
         self.corpus_version = corpus_version
+        self.corpus_sha = corpus_sha
+        self.embedding_profile = embedding_profile
         self.policy_version = policy_version
 
     @staticmethod
-    def is_cacheable(task_type: str | TaskType) -> bool:
-        return TaskType(task_type) == TaskType.LEGAL_LOOKUP
+    def is_cacheable(task_type: str | TaskType, *, route: str = "legal_lookup") -> bool:
+        """Only independent legal lookup answers may be reused.
 
-    def build_key(self, task_type: str | TaskType, standalone_query: str) -> str:
+        The legacy task type alone is insufficient because explain, web, and
+        case routes share it for API compatibility but must never share a
+        cached answer.
+        """
+
+        return TaskType(task_type) == TaskType.LEGAL_LOOKUP and route == "legal_lookup"
+
+    def build_key(self, task_type: str | TaskType, standalone_query: str, *, route: str = "legal_lookup") -> str:
         task = TaskType(task_type).value
         normalised = " ".join((standalone_query or "").lower().split())
         digest = hashlib.sha256(normalised.encode("utf-8")).hexdigest()
-        return f"legal:answer:v3:{self.policy_version}:{self.corpus_id}:{task}:{self.corpus_version}:{digest}"
+        return (
+            f"legal:answer:v3:{self.policy_version}:{self.corpus_id}:{self.corpus_version}:"
+            f"{self.corpus_sha}:{self.embedding_profile}:{route}:{task}:{digest}"
+        )
 
-    async def lookup(self, task_type: str | TaskType, standalone_query: str) -> tuple[CachedAnswer | None, str]:
-        key = self.build_key(task_type, standalone_query)
-        if not self.is_cacheable(task_type):
+    async def lookup(
+        self, task_type: str | TaskType, standalone_query: str, *, route: str = "legal_lookup"
+    ) -> tuple[CachedAnswer | None, str]:
+        key = self.build_key(task_type, standalone_query, route=route)
+        if not self.is_cacheable(task_type, route=route):
             return None, key
         return CachedAnswer.parse(await self.backend.lookup(key)), key
 
@@ -126,13 +159,14 @@ class ScopedAnswerCache:
         evidence: list[dict[str, Any]],
         citations: list[dict[str, Any]],
         source: str,
+        route: str = "legal_lookup",
     ) -> None:
         if (
             not answer
             or not evidence
             or not citations
             or source != "legal"
-            or not self.is_cacheable(task_type)
+            or not self.is_cacheable(task_type, route=route)
         ):
             return
         payload = CachedAnswer(
@@ -142,4 +176,4 @@ class ScopedAnswerCache:
             source=source,
             corpus_id=self.corpus_id,
         )
-        await self.backend.store(self.build_key(task_type, standalone_query), payload.serialise())
+        await self.backend.store(self.build_key(task_type, standalone_query, route=route), payload.serialise())

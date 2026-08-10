@@ -8,6 +8,7 @@ export interface ChatRequest {
   query: string;
   conversation_id?: string;
   session_id?: string;
+  mode?: 'auto' | 'research_web';
 }
 
 export interface SSEEvent {
@@ -23,6 +24,13 @@ export interface SSEEvent {
   status?: string;
   trace_id?: string;
   task_type?: string;
+  route?: string;
+  source_scope?: string;
+  corpus_version?: string;
+  corpus_sha?: string;
+  embedding_profile?: string;
+  evidence_status?: string;
+  available_actions?: string[];
   assessment?: Record<string, unknown> | null;
   case_state?: CaseState | null;
   checklist?: Array<Record<string, unknown>>;
@@ -88,5 +96,8 @@ export interface ReadinessResponse {
     corpus_id: string;
     corpus_version: string;
     index_schema_version: string;
+    corpus_sha?: string;
+    embedding_profile?: string;
+    embedding_dimensions?: number;
   };
 }

@@ -7,7 +7,6 @@ summarisation is called.
 
 from __future__ import annotations
 
-import hashlib
 import os
 import sys
 from pathlib import Path
@@ -17,22 +16,21 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 
-def _law_hash(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 def _configure() -> tuple[Any, str, str]:
     from backend.config import get_settings
+    from scripts.canonical_corpus import corpus_sha256, load_document_manifest
 
     base = get_settings()
-    digest = _law_hash(Path(base.law_data_path))
+    corpus_id, corpus_version, _ = load_document_manifest(Path(base.corpus_manifest_path))
+    digest = corpus_sha256(law_path=Path(base.law_data_path), manifest_path=Path(base.corpus_manifest_path))
     schema = base.index_schema_version.replace("-", "_")
-    target = f"law_{base.corpus_id}_{digest[:12]}_{schema}"
+    profile = base.embedding_profile.replace("-", "_")
+    target = f"law_{corpus_id}_{digest[:12]}_{schema}_{profile}"
     os.environ["LAW_COLLECTION"] = target
-    # Corpus version is an explicit deployment contract used by the cache; the
-    # immutable SHA and versioned collection carry the concrete source revision.
+    os.environ["CORPUS_ID"] = corpus_id
+    os.environ["CORPUS_VERSION"] = corpus_version
     os.environ["CORPUS_SHA256"] = digest
-    os.environ.setdefault("CHUNKING_STRATEGY", "legal_structure_v1")
+    os.environ["CHUNKING_STRATEGY"] = base.chunking_profile.replace("-", "_")
     get_settings.cache_clear()
     return get_settings(), target, digest
 
@@ -47,24 +45,30 @@ def _client(settings):
     return QdrantClient(path=settings.qdrant_local_path)
 
 
-def _matching_collection(client, collection: str, *, expected_count: int, digest: str, schema: str) -> bool:
+def _matching_collection(client, collection: str, *, expected_count: int, digest: str, schema: str, settings) -> bool:
     try:
         info = client.get_collection(collection)
         if int(info.points_count or 0) != expected_count:
             return False
         points, _ = client.scroll(collection, limit=1, with_payload=True, with_vectors=False)
         payload = dict(points[0].payload or {}) if points else {}
-        return payload.get("Corpus_SHA256") == digest and payload.get("Index_Schema_Version") == schema
+        return (
+            payload.get("Corpus_SHA256") == digest
+            and payload.get("Index_Schema_Version") == schema
+            and payload.get("Embedding_Profile") == settings.embedding_profile
+            and int(payload.get("Embedding_Dimensions") or 0) == settings.embedding_dimensions
+            and payload.get("Chunking_Strategy") == settings.chunking_profile
+        )
     except Exception:  # noqa: BLE001 - a missing/partial collection is an intentional rebuild signal
         return False
 
 
-def _audit(client, collection: str, *, expected_count: int, digest: str, schema: str) -> None:
+def _audit(client, collection: str, *, expected_count: int, digest: str, schema: str, settings) -> None:
     info = client.get_collection(collection)
     if int(info.points_count or 0) != expected_count or expected_count == 0:
         raise RuntimeError("index_point_count_mismatch")
     offset = None
-    seen: set[tuple[str, int]] = set()
+    seen: set[str] = set()
     anchors = 0
     while True:
         points, offset = client.scroll(collection, offset=offset, limit=256, with_payload=True, with_vectors=False)
@@ -72,11 +76,22 @@ def _audit(client, collection: str, *, expected_count: int, digest: str, schema:
             payload = dict(point.payload or {})
             if payload.get("Corpus_SHA256") != digest or payload.get("Index_Schema_Version") != schema:
                 raise RuntimeError("index_payload_version_mismatch")
-            key = (str(payload.get("Parent_Id") or point.id), int(payload.get("Chunk_Index") or 0))
+            if (
+                payload.get("Embedding_Profile") != settings.embedding_profile
+                or int(payload.get("Embedding_Dimensions") or 0) != settings.embedding_dimensions
+                or payload.get("Chunking_Strategy") != settings.chunking_profile
+            ):
+                raise RuntimeError("index_embedding_profile_mismatch")
+            key = str(payload.get("document_id") or point.id)
             if key in seen:
                 raise RuntimeError("index_duplicate_chunk")
             seen.add(key)
-            anchors += int(bool(payload.get("legal_anchor") and payload.get("source") == "legal"))
+            required = ("legal_anchor", "source", "source_file", "Original_Text", "retrieval_text", "lexical_text", "Source_Start", "Source_End")
+            if not all(payload.get(field) not in (None, "") for field in required):
+                raise RuntimeError("index_missing_citation_metadata")
+            if int(payload["Source_End"]) < int(payload["Source_Start"]):
+                raise RuntimeError("index_invalid_source_offsets")
+            anchors += int(payload.get("source") == "legal")
         if offset is None:
             break
     if anchors != expected_count:
@@ -109,13 +124,16 @@ def main() -> None:
     # Structural chunks are deterministic and give the exact expected point count
     # without making embedding or summary calls.
     chunks, _, _ = build_index.chunk_articles(articles, [""] * len(articles))
+    from scripts.canonical_corpus import canonical_chunks
+
+    canonical, chunk_audit = canonical_chunks(chunks)
+    if chunk_audit.duplicate_chunk_ids or chunk_audit.invalid_offsets:
+        raise RuntimeError("canonical_chunk_audit_failed")
     client = _client(settings)
     try:
-        if not _matching_collection(client, target, expected_count=len(chunks), digest=digest, schema=settings.index_schema_version):
-            summaries = build_index.summarise_articles(articles)
-            chunks, chunk_summaries, _ = build_index.chunk_articles(articles, summaries)
-            build_index.upsert_to_qdrant(chunks, chunk_summaries)
-        _audit(client, target, expected_count=len(chunks), digest=digest, schema=settings.index_schema_version)
+        if not _matching_collection(client, target, expected_count=len(canonical), digest=digest, schema=settings.index_schema_version, settings=settings):
+            build_index.upsert_to_qdrant(canonical)
+        _audit(client, target, expected_count=len(canonical), digest=digest, schema=settings.index_schema_version, settings=settings)
         _switch_alias(client, os.getenv("LAW_COLLECTION_ALIAS", "law_collection"), target)
         print(f"law_index_ready collection={target} corpus_sha256={digest}")
     finally:
