@@ -1,125 +1,113 @@
-import { useState, useRef, useEffect, type KeyboardEvent, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
 import { cn } from '@/lib/cn';
+import { Icon } from '@/components/UI/Icon';
 
 interface ChatInputProps {
+  autoFocus?: boolean;
+  disabled?: boolean;
+  isStreaming: boolean;
   onSend: (message: string) => void;
   onStop: () => void;
-  isStreaming: boolean;
-  disabled?: boolean;
+  variant?: 'conversation' | 'welcome';
 }
 
-/**
- * Enhanced chat input with auto-resize and keyboard shortcuts
- */
-export function ChatInput({ onSend, onStop, isStreaming, disabled = false }: ChatInputProps) {
+export function ChatInput({
+  autoFocus = true,
+  disabled = false,
+  isStreaming,
+  onSend,
+  onStop,
+  variant = 'conversation',
+}: ChatInputProps) {
   const [input, setInput] = useState('');
-  const [lastSendTime, setLastSendTime] = useState(0);
+  const lastSendTime = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-resize textarea
   useEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
-
-    // Reset height to calculate new height
     textarea.style.height = 'auto';
-    const newHeight = Math.min(textarea.scrollHeight, 200); // Max 200px
-    textarea.style.height = `${newHeight}px`;
-  }, [input]);
+    const minimum = variant === 'welcome' ? 76 : 28;
+    textarea.style.height = `${Math.max(minimum, Math.min(textarea.scrollHeight, 180))}px`;
+  }, [input, variant]);
 
-  // Focus input on mount
   useEffect(() => {
-    textareaRef.current?.focus();
-  }, []);
+    if (autoFocus) textareaRef.current?.focus();
+  }, [autoFocus]);
 
   const handleSend = () => {
     if (!input.trim() || isStreaming || disabled) return;
-
-    // Debounce: prevent double submission within 500ms
     const now = Date.now();
-    if (now - lastSendTime < 500) return;
-    setLastSendTime(now);
-
+    if (now - lastSendTime.current < 500) return;
+    lastSendTime.current = now;
     onSend(input.trim());
     setInput('');
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // Enter without Shift/Ctrl/Cmd to send
-    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
-      e.preventDefault();
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
       handleSend();
     }
-  };
-
-  const handleChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value);
   };
 
   const isDisabled = disabled || isStreaming;
 
   return (
-    <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
-      <div className="max-w-4xl mx-auto">
-        <div className="relative flex items-end gap-2 bg-gray-100 dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 focus-within:border-green-500 focus-within:ring-2 focus-within:ring-green-500/20 transition-all duration-200 shadow-sm">
-          {/* Textarea */}
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={handleChange}
-            onKeyDown={handleKeyDown}
-            placeholder="Nhập câu hỏi của bạn... (Shift+Enter xuống dòng)"
-            className="flex-1 resize-none bg-transparent px-4 py-3.5 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none max-h-[200px] overflow-y-auto scrollbar-thin text-[15px]"
-            rows={1}
-            disabled={isDisabled}
-          />
+    <div className={cn('w-full', variant === 'welcome' ? 'max-w-[760px]' : 'max-w-[820px]')}>
+      <div
+        className={cn(
+          'relative flex items-end border border-[#bdc9c6] bg-white transition-[border-color,box-shadow] duration-200 focus-within:border-[#0f766e] focus-within:ring-2 focus-within:ring-[#0f766e]/15',
+          variant === 'welcome' ? 'rounded-xl px-4 pb-3 pt-4' : 'rounded-xl px-3 py-2.5',
+          disabled && 'bg-[#f1f4f3] opacity-75'
+        )}
+      >
+        <textarea
+          aria-label="Câu hỏi pháp lý"
+          className={cn(
+            'scrollbar-thin min-h-7 max-h-[180px] flex-1 resize-none overflow-y-auto bg-transparent text-[15px] leading-6 text-[#172033] outline-none placeholder:text-[#84908d] disabled:cursor-not-allowed',
+            variant === 'welcome' ? 'pr-14 text-base' : 'px-1 pr-12'
+          )}
+          disabled={isDisabled}
+          onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setInput(event.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={variant === 'welcome' ? 'Nhập câu hỏi hoặc mô tả tình huống pháp lý…' : 'Hỏi thêm về nội dung này…'}
+          ref={textareaRef}
+          rows={1}
+          value={input}
+        />
 
-          {/* Send/Stop button */}
-          <div className="flex-shrink-0 pb-2 pr-2">
-            {isStreaming ? (
-              <button
-                onClick={onStop}
-                className="p-2 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-all duration-200 shadow-lg shadow-red-500/20 hover:shadow-red-500/30 active:scale-95"
-                title="Dừng tạo (Escape)"
-              >
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path
-                    fillRule="evenodd"
-                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-              </button>
-            ) : (
-              <button
-                onClick={handleSend}
-                disabled={!input.trim() || isDisabled}
-                className={cn(
-                  'p-2 rounded-xl transition-all duration-200 active:scale-95',
-                  input.trim() && !isDisabled
-                    ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg shadow-green-500/20 hover:shadow-green-500/30 hover:from-green-600 hover:to-emerald-700'
-                    : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
-                )}
-                title="Gửi (Enter)"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-                  />
-                </svg>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Helper text */}
-        <div className="mt-2 text-center text-xs text-gray-500 dark:text-gray-400">
-          <span>Enter để gửi · Shift+Enter xuống dòng · Escape để dừng</span>
+        <div className={cn('absolute right-3', variant === 'welcome' ? 'bottom-3' : 'bottom-2.5')}>
+          {isStreaming ? (
+            <button
+              aria-label="Dừng tạo câu trả lời"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#e6b9b5] bg-[#fff0ef] text-[#ba1a1a] transition-colors hover:bg-[#ffdad6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ba1a1a]"
+              onClick={onStop}
+              title="Dừng tạo"
+              type="button"
+            >
+              <Icon name="stop" size={18} />
+            </button>
+          ) : (
+            <button
+              aria-label="Gửi câu hỏi"
+              className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#0f766e] text-white transition-colors hover:bg-[#005c55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-[#d7dbd9] disabled:text-[#7a8582]"
+              disabled={!input.trim() || isDisabled}
+              onClick={handleSend}
+              title="Gửi (Enter)"
+              type="button"
+            >
+              <Icon name="send" size={18} />
+            </button>
+          )}
         </div>
       </div>
+      {variant === 'conversation' && (
+        <p className="mt-2 px-2 text-center text-[11px] leading-4 text-[#667085]">
+          Trợ lý có thể mắc sai sót. Hãy đối chiếu nguồn trước khi sử dụng thông tin quan trọng.
+        </p>
+      )}
     </div>
   );
 }

@@ -18,7 +18,7 @@ request
   -> one repair or safe stop
 ```
 
-The first workflow supports three tasks:
+The workflow supports three substantive tasks plus bounded chitchat:
 
 - `legal_lookup`: a standalone legal question. Its corpus-backed answer may be
   cached using task type, standalone query and corpus version.
@@ -33,6 +33,10 @@ Task understanding produces a validated schema with `task_type`,
 output cannot select tools or transitions: the planner accepts only the
 predeclared actions and falls back safely when structured output fails.
 
+SSE progress is emitted from actual LangGraph node updates, not from a simulated
+timer. Every `workflow_step` carries an ordered step number, closed action name,
+status, and trace id before the final response is streamed.
+
 `case_states` stores only the active structured case needed to resume a
 follow-up. It is not a long-term user profile. `agent_runs` records the trace
 id, action sequence, tool latency and termination reason. SQLAlchemy persists
@@ -44,6 +48,11 @@ The planner can record only the actions in `epr_agent.domain.models.Action`.
 The graph allows at most three retrieval actions and one answer repair. It does
 not call web search to fill missing business facts, and it does not return an
 assessment or checklist without evidence and citations.
+
+The answer cache stores a versioned bundle containing the answer, evidence,
+citations, and source. A cache hit is accepted only after the citations are
+verified against its cached evidence. Only independent, corpus-backed
+`legal_lookup` answers are eligible; case work and web answers are excluded.
 
 ## Local development
 

@@ -146,9 +146,10 @@ def build_workflow(deps: WorkflowDependencies):
         state["follow_up_question"] = build_follow_up_question(task, state["missing_facts"])
         state["is_epr_scope"] = is_epr_scope(state["standalone_query"], history, active_case)
         if task in {TaskType.ASSESS_EPR_OBLIGATION, TaskType.BUILD_COMPLIANCE_CHECKLIST}:
-            state["active_case"] = build_active_case(task, facts, state["query"])
+            case = build_active_case(task, facts, state["query"])
+            state["active_case"] = case
             state["case_state"] = {
-                **state["active_case"],
+                **case,
                 "status": "ready" if not state["missing_facts"] else "collecting",
             }
         return state
@@ -159,7 +160,16 @@ def build_workflow(deps: WorkflowDependencies):
         started = time.perf_counter()
         try:
             value, key = await deps.cache.lookup(task, state["standalone_query"])
-            state["cached_answer"] = value
+            if value is not None:
+                cached_documents = documents_from_dict(value.evidence)
+                cache_valid, _, cache_reason = verify_citations(value.answer, cached_documents, task)
+                if not cache_valid:
+                    value = None
+                    state["citation_error"] = f"cached_{cache_reason}"
+            state["cached_answer"] = value.answer if value else None
+            state["cached_evidence"] = list(value.evidence) if value else []
+            state["cached_citations"] = list(value.citations) if value else []
+            state["cached_source"] = value.source if value else ""
             state["cache_key"] = key
             _tool_result(state, "answer_cache", started, ok=True, count=1 if value else 0)
         except Exception as exc:  # noqa: BLE001 - cache failures must degrade to a miss
@@ -183,9 +193,14 @@ def build_workflow(deps: WorkflowDependencies):
     async def answer_cache(state: AgentState) -> AgentState:
         append_action(state, Action.ANSWER_CACHE)
         state["answer"] = state.get("cached_answer") or ""
+        state["evidence"] = list(state.get("cached_evidence") or [])
+        state["citations"] = list(state.get("cached_citations") or [])
         state["source"] = "cache"
         state["termination_reason"] = TerminationReason.CACHE_HIT.value
-        state["citation_valid"] = True
+        documents = documents_from_dict(state.get("evidence"))
+        valid, _, reason = verify_citations(state["answer"], documents, TaskType.LEGAL_LOOKUP)
+        state["citation_valid"] = valid
+        state["citation_error"] = reason
         return state
 
     async def retrieve_faq(state: AgentState) -> AgentState:
@@ -465,7 +480,7 @@ def build_workflow(deps: WorkflowDependencies):
     return graph.compile()
 
 
-async def run_workflow(
+async def create_initial_state(
     query: str,
     *,
     user_id: str,
@@ -475,10 +490,10 @@ async def run_workflow(
     deps: WorkflowDependencies,
     trace_id: str | None = None,
 ) -> AgentState:
-    """Execute one bounded run and return its complete traceable state."""
+    """Initialize one serializable run state for invoke or streaming."""
 
     await deps.history.initialize()
-    initial: AgentState = {
+    return {
         "trace_id": trace_id or str(uuid.uuid4()),
         "query": query.strip(),
         "standalone_query": query.strip(),
@@ -503,9 +518,35 @@ async def run_workflow(
         "citation_valid": False,
         "awaiting_user_input": False,
         "cached_answer": None,
+        "cached_evidence": [],
+        "cached_citations": [],
+        "cached_source": "",
         "web_answer": "",
         "faq_hit": False,
         "source": "",
     }
+
+
+async def run_workflow(
+    query: str,
+    *,
+    user_id: str,
+    conversation_id: str,
+    legacy_session_id: str = "",
+    faq_threshold: float = 0.75,
+    deps: WorkflowDependencies,
+    trace_id: str | None = None,
+) -> AgentState:
+    """Execute one bounded run and return its complete traceable state."""
+
+    initial = await create_initial_state(
+        query,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        legacy_session_id=legacy_session_id,
+        faq_threshold=faq_threshold,
+        deps=deps,
+        trace_id=trace_id,
+    )
     compiled = build_workflow(deps)
     return await compiled.ainvoke(initial)

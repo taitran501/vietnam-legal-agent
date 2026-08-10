@@ -1,20 +1,58 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useSessions } from '@/hooks/useSessions';
 import { useChatStore } from '@/state/chatStore';
 import { truncate } from '@/lib/formatters';
 import { cn } from '@/lib/cn';
 import { Modal } from '@/components/UI/Modal';
+import { Icon } from '@/components/UI/Icon';
+import type { SessionInfo } from '@/types';
 
 interface SidebarProps {
-  onSelectSession: (sessionId: string) => void;
+  collapsed?: boolean;
+  isMobile?: boolean;
   onClearAll?: () => void;
+  onDismiss?: () => void;
   onNewSession?: () => void;
+  onSelectSession: (sessionId: string) => void;
+  onToggle?: () => void;
 }
 
-/**
- * Redesigned modern sidebar with search and smooth animations
- */
-export function Sidebar({ onSelectSession, onClearAll, onNewSession }: SidebarProps) {
+type SessionGroup = { label: string; sessions: SessionInfo[] };
+
+function timestampMs(value: number | undefined): number {
+  if (!value) return 0;
+  return value < 1_000_000_000_000 ? value * 1000 : value;
+}
+
+function groupSessions(sessions: SessionInfo[]): SessionGroup[] {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const groups: SessionGroup[] = [
+    { label: 'Hôm nay', sessions: [] },
+    { label: '7 ngày trước', sessions: [] },
+    { label: 'Cũ hơn', sessions: [] },
+  ];
+
+  sessions.forEach((session) => {
+    const time = timestampMs(session.updated_at || session.created_at);
+    const age = startOfToday - time;
+    if (age <= 0) groups[0].sessions.push(session);
+    else if (age <= 7 * 24 * 60 * 60 * 1000) groups[1].sessions.push(session);
+    else groups[2].sessions.push(session);
+  });
+
+  return groups.filter((group) => group.sessions.length > 0);
+}
+
+export function Sidebar({
+  collapsed = false,
+  isMobile = false,
+  onClearAll,
+  onDismiss,
+  onNewSession,
+  onSelectSession,
+  onToggle,
+}: SidebarProps) {
   const {
     sessions,
     isLoadingSessions,
@@ -26,228 +64,275 @@ export function Sidebar({ onSelectSession, onClearAll, onNewSession }: SidebarPr
     clearAllSessions,
     renameSession,
   } = useSessions();
-
   const { activeSessionId } = useChatStore();
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [showClearAllModal, setShowClearAllModal] = useState(false);
   const [editingSession, setEditingSession] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const groupedSessions = useMemo(() => groupSessions(sessions), [sessions]);
 
   const handleNewChat = () => {
     createNewSession();
     onNewSession?.();
+    onDismiss?.();
   };
 
   const handleSelectSession = async (sessionId: string) => {
     await loadSession(sessionId);
     onSelectSession(sessionId);
-  };
-
-  const handleDeleteClick = (e: React.MouseEvent, sessionId: string) => {
-    e.stopPropagation();
-    setDeleteTarget(sessionId);
+    onDismiss?.();
   };
 
   const handleDeleteConfirm = async () => {
-    if (deleteTarget) {
-      await deleteSession(deleteTarget);
-      setDeleteTarget(null);
-    }
-  };
-
-  const handleClearAll = () => {
-    setShowClearAllModal(true);
+    if (!deleteTarget) return;
+    const deletedActiveSession = deleteTarget === activeSessionId;
+    await deleteSession(deleteTarget);
+    setDeleteTarget(null);
+    if (deletedActiveSession) onNewSession?.();
   };
 
   const handleClearAllConfirm = async () => {
     await clearAllSessions();
     setShowClearAllModal(false);
-    if (onClearAll) onClearAll();
+    onClearAll?.();
   };
 
-  const handleRenameStart = (e: React.MouseEvent, sessionId: string, currentTitle: string) => {
-    e.stopPropagation();
-    setEditingSession(sessionId);
-    setEditTitle(currentTitle);
+  const handleRenameStart = (event: React.MouseEvent, session: SessionInfo) => {
+    event.stopPropagation();
+    setEditingSession(session.id);
+    setEditTitle(session.title || 'Cuộc trò chuyện mới');
   };
 
   const handleRenameSave = async (sessionId: string) => {
-    if (editTitle.trim()) {
-      await renameSession(sessionId, editTitle.trim());
-    }
+    const nextTitle = editTitle.trim();
+    if (nextTitle) await renameSession(sessionId, nextTitle);
     setEditingSession(null);
     setEditTitle('');
   };
 
-  return (
-    <div className="flex h-full min-h-0 flex-col bg-gray-50 dark:bg-gray-900">
-      {/* New chat button */}
-      <div className="p-3 border-b border-gray-200 dark:border-gray-700">
+  if (collapsed && !isMobile) {
+    return (
+      <aside
+        aria-label="Thanh điều hướng thu gọn"
+        className="flex h-full w-16 flex-col items-center border-r border-[#d9e1df] bg-[#f1f4f3] py-3"
+      >
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#0f766e] text-white">
+          <Icon name="scale" size={21} />
+        </div>
         <button
-          onClick={handleNewChat}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl hover:from-green-600 hover:to-emerald-700 transition-all duration-200 font-medium shadow-lg shadow-green-500/20 hover:shadow-green-500/30"
+          aria-label="Mở thanh lịch sử"
+          className="mt-3 rounded-md p-2 text-[#53615e] transition-colors hover:bg-[#e0e7e5] hover:text-[#172033] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e]"
+          onClick={onToggle}
+          title="Mở thanh lịch sử"
+          type="button"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
+          <Icon name="expand" size={20} />
+        </button>
+        <button
+          aria-label="Cuộc trò chuyện mới"
+          className="mt-5 flex h-11 w-11 items-center justify-center rounded-lg bg-[#0f766e] text-white transition-colors hover:bg-[#005c55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] focus-visible:ring-offset-2"
+          onClick={handleNewChat}
+          title="Cuộc trò chuyện mới"
+          type="button"
+        >
+          <Icon name="plus" size={22} />
+        </button>
+        <button
+          aria-label="Lịch sử trò chuyện"
+          className="mt-5 rounded-md p-2.5 text-[#53615e] transition-colors hover:bg-[#e0e7e5] hover:text-[#006a63] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e]"
+          onClick={onToggle}
+          title="Lịch sử trò chuyện"
+          type="button"
+        >
+          <Icon name="history" size={21} />
+        </button>
+      </aside>
+    );
+  }
+
+  return (
+    <aside aria-label="Lịch sử trò chuyện" className="flex h-full min-h-0 w-full flex-col bg-[#f1f4f3]">
+      <div className="flex h-16 items-center justify-between border-b border-[#d9e1df] px-4">
+        <div className="flex min-w-0 items-center gap-2.5 text-[#005c55]">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#0f766e] text-white">
+            <Icon name="scale" size={18} />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold">Trợ lý pháp lý</p>
+            <p className="truncate text-[11px] text-[#667085]">Tra cứu có nguồn</p>
+          </div>
+        </div>
+        <button
+          aria-label={isMobile ? 'Đóng lịch sử' : 'Thu gọn thanh lịch sử'}
+          className="rounded-md p-2 text-[#53615e] transition-colors hover:bg-[#e0e7e5] hover:text-[#172033] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e]"
+          onClick={isMobile ? onDismiss : onToggle}
+          title={isMobile ? 'Đóng' : 'Thu gọn'}
+          type="button"
+        >
+          <Icon name={isMobile ? 'close' : 'collapse'} size={20} />
+        </button>
+      </div>
+
+      <div className="px-3 pt-3">
+        <button
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#0f766e] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#005c55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] focus-visible:ring-offset-2"
+          onClick={handleNewChat}
+          type="button"
+        >
+          <Icon name="plus" size={18} />
           Cuộc trò chuyện mới
         </button>
       </div>
 
-      {/* Search */}
-      <div className="p-3">
-        <div className="relative">
-          <svg
-            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-            />
-          </svg>
+      <div className="px-3 pb-2 pt-3">
+        <label className="relative block">
+          <span className="sr-only">Tìm kiếm cuộc trò chuyện</span>
+          <Icon className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#6e7977]" name="search" size={17} />
           <input
-            type="text"
+            className="w-full rounded-lg border border-transparent bg-white py-2 pl-9 pr-9 text-sm text-[#172033] outline-none placeholder:text-[#84908d] focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]/15"
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Tìm kiếm"
+            type="search"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Tìm kiếm cuộc trò chuyện..."
-            className="w-full pl-9 pr-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent placeholder-gray-400 dark:placeholder-gray-500 text-gray-900 dark:text-white"
           />
-        </div>
+          {searchQuery && (
+            <button
+              aria-label="Xóa nội dung tìm kiếm"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-[#6e7977] hover:bg-[#e7eceb]"
+              onClick={() => setSearchQuery('')}
+              type="button"
+            >
+              <Icon name="close" size={15} />
+            </button>
+          )}
+        </label>
       </div>
 
-      {/* Session list */}
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain scrollbar-thin px-2 pb-2">
+      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3">
         {isLoadingSessions ? (
-          <div className="space-y-2 p-2">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="h-14 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse" />
+          <div className="space-y-2 px-1 py-3" aria-label="Đang tải lịch sử">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <div className="h-11 animate-pulse rounded-md bg-[#e0e3e1]" key={index} />
             ))}
           </div>
-        ) : sessions.length === 0 ? (
-          <div className="px-3 py-8 text-center">
-            <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
-              <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-              </svg>
-            </div>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              {searchQuery ? 'Không tìm thấy cuộc trò chuyện nào' : 'Chưa có cuộc trò chuyện nào'}
+        ) : groupedSessions.length === 0 ? (
+          <div className="px-5 py-12 text-center text-[#667085]">
+            <Icon className="mx-auto" name={searchQuery ? 'search' : 'message'} size={25} />
+            <p className="mt-3 text-sm font-medium text-[#3e4947]">
+              {searchQuery ? 'Không tìm thấy cuộc trò chuyện' : 'Chưa có lịch sử'}
+            </p>
+            <p className="mt-1 text-xs leading-5">
+              {searchQuery ? 'Thử tìm bằng từ khóa khác.' : 'Câu hỏi đầu tiên sẽ xuất hiện tại đây.'}
             </p>
           </div>
         ) : (
-          <div className="space-y-1">
-            {sessions.map((session) => (
-              <div
-                key={session.id}
-                onClick={() => handleSelectSession(session.id)}
-                className={cn(
-                  'group flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-200',
-                  session.id === activeSessionId
-                    ? 'bg-gray-200 dark:bg-gray-700 shadow-sm'
-                    : 'hover:bg-gray-100 dark:hover:bg-gray-800'
-                )}
-              >
-                {/* Chat icon */}
-                <svg className="w-4 h-4 flex-shrink-0 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
-
-                {/* Session info */}
-                <div className="flex-1 min-w-0">
-                  {editingSession === session.id ? (
-                    <input
-                      type="text"
-                      value={editTitle}
-                      onChange={(e) => setEditTitle(e.target.value)}
-                      onBlur={() => handleRenameSave(session.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleRenameSave(session.id);
-                        if (e.key === 'Escape') setEditingSession(null);
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                      className="w-full px-2 py-0.5 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-green-500 text-gray-900 dark:text-white"
-                      autoFocus
-                    />
-                  ) : (
-                    <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                      {truncate(session.title || 'Cuộc trò chuyện mới', 32)}
+          groupedSessions.map((group) => (
+            <section className="mt-3" key={group.label}>
+              <h2 className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#667085]">
+                {group.label}
+              </h2>
+              <div className="space-y-0.5">
+                {group.sessions.map((session) => (
+                  <div
+                    className={cn(
+                      'group relative flex cursor-pointer items-center gap-2 rounded-md border-l-2 px-2.5 py-2 text-sm transition-colors',
+                      session.id === activeSessionId
+                        ? 'border-[#0f766e] bg-[#e0e7e5] text-[#005c55]'
+                        : 'border-transparent text-[#3e4947] hover:bg-[#e7eceb] hover:text-[#172033]'
+                    )}
+                    key={session.id}
+                    onClick={() => void handleSelectSession(session.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') void handleSelectSession(session.id);
+                    }}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    <Icon className="shrink-0" name="message" size={16} />
+                    <div className="min-w-0 flex-1">
+                      {editingSession === session.id ? (
+                        <input
+                          autoFocus
+                          className="w-full rounded border border-[#0f766e] bg-white px-2 py-1 text-sm text-[#172033] outline-none ring-2 ring-[#0f766e]/15"
+                          onBlur={() => void handleRenameSave(session.id)}
+                          onChange={(event) => setEditTitle(event.target.value)}
+                          onClick={(event) => event.stopPropagation()}
+                          onKeyDown={(event) => {
+                            event.stopPropagation();
+                            if (event.key === 'Enter') void handleRenameSave(session.id);
+                            if (event.key === 'Escape') setEditingSession(null);
+                          }}
+                          value={editTitle}
+                        />
+                      ) : (
+                        <p className="truncate font-medium">{truncate(session.title || 'Cuộc trò chuyện mới', 34)}</p>
+                      )}
                     </div>
-                  )}
-                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                    {session.message_count} tin nhắn
+                    {editingSession !== session.id && (
+                      <div className="flex shrink-0 items-center opacity-100 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+                        <button
+                          aria-label="Đổi tên cuộc trò chuyện"
+                          className="rounded p-1.5 text-[#667085] hover:bg-white hover:text-[#172033]"
+                          onClick={(event) => handleRenameStart(event, session)}
+                          title="Đổi tên"
+                          type="button"
+                        >
+                          <Icon name="edit" size={14} />
+                        </button>
+                        <button
+                          aria-label="Xóa cuộc trò chuyện"
+                          className="rounded p-1.5 text-[#667085] hover:bg-[#fff0ef] hover:text-[#ba1a1a]"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setDeleteTarget(session.id);
+                          }}
+                          title="Xóa"
+                          type="button"
+                        >
+                          <Icon name="trash" size={14} />
+                        </button>
+                      </div>
+                    )}
                   </div>
-                </div>
-
-                {/* Action buttons */}
-                <div className="flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  {/* Rename button */}
-                  <button
-                    onClick={(e) => handleRenameStart(e, session.id, session.title)}
-                    className="p-1 rounded hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-400 transition-colors"
-                    title="Đổi tên"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                    </svg>
-                  </button>
-
-                  {/* Delete button */}
-                  <button
-                    onClick={(e) => handleDeleteClick(e, session.id)}
-                    className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-500 dark:text-gray-400 hover:text-red-500 transition-colors"
-                    title="Xóa"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
-                </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </section>
+          ))
         )}
       </div>
 
-      {/* Clear all button */}
       {sessions.length > 0 && (
-        <div className="p-3 border-t border-gray-200 dark:border-gray-700">
+        <div className="border-t border-[#d9e1df] px-3 py-3 text-right">
           <button
-            onClick={handleClearAll}
-            className="w-full px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors font-medium"
+            className="rounded-md px-2 py-1.5 text-xs font-medium text-[#8f2424] hover:bg-[#fff0ef]"
+            onClick={() => setShowClearAllModal(true)}
+            type="button"
           >
-            Xóa tất cả cuộc trò chuyện
+            Xóa toàn bộ
           </button>
         </div>
       )}
 
-      {/* Delete confirmation modal */}
       <Modal
-        isOpen={!!deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-        onConfirm={handleDeleteConfirm}
-        title="Xóa cuộc trò chuyện"
-        message="Bạn có chắc chắn muốn xóa cuộc trò chuyện này? Hành động này không thể hoàn tác."
+        cancelText="Hủy"
         confirmText="Xóa"
-        cancelText="Hủy"
+        isOpen={!!deleteTarget}
+        message="Hành động này không thể hoàn tác."
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => void handleDeleteConfirm()}
+        title="Xóa cuộc trò chuyện này?"
         variant="danger"
       />
-
-      {/* Clear all confirmation modal */}
       <Modal
-        isOpen={showClearAllModal}
-        onClose={() => setShowClearAllModal(false)}
-        onConfirm={handleClearAllConfirm}
-        title="Xóa tất cả cuộc trò chuyện"
-        message="Bạn có chắc chắn muốn xóa tất cả cuộc trò chuyện? Hành động này không thể hoàn tác."
-        confirmText="Xóa tất cả"
         cancelText="Hủy"
+        confirmText="Xóa tất cả"
+        isOpen={showClearAllModal}
+        message="Toàn bộ lịch sử trò chuyện sẽ bị xóa và không thể khôi phục."
+        onClose={() => setShowClearAllModal(false)}
+        onConfirm={() => void handleClearAllConfirm()}
+        title="Xóa tất cả cuộc trò chuyện?"
         variant="danger"
       />
-    </div>
+    </aside>
   );
 }

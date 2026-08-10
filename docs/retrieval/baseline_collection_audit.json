@@ -1,0 +1,22 @@
+{
+  "qdrant_target": "local:./qdrant_db",
+  "collection": "law_collection_baseline_v1",
+  "points_total": 461,
+  "schema_missing": {},
+  "hygiene_flags": {},
+  "short_text_count_lt_80": 0,
+  "exact_duplicate_docs": 0,
+  "anchor_hits": {
+    "mandatory_recycling_terms": 95,
+    "phu_luc_xxii": 16
+  },
+  "quality_summary": {
+    "schema_ok": true,
+    "hygiene_ok": true,
+    "duplicate_ok": true,
+    "coverage_phu_luc_xxii_ok": true
+  },
+  "retrieval_sanity": {
+    "enabled": false
+  }
+}

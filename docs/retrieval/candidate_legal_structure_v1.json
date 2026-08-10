@@ -3,11 +3,11 @@
   "corpus_version": "law-f03ad59846bb",
   "law_records": 178,
   "faq_records": 49,
-  "indexed_records": 178,
+  "indexed_records": 1989,
   "law_sha256": "f03ad59846bbbfe1435d412684964609182895fac3d25049dd123252d0a5731c",
   "faq_sha256": "60c6835446210325ffb3b2115579067676b6d88ba0daf9a863b6f6446aadf471",
   "legal_anchor_count": 178,
-  "chunking_strategy": "sliding_window",
+  "chunking_strategy": "legal_structure_v1",
   "metrics": {
     "protocol": "offline_bm25_legal_anchor_v1",
     "p_at_1": 1.0,
@@ -17,7 +17,7 @@
     "query_count": 16
   },
   "audit": {
-    "records": 178,
+    "records": 1989,
     "unique_legal_anchors": 178,
     "schema_missing": {},
     "exact_duplicate_records": 0,
@@ -41,18 +41,18 @@
     "query_count": 16
   },
   "notes": "Offline metrics are deterministic. live_metrics require a named configured collection.",
-  "collection": "law_collection_baseline_v1",
+  "collection": "law_collection_legal_structure_v2",
   "collection_audit": {
     "qdrant_target": "local:./qdrant_db",
-    "collection": "law_collection_baseline_v1",
-    "points_total": 461,
+    "collection": "law_collection_legal_structure_v2",
+    "points_total": 1989,
     "schema_missing": {},
     "hygiene_flags": {},
-    "short_text_count_lt_80": 0,
+    "short_text_count_lt_80": 257,
     "exact_duplicate_docs": 0,
     "anchor_hits": {
-      "mandatory_recycling_terms": 95,
-      "phu_luc_xxii": 16
+      "phu_luc_xxii": 20,
+      "mandatory_recycling_terms": 163
     },
     "quality_summary": {
       "schema_ok": true,
@@ -64,5 +64,20 @@
       "enabled": false
     }
   },
-  "collection_points": 461
+  "collection_points": 1989,
+  "promotion": {
+    "offline_gate_passed": true,
+    "promotable": true,
+    "blocking_reason": "",
+    "checks": {
+      "offline_no_metric_regression": true,
+      "offline_explicit_article_hit_at_3_is_100_percent": true,
+      "candidate_audit_passed": true,
+      "live_hybrid_metrics_available": true,
+      "live_hybrid_no_metric_regression": true,
+      "live_hybrid_explicit_article_hit_at_3_is_100_percent": true,
+      "live_collection_audit_available": true,
+      "live_collection_audit_passed": true
+    }
+  }
 }

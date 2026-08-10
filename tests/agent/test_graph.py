@@ -129,7 +129,14 @@ async def test_follow_up_resumes_active_case_with_new_fact():
 async def test_answer_cache_is_only_used_for_standalone_legal_lookup():
     cache = InMemoryAnswerCache()
     scoped = ScopedAnswerCache(cache)
-    await cache.store(scoped.build_key("legal_lookup", "EPR là gì?"), "Cached answer [1].")
+    await scoped.store(
+        "legal_lookup",
+        "EPR là gì?",
+        "Cached answer about Điều 77 [1].",
+        evidence=[legal_doc().to_dict()],
+        citations=[{"index": 1, "document_id": "law-77", "label": "Điều 77"}],
+        source="legal",
+    )
     deps = make_dependencies(cache_backend=cache)
 
     state = await run_workflow(

@@ -12,9 +12,12 @@ from dataclasses import dataclass
 from typing import Any
 
 _CLAUSE_OR_POINT = re.compile(
-    r"(?im)(?=^\s*(?:Khoản\s+\d+\b|Điểm\s+[a-zđ]\b|\(\d+\)|[a-zđ]\)))"
+    r"(?im)(?=^\s*(?:Khoản\s+\d+(?=[.:)])|\d+[.)]|Điểm\s+[a-zđ](?=[.:)])|\(\d+\)|[a-zđ]\)))"
 )
-_LABEL = re.compile(r"^\s*(Khoản\s+\d+\b|Điểm\s+[a-zđ]\b|\(\d+\)|[a-zđ]\))", re.IGNORECASE)
+_LABEL = re.compile(
+    r"^\s*(Khoản\s+\d+(?=[.:)])|\d+[.)]|Điểm\s+[a-zđ](?=[.:)])|\(\d+\)|[a-zđ]\))",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,7 +51,7 @@ def _label(segment: str, current_clause: str) -> tuple[str, str]:
     match = _LABEL.match(segment)
     value = match.group(1) if match else ""
     lower = value.lower()
-    if lower.startswith("khoản") or value.startswith("("):
+    if lower.startswith("khoản") or value.startswith("(") or (value and value[0].isdigit()):
         return value, ""
     if lower.startswith("điểm") or (value and value[0].isalpha()):
         return current_clause, value
@@ -101,7 +104,7 @@ def structural_chunk_articles(
     output_summaries: list[str] = []
     max_chunks = 0
     for article, summary in zip(articles, summaries):
-        source = _article_value(article, "Text", "text")
+        source = _article_value(article, "_Structural_Text", "Text", "text")
         pieces = structural_chunks(source, max_chars=max_chars)
         if not pieces:
             continue
@@ -111,9 +114,10 @@ def structural_chunk_articles(
         muc = _article_value(article, "Mục", "Muc", "Mục_Number")
         for index, piece in enumerate(pieces):
             hierarchy = " → ".join(value for value in (dieu, chuong, muc, piece.clause, piece.point) if value)
+            source_article = {key: value for key, value in article.items() if key != "_Structural_Text"}
             output_articles.append(
                 {
-                    **article,
+                    **source_article,
                     "Text": piece.text,
                     "Parent_Dieu": dieu,
                     "Hierarchy": hierarchy,
@@ -121,6 +125,7 @@ def structural_chunk_articles(
                     "Diem": piece.point,
                     "Source_Start": piece.source_start,
                     "Source_End": piece.source_end,
+                    "Original_Text": source[piece.source_start:piece.source_end].strip(),
                     "Chunk_Index": index,
                     "Chunk_Count": len(pieces),
                     "Full_Text_Chars": len(source),

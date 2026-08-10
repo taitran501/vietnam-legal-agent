@@ -32,3 +32,36 @@ def test_citation_verifier_rejects_missing_and_out_of_range_citations():
     missing, _, missing_reason = verify_citations("Kết luận.", docs, TaskType.LEGAL_LOOKUP)
     assert missing is False
     assert missing_reason == "answer_has_no_citation"
+
+
+def test_citation_verifier_requires_each_legal_claim_to_have_a_source():
+    docs = [document()]
+    valid, _, reason = verify_citations(
+        "Theo quy định, doanh nghiệp phải thực hiện nghĩa vụ tái chế.\nNguồn tham khảo: [1]",
+        docs,
+        TaskType.LEGAL_LOOKUP,
+    )
+    assert valid is False
+    assert reason == "legal_claim_without_citation"
+
+
+def test_citation_verifier_rejects_article_not_present_in_cited_evidence():
+    docs = [document()]
+    valid, _, reason = verify_citations(
+        "Theo Điều 81 [1], doanh nghiệp phải đóng góp tài chính.",
+        docs,
+        TaskType.LEGAL_LOOKUP,
+    )
+    assert valid is False
+    assert reason == "article_reference_not_in_evidence"
+
+
+def test_citation_verifier_accepts_supported_article_claim():
+    docs = [document()]
+    valid, _, reason = verify_citations(
+        "Theo Điều 77 [1], doanh nghiệp phải đối chiếu trách nhiệm tái chế.",
+        docs,
+        TaskType.LEGAL_LOOKUP,
+    )
+    assert valid is True
+    assert reason == "ok"

@@ -1,84 +1,89 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import { cn } from '@/lib/cn';
+import { Icon } from './Icon';
 
 interface ModalProps {
+  cancelText?: string;
+  confirmText?: string;
   isOpen: boolean;
+  message: string;
   onClose: () => void;
   onConfirm: () => void;
   title: string;
-  message: string;
-  confirmText?: string;
-  cancelText?: string;
   variant?: 'danger' | 'primary';
 }
 
-/**
- * Confirmation modal dialog
- */
 export function Modal({
+  cancelText = 'Hủy',
+  confirmText = 'Xác nhận',
   isOpen,
+  message,
   onClose,
   onConfirm,
   title,
-  message,
-  confirmText = 'Xác nhận',
-  cancelText = 'Hủy',
   variant = 'primary',
 }: ModalProps) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  const cancelRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    if (isOpen) {
-      dialogRef.current?.showModal();
-    } else {
-      dialogRef.current?.close();
-    }
-  }, [isOpen]);
-
-  const handleConfirm = () => {
-    onConfirm();
-    onClose();
-  };
+    if (!isOpen) return;
+    cancelRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+      <button
+        aria-label="Đóng hộp thoại"
+        className="absolute inset-0 h-full w-full cursor-default bg-[#172033]/25 backdrop-blur-[1px] motion-safe:animate-[fadeIn_180ms_ease-out]"
         onClick={onClose}
+        type="button"
       />
-
-      {/* Modal */}
       <div
-        className={cn(
-          'relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4 animate-in zoom-in-95 duration-200',
-          'border border-gray-200 dark:border-gray-700'
-        )}
+        aria-labelledby={titleId}
+        aria-modal="true"
+        className="relative w-full max-w-sm rounded-xl border border-[#d9e1df] bg-white p-5 shadow-[0_20px_50px_rgba(24,28,28,0.16)] motion-safe:animate-[messageIn_180ms_ease-out]"
+        role="dialog"
       >
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-          {title}
-        </h3>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-          {message}
-        </p>
-
-        <div className="flex gap-3 justify-end">
+        <div className="flex items-start gap-3">
+          {variant === 'danger' && (
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#ffdad6] text-[#ba1a1a]">
+              <Icon name="alert" size={19} />
+            </span>
+          )}
+          <div>
+            <h3 className="text-base font-semibold leading-6 text-[#172033]" id={titleId}>{title}</h3>
+            <p className="mt-1.5 text-sm leading-6 text-[#667085]">{message}</p>
+          </div>
+        </div>
+        <div className="mt-6 flex justify-end gap-2.5">
           <button
+            className="rounded-lg border border-[#bdc9c6] bg-white px-4 py-2 text-sm font-semibold text-[#3e4947] transition-colors hover:bg-[#f1f4f3] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e]"
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+            ref={cancelRef}
+            type="button"
           >
             {cancelText}
           </button>
           <button
-            onClick={handleConfirm}
             className={cn(
-              'px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors',
+              'rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
               variant === 'danger'
-                ? 'bg-red-500 hover:bg-red-600'
-                : 'bg-blue-500 hover:bg-blue-600'
+                ? 'bg-[#ba1a1a] hover:bg-[#93000a] focus-visible:ring-[#ba1a1a]'
+                : 'bg-[#0f766e] hover:bg-[#005c55] focus-visible:ring-[#0f766e]'
             )}
+            onClick={() => {
+              onConfirm();
+              onClose();
+            }}
+            type="button"
           >
             {confirmText}
           </button>

@@ -14,10 +14,11 @@ describe('WorkflowResultCard', () => {
       />
     );
 
-    expect(screen.getByText('Cần bổ sung thông tin')).toBeInTheDocument();
+    expect(screen.getByText('Cần thêm thông tin để tiếp tục')).toBeInTheDocument();
+    expect(screen.getByText(/vật liệu chính/i)).toBeInTheDocument();
   });
 
-  it('shows citations for a completed compliance output', () => {
+  it('shows a structured checklist without duplicating the source drawer', () => {
     render(
       <WorkflowResultCard
         workflow={{
@@ -27,7 +28,13 @@ describe('WorkflowResultCard', () => {
       />
     );
 
-    expect(screen.getByText('Checklist tuân thủ')).toBeInTheDocument();
-    expect(screen.getByText('[1] Điều 77')).toBeInTheDocument();
+    expect(screen.getByText('Checklist đề xuất')).toBeInTheDocument();
+    expect(screen.getByText('Đối chiếu Điều 77')).toBeInTheDocument();
+    expect(screen.queryByText('[1] Điều 77')).not.toBeInTheDocument();
+  });
+
+  it('uses a safe-stop state when evidence is insufficient', () => {
+    render(<WorkflowResultCard workflow={{ termination_reason: 'insufficient_evidence' }} />);
+    expect(screen.getByText('Chưa đủ căn cứ để trả lời chắc chắn')).toBeInTheDocument();
   });
 });

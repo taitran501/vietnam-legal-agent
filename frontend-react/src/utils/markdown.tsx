@@ -2,20 +2,18 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import type { Options } from 'react-markdown';
+import type { Components } from 'react-markdown';
 
 /**
  * Configure react-markdown with GFM and syntax highlighting
  */
-export const markdownOptions: Options = {
-  remarkPlugins: [remarkGfm],
-  components: {
+const markdownComponents: Components = {
     // Code blocks with syntax highlighting
-    code({ inline, className, children, ...props }: any) {
+    code({ className, children }) {
       const match = /language-(\w+)/.exec(className || '');
-      return !inline && match ? (
+      return match ? (
         <SyntaxHighlighter
-          style={oneDark as any}
+          style={oneDark}
           language={match[1]}
           PreTag="div"
           customStyle={{
@@ -23,14 +21,12 @@ export const markdownOptions: Options = {
             borderRadius: '8px',
             fontSize: '13px',
           }}
-          {...props}
         >
           {String(children).replace(/\n$/, '')}
         </SyntaxHighlighter>
       ) : (
         <code
-          className={`${className} bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-sm font-mono`}
-          {...props}
+          className={`${className || ''} rounded bg-[#f1f4f3] px-1.5 py-0.5 font-mono text-sm`}
         >
           {children}
         </code>
@@ -39,8 +35,8 @@ export const markdownOptions: Options = {
     // Table styling
     table({ children }) {
       return (
-        <div className="overflow-x-auto my-4">
-          <table className="min-w-full border-collapse border border-gray-300 dark:border-gray-600">
+        <div className="my-4 overflow-x-auto">
+          <table className="min-w-full border-collapse border border-[#d9e1df]">
             {children}
           </table>
         </div>
@@ -48,14 +44,14 @@ export const markdownOptions: Options = {
     },
     th({ children }) {
       return (
-        <th className="bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 px-4 py-2 text-left font-semibold">
+        <th className="border border-[#d9e1df] bg-[#f1f4f3] px-4 py-2 text-left font-semibold text-[#172033]">
           {children}
         </th>
       );
     },
     td({ children }) {
       return (
-        <td className="border border-gray-300 dark:border-gray-600 px-4 py-2">
+        <td className="border border-[#d9e1df] px-4 py-2">
           {children}
         </td>
       );
@@ -67,7 +63,7 @@ export const markdownOptions: Options = {
           href={href}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-blue-600 dark:text-blue-400 hover:underline"
+          className="text-[#006a63] underline-offset-2 hover:underline"
         >
           {children}
         </a>
@@ -76,17 +72,17 @@ export const markdownOptions: Options = {
     // Blockquote styling
     blockquote({ children }) {
       return (
-        <blockquote className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 italic text-gray-600 dark:text-gray-400 my-2">
+        <blockquote className="my-3 border-l-4 border-[#80d5cb] pl-4 italic text-[#53615e]">
           {children}
         </blockquote>
       );
     },
     // List styling
     ul({ children }) {
-      return <ul className="list-disc list-inside space-y-1 my-2">{children}</ul>;
+      return <ul className="my-2 list-disc space-y-1 pl-5">{children}</ul>;
     },
     ol({ children }) {
-      return <ol className="list-decimal list-inside space-y-1 my-2">{children}</ol>;
+      return <ol className="my-2 list-decimal space-y-1 pl-5">{children}</ol>;
     },
     // Heading styling
     h1({ children }) {
@@ -102,7 +98,6 @@ export const markdownOptions: Options = {
     p({ children }) {
       return <p className="mb-2 leading-relaxed">{children}</p>;
     },
-  },
 };
 
 /**
@@ -110,7 +105,7 @@ export const markdownOptions: Options = {
  */
 export function MarkdownRenderer({ content }: { content: string }) {
   return (
-    <ReactMarkdown {...(markdownOptions as any)}>
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
       {content}
     </ReactMarkdown>
   );

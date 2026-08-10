@@ -28,7 +28,6 @@ dependencies = [
     "tiktoken>=0.8,<1",
     "lark==1.2.2",
     "tqdm>=4.66.0",
-    "sentence-transformers>=3.0.0",
     "prometheus-client>=0.19.0",
     "sqlalchemy[asyncio]>=2.0,<3.0",
     "alembic>=1.13,<2.0",
@@ -45,6 +44,7 @@ dev = [
     "mypy>=1.11,<2.0",
 ]
 observability = ["langsmith>=0.1,<1.0"]
+cross-encoder = ["sentence-transformers>=3.0.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -59,3 +59,7 @@ python_version = "3.11"
 packages = ["epr_agent"]
 check_untyped_defs = true
 warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["backend.*"]
+follow_imports = "skip"

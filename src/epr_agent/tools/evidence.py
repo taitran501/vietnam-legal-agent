@@ -53,6 +53,67 @@ class EvidenceEvaluator:
 
 
 _CITATION_RE = re.compile(r"\[(\d+)\]")
+_ARTICLE_RE = re.compile(r"\bđiều\s+(\d+[a-zđ]?)\b", re.IGNORECASE)
+_MARKDOWN_PREFIX_RE = re.compile(r"^\s*(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+)")
+_LEGAL_CLAIM_SIGNALS = (
+    "theo điều",
+    "quy định",
+    "nghĩa vụ",
+    "trách nhiệm",
+    "phải ",
+    "không được",
+    "được phép",
+    "thời hạn",
+    "mức đóng góp",
+    "tỷ lệ",
+    "xử phạt",
+    "hồ sơ",
+    "đối tượng áp dụng",
+    "cần đối chiếu",
+)
+_NON_CLAIM_SIGNALS = (
+    "không thay thế tư vấn pháp lý",
+    "không thay thế việc kiểm tra hồ sơ pháp lý",
+    "tôi chưa thể xác minh",
+    "chưa đủ tài liệu",
+    "nguồn tham khảo",
+)
+
+
+def _article_ids(text: str) -> set[str]:
+    return {match.lower() for match in _ARTICLE_RE.findall(text or "")}
+
+
+def _document_article_ids(document: DocumentRecord) -> set[str]:
+    metadata = document.metadata or {}
+    values = [
+        str(metadata.get(key) or "")
+        for key in ("Dieu", "Điều", "Parent_Dieu", "title", "source")
+    ]
+    values.append(document.content)
+    return _article_ids("\n".join(values))
+
+
+def _legal_claim_segments(answer: str) -> list[str]:
+    """Return answer lines that make a legal or compliance claim.
+
+    A line is the useful verification unit for the generated Markdown because
+    numbered checklist items and answer paragraphs already place citations on
+    the same line. Headings, source-list labels, and explicit safe-stop text are
+    not treated as legal conclusions.
+    """
+
+    segments: list[str] = []
+    for raw_line in (answer or "").splitlines():
+        line = _MARKDOWN_PREFIX_RE.sub("", raw_line).strip()
+        if not line:
+            continue
+        lower = line.lower()
+        if any(signal in lower for signal in _NON_CLAIM_SIGNALS):
+            continue
+        if any(signal in lower for signal in _LEGAL_CLAIM_SIGNALS) or _ARTICLE_RE.search(line):
+            segments.append(line)
+    return segments
 
 
 def build_citations(documents: list[DocumentRecord]) -> list[Citation]:
@@ -74,7 +135,7 @@ def verify_citations(
     documents: list[DocumentRecord],
     task_type: str | TaskType,
 ) -> tuple[bool, list[Citation], str]:
-    """Verify that every numbered citation points to returned evidence."""
+    """Verify citation range, claim coverage, and cited article provenance."""
 
     task = TaskType(task_type)
     citations = build_citations(documents)
@@ -86,6 +147,18 @@ def verify_citations(
     max_index = len(documents)
     if any(index < 1 or index > max_index for index in indices):
         return False, citations, "citation_out_of_range"
+
+    for segment in _legal_claim_segments(answer):
+        segment_indices = [int(value) for value in _CITATION_RE.findall(segment)]
+        if not segment_indices:
+            return False, citations, "legal_claim_without_citation"
+        cited_documents = [documents[index - 1] for index in segment_indices]
+        mentioned_articles = _article_ids(segment)
+        if mentioned_articles:
+            supported_articles = set().union(*(_document_article_ids(document) for document in cited_documents))
+            if not mentioned_articles.issubset(supported_articles):
+                return False, citations, "article_reference_not_in_evidence"
+
     if task in {TaskType.ASSESS_EPR_OBLIGATION, TaskType.BUILD_COMPLIANCE_CHECKLIST} and not any(
         citation.index in indices for citation in citations
     ):

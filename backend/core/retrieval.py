@@ -14,11 +14,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
+import threading
 import uuid
 from functools import lru_cache
-from pathlib import Path
-from typing import Optional
 
 import tiktoken
 from langchain.chains.query_constructor.base import (
@@ -42,8 +42,10 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 
 from backend.config import get_settings
+from backend.core.legal_parser import build_qdrant_filter, parse_legal_query
 from backend.core.llm_instances import get_embeddings, get_llm_smart
-from backend.core.legal_parser import parse_legal_query, build_qdrant_filter
+
+logger = logging.getLogger(__name__)
 
 # FIX: Import reranker at module level to avoid 8+ duplicate lazy imports
 try:
@@ -65,7 +67,7 @@ def _count_tokens(text: str, model: str = "gpt-3.5-turbo") -> int:
     try:
         enc = tiktoken.encoding_for_model(model)
         return len(enc.encode(text))
-    except Exception:
+    except Exception:  # noqa: BLE001 - token counting has a deterministic fallback
         # Improved fallback: Vietnamese averages ~3.5 chars/token
         # vs English ~4 chars/token, so use 3.5 for better accuracy
         return int(len(text) / 3.5)
@@ -78,7 +80,7 @@ def _truncate_text(text: str, max_tokens: int = 1000, model: str = "gpt-3.5-turb
         if len(tokens) <= max_tokens:
             return text
         return enc.decode(tokens[:max_tokens]) + "..."
-    except Exception:
+    except Exception:  # noqa: BLE001 - truncation has a deterministic fallback
         return text[: max_tokens * 4] + "..."
 
 
@@ -113,9 +115,12 @@ _LEGAL_QUERY_PATTERNS = [
 ]
 
 _LEGAL_QUERY_KEYWORDS = {
-    "quy định", "thủ tục", "trách nhiệm", "nghĩa vụ", "đăng ký", "báo cáo",
-    "xử phạt", "mức phạt", "căn cứ", "điều kiện", "hồ sơ", "thẩm quyền",
-    "tuân thủ", "thực hiện", "kiểm tra", "đánh giá", "phù hợp",
+    "căn cứ pháp lý",
+    "trích dẫn",
+    "điều khoản nào",
+    "văn bản nào",
+    "theo điều",
+    "theo khoản",
 }
 
 
@@ -156,31 +161,50 @@ def _is_strict_faq_hit(query: str, best: dict, runner_up: dict | None, threshold
 # Qdrant client singleton
 # ---------------------------------------------------------------------------
 
-@lru_cache(maxsize=1)
+_qdrant_client: QdrantClient | None = None
+_qdrant_client_lock = threading.Lock()
+
+
 def _get_qdrant_client() -> QdrantClient:
     """Get Qdrant client with timeout configuration.
     
     CRITICAL FIX HIGH #3: Add timeout to prevent system hang if Qdrant
     becomes unresponsive. Without timeout, all operations block indefinitely.
     """
-    s = get_settings()
-    timeout = 10  # 10 second timeout for all Qdrant operations
-    
-    if s.use_qdrant_cloud and s.qdrant_cloud_url and s.qdrant_api_key:
-        return QdrantClient(
-            url=s.qdrant_cloud_url,
-            api_key=s.qdrant_api_key,
-            timeout=timeout,
-        )
-    if s.qdrant_url:
-        return QdrantClient(url=s.qdrant_url, timeout=timeout)
-    try:
-        return QdrantClient(
-            path=s.qdrant_local_path,
-            timeout=timeout,
-        )
-    except Exception:
-        return QdrantClient(":memory:", timeout=timeout)
+    global _qdrant_client
+    if _qdrant_client is not None:
+        return _qdrant_client
+
+    with _qdrant_client_lock:
+        if _qdrant_client is not None:
+            return _qdrant_client
+
+        s = get_settings()
+        timeout = 10  # 10 second timeout for all Qdrant operations
+        if s.use_qdrant_cloud and s.qdrant_cloud_url and s.qdrant_api_key:
+            _qdrant_client = QdrantClient(
+                url=s.qdrant_cloud_url,
+                api_key=s.qdrant_api_key,
+                timeout=timeout,
+            )
+        elif s.qdrant_url:
+            _qdrant_client = QdrantClient(url=s.qdrant_url, timeout=timeout)
+        else:
+            # Never hide a broken local path behind an empty in-memory store:
+            # retrieval would appear healthy while returning incomplete results.
+            _qdrant_client = QdrantClient(path=s.qdrant_local_path, timeout=timeout)
+        return _qdrant_client
+
+
+def close_qdrant_client() -> None:
+    """Close the shared client explicitly for scripts and graceful shutdown."""
+    global _qdrant_client
+    with _qdrant_client_lock:
+        if _qdrant_client is not None:
+            _qdrant_client.close()
+            _qdrant_client = None
+    _get_law_vectorstore.cache_clear()
+    _get_fallback_retriever.cache_clear()
 
 
 # ---------------------------------------------------------------------------
@@ -387,7 +411,7 @@ def _enrich_docs_from_qdrant(docs: list[Document], collection_name: str) -> list
             for k, v in payload.items():
                 if k not in ("Text",):  # Text is already page_content
                     d.metadata.setdefault(k, v)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - metadata enrichment is best effort
         print(f"⚠️ _enrich_docs_from_qdrant failed: {e}")
     return docs
 
@@ -406,7 +430,7 @@ def _fix_unicode_escapes(llm_output) -> str:
     def _replace(m: re.Match) -> str:
         try:
             return chr(int(m.group(1), 16))
-        except Exception:
+        except Exception:  # noqa: BLE001 - malformed escapes remain unchanged
             return m.group(0)
 
     json_match = re.search(r"(\{.*?\})", llm_output, re.DOTALL)
@@ -533,7 +557,7 @@ class _FallbackLegalRetriever:
             # rerank_documents already imported at module level
                     docs = rerank_documents(query, docs, top_k=self.rerank_top_k)
                 return docs
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - rule filtering falls back to vector search
                 print(f"⚠️ Rule-based filter failed: {e}")
 
         # ── Step 2: Fallback to LLM-based SelfQuery (for complex queries) ──
@@ -574,7 +598,7 @@ class _FallbackLegalRetriever:
             # rerank_documents already imported at module level
                         docs = rerank_documents(query, docs, top_k=self.rerank_top_k)
                     return docs
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - LLM filtering falls back to vector search
                     print(f"⚠️ LLM filter retrieval failed: {e}")
 
             docs = vs.similarity_search(structured.query, k=self.k)
@@ -585,7 +609,7 @@ class _FallbackLegalRetriever:
             # rerank_documents already imported at module level
                 docs = rerank_documents(query, docs, top_k=self.rerank_top_k)
             return docs
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - query construction falls back to plain search
             print(f"⚠️ Query constructor failed, falling back to plain search: {e}")
             docs = vs.similarity_search(query, k=self.k)
             for d in docs:
@@ -720,7 +744,7 @@ def count_articles(query: str) -> dict:
             "filter_description": query,
         }
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - article counting returns an explicit empty result
         logger.error(f"❌ count_articles error: {e}")
         return {"count": None, "articles": [], "filter_description": query}
 
@@ -731,7 +755,7 @@ def counting_answer(count_result: dict, query: str) -> str:
     if count is None:
         return "Xin lỗi, tôi không thể đếm số lượng điều luật dựa trên câu hỏi của bạn."
     if count == 0:
-        return f"Không có điều luật nào trong phạm vi bạn yêu cầu."
+        return "Không có điều luật nào trong phạm vi bạn yêu cầu."
 
     answer = f"Có **{count} điều luật** trong phạm vi bạn yêu cầu."
     if 0 < count <= 20:
@@ -747,7 +771,7 @@ def counting_answer(count_result: dict, query: str) -> str:
 # Async wrappers (run sync calls in thread pool)
 # ---------------------------------------------------------------------------
 
-async def retrieve_faq_async(query: str, score_threshold: Optional[float] = None) -> list[Document]:
+async def retrieve_faq_async(query: str, score_threshold: float | None = None) -> list[Document]:
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, retrieve_faq_top1, query, score_threshold)
 
