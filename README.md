@@ -22,7 +22,7 @@ official legal source
   -> persist run, trace, conversation, and active case
 ```
 
-The only active V3 corpus is EPR. The corpus abstraction and route contracts
+The only indexed corpus is EPR. The corpus abstraction and route contracts
 are reusable for another legal domain, but no other domain is silently searched.
 
 Pipeline V4 is now the default runtime. It
@@ -31,8 +31,8 @@ checklist workflows: a quick action only prefills the composer, facts retain
 their user/panel provenance, evidence is checked per legal issue, and a result
 card is rendered only after the deterministic case decision completes.  The
 official Appendix XXII table must be extracted and audited before V4 can build
-or activate its versioned index. Operators can temporarily roll back with
-`AGENT_PIPELINE_VERSION=pipeline-v3`. See
+or activate its versioned index. The previous V3 collection and Git tag are
+retained as rollback artifacts. See
 [`docs/pipeline_v4_behavior_contract.md`](docs/pipeline_v4_behavior_contract.md).
 
 ## Route contracts
@@ -52,9 +52,11 @@ an exact Redis key containing its normalized-query digest, route, corpus SHA,
 and embedding profile. V3 never uses semantic answer-cache matching: similar
 questions about different Articles must run their own legal retrieval.
 
-For an EPR assessment or checklist, V1 requires four facts: business role,
-product/packaging, material, and activity scope. Missing facts always produce
-`awaiting_user_input`; web research never fills in company facts.
+For an EPR assessment or checklist, V4 validates the facts required by each
+legal issue. These can include the business role, object/product group,
+material or packaging specification, market placement, purpose, exemptions,
+revenue thresholds, reuse, and effective date. Missing decision facts produce
+`needs_information`; web research never fills in company facts.
 
 When legal evidence is insufficient, the answer stops safely and offers the
 user the explicit action **“Tìm nguồn công khai”**. It does not automatically
@@ -155,26 +157,28 @@ successfully before starting.
 
 ## Verification
 
-This repository intentionally has no CI/CD workflow. Run local checks from the
-project virtual environment:
+This repository intentionally has no CI/CD workflow. The complete local test
+matrix and the distinction between deterministic and real-service checks are
+documented in [`docs/v4_test_matrix.md`](docs/v4_test_matrix.md). The fast
+deterministic checks are:
 
 ```powershell
-pytest -q
-ruff check src/epr_agent backend scripts tests
-mypy src/epr_agent
+.venv_acceptance\Scripts\python.exe -m pytest -q
+.venv_acceptance\Scripts\ruff.exe check src/epr_agent backend scripts tests
+.venv_acceptance\Scripts\mypy.exe src/epr_agent
+
+python -m tests.eval.run_eval --suite all --output data/eval/v4-deterministic.json
 
 Set-Location frontend-react
-npm run test
-npm run lint
-npm run build
-npm run test:e2e
+npm.cmd run test
+npm.cmd run build
+npm.cmd run test:e2e -- --grep-invert "real FastAPI|real multi-turn"
 ```
 
-`tests/eval/pipeline_v3_manifest.py` declares the V3 query-understanding,
-retrieval, and end-to-end trajectory contracts. Live retrieval metrics and
-latency must be recorded in `docs/acceptance_report.md` only after a real
-versioned collection is built; deterministic unit tests do not stand in for
-those measurements.
+The real-stack checks require Docker Compose and are run explicitly; they are
+not part of the fast unit command. The OpenAI live suite is also opt-in and
+writes a timestamped report, so deterministic doubles are never presented as
+live quality measurements.
 
 ## Design handoff
 

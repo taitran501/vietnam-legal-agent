@@ -1,4 +1,4 @@
-# Pipeline V3: legal retrieval contract
+# Pipeline V4: legal retrieval contract
 
 ## Canonical source boundary
 

@@ -107,6 +107,8 @@ export interface WorkflowStep {
   action: string;
   status: string;
   trace_id?: string;
+  pipeline_version?: string;
+  sequence?: number;
 }
 
 export interface Conversation {

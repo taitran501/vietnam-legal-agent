@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ChatInput } from '@/components/Chat/ChatInput';
 import { Icon, type IconName } from '@/components/UI/Icon';
 
@@ -41,6 +42,13 @@ const suggestions = [
 ];
 
 export function WelcomeScreen({ disabled = false, isStreaming, onSendPrompt, onPrefillPrompt, onStop, draftText, onDraftChange, intentLabel, onClearIntent }: WelcomeScreenProps) {
+  const [prefillRevision, setPrefillRevision] = useState(0);
+
+  const handlePrefill = (prompt: string, intent: string) => {
+    onPrefillPrompt(prompt, intent);
+    setPrefillRevision((revision) => revision + 1);
+  };
+
   return (
     <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto bg-[#fcfcfa]">
       <div className="mx-auto flex min-h-full w-full max-w-[980px] flex-col items-center px-5 pb-10 pt-[clamp(3rem,9vh,7rem)] sm:px-8">
@@ -68,6 +76,7 @@ export function WelcomeScreen({ disabled = false, isStreaming, onSendPrompt, onP
             onValueChange={onDraftChange}
             intentLabel={intentLabel}
             onClearIntent={onClearIntent}
+            focusRequest={prefillRevision}
             variant="welcome"
           />
           <div className="mt-3 flex flex-wrap justify-center gap-2" aria-label="Tác vụ gợi ý">
@@ -76,7 +85,7 @@ export function WelcomeScreen({ disabled = false, isStreaming, onSendPrompt, onP
                 className="inline-flex min-h-10 items-center gap-2 rounded-full border border-[#bdc9c6] bg-white px-3.5 py-2 text-xs font-medium text-[#3e4947] transition-colors hover:border-[#0f766e] hover:bg-[#f1f4f3] hover:text-[#005c55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] sm:text-sm"
                 disabled={disabled || isStreaming}
                 key={action.label}
-                onClick={() => onPrefillPrompt(action.prompt, action.intent)}
+                onClick={() => handlePrefill(action.prompt, action.intent)}
                 type="button"
               >
                 <Icon name={action.icon} size={16} />
@@ -99,7 +108,7 @@ export function WelcomeScreen({ disabled = false, isStreaming, onSendPrompt, onP
                 className="group flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left text-sm leading-5 text-[#3e4947] transition-colors hover:bg-[#f1f4f3] hover:text-[#172033] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#0f766e] sm:text-[15px]"
                 disabled={disabled || isStreaming}
                 key={suggestion}
-                onClick={() => onPrefillPrompt(suggestion, 'auto')}
+                onClick={() => handlePrefill(suggestion, 'auto')}
                 type="button"
               >
                 <Icon className="shrink-0 text-[#6e7977] group-hover:text-[#006a63]" name="message" size={17} />

@@ -27,13 +27,9 @@ class TestChatRequestValidation:
             ChatRequest(query="")
 
     def test_whitespace_only_query_rejected(self):
-        """Whitespace-only query should be accepted by Pydantic (min_length=1 counts spaces)."""
-        # Note: Pydantic min_length counts all characters including spaces
-        # "   " has length 3, so it passes min_length=1
-        # The backend should handle this by trimming before processing
-        req = ChatRequest(query="   ")
-        assert req.query == "   "  # Pydantic allows it
-        # Backend pipeline should trim/validate after Pydantic
+        """Whitespace-only input is empty after V4 canonicalization."""
+        with pytest.raises(ValidationError):
+            ChatRequest(query="   ")
 
     def test_single_character_query_allowed(self):
         """Single character query should be allowed."""

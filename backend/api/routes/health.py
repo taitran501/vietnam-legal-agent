@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import Any
 
@@ -26,6 +27,7 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
         "corpus_id": settings.corpus_id,
         "corpus_version": settings.corpus_version,
         "corpus_sha": "",
+        "appendix_sha256": "",
         "index_schema_version": settings.index_schema_version,
         "embedding_profile": settings.embedding_profile,
         "embedding_dimensions": settings.embedding_dimensions,
@@ -42,6 +44,8 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
             appendix_path=settings.appendix_xxii_data_path,
         )
         corpus["corpus_sha"] = expected_sha
+        if settings.appendix_xxii_data_path.exists():
+            corpus["appendix_sha256"] = hashlib.sha256(settings.appendix_xxii_data_path.read_bytes()).hexdigest()
         from backend.core.retrieval import _get_qdrant_client
 
         client = _get_qdrant_client()

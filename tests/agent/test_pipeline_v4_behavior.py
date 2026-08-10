@@ -152,7 +152,44 @@ async def test_v4_sse_emits_case_update_and_input_required_before_completion():
     event_types = [event["type"] for event in events]
     assert "input_required" in event_types
     assert "case_update" in event_types
+    assert [event["sequence"] for event in events] == list(range(1, len(events) + 1))
+    assert {event["trace_id"] for event in events} == {events[0]["trace_id"]}
+    assert {event["pipeline_version"] for event in events} == {"pipeline-v4"}
     complete = next(event for event in events if event["type"] == "response_complete")
     assert complete["outcome"] == "needs_information"
     assert complete["result_type"] == "none"
     assert complete["pipeline_version"] == "pipeline-v4"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", ["Quy định về chứng khoán là gì?", "Luật lao động quy định gì về hợp đồng?"])
+async def test_v4_out_of_scope_stops_before_legacy_retrieval(query: str):
+    history = MemoryHistory()
+    app, retrieval = runtime(history)
+
+    state = await app.run(query=query, user_id="v4-user", conversation_id="v4-out-of-scope")
+
+    assert state["route"] == "out_of_scope"
+    assert state["outcome"] == "out_of_scope"
+    assert state["result_type"] == "none"
+    assert state["termination_reason"] == "out_of_scope"
+    assert retrieval.requests == []
+
+
+@pytest.mark.asyncio
+async def test_v4_explicit_no_evidence_signal_stops_without_claim():
+    history = MemoryHistory()
+    app, retrieval = runtime(history)
+
+    state = await app.run(
+        query="Tỷ lệ tái chế của nhóm chưa có trong corpus là bao nhiêu?",
+        user_id="v4-user",
+        conversation_id="v4-no-evidence-signal",
+    )
+
+    assert state["route"] == "legal_lookup"
+    assert state["outcome"] == "insufficient_evidence"
+    assert state["termination_reason"] == "insufficient_evidence"
+    assert state["result_type"] == "none"
+    assert state["available_actions"] == ["research_web"]
+    assert retrieval.requests == []

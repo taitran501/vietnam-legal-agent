@@ -87,6 +87,8 @@ def extract_explicit_epr_facts(query: str, *, source: FactSource = FactSource.US
         if marker in text:
             found["packaged_goods_category"] = _fact(category, source, marker, turn_id=turn_id)
             break
+    if "hàng hóa khác" in text or "nhóm hàng hóa khác" in text:
+        found["packaged_goods_category"] = _fact("other", source, "hàng hóa khác", turn_id=turn_id)
     for marker, material in (("pet", "pet"), ("pe", "pe_pp"), ("pp", "pe_pp"), ("nhựa", "plastic"), ("giấy", "paper"), ("thủy tinh", "glass"), ("kim loại", "metal"), ("cao su", "rubber")):
         if marker in text:
             found["material"] = _fact(material, source, marker, turn_id=turn_id)
@@ -101,8 +103,9 @@ def extract_explicit_epr_facts(query: str, *, source: FactSource = FactSource.US
 
     if any(marker in text for marker in ("nghiên cứu", "học tập", "thử nghiệm")):
         found["activity_purpose"] = _fact("research_study_test", source, "nghiên cứu/học tập/thử nghiệm", turn_id=turn_id)
-    elif "xuất khẩu" not in text:
-        # This only describes the stated business purpose, never market scope.
+    elif any(marker in text for marker in ("kinh doanh", "thương mại", "bán ra", "bán tại")):
+        # Only accept an explicitly stated commercial purpose.  A business
+        # role or the phrase "tại Việt Nam" is not enough to infer this fact.
         found["activity_purpose"] = _fact("commercial", source, "hoạt động thương mại", turn_id=turn_id)
 
     revenue = re.search(r"(?:doanh thu[^\d]{0,40})?(\d+(?:[.,]\d+)?)\s*(tỷ|triệu)?\s*(?:đồng|vnđ|vnd)?", text)

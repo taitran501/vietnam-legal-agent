@@ -13,6 +13,7 @@ import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any, cast
+from uuid import uuid4
 
 from epr_agent.agent.graph import create_initial_state, run_workflow
 from epr_agent.agent.runtime import WorkflowRuntime, _documents_for_api, _metadata, split_verified_answer_for_stream
@@ -35,7 +36,7 @@ from epr_agent.domain.models import (
     documents_to_dict,
 )
 from epr_agent.domain.routes import RouteType
-from epr_agent.domain.tasks import classify_route
+from epr_agent.domain.tasks import classify_route, has_explicit_no_evidence_signal
 from epr_agent.domain.v4 import (
     AssessmentStatus,
     CaseStateV4,
@@ -66,9 +67,11 @@ _PHASES = {
 def _fact_values(raw: dict[str, Any] | None) -> dict[str, FactValue]:
     result: dict[str, FactValue] = {}
     for key, value in (raw or {}).items():
+        target_key = str(key)
         if isinstance(value, dict) and "value" in value:
             try:
-                result[key] = FactValue.model_validate(value)
+                fact = FactValue.model_validate(value)
+                result[target_key] = fact
                 continue
             except (TypeError, ValueError):
                 # Legacy V3 facts have no typed provenance and are converted
@@ -76,7 +79,43 @@ def _fact_values(raw: dict[str, Any] | None) -> dict[str, FactValue]:
                 continue
         text = " ".join(str(value or "").split())
         if text:
-            result[key] = FactValue(value=text, source=FactSource.USER_TURN, confidence=0.5, verified=False)
+            result[target_key] = FactValue(
+                value=text,
+                source=FactSource.USER_TURN,
+                source_turn="legacy-v3-migration",
+                confidence=0.5,
+                verified=False,
+            )
+
+    # V3 stored four free-form fields. Convert only values that have an
+    # unambiguous V4 meaning; every migrated value remains explicitly
+    # unverified so the V4 rule pack can still ask for material facts.
+    migrated: dict[str, FactValue] = {}
+
+    def migrate(target_key: str, value: str) -> None:
+        if target_key not in result and value:
+            migrated[target_key] = FactValue(
+                value=value,
+                source=FactSource.USER_TURN,
+                source_turn="legacy-v3-migration",
+                confidence=0.5,
+                verified=False,
+            )
+
+    legacy_product = result.get("product_or_packaging")
+    if legacy_product:
+        product_text = legacy_product.value
+        if "bao bì" in product_text.casefold():
+            migrate("object_kind", "packaging")
+            migrate("product_group", "bao_bi")
+        elif "sản phẩm" in product_text.casefold():
+            migrate("object_kind", "product")
+
+    legacy_scope = result.get("activity_scope")
+    if legacy_scope and any(marker in legacy_scope.value.casefold() for marker in ("việt nam", "nội địa", "trong nước")):
+        migrate("market_placement", "vietnam_market")
+
+    result.update(migrated)
     return result
 
 
@@ -99,6 +138,41 @@ def _metadata_v4(state: AgentState) -> dict[str, Any]:
         }
     )
     return data
+
+
+def _terminal_safe_stop(
+    state: AgentState,
+    *,
+    route: RouteType,
+    outcome: WorkflowOutcome,
+    termination: TerminationReason,
+    answer: str,
+    source_scope: str,
+    available_actions: list[str] | None = None,
+    reason_code: str,
+) -> AgentState:
+    """Finish a bounded route before retrieval when its contract requires it."""
+
+    state["route"] = route.value
+    state["source_scope"] = source_scope
+    state["answer"] = answer
+    state["source"] = "error"
+    state["outcome"] = outcome.value
+    state["result_type"] = ResultType.NONE.value
+    state["termination_reason"] = termination.value
+    state["evidence_status"] = "not_evaluated" if outcome == WorkflowOutcome.OUT_OF_SCOPE else "insufficient"
+    state["available_actions"] = list(available_actions or [])
+    state["citation_valid"] = False
+    state["citation_error"] = reason_code
+    if state.get("trace_events"):
+        state["trace_events"][-1]["reason_code"] = reason_code
+        state["trace_events"][-1]["payload"] = {
+            "route": route.value,
+            "outcome": outcome.value,
+            "source_scope": source_scope,
+        }
+    append_action(state, Action.FINISH)
+    return state
 
 
 class V4WorkflowRuntime(WorkflowRuntime):
@@ -213,6 +287,18 @@ class V4WorkflowRuntime(WorkflowRuntime):
                 },
             )
             return state
+
+        if has_explicit_no_evidence_signal(state.get("query", "")):
+            return _terminal_safe_stop(
+                state,
+                route=route,
+                outcome=WorkflowOutcome.INSUFFICIENT_EVIDENCE,
+                termination=TerminationReason.INSUFFICIENT_EVIDENCE,
+                answer="Tôi chưa có tài liệu pháp luật phù hợp để kiểm chứng yêu cầu này. Bạn có thể chọn tìm nguồn công khai.",
+                source_scope="legal_corpus",
+                available_actions=[RouteType.RESEARCH_WEB.value],
+                reason_code="explicit_no_evidence_signal",
+            )
 
         issues = legal_issues(facts, checklist=task == TaskType.BUILD_COMPLIANCE_CHECKLIST)
         state["required_issues"] = [issue.issue_id for issue in issues if issue.required]
@@ -381,6 +467,27 @@ class V4WorkflowRuntime(WorkflowRuntime):
         route = classify_route(state.get("query", ""), None, active_case)
         if route in {RouteType.CASE_ASSESSMENT, RouteType.COMPLIANCE_CHECKLIST}:
             return await self._execute_case(state)
+        if route == RouteType.OUT_OF_SCOPE:
+            return _terminal_safe_stop(
+                state,
+                route=route,
+                outcome=WorkflowOutcome.OUT_OF_SCOPE,
+                termination=TerminationReason.OUT_OF_SCOPE,
+                answer="Tôi hiện chỉ hỗ trợ tra cứu và xử lý các vấn đề trong kho pháp luật EPR đã đăng ký.",
+                source_scope="outside_registered_corpus",
+                reason_code="outside_registered_corpus",
+            )
+        if route != RouteType.RESEARCH_WEB and has_explicit_no_evidence_signal(state.get("query", "")):
+            return _terminal_safe_stop(
+                state,
+                route=route,
+                outcome=WorkflowOutcome.INSUFFICIENT_EVIDENCE,
+                termination=TerminationReason.INSUFFICIENT_EVIDENCE,
+                answer="Tôi chưa có tài liệu pháp luật phù hợp để kiểm chứng yêu cầu này. Bạn có thể chọn tìm nguồn công khai.",
+                source_scope="legal_corpus",
+                available_actions=[RouteType.RESEARCH_WEB.value],
+                reason_code="explicit_no_evidence_signal",
+            )
         delegated = await run_workflow(
             state["query"], user_id=state["user_id"], conversation_id=state["conversation_id"],
             legacy_session_id=state.get("legacy_session_id", ""), mode=state.get("mode", "auto"), deps=self.deps,
@@ -432,12 +539,29 @@ class V4WorkflowRuntime(WorkflowRuntime):
 
     async def stream(self, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
         started = time.perf_counter()
-        yield {"type": "status", "message": "Đang hiểu yêu cầu…", "stage": "understand"}
-        state = await self._execute(**kwargs)
+        # SSE consumers need one stable envelope from the first event onward.
+        # The trace id is allocated before execution so status/error events can
+        # be correlated even when a later workflow node fails.
+        trace_id = str(kwargs.get("trace_id") or uuid4())
+        request_kwargs = {**kwargs, "trace_id": trace_id}
+        sequence = 0
+
+        def emit(payload: dict[str, Any]) -> dict[str, Any]:
+            nonlocal sequence
+            sequence += 1
+            return {
+                **payload,
+                "trace_id": trace_id,
+                "pipeline_version": "pipeline-v4",
+                "sequence": sequence,
+            }
+
+        yield emit({"type": "status", "message": "Đang hiểu yêu cầu…", "stage": "understand"})
+        state = await self._execute(**request_kwargs)
         state["run_ended_at"] = datetime.now(UTC).isoformat()
         state["run_duration_ms"] = round((time.perf_counter() - started) * 1000, 2)
         await self._persist(state, started_at=started)
-        trace_id = state.get("trace_id", "")
+        trace_id = str(state.get("trace_id") or trace_id)
         seen: set[str] = set()
         step = 0
         for action in state.get("action_sequence", []):
@@ -446,14 +570,14 @@ class V4WorkflowRuntime(WorkflowRuntime):
                 continue
             seen.add(phase)
             step += 1
-            yield {"type": "workflow_step", "step": step, "action": phase, "label": label, "status": "completed", "trace_id": trace_id, "pipeline_version": "pipeline-v4"}
+            yield emit({"type": "workflow_step", "step": step, "action": phase, "label": label, "status": "completed"})
         if state.get("outcome") == WorkflowOutcome.NEEDS_INFORMATION.value:
-            yield {"type": "input_required", "question": state.get("answer", ""), "missing_facts": state.get("missing_facts", []), "case_state": state.get("case_state"), "trace_id": trace_id, "pipeline_version": "pipeline-v4"}
+            yield emit({"type": "input_required", "question": state.get("answer", ""), "missing_facts": state.get("missing_facts", []), "case_state": state.get("case_state")})
         if state.get("case_state"):
-            yield {"type": "case_update", "case_state": state["case_state"], "trace_id": trace_id, "pipeline_version": "pipeline-v4"}
+            yield emit({"type": "case_update", "case_state": state["case_state"]})
         answer = state.get("answer", "")
         for index, chunk in enumerate(split_verified_answer_for_stream(answer, max_chunk_chars=self.answer_chunk_size), start=1):
-            yield {"type": "response_chunk", "chunk": chunk, "chunk_index": index, "stage": "streaming", "trace_id": trace_id}
+            yield emit({"type": "response_chunk", "chunk": chunk, "chunk_index": index, "stage": "streaming"})
             if self.answer_chunk_delay_s:
                 await asyncio.sleep(self.answer_chunk_delay_s)
-        yield {"type": "response_complete", "text": answer, "documents": _documents_for_api(state), "source": state.get("source", "error"), "stage": "complete", **_metadata_v4(state)}
+        yield emit({"type": "response_complete", "text": answer, "documents": _documents_for_api(state), "source": state.get("source", "error"), "stage": "complete", **_metadata_v4(state)})

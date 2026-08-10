@@ -13,6 +13,8 @@ interface ChatInputProps {
   intentLabel?: string;
   onValueChange?: (value: string) => void;
   onClearIntent?: () => void;
+  /** Incremented by quick actions to return focus to the composer. */
+  focusRequest?: number;
 }
 
 export function ChatInput({
@@ -26,6 +28,7 @@ export function ChatInput({
   intentLabel,
   onValueChange,
   onClearIntent,
+  focusRequest,
 }: ChatInputProps) {
   const [localInput, setLocalInput] = useState('');
   const input = value ?? localInput;
@@ -45,8 +48,8 @@ export function ChatInput({
   }, [input, variant]);
 
   useEffect(() => {
-    if (autoFocus) textareaRef.current?.focus();
-  }, [autoFocus]);
+    if (autoFocus || focusRequest !== undefined) textareaRef.current?.focus();
+  }, [autoFocus, focusRequest]);
 
   const handleSend = () => {
     if (!input.trim() || isStreaming || disabled) return;
