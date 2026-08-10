@@ -31,8 +31,8 @@ mark a live gate complete from mocks or deterministic doubles.
 
 | Check | Result | Notes |
 | --- | --- | --- |
-| Python tests | pass | 345 tests collected; the complete local `pytest` process exited with code 0. This includes the 60 understanding/retrieval manifest contracts and 40 V3 trajectories. |
-| V3 Ruff scope | pass | `src/epr_agent`, V3 API/retrieval/index scripts, migration, and V3 tests pass. The repository-wide legacy lint baseline still has 233 unrelated findings and was not hidden or rewritten in this batch. |
+| Python tests | pass | 326 tests collected; the complete local `pytest` process exited with code 0. This includes the 60 understanding/retrieval manifest contracts and 40 V3 trajectories. |
+| Repository Ruff | pass | `ruff check .` passes. The unused legacy semantic cache and its tests were removed; mechanical lint fixes retain existing runtime behaviour. |
 | `mypy src/epr_agent` | pass | Success for 28 source files. |
 | React | pass | Vitest: 5 tests in 3 files; ESLint passed; production build passed. Vite reports only a non-blocking 1.07 MB pre-gzip chunk warning. |
 | Playwright | pass | 9/9 browser flows: desktop/mobile/tablet behaviour, missing facts, safe stop, evidence drawer, SSE lookup, and case resume. |
@@ -50,12 +50,12 @@ mark a live gate complete from mocks or deterministic doubles.
 
 ## Live V3 retrieval gates
 
-These gates are intentionally unfilled until the versioned V3 index has been
-built from the canonical corpus with `text-embedding-3-small`.
+These gates were measured after the versioned V3 index was built from the
+canonical corpus with `text-embedding-3-small`.
 
 | Field | Result |
 | --- | --- |
-| Evaluated code commit | `16032b11c92c5973f2bfe53c066e570d91cac0ed` |
+| Evaluated code commit | `c982b777954fa7c0eb7ef646206e67aa527f1f68` |
 | Corpus SHA | `ca0238a1579e555e427dafa5e98761ba5405c9dff41b5e421688c8179c25adfd` |
 | Collection target / alias | `law_epr_ca0238a1579e_legal_structure_v2_openai_text_embedding_3_small_v1` / `law_collection` |
 | Embedding profile | `openai-text-embedding-3-small-v1` |
@@ -64,7 +64,7 @@ built from the canonical corpus with `text-embedding-3-small`.
 | P@1 | 1.0 (required >= 0.9375) |
 | NDCG@3 | 1.0 (required >= 0.9375) |
 | Recall@5 | 1.0 (required >= 0.9375) |
-| E2E p95 | pass: all 40 deterministic V3 trajectories assert under 15 s, so p95 is also under the gate |
+| Real-stack E2E p95 | 3,250.04 ms across 40 cache-cold Docker requests; maximum 4,019.99 ms; all 40 under 15 s |
 
 ### Live smoke evidence
 
@@ -75,8 +75,11 @@ built from the canonical corpus with `text-embedding-3-small`.
   this bounded action sequence: validate, load context, understand, cache
   miss, legal retrieval, evidence gate, compose, verify, finish.
 - A subsequent Article 78 request also executed legal retrieval rather than
-  reusing Article 77. The active answer cache is exact-key Redis only; it no
-  longer calls the legacy semantic cache.
+  reusing Article 77. The active answer cache is exact-key Redis only; the
+  obsolete semantic-cache component was removed.
+- The p95 run used 40 distinct Article queries through the running Docker
+  backend with V3 answer-cache keys cleared first. All runs ended
+  `answer_complete` with cache miss/store paths; p50 was 2,417.87 ms.
 
 Merge to `main` requires every mandatory local and live gate above to be
 recorded as passing. A collection or evaluation failure leaves the prior alias

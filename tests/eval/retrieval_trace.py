@@ -13,13 +13,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from backend.core.retrieval import retrieve_legal  # noqa: E402
+from backend.core.retrieval import retrieve_legal
 
 
 def _format_doc(doc: Any, rank: int) -> str:

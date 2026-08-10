@@ -11,7 +11,6 @@ from __future__ import annotations
 import logging
 import re
 import time
-from typing import Optional
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field, field_validator
@@ -27,7 +26,7 @@ class FeedbackRequest(BaseModel):
     session_id: str = Field(..., min_length=1, max_length=128, description="Session identifier")
     message_index: int = Field(..., ge=0, description="Index of the assistant message (must be >= 0)")
     rating: int = Field(..., description="1 = thumbs down, 2 = thumbs up")
-    comment: Optional[str] = Field(default=None, max_length=500)
+    comment: str | None = Field(default=None, max_length=500)
 
     @field_validator("session_id")
     @classmethod
@@ -49,7 +48,7 @@ class FeedbackRequest(BaseModel):
     
     @field_validator("comment")
     @classmethod
-    def sanitize_comment(cls, v: Optional[str]) -> Optional[str]:
+    def sanitize_comment(cls, v: str | None) -> str | None:
         """Sanitize comment by stripping potentially dangerous characters."""
         if v is None:
             return v
@@ -107,7 +106,7 @@ async def submit_feedback(body: FeedbackRequest):
             body.rating,
         )
         return {"status": "ok", "message": "Feedback recorded"}
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - feedback is best-effort and must not break chat responses
         logger.warning("Failed to store feedback: %s", exc)
         return {"status": "error", "detail": "Failed to store feedback"}
 
@@ -123,7 +122,6 @@ async def get_feedback_stats():
         redis_client = await get_redis()
         counter_key = "feedback:counters"
         
-        import json
         counters = await redis_client.hgetall(counter_key)
         
         return {
@@ -132,7 +130,7 @@ async def get_feedback_stats():
             "total_feedback": int(counters.get("total", 0)),
             "satisfaction_rate": _calculate_satisfaction(counters),
         }
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - aggregate feedback remains optional when Redis is unavailable
         logger.warning("Failed to get feedback stats: %s", exc)
         return {"total_up": 0, "total_down": 0, "total_feedback": 0, "satisfaction_rate": 0}
 

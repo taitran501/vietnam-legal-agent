@@ -8,15 +8,13 @@ Tests cover:
 - Streaming configuration
 """
 
-import pytest
-from unittest.mock import patch, MagicMock
 
 from backend.core.llm_instances import (
+    get_embeddings,
     get_llm_fast,
     get_llm_router,
     get_llm_smart,
     get_llm_stream,
-    get_embeddings,
 )
 
 

@@ -11,12 +11,11 @@ Tests cover:
 - Permissions-Policy header present
 """
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from starlette.testclient import TestClient
-from fastapi import FastAPI
 
+import pytest
 from backend.main import SecurityHeadersMiddleware
+from fastapi import FastAPI
+from starlette.testclient import TestClient
 
 
 class TestSecurityHeadersMiddleware:

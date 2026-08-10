@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from backend.core.retrieval import retrieve_legal  # noqa: E402
+from backend.core.retrieval import retrieve_legal
 
 
 @dataclass

@@ -18,10 +18,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Optional, List
 
-from qdrant_client.models import Filter, FieldCondition, MatchValue, MatchText, MinShould
-
+from qdrant_client.models import FieldCondition, Filter, MatchText, MatchValue, MinShould
 
 # ---------------------------------------------------------------------------
 # Roman numeral conversion
@@ -35,7 +33,7 @@ _ROMAN_TO_INT = {
 }
 
 
-def _roman_to_int(roman: str) -> Optional[int]:
+def _roman_to_int(roman: str) -> int | None:
     """Convert Roman numeral string to integer."""
     return _ROMAN_TO_INT.get(roman.upper().strip())
 
@@ -47,15 +45,15 @@ def _roman_to_int(roman: str) -> Optional[int]:
 @dataclass
 class LegalFilter:
     """Extracted filter conditions from a legal query."""
-    dieu_number: Optional[int] = None      # e.g., 77 from "Điều 77"
-    dieu_text: Optional[str] = None        # Full match: "Điều 77"
-    chuong_number: Optional[int] = None    # e.g., 2 from "Chương II" or "Chương 2"
-    chuong_text: Optional[str] = None      # Full match: "Chương II"
-    muc_number: Optional[int] = None       # e.g., 1 from "Mục 1"
-    muc_text: Optional[str] = None         # Full match: "Mục 1"
+    dieu_number: int | None = None      # e.g., 77 from "Điều 77"
+    dieu_text: str | None = None        # Full match: "Điều 77"
+    chuong_number: int | None = None    # e.g., 2 from "Chương II" or "Chương 2"
+    chuong_text: str | None = None      # Full match: "Chương II"
+    muc_number: int | None = None       # e.g., 1 from "Mục 1"
+    muc_text: str | None = None         # Full match: "Mục 1"
     free_query: str = ""                   # Remaining text for semantic search
     # NEW: Keyword-based article hints for broader coverage
-    related_articles: List[str] = field(default_factory=list)  # e.g., ["Điều 77", "Điều 78"]
+    related_articles: list[str] = field(default_factory=list)  # e.g., ["Điều 77", "Điều 78"]
 
 
 def parse_legal_query(query: str) -> LegalFilter:
@@ -210,7 +208,7 @@ def parse_legal_query(query: str) -> LegalFilter:
 # Qdrant filter builder
 # ---------------------------------------------------------------------------
 
-def build_qdrant_filter(legal_filter: LegalFilter) -> Optional[Filter]:
+def build_qdrant_filter(legal_filter: LegalFilter) -> Filter | None:
     """
     Convert a LegalFilter into a Qdrant Filter object.
 

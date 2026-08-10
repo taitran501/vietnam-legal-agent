@@ -15,7 +15,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import List
 
 import redis.asyncio as aioredis
 
@@ -104,7 +103,7 @@ def _registry_key() -> str:
     return "sessions:registry"
 
 
-async def get_history(session_id: str) -> List[dict]:
+async def get_history(session_id: str) -> list[dict]:
     """Return the stored message list, newest-last. Empty list if missing.
     
     Supports both old format (JSON string) and new format (Redis list).
@@ -134,7 +133,7 @@ async def get_history(session_id: str) -> List[dict]:
             return messages
         
         return []
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - degraded Redis history must return an empty context
         logger.warning("get_history failed for %s: %s", session_id, exc)
         return []
 
@@ -145,12 +144,12 @@ async def append_exchange(session_id: str, user_msg: str, assistant_msg: str) ->
     Uses atomic Redis RPUSH/LTRIM operations to prevent read-modify-write
     race conditions under concurrent requests to the same session.
     """
-    from datetime import datetime
+    from datetime import UTC, datetime
 
     settings = get_settings()
     try:
         r = await get_redis()
-        timestamp = datetime.utcnow().isoformat() + "Z"
+        timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         
         # Serialize messages
         user_entry = json.dumps({
@@ -176,17 +175,17 @@ async def append_exchange(session_id: str, user_msg: str, assistant_msg: str) ->
         # Keep metadata operations best-effort so history persistence still succeeds.
         try:
             await _auto_title(session_id, user_msg, assistant_msg)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - title enrichment is strictly best-effort
             logger.debug("_auto_title failed for %s: %s", session_id, exc)
 
         try:
             await _update_meta(session_id)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - metadata enrichment is strictly best-effort
             logger.debug("_update_meta failed for %s: %s", session_id, exc)
 
         try:
             await _register_session(session_id)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - session registry enrichment is strictly best-effort
             logger.debug("_register_session failed for %s: %s", session_id, exc)
         
     except Exception as exc:
@@ -200,7 +199,7 @@ async def get_session_meta(session_id: str) -> dict:
         r = await get_redis()
         raw = await r.get(_meta_key(session_id))
         return json.loads(raw) if raw else {}
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - session metadata is optional during Redis degradation
         logger.debug("get_session_meta failed for %s: %s", session_id, exc)
         return {}
 
@@ -220,7 +219,7 @@ async def set_session_meta(session_id: str, meta: dict) -> None:
         
         await r.set(_meta_key(session_id), json.dumps(existing, ensure_ascii=False))
         await r.expire(_meta_key(session_id), get_settings().cache_ttl_seconds)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - session metadata writes are best-effort
         logger.warning("set_session_meta failed for %s: %s", session_id, exc)
 
 
@@ -247,7 +246,7 @@ async def _auto_title(session_id: str, user_msg: str, assistant_msg: str) -> Non
 
         title = _derive_title_from_message(user_msg)
         await set_session_meta(session_id, {"title": title})
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - title generation must not prevent message persistence
         logger.debug("_auto_title failed for %s: %s", session_id, exc)
 
 
@@ -264,7 +263,7 @@ async def _update_meta(session_id: str) -> None:
                 "message_count": len(messages),
             },
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - session metadata refresh is best-effort
         logger.debug("_update_meta failed for %s: %s", session_id, exc)
 
 
@@ -278,11 +277,11 @@ async def _register_session(session_id: str) -> None:
         if exists is None:
             await r.zadd(_registry_key(), {session_id: time.time()})
             await r.expire(_registry_key(), get_settings().cache_ttl_seconds)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - the legacy registry is best-effort only
         logger.debug("_register_session failed: %s", exc)
 
 
-async def list_sessions(limit: int = 50, offset: int = 0) -> List[dict]:
+async def list_sessions(limit: int = 50, offset: int = 0) -> list[dict]:
     """
     List all sessions sorted by creation time (newest first).
     Returns list of {id, title, created_at, updated_at, message_count}.
@@ -307,7 +306,7 @@ async def list_sessions(limit: int = 50, offset: int = 0) -> List[dict]:
             })
         
         return sessions
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - Redis listing degrades to an empty legacy-session list
         logger.warning("list_sessions failed: %s", exc)
         return []
 
@@ -321,11 +320,11 @@ async def clear_session(session_id: str) -> None:
         pipe.delete(_meta_key(session_id))
         pipe.zrem(_registry_key(), session_id)
         await pipe.execute()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - clearing legacy sessions is best-effort during Redis outage
         logger.warning("clear_session failed for %s: %s", session_id, exc)
 
 
-def format_history_for_llm(messages: List[dict]) -> str:
+def format_history_for_llm(messages: list[dict]) -> str:
     """
     Format the stored messages as a plain-text block for LLM prompts.
     Example output:
@@ -337,7 +336,7 @@ def format_history_for_llm(messages: List[dict]) -> str:
     """
     if not messages:
         return "(trống)"
-    lines: List[str] = []
+    lines: list[str] = []
     for m in messages:
         role = "Người dùng" if m["role"] == "user" else "Trợ lý"
         # CRITICAL: Sanitize user input to prevent prompt injection

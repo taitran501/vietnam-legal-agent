@@ -14,7 +14,7 @@ import asyncio
 import logging
 from typing import Any
 
-from backend.history import init_history_store, ensure_conversation, append_exchange
+from backend.history import append_exchange, ensure_conversation, init_history_store
 from backend.memory import session_store
 
 logger = logging.getLogger(__name__)

@@ -16,13 +16,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import re
 import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
-
 
 CHAPTER_RE = re.compile(r"^\s*Chương\s+([IVXLCM]+|\d+)\b.*$", re.IGNORECASE)
 SECTION_RE = re.compile(r"^\s*Mục\s+\d+\b.*$", re.IGNORECASE)
@@ -31,13 +31,15 @@ ARTICLE_RE = re.compile(r"^\s*Điều\s+(\d+)\.\s*(.+)?$", re.IGNORECASE)
 ZERO_WIDTH_RE = re.compile(r"[\u200B-\u200F\uFEFF]")
 MULTISPACE_RE = re.compile(r"[ \t]{2,}")
 MULTIBLANK_RE = re.compile(r"\n{3,}")
+logger = logging.getLogger(__name__)
 
 
 def _read_text_with_fallback(path: Path) -> str:
     for enc in ("utf-8-sig", "utf-16", "utf-16-le", "utf-16-be", "cp1258", "latin-1"):
         try:
             return path.read_text(encoding=enc)
-        except Exception:
+        except (OSError, UnicodeError) as exc:
+            logger.debug("Unable to read %s as %s: %s", path, enc, exc)
             continue
     return path.read_text(encoding="utf-8", errors="ignore")
 
@@ -61,8 +63,8 @@ def extract_doc_to_txt(doc_path: Path, out_txt: Path) -> None:
 
     ps = (
         "$ErrorActionPreference='Stop'; "
-        f"$docPath='{str(doc_path)}'; "
-        f"$tmpOut='{str(out_txt)}'; "
+        f"$docPath='{doc_path!s}'; "
+        f"$tmpOut='{out_txt!s}'; "
         "$word=New-Object -ComObject Word.Application; "
         "$word.Visible=$false; "
         "$doc=$word.Documents.Open($docPath,$false,$true); "

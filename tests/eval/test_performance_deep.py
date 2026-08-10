@@ -11,18 +11,22 @@ Usage:
     python tests/eval/test_performance_deep.py
 """
 
+# This standalone benchmark reports arbitrary service failures and writes one
+# report after the async measurement loop has completed.
+# ruff: noqa: BLE001, ASYNC230
+
+import asyncio
+import json
 import sys
 import time
-import json
-import asyncio
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import List, Dict
-from dataclasses import dataclass, field, asdict
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from dotenv import load_dotenv
+
 load_dotenv(ROOT / ".env", override=True)
 
 
@@ -100,11 +104,11 @@ class QueryResult:
     token_count: int
     token_rate: float  # tokens/sec during streaming
     source: str
-    stages: List[StageTiming] = field(default_factory=list)
+    stages: list[StageTiming] = field(default_factory=list)
     error: str = ""
 
 
-async def run_single_query(test_case: Dict, clear_cache_before: bool = True) -> QueryResult:
+async def run_single_query(test_case: dict, clear_cache_before: bool = True) -> QueryResult:
     """Test a single query with full timing breakdown."""
     query = test_case["query"]
     query_id = test_case["id"]
@@ -202,7 +206,7 @@ def print_detailed_result(result: QueryResult):
         return
     
     # Timing summary
-    print(f"\n⏱️  TIMING BREAKDOWN:")
+    print("\n⏱️  TIMING BREAKDOWN:")
     print(f"  Time to First Token:  {result.ttft_ms:>8.0f}ms ({result.ttft_ms/1000:.2f}s)")
     print(f"  Total Time:           {result.total_ms:>8.0f}ms ({result.total_ms/1000:.2f}s)")
     print(f"  Streaming Time:       {(result.total_ms - result.ttft_ms):>8.0f}ms")
@@ -211,7 +215,7 @@ def print_detailed_result(result: QueryResult):
     
     # Stage-by-stage breakdown
     if result.stages:
-        print(f"\n📊 STAGE-BY-STAGE BREAKDOWN:")
+        print("\n📊 STAGE-BY-STAGE BREAKDOWN:")
         print(f"  {'Stage':<25} {'Start':>8} {'Duration':>10} {'% of Total':>12}")
         print(f"  {'-'*58}")
         
@@ -220,7 +224,6 @@ def print_detailed_result(result: QueryResult):
         # We'll show actual streaming vs post-processing breakdown
         streaming_start = None
         streaming_end = None
-        last_status_end = None
         
         for i, stage in enumerate(result.stages):
             if stage.name in ['chitchat', 'generation', 'web_search']:
@@ -230,12 +233,11 @@ def print_detailed_result(result: QueryResult):
                 streaming_end = stage.start_offset_ms + stage.duration_ms
             
             if stage.name not in ['complete', 'cache']:
-                last_status_end = stage.start_offset_ms + stage.duration_ms
+                stage.start_offset_ms + stage.duration_ms
         
         # Calculate actual metrics
-        actual_streaming_time = (streaming_end - streaming_start) if (streaming_start is not None and streaming_end is not None) else 0
+        (streaming_end - streaming_start) if (streaming_start is not None and streaming_end is not None) else 0
         actual_post_processing = result.total_ms - (streaming_end if streaming_end else result.total_ms)
-        actual_processing = last_status_end if last_status_end else result.total_ms
         
         # For cache hits with no streaming, user-perceived time is the total time
         user_perceived_time = streaming_end if streaming_end else result.total_ms
@@ -266,10 +268,10 @@ def print_detailed_result(result: QueryResult):
     print(f"{'='*90}")
 
 
-def print_comprehensive_summary(results: List[QueryResult]):
+def print_comprehensive_summary(results: list[QueryResult]):
     """Print comprehensive summary across all queries."""
     print(f"\n\n{'='*90}")
-    print(f"📊 COMPREHENSIVE PERFORMANCE SUMMARY")
+    print("📊 COMPREHENSIVE PERFORMANCE SUMMARY")
     print(f"{'='*90}")
     
     # Group by type
@@ -303,13 +305,13 @@ def print_comprehensive_summary(results: List[QueryResult]):
     
     # Overall statistics
     print(f"\n{'='*90}")
-    print(f"🎯 OVERALL STATISTICS:")
+    print("🎯 OVERALL STATISTICS:")
     print(f"{'='*90}")
     
     if all_ttft:
         all_totals = [r.total_ms for r in results]
         
-        print(f"\n📈 TTFT (Time to First Token):")
+        print("\n📈 TTFT (Time to First Token):")
         print(f"  Average: {sum(all_ttft)/len(all_ttft):.0f}ms ({sum(all_ttft)/len(all_ttft)/1000:.2f}s)")
         sorted_ttft = sorted(all_ttft)
         print(f"  Median:  {sorted_ttft[len(sorted_ttft)//2]:.0f}ms")
@@ -318,14 +320,14 @@ def print_comprehensive_summary(results: List[QueryResult]):
         print(f"  P50:     {sorted_ttft[int(len(sorted_ttft)*0.5)]:.0f}ms")
         print(f"  P90:     {sorted_ttft[int(len(sorted_ttft)*0.9)]:.0f}ms")
         
-        print(f"\n⏱️  Total Response Time:")
+        print("\n⏱️  Total Response Time:")
         print(f"  Average: {sum(all_totals)/len(all_totals):.0f}ms ({sum(all_totals)/len(all_totals)/1000:.2f}s)")
         print(f"  Median:  {sorted(all_totals)[len(all_totals)//2]:.0f}ms")
         print(f"  Min:     {min(all_totals):.0f}ms")
         print(f"  Max:     {max(all_totals):.0f}ms ({max(all_totals)/1000:.2f}s)")
     
     # Stage aggregation - Find the REAL bottleneck
-    print(f"\n🔍 BOTTLENECK ANALYSIS (Average time per stage across all queries):")
+    print("\n🔍 BOTTLENECK ANALYSIS (Average time per stage across all queries):")
     print(f"{'='*90}")
     
     stage_totals = {}
@@ -356,7 +358,7 @@ def print_comprehensive_summary(results: List[QueryResult]):
     print(f"\n{'='*90}")
     print(f"📋 TEST RESULTS: {passed}/{len(results)} queries with TTFT < 4s")
     if failed > 0:
-        print(f"\n❌ FAILED QUERIES (TTFT >= 4s):")
+        print("\n❌ FAILED QUERIES (TTFT >= 4s):")
         for r in results:
             if r.ttft_ms >= 4000:
                 print(f"  - {r.query_id} ({r.query_type}): {r.ttft_ms:.0f}ms - {r.query[:60]}")
@@ -366,7 +368,7 @@ def print_comprehensive_summary(results: List[QueryResult]):
 async def main():
     print("="*90)
     print("🚀 COMPREHENSIVE PERFORMANCE TEST - WITH CACHE CLEARING")
-    print(f"Testing {len(TEST_QUERIES)} queries across {len(set(q['type'] for q in TEST_QUERIES))} categories")
+    print(f"Testing {len(TEST_QUERIES)} queries across {len({q['type'] for q in TEST_QUERIES})} categories")
     print("="*90)
     
     results = []

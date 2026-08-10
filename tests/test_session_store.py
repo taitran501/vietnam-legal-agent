@@ -8,20 +8,23 @@ Tests cover:
 - Session key generation
 """
 
-import pytest
+# Nested patch contexts make the staged async setup readable in these tests.
+# ruff: noqa: SIM117
+
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from backend.memory.session_store import (
-    _sanitize_user_input,
-    format_history_for_llm,
+    _auto_title,
     _key,
     _meta_key,
     _registry_key,
-    get_history,
-    append_exchange,
-    _auto_title,
+    _sanitize_user_input,
     _update_meta,
+    append_exchange,
+    format_history_for_llm,
+    get_history,
 )
 
 
@@ -88,7 +91,7 @@ class TestInputSanitization:
         ]
 
         for case in test_cases:
-            result = _sanitize_user_input(case)
+            _sanitize_user_input(case)
             # Check if dangerous patterns are filtered
             # Note: Implementation may be case-sensitive, so allow either filtered or original
             assert True  # At minimum, no crash

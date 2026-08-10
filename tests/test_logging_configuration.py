@@ -8,16 +8,15 @@ Tests cover:
 - Log level configuration
 """
 
-import os
-import sys
-import logging
-import pytest
-from unittest.mock import patch, MagicMock
-from io import StringIO
-
 # Import the setup_logging function
 # We need to import it in a way that doesn't trigger full app initialization
-import importlib
+import logging
+import os
+import sys
+from io import StringIO
+from unittest.mock import patch
+
+import pytest
 
 
 class TestLoggingConfiguration:
@@ -150,8 +149,9 @@ class TestLoggingConfiguration:
     def test_json_log_format_structure(self):
         """JSON log format should produce structured output when available."""
         try:
-            from pythonjsonlogger import jsonlogger
             import json
+
+            from pythonjsonlogger import jsonlogger
 
             log_stream = StringIO()
             handler = logging.StreamHandler(log_stream)
