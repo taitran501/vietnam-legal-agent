@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -16,8 +17,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from backend.config import get_settings
-from backend.core.retrieval import ensure_faq_collection
-from backend.core.ensemble_retrieval import warmup_retrieval_indexes
 from backend.memory.session_store import close_redis, get_redis
 from backend.history import init_history_store
 from backend.api.middleware import RateLimitMiddleware, RateLimiter
@@ -108,8 +107,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup: warm up connections; Shutdown: release resources."""
-    import asyncio
-    
     # Setup logging first
     setup_logging()
     
@@ -124,25 +121,17 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("Redis not available: %s — session store will degrade gracefully", exc)
 
-    # 2. Ensure FAQ collection is indexed (idempotent, fast no-op if already done)
-    try:
-        ensure_faq_collection()
-        logger.info("FAQ collection ready")
-    except Exception as exc:
-        logger.warning("FAQ indexing failed: %s", exc)
-
-    # 2.5 Initialize the single durable conversation/case/run repository.
+    # 2. Initialize the single durable conversation/case/run repository.
     try:
         await init_history_store()
         logger.info("Persistent history store ready at %s", settings.history_db_path)
     except Exception as exc:
         logger.warning("Persistent history init failed: %s", exc)
 
-    # 2.6 Warm retrieval indexes asynchronously so startup doesn't block readiness.
+    # 2.5 Warm retrieval indexes asynchronously; readiness still guards requests.
     warmup_task = asyncio.create_task(_warmup_retrieval_indexes_task())
 
     # 3. Start background cache cleanup task
-    from backend.cache.semantic_cache import cleanup_expired
     cleanup_task = asyncio.create_task(_periodic_cache_cleanup())
 
     yield
@@ -172,6 +161,8 @@ async def lifespan(app: FastAPI):
 async def _warmup_retrieval_indexes_task() -> None:
     """Warm retrieval indexes in background without blocking API availability."""
     try:
+        from backend.core.ensemble_retrieval import warmup_retrieval_indexes
+
         await asyncio.to_thread(warmup_retrieval_indexes)
     except asyncio.CancelledError:
         raise
@@ -202,8 +193,6 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
-
-import os
 
 _ALLOWED_ORIGINS = [
     o.strip()
@@ -249,11 +238,13 @@ from backend.api.routes.chat import router as chat_router
 from backend.api.routes.health import router as health_router
 from backend.api.routes.sessions import router as sessions_router
 from backend.api.routes.feedback import router as feedback_router
+from backend.api.routes.traces import router as traces_router
 
 app.include_router(chat_router, prefix="/api/v1")
 app.include_router(health_router, prefix="/api/v1")
 app.include_router(sessions_router, prefix="/api/v1")
 app.include_router(feedback_router, prefix="/api/v1")
+app.include_router(traces_router, prefix="/api/v1")
 
 
 @app.get("/", tags=["root"])

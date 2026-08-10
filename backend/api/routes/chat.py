@@ -20,6 +20,7 @@ from fastapi import APIRouter, Request
 from sse_starlette.sse import EventSourceResponse
 
 from backend.api.schemas import ChatRequest
+from backend.api.routes.health import readiness_payload
 from epr_agent.api.routes import stream_chat_events as agentic_stream_chat
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,22 @@ async def chat(request: Request, body: ChatRequest):
     # Fallback keeps local development functional when auth is disabled.
     user_id = getattr(request.state, "api_key_hash", None) or "dev-local"
     runtime = getattr(request.app.state, "workflow_runtime", None)
+
+    readiness, is_ready = await readiness_payload()
+    if not is_ready:
+        async def _not_ready():
+            yield {
+                "data": json.dumps(
+                    {
+                        "type": "error",
+                        "code": "corpus_not_ready",
+                        "message": "Dữ liệu pháp luật đang chưa sẵn sàng. Vui lòng thử lại sau khi index hoàn tất.",
+                        "readiness": readiness,
+                    },
+                    ensure_ascii=False,
+                )
+            }
+        return EventSourceResponse(_not_ready(), status_code=503)
     
     # Log session creation for audit trail
     logger.info(
@@ -53,7 +70,6 @@ async def chat(request: Request, body: ChatRequest):
                 user_id=user_id,
                 conversation_id=conversation_id,
                 legacy_session_id=body.session_id,
-                faq_threshold=body.faq_threshold,
                 runtime=runtime,
             ):
                 # CRITICAL: Check if client disconnected

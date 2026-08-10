@@ -39,11 +39,11 @@ class FakeHistory:
         self.runs.append(state)
 
 
-def make_dependencies(*, legal=None, faq=None, history=None, generation=None, cache_backend=None):
+def make_dependencies(*, legal=None, history=None, generation=None, cache_backend=None):
     return WorkflowDependencies(
         history=history or FakeHistory(),
         cache=ScopedAnswerCache(cache_backend or InMemoryAnswerCache()),
-        retrieval=StaticRetrievalGateway(legal_documents=legal or [], faq_documents=faq or []),
+        retrieval=StaticRetrievalGateway(legal_documents=legal or []),
         evidence=EvidenceEvaluator(min_chars=20),
         generation=generation or StaticGenerationGateway(),
         planner=BoundedPlanner(max_retrieval_actions=3, max_repairs=1, max_iterations=12),
@@ -53,7 +53,12 @@ def make_dependencies(*, legal=None, faq=None, history=None, generation=None, ca
 def legal_doc(source="legal"):
     return DocumentRecord(
         content="Nội dung điều luật EPR có đủ thông tin để đối chiếu nghĩa vụ và hình thức thực hiện. " * 3,
-        metadata={"Dieu": "Điều 77", "source": "Nghị định 08/2022/NĐ-CP"},
+        metadata={
+            "Dieu": "Điều 77",
+            "source": "Nghị định 08/2022/NĐ-CP",
+            "Corpus_Version": "epr-law-structure-v2",
+            "document_id": "law-77",
+        },
         document_id="law-77",
         score=0.91,
         source=source,

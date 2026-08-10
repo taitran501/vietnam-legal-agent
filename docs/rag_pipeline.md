@@ -8,7 +8,7 @@ provided through adapters around the existing `backend/core` implementation.
 
 The source files are:
 
-- `data/faq.json` for frequently asked questions.
+- `data/faq.json` for UI suggestions and evaluation only; it is not a runtime source.
 - `data/law.json` for structured legal articles and appendices.
 
 Run `python -m scripts.build_index` after changing the legal corpus. The
@@ -25,21 +25,7 @@ case?” is rewritten into a retrievable query using the recent context and
 known case facts. The full conversation is not copied into the retrieval
 query.
 
-## 3. FAQ path
-
-The FAQ retriever:
-
-1. Embeds the query and asks Qdrant for five candidates.
-2. Adds a Vietnamese keyword-overlap boost to the dense score.
-3. Applies the configured score threshold and top-versus-runner-up margin.
-4. Rejects a direct FAQ answer for legal-specific interpretation queries.
-5. Optionally reranks the strict candidates and returns the best match.
-
-The threshold is a decision boundary, not a probability. It is calibrated
-against the score distribution and the cost of returning an unrelated FAQ.
-An ambiguous FAQ match continues to legal retrieval.
-
-## 4. Hybrid legal retrieval
+## 3. Hybrid legal retrieval
 
 The legal retriever runs two candidate generators in parallel:
 
@@ -53,8 +39,10 @@ metadata boost. Candidates from the dense, lexical, and explicit-reference
 paths are deduplicated by article and ranked by the heuristic reranker. The
 reranker considers dense and lexical scores, token/phrase coverage, legal
 metadata, and explicit article references. The default public retrieval result
-contains up to ten documents. `rerank_top_n` controls how many merged
-candidates are considered before the final result is produced.
+contains up to ten ranked candidates. The workflow passes at most three
+selected chunks to answer generation. `rerank_top_n` controls how many merged
+candidates are considered before the final result is produced. If an explicitly
+named article is absent, the workflow stops instead of substituting a similar article.
 
 A cross-encoder reranker exists behind rollout and timeout controls. It can be
 applied or run in shadow mode; the heuristic reranker remains the safe
@@ -66,7 +54,7 @@ The evidence evaluator checks:
 
 - at least the configured number of documents;
 - enough non-empty content;
-- legal source metadata or a valid FAQ/web source; and
+- legal source metadata or a valid web source; and
 - an optional relevance check.
 
 If evidence is sufficient, the generation adapter composes the answer,
@@ -80,8 +68,8 @@ result is still treated as evidence and is subject to citation checks.
 
 ## 6. What is deliberately not used
 
-- FAQ matching is not based on a TF-IDF index. It uses dense Qdrant scores
-  plus keyword overlap.
+- FAQ records are not indexed or used as evidence. They remain available only
+  as product examples and evaluation prompts.
 - Assessment and checklist answers are not semantic-cache entries.
 - Web search does not supply missing business facts.
 - Retrieval scores alone do not determine a legal conclusion; explicit facts,

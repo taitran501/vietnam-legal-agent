@@ -37,7 +37,7 @@ class HistoryDouble:
 async def test_stream_preserves_legacy_events_and_adds_workflow_metadata():
     doc = DocumentRecord(
         content="Nội dung điều luật EPR đủ dài để tạo câu trả lời có nguồn. " * 4,
-        metadata={"Dieu": "Điều 77"},
+        metadata={"Dieu": "Điều 77", "source": "Nghị định 08/2022/NĐ-CP", "Corpus_Version": "epr-law-structure-v2"},
         document_id="law-77",
         source="legal",
     )

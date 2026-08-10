@@ -72,33 +72,3 @@ class TestChatRequestValidation:
         """Query with SQL injection should be allowed (backend handles it)."""
         req = ChatRequest(query="What is EPR?'; DROP TABLE users;--")
         assert "DROP TABLE" in req.query
-
-    def test_default_faq_threshold(self):
-        """Default FAQ threshold should be 0.75."""
-        req = ChatRequest(query="Test query")
-        assert req.faq_threshold == 0.75
-
-    def test_custom_faq_threshold(self):
-        """Custom FAQ threshold should be accepted within range."""
-        req = ChatRequest(query="Test query", faq_threshold=0.9)
-        assert req.faq_threshold == 0.9
-
-    def test_faq_threshold_minimum(self):
-        """FAQ threshold at minimum (0.0) should be allowed."""
-        req = ChatRequest(query="Test query", faq_threshold=0.0)
-        assert req.faq_threshold == 0.0
-
-    def test_faq_threshold_maximum(self):
-        """FAQ threshold at maximum (1.0) should be allowed."""
-        req = ChatRequest(query="Test query", faq_threshold=1.0)
-        assert req.faq_threshold == 1.0
-
-    def test_faq_threshold_below_minimum_rejected(self):
-        """FAQ threshold below 0.0 should be rejected."""
-        with pytest.raises(ValidationError):
-            ChatRequest(query="Test query", faq_threshold=-0.1)
-
-    def test_faq_threshold_above_maximum_rejected(self):
-        """FAQ threshold above 1.0 should be rejected."""
-        with pytest.raises(ValidationError):
-            ChatRequest(query="Test query", faq_threshold=1.1)

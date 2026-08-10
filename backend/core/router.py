@@ -177,15 +177,6 @@ def route_query(question: str) -> Literal["epr_query", "chitchat"]:
 
 
 # ---------------------------------------------------------------------------
-# Legacy alias
-# ---------------------------------------------------------------------------
-
-def route_faq(question: str) -> Literal["vectorstore_faq", "chitchat"]:
-    """Legacy alias — maps new route names to old ones for backward compat."""
-    return "chitchat" if route_query(question) == "chitchat" else "vectorstore_faq"
-
-
-# ---------------------------------------------------------------------------
 # Law router
 # ---------------------------------------------------------------------------
 

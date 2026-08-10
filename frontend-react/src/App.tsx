@@ -16,9 +16,8 @@ import { useSessions } from '@/hooks/useSessions';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useChatStore } from '@/state/chatStore';
+import type { ReadinessResponse } from '@/types/api';
 import type { SourceDocument } from '@/types';
-
-const FAQ_THRESHOLD = 0.75;
 
 interface OpenSources {
   citations: Array<Record<string, unknown>>;
@@ -30,7 +29,8 @@ function LegalAssistantWorkspace() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [caseDrawerOpen, setCaseDrawerOpen] = useState(false);
   const [openSources, setOpenSources] = useState<OpenSources | null>(null);
-  const [isHealthy, setIsHealthy] = useState(true);
+  const [readiness, setReadiness] = useState<'ready' | 'preparing' | 'missing' | 'offline'>('preparing');
+  const isHealthy = readiness === 'ready';
   const isDesktop = useMediaQuery('(min-width: 1024px)');
   const isTablet = useMediaQuery('(min-width: 768px) and (max-width: 1023px)');
   const { conversationId } = useParams();
@@ -56,11 +56,15 @@ function LegalAssistantWorkspace() {
     const checkHealth = async () => {
       try {
         const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
-        const response = await fetch(`${baseUrl}/api/v1/health`);
-        setIsHealthy(response.ok);
-        if (response.ok) void loadSessions();
+        const response = await fetch(`${baseUrl}/api/v1/ready`);
+        const payload = await response.json().catch(() => null) as ReadinessResponse | null;
+        if (response.ok && payload?.status === 'ready') {
+          setReadiness('ready');
+          void loadSessions();
+        } else if (payload?.corpus?.status === 'missing') setReadiness('missing');
+        else setReadiness('preparing');
       } catch {
-        setIsHealthy(false);
+        setReadiness('offline');
       }
     };
     void checkHealth();
@@ -85,7 +89,7 @@ function LegalAssistantWorkspace() {
       useChatStore.getState().setActiveSession(sessionId);
       navigate(`/conversations/${sessionId}`);
     }
-    void sendMessage(query, sessionId, FAQ_THRESHOLD);
+    void sendMessage(query, sessionId);
   };
 
   const handleNewSession = () => {
@@ -95,7 +99,7 @@ function LegalAssistantWorkspace() {
   };
 
   const handleRegenerate = () => {
-    if (activeSessionId && isHealthy) void regenerateResponse(activeSessionId, FAQ_THRESHOLD);
+    if (activeSessionId && isHealthy) void regenerateResponse(activeSessionId);
   };
 
   const handleOpenSources = (
@@ -150,7 +154,7 @@ function LegalAssistantWorkspace() {
       <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-[#fcfcfa]">
         <Header
           hasActiveCase={Boolean(activeCase)}
-          isHealthy={isHealthy}
+          readiness={readiness}
           onOpenCase={() => setCaseDrawerOpen(true)}
           onOpenMobileNav={() => setMobileSidebarOpen(true)}
         />
@@ -158,7 +162,7 @@ function LegalAssistantWorkspace() {
         {!isHealthy && (
           <div className="flex shrink-0 items-center justify-center gap-2 border-b border-[#ead6b8] bg-[#fff8ea] px-4 py-2 text-center text-xs text-[#714b18]" role="status">
             <Icon name="wifiOff" size={15} />
-            Không thể kết nối tới máy chủ. Lịch sử hiện có vẫn có thể xem, nhưng chưa thể gửi câu hỏi mới.
+            {readiness === 'missing' ? 'Thiếu dữ liệu pháp luật. Hãy chạy indexer trước khi tra cứu.' : readiness === 'preparing' ? 'Đang chuẩn bị dữ liệu pháp luật. Bạn sẽ có thể hỏi ngay khi index hoàn tất.' : 'Không thể kết nối tới máy chủ. Lịch sử hiện có vẫn có thể xem, nhưng chưa thể gửi câu hỏi mới.'}
           </div>
         )}
 

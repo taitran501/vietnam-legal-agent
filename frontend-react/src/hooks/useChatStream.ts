@@ -7,7 +7,6 @@ import { toast } from '@/state/toastStore';
 import type { ChatMessage, ResponseSource, SourceDocument, WorkflowMetadata } from '@/types';
 
 const responseSources: ReadonlySet<ResponseSource> = new Set([
-  'faq',
   'legal',
   'chitchat',
   'web_search',
@@ -68,7 +67,7 @@ export function useChatStream() {
   } = useChatStore();
 
   const runAssistantStream = useCallback(
-    async (query: string, sessionId: string, faqThreshold: number) => {
+    async (query: string, sessionId: string) => {
       // Abort any existing stream before starting a new one
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -91,7 +90,6 @@ export function useChatStream() {
         for await (const event of streamChat(
           query,
           sessionId,
-          faqThreshold,
           abortControllerRef.current.signal
         )) {
           if (event.type === 'status') {
@@ -121,6 +119,8 @@ export function useChatStream() {
               citations: event.citations,
               evidence_assessment: event.evidence_assessment,
               trace_id: event.trace_id,
+              corpus_id: event.corpus_id,
+              pipeline_version: event.pipeline_version,
               termination_reason: event.termination_reason,
             };
             if (event.case_state) setActiveCase(event.case_state);
@@ -161,7 +161,7 @@ export function useChatStream() {
    * Send message and stream response
    */
   const sendMessage = useCallback(
-    async (query: string, sessionId: string, faqThreshold = 0.75) => {
+    async (query: string, sessionId: string) => {
       // Prevent double submission: check if already streaming
       const { isStreaming: currentlyStreaming } = useChatStore.getState();
       if (currentlyStreaming) {
@@ -187,7 +187,7 @@ export function useChatStream() {
 
       ensureSessionVisibleInSidebar(sessionId, query);
 
-      await runAssistantStream(query, sessionId, faqThreshold);
+      await runAssistantStream(query, sessionId);
     },
     [addMessage, runAssistantStream]
   );
@@ -196,7 +196,7 @@ export function useChatStream() {
    * Regenerate the last assistant response
    */
   const regenerateResponse = useCallback(
-    async (sessionId: string, faqThreshold = 0.75) => {
+    async (sessionId: string) => {
       const state = useChatStore.getState();
       const messages = state.messages;
 
@@ -213,7 +213,7 @@ export function useChatStream() {
       };
       state.addMessage(assistantMessage);
 
-      await runAssistantStream(lastUserMsg.content, sessionId, faqThreshold);
+      await runAssistantStream(lastUserMsg.content, sessionId);
     },
     [runAssistantStream]
   );

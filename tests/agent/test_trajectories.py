@@ -34,7 +34,7 @@ class NoWebGeneration(StaticGenerationGateway):
 def legal_document() -> DocumentRecord:
     return DocumentRecord(
         content="Nội dung Điều 77 về trách nhiệm tái chế và thực hiện nghĩa vụ EPR. " * 8,
-        metadata={"Dieu": "Điều 77", "source": "Nghị định 08/2022/NĐ-CP"},
+        metadata={"Dieu": "Điều 77", "source": "Nghị định 08/2022/NĐ-CP", "Corpus_Version": "epr-law-structure-v2"},
         document_id="law-77",
         source="legal",
         score=0.94,

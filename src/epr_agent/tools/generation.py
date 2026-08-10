@@ -47,13 +47,10 @@ class LegacyGenerationGateway:
         if task == TaskType.BUILD_COMPLIANCE_CHECKLIST:
             return self._compose_checklist(query, facts, documents)
 
-        from backend.core.generation import stream_faq_answer, stream_legal_answer
+        from backend.core.generation import stream_legal_answer
 
         langchain_documents = _as_langchain_documents(documents)
-        if documents and documents[0].source == "faq":
-            chunks = [chunk async for chunk in stream_faq_answer(query, langchain_documents[0])]
-        else:
-            chunks = [chunk async for chunk in stream_legal_answer(query, langchain_documents)]
+        chunks = [chunk async for chunk in stream_legal_answer(query, langchain_documents)]
         return "".join(chunks)
 
     async def web(self, query: str) -> tuple[str, DocumentRecord | None]:
@@ -66,7 +63,7 @@ class LegacyGenerationGateway:
             content=answer,
             document_id="web-fallback-1",
             source="web",
-            metadata={"source": "web_search", "query": query},
+            metadata={"source": "web_search", "query": query, "title": "Nguồn web", "url": "https://example.invalid/epr"},
         )
 
     async def repair(self, answer: str, documents: list[DocumentRecord], task_type: str) -> str:
@@ -109,9 +106,9 @@ class LegacyGenerationGateway:
 class StaticGenerationGateway:
     """Injectable generation double for graph and trajectory tests."""
 
-    def __init__(self, answer_text: str = "Câu trả lời dựa trên tài liệu [1].") -> None:
+    def __init__(self, answer_text: str = "Theo Điều 77, nội dung được đối chiếu theo tài liệu nguồn [1].") -> None:
         self.answer_text = answer_text
-        self.web_text = "Thông tin web cần kiểm tra thêm [1]."
+        self.web_text = "Theo nguồn web, nghĩa vụ cần được kiểm tra thêm [1]."
         self.calls: list[str] = []
 
     async def chitchat(self, query: str, history: list[dict[str, Any]]) -> str:
@@ -132,9 +129,9 @@ class StaticGenerationGateway:
             content=self.web_text,
             document_id="web-1",
             source="web",
-            metadata={"source": "web_search", "query": query},
+            metadata={"source": "web_search", "query": query, "title": "Nguồn web", "url": "https://example.invalid/epr"},
         )
 
     async def repair(self, answer: str, documents: list[DocumentRecord], task_type: str) -> str:
         self.calls.append("repair")
-        return "Đã kiểm tra lại nội dung theo nguồn [1]."
+        return "Theo tài liệu nguồn, nội dung cần được đối chiếu theo Điều 77 [1]."

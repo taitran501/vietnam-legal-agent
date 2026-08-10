@@ -196,11 +196,6 @@ def test_chat_request_validation():
         assert req.query == "What is EPR?"
         results.pass_test("Valid query accepted")
 
-        # Test FAQ threshold range
-        req = ChatRequest(query="test", faq_threshold=0.85)
-        assert req.faq_threshold == 0.85
-        results.pass_test("Custom FAQ threshold accepted")
-
     except Exception as e:
         results.fail_test("Chat request validation", str(e))
 

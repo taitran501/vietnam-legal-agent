@@ -13,7 +13,6 @@ export interface ChatMessage {
 }
 
 export type ResponseSource = 
-  | 'faq'
   | 'legal'
   | 'chitchat'
   | 'web_search'
@@ -43,6 +42,8 @@ export interface WorkflowMetadata {
   citations?: Array<Record<string, unknown>>;
   evidence_assessment?: EvidenceAssessment;
   trace_id?: string;
+  corpus_id?: string;
+  pipeline_version?: string;
   termination_reason?: string;
 }
 

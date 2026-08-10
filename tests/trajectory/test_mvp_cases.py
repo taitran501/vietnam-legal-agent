@@ -38,7 +38,7 @@ class HistoryDouble:
 def law_doc():
     return DocumentRecord(
         content="Tài liệu pháp luật EPR dùng để đối chiếu nghĩa vụ, sản phẩm, vật liệu và hình thức thực hiện. " * 4,
-        metadata={"Dieu": "Điều 77", "source": "Nghị định 08/2022/NĐ-CP"},
+        metadata={"Dieu": "Điều 77", "source": "Nghị định 08/2022/NĐ-CP", "Corpus_Version": "epr-law-structure-v2"},
         document_id="law-77",
         source="legal",
     )

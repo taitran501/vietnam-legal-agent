@@ -29,7 +29,6 @@ class Action(StrEnum):
     CHECK_CACHE = "check_cache"
     ANSWER_CACHE = "answer_cache"
     ASK_USER = "ask_user"
-    RETRIEVE_FAQ = "retrieve_faq"
     RETRIEVE_LEGAL = "retrieve_legal"
     RETRIEVE_WEB = "retrieve_web"
     EVALUATE_EVIDENCE = "evaluate_evidence"
@@ -136,8 +135,13 @@ class AgentState(TypedDict, total=False):
     user_id: str
     conversation_id: str
     legacy_session_id: str
-    faq_threshold: float
+    corpus_id: str
+    pipeline_version: str
     corpus_version: str
+    run_started_at: str
+    run_ended_at: str
+    run_duration_ms: float
+    cache_status: str
 
     history: list[dict[str, Any]]
     history_summary: str
@@ -156,11 +160,12 @@ class AgentState(TypedDict, total=False):
     cached_source: str
     cache_key: str
     web_answer: str
-    faq_hit: bool
+    explicit_articles: list[str]
     citation_error: str
     evidence: list[dict[str, Any]]
     evidence_assessment: dict[str, Any]
     tool_results: list[ToolResult]
+    trace_events: list[dict[str, Any]]
     answer: str
     citations: list[dict[str, Any]]
     assessment: dict[str, Any] | None
@@ -185,6 +190,15 @@ def append_action(state: AgentState, action: Action) -> None:
     sequence.append(action.value)
     state["current_action"] = action.value
     state["iteration"] = int(state.get("iteration", 0)) + 1
+    state.setdefault("trace_events", []).append(
+        {
+            "sequence": len(sequence),
+            "node": action.value,
+            "status": "completed",
+            "reason_code": "",
+            "payload": {},
+        }
+    )
 
 
 def documents_to_dict(documents: list[DocumentRecord]) -> list[dict[str, Any]]:

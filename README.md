@@ -14,7 +14,7 @@ request
   -> load recent conversation context and active case
   -> structured task understanding
   -> ask for missing required facts, or retrieve evidence
-  -> FAQ retrieval -> hybrid legal retrieval -> EPR-only web fallback
+  -> legal-first hybrid retrieval -> evidence gate -> EPR-only web fallback
   -> compose answer, assessment, or checklist
   -> verify citations -> repair once or stop safely
 ```
@@ -27,10 +27,11 @@ when required facts or supported evidence are missing.
 
 ## Retrieval and safety
 
-- FAQ matching uses dense retrieval, keyword support, a threshold, and a
-  top-result margin check.
-- Legal retrieval combines Qdrant dense search with BM25-style lexical search,
-  then merges, deduplicates, and reranks candidates.
+- `data/faq.json` is retained only for UI suggestions and evaluation. It is not
+  indexed, retrieved, cited, cached, or exposed as a runtime source.
+- Legal retrieval resolves explicit `Điều/Khoản/Điểm` anchors, then runs Qdrant
+  dense and BM25-style lexical retrieval in parallel. It merges about 20
+  candidates, heuristically reranks 10, and supplies at most 3 evidence chunks.
 - Evidence and citation checks block unsupported legal claims. Web search is an
   explicitly labelled, EPR-scoped fallback only when the corpus is insufficient.
 - The candidate structure-aware index splits legislation by `Điều -> Khoản -> Điểm`
@@ -52,7 +53,9 @@ Recent messages and a compact conversation summary provide short-term context.
 An active case records only explicit facts for the current assessment or
 checklist; it is not a long-term user profile. Redis is limited to answer cache,
 hot context, rate limits, and short-lived feedback. Only independent,
-corpus-backed `legal_lookup` answers are cacheable.
+corpus-backed `legal_lookup` answers with sufficient evidence and a valid
+citation are cacheable. Cache keys include corpus ID, corpus version, and the
+`legal-only-v2` policy version.
 
 ## Interfaces
 
@@ -60,6 +63,11 @@ corpus-backed `legal_lookup` answers are cacheable.
 legacy `session_id` remains supported. Existing SSE event types remain:
 `status`, `response_chunk`, `response_complete`, and `error`. The additional
 `workflow_step` event is optional for older clients.
+
+`GET /api/v1/health` is process liveness. `GET /api/v1/ready` verifies
+PostgreSQL, Redis, Qdrant, OpenAI configuration, and the versioned legal index;
+it returns `503` until the corpus is ready. Set `ENABLE_TRACE_DEBUG_API=true`
+locally to inspect owner-scoped runs at `/api/v1/debug/traces/{trace_id}`.
 
 The React workspace is the primary UI. It includes conversation history, chat,
 workflow progress, an editable Case Facts panel, evidence/citation cards,
@@ -99,8 +107,10 @@ For the container stack, set the required secrets in `.env` and run:
 docker compose up --build
 ```
 
-This starts React, FastAPI, PostgreSQL, Redis, and Qdrant. The backend applies
-the Alembic migration at startup. Do not commit `.env`, SQLite databases,
+This starts React, FastAPI, PostgreSQL, Redis, Qdrant, and a one-shot `indexer`.
+The indexer builds a structure-aware versioned collection only when needed,
+audits it, then atomically switches the `law_collection` alias. The backend
+applies Alembic migrations only after the indexer succeeds. Do not commit `.env`, SQLite databases,
 Qdrant storage, logs, or cache files.
 
 ## Tests
@@ -123,8 +133,12 @@ The committed source baseline records 49 FAQ entries and 178 legal records in
 [docs/retrieval/baseline_manifest.json](docs/retrieval/baseline_manifest.json).
 Named local Qdrant baseline and candidate results, collection audits, and the
 promotion decision are committed under [docs/retrieval](docs/retrieval/README.md).
-Run the 33-case live golden evaluation manually when needed because generated
-answer text and latency depend on the configured model service.
+Run the 50-case legal-first evaluation manually when needed because generated
+answer text and latency depend on the configured model service:
+
+```powershell
+python -m tests.eval.run_eval --output artifacts/legal_first_eval.json
+```
 
 ## Design handoff
 
