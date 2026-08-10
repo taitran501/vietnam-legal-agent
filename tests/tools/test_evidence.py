@@ -5,7 +5,7 @@ from epr_agent.tools.evidence import EvidenceEvaluator, verify_citations
 def document():
     return DocumentRecord(
         content="Nội dung điều luật EPR đủ dài để kiểm tra evidence và citation. " * 4,
-        metadata={"Dieu": "Điều 77"},
+        metadata={"Dieu": "Điều 77", "source": "Nghị định 08/2022", "Corpus_Version": "test-v1"},
         document_id="law-77",
         source="legal",
     )
@@ -23,7 +23,7 @@ def test_evidence_evaluator_requires_document_and_source_metadata():
 
 def test_citation_verifier_rejects_missing_and_out_of_range_citations():
     docs = [document()]
-    valid, _, reason = verify_citations("Kết luận [1].", docs, TaskType.LEGAL_LOOKUP)
+    valid, _, reason = verify_citations("Theo Điều 77 [1], đây là kết luận có căn cứ.", docs, TaskType.LEGAL_LOOKUP)
     assert valid is True
     assert reason == "ok"
     invalid, _, invalid_reason = verify_citations("Kết luận [2].", docs, TaskType.LEGAL_LOOKUP)

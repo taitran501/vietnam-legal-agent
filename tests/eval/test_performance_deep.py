@@ -1,7 +1,7 @@
 """
 Comprehensive Performance Test - With Cache Clearing
 
-This test measures REAL performance by:
+This executable benchmark measures real workflow performance by:
 1. Clearing all caches before each test
 2. Testing 20+ diverse queries
 3. Measuring EXACT time for each pipeline stage
@@ -25,9 +25,6 @@ sys.path.insert(0, str(ROOT))
 from dotenv import load_dotenv
 load_dotenv(ROOT / ".env", override=True)
 
-from backend.cache import semantic_cache
-from backend.memory import session_store
-from backend.core.pipeline import optimized_chatbot_pipeline
 
 
 # ---------------------------------------------------------------------------
@@ -42,12 +39,12 @@ TEST_QUERIES = [
     {"id": "chat_04", "query": "Tạm biệt", "type": "chitchat"},
     {"id": "chat_05", "query": "Bạn có thể làm gì?", "type": "chitchat"},
     
-    # FAQ - Exact matches (5 cases)
-    {"id": "faq_01", "query": "Các đối tượng nào phải thực hiện trách nhiệm tái chế?", "type": "faq"},
-    {"id": "faq_02", "query": "Bao bì thương phẩm là gì?", "type": "faq"},
-    {"id": "faq_03", "query": "Khi nào nhà sản xuất phải bắt đầu thực hiện trách nhiệm tái chế?", "type": "faq"},
-    {"id": "faq_04", "query": "Trường hợp nào không phải thực hiện trách nhiệm tái chế?", "type": "faq"},
-    {"id": "faq_05", "query": "Dầu nhớt có phải tái chế bắt buộc không?", "type": "faq"},
+    # Common legal questions (5 cases; FAQ is evaluation-only, never a route)
+    {"id": "common_01", "query": "Các đối tượng nào phải thực hiện trách nhiệm tái chế?", "type": "legal_common"},
+    {"id": "common_02", "query": "Bao bì thương phẩm là gì?", "type": "legal_common"},
+    {"id": "common_03", "query": "Khi nào nhà sản xuất phải bắt đầu thực hiện trách nhiệm tái chế?", "type": "legal_common"},
+    {"id": "common_04", "query": "Trường hợp nào không phải thực hiện trách nhiệm tái chế?", "type": "legal_common"},
+    {"id": "common_05", "query": "Dầu nhớt có phải tái chế bắt buộc không?", "type": "legal_common"},
     
     # LEGAL - Explicit article numbers (5 cases)
     {"id": "legal_01", "query": "Điều 77 quy định gì?", "type": "legal_explicit"},
@@ -73,18 +70,13 @@ TEST_QUERIES = [
 
 
 async def clear_all_caches():
-    """Clear semantic cache and session store for clean testing."""
-    # Clear semantic cache (exact + semantic)
+    """Clear only the legal-only answer cache for a clean benchmark run."""
     try:
-        r = await session_store.get_redis()
-        # Clear exact cache keys
-        exact_keys = await r.keys("cache:exact:*")
+        from backend.memory.session_store import get_redis
+        r = await get_redis()
+        exact_keys = await r.keys("legal:answer:v3:*")
         if exact_keys:
             await r.delete(*exact_keys)
-        # Clear session keys
-        session_keys = await r.keys("session:*")
-        if session_keys:
-            await r.delete(*session_keys)
     except Exception as e:
         print(f"Warning: Could not clear Redis cache: {e}")
     
@@ -141,10 +133,11 @@ async def run_single_query(test_case: Dict, clear_cache_before: bool = True) -> 
     stage_events = []
     
     try:
-        async for event in optimized_chatbot_pipeline(
+        from epr_agent.agent.runtime import stream_chat
+        async for event in stream_chat(
             query=query,
-            session_id=session_id,
-            skip_cache=(query_type == "cache_hit" and "cache_01" not in query_id),
+            user_id="performance-local",
+            conversation_id=session_id,
         ):
             now = time.perf_counter()
             elapsed_ms = (now - global_start) * 1000

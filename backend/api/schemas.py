@@ -16,7 +16,6 @@ class ChatRequest(BaseModel):
         description="Persistent conversation identifier (preferred)",
     )
     session_id: str = Field(default="", min_length=0, max_length=128, description="Session identifier (empty = auto-generated UUID)")
-    faq_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
 
     @field_validator("conversation_id", "session_id")
     @classmethod

@@ -1,5 +1,6 @@
 import type { WorkflowMetadata } from '@/types';
 import { Icon } from '@/components/UI/Icon';
+import { TraceDrawer } from './TraceDrawer';
 
 interface WorkflowResultCardProps {
   onOpenCase?: () => void;
@@ -23,7 +24,8 @@ export function WorkflowResultCard({ onOpenCase, workflow }: WorkflowResultCardP
   const hasMissingFacts = Boolean(workflow.missing_facts?.length);
   const hasAssumptions = Boolean(workflow.assumptions?.length);
 
-  if (!safeStop && !hasAssessment && !hasChecklist && !hasMissingFacts && !hasAssumptions) return null;
+  const hasTrace = import.meta.env.VITE_ENABLE_TRACE_DEBUG === 'true' && Boolean(workflow.trace_id);
+  if (!safeStop && !hasAssessment && !hasChecklist && !hasMissingFacts && !hasAssumptions && !hasTrace) return null;
 
   return (
     <section className="mt-5 space-y-3" aria-label="Kết quả workflow">
@@ -106,6 +108,7 @@ export function WorkflowResultCard({ onOpenCase, workflow }: WorkflowResultCardP
           </ul>
         </details>
       )}
+      <TraceDrawer traceId={workflow.trace_id} />
     </section>
   );
 }

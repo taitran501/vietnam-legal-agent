@@ -8,7 +8,6 @@ const labels: Record<string, string> = {
   check_cache: 'Kiểm tra câu trả lời đã có',
   answer_cache: 'Dùng câu trả lời đã xác minh',
   ask_user: 'Cần thêm thông tin',
-  retrieve_faq: 'Kiểm tra câu hỏi thường gặp',
   retrieve_legal: 'Tìm văn bản liên quan',
   retrieve_web: 'Tìm nguồn bổ sung',
   evaluate_evidence: 'Đánh giá bằng chứng',

@@ -46,14 +46,7 @@ class BoundedPlanner:
     def after_cache(self, state: AgentState) -> PlannerDecision:
         if state.get("cached_answer"):
             return PlannerDecision(Action.ANSWER_CACHE, "scoped_legal_lookup_cache_hit")
-        return PlannerDecision(Action.RETRIEVE_FAQ, "cache_miss_or_cache_not_allowed")
-
-    def after_faq(self, state: AgentState) -> PlannerDecision:
-        if state.get("evidence"):
-            return PlannerDecision(Action.COMPOSE_ANSWER, "faq_match_found")
-        if self.can_retrieve(state):
-            return PlannerDecision(Action.RETRIEVE_LEGAL, "faq_miss")
-        return PlannerDecision(Action.SAFE_STOP, "retrieval_budget_exhausted")
+        return PlannerDecision(Action.RETRIEVE_LEGAL, "cache_miss_or_cache_not_allowed")
 
     def after_evidence(self, state: AgentState) -> PlannerDecision:
         assessment = state.get("evidence_assessment") or {}

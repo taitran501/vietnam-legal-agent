@@ -1,23 +1,11 @@
-"""
-Retrieval module — FAQ (Qdrant) + Legal documents (Qdrant).
-
-Key fixes vs the original monolith:
-1. FAQ: loads ALL 39 entries from data/faq.json (was hardcoded 4).
-2. Lazy retrieval: legal docs are only fetched when FAQ misses (no wasted work).
-3. Async wrappers run sync calls in a thread pool (non-blocking event loop).
-4. SelfQueryRetriever with FallbackLegalRetriever for structured + semantic search.
-5. Vectorstore and retriever instances are built once (module-level singletons after
-   build_index.py has pre-populated Qdrant — no LLM summarisation at startup).
-"""
+"""Legal-only Qdrant retrieval adapters used by the bounded workflow."""
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 import threading
-import uuid
 from functools import lru_cache
 
 import tiktoken
@@ -39,7 +27,6 @@ from langchain_core.documents import Document
 from langchain_core.runnables import RunnableLambda
 from langchain_qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, PointStruct, VectorParams
 
 from backend.config import get_settings
 from backend.core.legal_parser import build_qdrant_filter, parse_legal_query
@@ -82,79 +69,6 @@ def _truncate_text(text: str, max_tokens: int = 1000, model: str = "gpt-3.5-turb
         return enc.decode(tokens[:max_tokens]) + "..."
     except Exception:  # noqa: BLE001 - truncation has a deterministic fallback
         return text[: max_tokens * 4] + "..."
-
-
-# ---------------------------------------------------------------------------
-# Vietnamese tokenizer (keyword matching for hybrid FAQ search)
-# ---------------------------------------------------------------------------
-
-_STOPWORDS = {
-    "là", "và", "của", "có", "được", "trong", "cho", "với", "các",
-    "này", "đó", "những", "để", "khi", "từ", "theo", "về", "như",
-    "thì", "mà", "nhưng", "hoặc", "nếu", "vì", "do", "bởi", "tại",
-    "đã", "đang", "sẽ", "còn", "cũng", "rất", "lại", "nên", "phải",
-    "bạn", "tôi", "chúng", "họ", "nó", "gì", "nào", "sao", "bao",
-}
-
-
-def _tokenize_vietnamese(text: str) -> set[str]:
-    text = text.lower()
-    text = re.sub(r"[^\w\s]", " ", text)
-    return {w for w in text.split() if w not in _STOPWORDS and len(w) > 1}
-
-
-_LEGAL_QUERY_PATTERNS = [
-    r"\bđi[eề]u\s+\d+",
-    r"\bkhoản\s+\d+",
-    r"\bchương\s+[ivxlcdm\d]+",
-    r"\bmục\s+\d+",
-    r"\bnghị định\b",
-    r"\bthông tư\b",
-    r"\bluật\b",
-    r"\bphụ lục\b",
-]
-
-_LEGAL_QUERY_KEYWORDS = {
-    "căn cứ pháp lý",
-    "trích dẫn",
-    "điều khoản nào",
-    "văn bản nào",
-    "theo điều",
-    "theo khoản",
-}
-
-
-def _looks_like_legal_query(query: str) -> bool:
-    q = query.lower()
-    if any(re.search(pattern, q) for pattern in _LEGAL_QUERY_PATTERNS):
-        return True
-    return any(keyword in q for keyword in _LEGAL_QUERY_KEYWORDS)
-
-
-def _is_strict_faq_hit(query: str, best: dict, runner_up: dict | None, threshold: float) -> bool:
-    """
-    Treat FAQ as a semantic cache, not an authoritative legal branch.
-
-    A direct FAQ answer is allowed only when:
-    - similarity is very high
-    - the top candidate clearly beats the runner-up
-    - the query is not asking for legal-specific interpretation or citation
-    """
-    settings = get_settings()
-    if _looks_like_legal_query(query):
-        return False
-
-    if best["final"] < max(threshold, settings.faq_semantic_cache_threshold):
-        return False
-
-    if best["semantic"] < settings.faq_semantic_cache_threshold:
-        return False
-
-    if runner_up is None:
-        return True
-
-    margin = best["final"] - runner_up["final"]
-    return margin >= settings.faq_semantic_cache_margin
 
 
 # ---------------------------------------------------------------------------
@@ -205,158 +119,6 @@ def close_qdrant_client() -> None:
             _qdrant_client = None
     _get_law_vectorstore.cache_clear()
     _get_fallback_retriever.cache_clear()
-
-
-# ---------------------------------------------------------------------------
-# FAQ collection setup (loads from faq.json — all 39 entries)
-# ---------------------------------------------------------------------------
-
-def ensure_faq_collection() -> None:
-    """
-    Create and populate faq_collection if it does not already exist.
-    Idempotent: does nothing if the collection already has points.
-    """
-    s = get_settings()
-    client = _get_qdrant_client()
-    embeddings = get_embeddings()
-    collection = s.faq_collection
-
-    existing = {c.name for c in client.get_collections().collections}
-    if collection in existing:
-        count = client.get_collection(collection).points_count
-        if count and count > 0:
-            print(f"✅ FAQ collection '{collection}' already has {count} points")
-            return
-
-    # Load FAQ data
-    faq_path = s.faq_data_path
-    with open(faq_path, encoding="utf-8") as f:
-        faq_data = json.load(f)
-
-    entries = faq_data.get("meta", [])
-    print(f"📄 Indexing {len(entries)} FAQ entries into '{collection}'...")
-
-    # Create collection with optimized HNSW parameters
-    sample_vec = embeddings.embed_query("test")
-    dim = len(sample_vec)
-    if collection not in existing:
-        from qdrant_client.models import HnswConfigDiff
-        client.create_collection(
-            collection_name=collection,
-            vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
-            hnsw_config=HnswConfigDiff(
-                m=s.hnsw_m,
-                ef_construct=s.hnsw_ef_construct,
-            ),
-        )
-
-    points = []
-    for item in entries:
-        question = item.get("Câu hỏi", "")
-        answer = item.get("Trả lời", "")
-        vector = embeddings.embed_query(question)
-        points.append(
-            PointStruct(
-                id=str(uuid.uuid4()),
-                vector=vector,
-                payload={"Câu_hỏi": question, "Trả_lời": answer},
-            )
-        )
-
-    client.upsert(collection_name=collection, points=points)
-    print(f"✅ Indexed {len(points)} FAQ entries")
-
-
-# ---------------------------------------------------------------------------
-# FAQ retrieval — hybrid semantic + keyword
-# ---------------------------------------------------------------------------
-
-def retrieve_faq_top1(
-    query: str,
-    score_threshold: float | None = None,
-    keyword_boost: float | None = None,
-    rerank: bool = True,
-) -> list[Document]:
-    s = get_settings()
-    threshold = score_threshold if score_threshold is not None else s.faq_score_threshold
-    boost = keyword_boost if keyword_boost is not None else s.faq_keyword_boost
-
-    client = _get_qdrant_client()
-    embeddings = get_embeddings()
-    query_vector = embeddings.embed_query(query)
-
-    # Use search_ef for better accuracy at scale
-    from qdrant_client.models import SearchParams
-    results = client.query_points(
-        collection_name=s.faq_collection,
-        query=query_vector,
-        limit=5,
-        search_params=SearchParams(hnsw_ef=s.search_ef),
-    )
-
-    if not results or not results.points:
-        return []
-
-    query_tokens = _tokenize_vietnamese(query)
-    scored: list[dict] = []
-    for point in results.points:
-        semantic = point.score
-        q_tokens = _tokenize_vietnamese(point.payload["Câu_hỏi"])
-        kw_score = len(query_tokens & q_tokens) / len(query_tokens) if query_tokens else 0.0
-        final = semantic + boost * kw_score
-        scored.append({"point": point, "semantic": semantic, "keyword": kw_score, "final": final})
-
-    scored.sort(key=lambda x: x["final"], reverse=True)
-    best = scored[0]
-    runner_up = scored[1] if len(scored) > 1 else None
-
-    if best["final"] >= threshold:
-        p = best["point"]
-        strict_hit = _is_strict_faq_hit(query, best, runner_up, threshold)
-        margin = best["final"] - runner_up["final"] if runner_up else best["final"]
-        docs = [
-            Document(
-                page_content=p.payload["Trả_lời"],
-                metadata={
-                    "Câu_hỏi": p.payload["Câu_hỏi"],
-                    "score": best["final"],
-                    "semantic_score": best["semantic"],
-                    "keyword_score": best["keyword"],
-                    "score_margin": margin,
-                    "strict_faq_hit": strict_hit,
-                },
-            )
-        ]
-
-        # Re-rank FAQ only for strict hits. Ambiguous matches should continue to legal retrieval.
-        if strict_hit and rerank and rerank_documents is not None:
-            # rerank_documents already imported at module level
-            # Get top 3 candidates for re-ranking
-            top_candidates = []
-            for s_item in scored[:3]:
-                if s_item["final"] >= threshold - 0.1:  # Slightly relaxed threshold
-                    pt = s_item["point"]
-                    top_candidates.append(
-                        Document(
-                            page_content=pt.payload["Trả_lời"],
-                            metadata={
-                                "Câu_hỏi": pt.payload["Câu_hỏi"],
-                                "score": s_item["final"],
-                                "semantic_score": s_item["semantic"],
-                                "keyword_score": s_item["keyword"],
-                                "score_margin": margin,
-                                "strict_faq_hit": strict_hit,
-                            },
-                        )
-                    )
-
-            if len(top_candidates) > 1:
-                reranked = rerank_documents(query, top_candidates, top_k=1)
-                if reranked:
-                    return reranked
-
-        return docs
-    return []
 
 
 # ---------------------------------------------------------------------------
@@ -641,6 +403,9 @@ def retrieve_legal(query: str) -> list[Document]:
     """
     # Use ensemble retriever for better accuracy
     from backend.core.ensemble_retrieval import retrieve_legal_ensemble
+    # 20 dense/lexical candidates are merged by the ensemble, then the
+    # heuristic reranker retains 10; the bounded workflow selects top 3 as
+    # evidence for answer generation.
     docs = retrieve_legal_ensemble(query, k=10)
 
     # Apply re-ranking only if enabled AND docs haven't been re-ranked yet
@@ -770,11 +535,6 @@ def counting_answer(count_result: dict, query: str) -> str:
 # ---------------------------------------------------------------------------
 # Async wrappers (run sync calls in thread pool)
 # ---------------------------------------------------------------------------
-
-async def retrieve_faq_async(query: str, score_threshold: float | None = None) -> list[Document]:
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, retrieve_faq_top1, query, score_threshold)
-
 
 async def retrieve_legal_async(query: str) -> list[Document]:
     loop = asyncio.get_event_loop()

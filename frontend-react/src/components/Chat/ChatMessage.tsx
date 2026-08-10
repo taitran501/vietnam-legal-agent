@@ -15,7 +15,6 @@ interface ChatMessageProps {
 }
 
 const sourceLabels: Record<string, string> = {
-  faq: 'Câu hỏi thường gặp',
   legal: 'Kho văn bản',
   chitchat: 'Hội thoại',
   web_search: 'Nguồn web bổ sung',

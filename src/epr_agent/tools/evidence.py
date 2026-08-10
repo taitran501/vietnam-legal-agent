@@ -14,7 +14,14 @@ class EvidenceEvaluator:
         self.min_chars = max(1, min_chars)
         self.relevance_checker = relevance_checker
 
-    def evaluate(self, query: str, documents: list[DocumentRecord], task_type: str | TaskType) -> EvidenceAssessment:
+    def evaluate(
+        self,
+        query: str,
+        documents: list[DocumentRecord],
+        task_type: str | TaskType,
+        *,
+        expected_articles: set[str] | None = None,
+    ) -> EvidenceAssessment:
         if len(documents) < self.min_docs:
             return EvidenceAssessment(False, "not_enough_docs", len(documents), 0, False)
 
@@ -25,6 +32,11 @@ class EvidenceEvaluator:
         has_metadata = any(self._has_source_metadata(doc) for doc in documents[:3])
         if not has_metadata:
             return EvidenceAssessment(False, "missing_source_metadata", len(documents), total_chars, False)
+
+        if expected_articles:
+            available = set().union(*(_document_article_ids(document) for document in documents[:3]))
+            if not expected_articles.issubset(available):
+                return EvidenceAssessment(False, "explicit_article_not_found", len(documents), total_chars, has_metadata)
 
         if self.relevance_checker is not None:
             try:
@@ -41,15 +53,12 @@ class EvidenceEvaluator:
     @staticmethod
     def _has_source_metadata(document: DocumentRecord) -> bool:
         metadata = document.metadata or {}
-        if document.source in {"faq", "web"}:
-            return bool(document.content.strip())
-        return bool(
-            metadata.get("Dieu")
-            or metadata.get("Chuong")
-            or metadata.get("Muc")
-            or metadata.get("source")
-            or metadata.get("document_id")
-        )
+        if document.source == "web":
+            return bool(document.content.strip() and metadata.get("title") and metadata.get("url"))
+        has_anchor = bool(metadata.get("Dieu") or metadata.get("Điều") or metadata.get("Parent_Dieu"))
+        has_source = bool(metadata.get("source") or metadata.get("Source") or metadata.get("document_id"))
+        has_provenance = bool(metadata.get("Corpus_Version") or metadata.get("corpus_version"))
+        return bool(document.source == "legal" and has_anchor and has_source and has_provenance)
 
 
 _CITATION_RE = re.compile(r"\[(\d+)\]")
@@ -82,6 +91,12 @@ _NON_CLAIM_SIGNALS = (
 
 def _article_ids(text: str) -> set[str]:
     return {match.lower() for match in _ARTICLE_RE.findall(text or "")}
+
+
+def explicit_article_ids(text: str) -> set[str]:
+    """Expose explicit legal anchors so retrieval and evidence share one parser."""
+
+    return _article_ids(text)
 
 
 def _document_article_ids(document: DocumentRecord) -> set[str]:
@@ -148,7 +163,11 @@ def verify_citations(
     if any(index < 1 or index > max_index for index in indices):
         return False, citations, "citation_out_of_range"
 
-    for segment in _legal_claim_segments(answer):
+    claim_segments = _legal_claim_segments(answer)
+    if task != TaskType.CHITCHAT and not claim_segments:
+        return False, citations, "answer_has_no_supported_legal_claim"
+
+    for segment in claim_segments:
         segment_indices = [int(value) for value in _CITATION_RE.findall(segment)]
         if not segment_indices:
             return False, citations, "legal_claim_without_citation"

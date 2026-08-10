@@ -2,12 +2,18 @@ import { Icon } from '@/components/UI/Icon';
 
 interface HeaderProps {
   hasActiveCase?: boolean;
-  isHealthy: boolean;
+  readiness: 'ready' | 'preparing' | 'missing' | 'offline';
   onOpenCase?: () => void;
   onOpenMobileNav: () => void;
 }
 
-export function Header({ hasActiveCase = false, isHealthy, onOpenCase, onOpenMobileNav }: HeaderProps) {
+export function Header({ hasActiveCase = false, readiness, onOpenCase, onOpenMobileNav }: HeaderProps) {
+  const status = {
+    ready: { label: 'Sẵn sàng', color: 'bg-[#1d8b66]', title: 'Dữ liệu pháp luật đã sẵn sàng' },
+    preparing: { label: 'Đang chuẩn bị dữ liệu', color: 'bg-[#d98b22]', title: 'Đang chuẩn bị dữ liệu pháp luật' },
+    missing: { label: 'Thiếu dữ liệu pháp luật', color: 'bg-[#ba1a1a]', title: 'Chưa có law index' },
+    offline: { label: 'Ngoại tuyến', color: 'bg-[#ba1a1a]', title: 'Không thể kết nối tới máy chủ' },
+  }[readiness];
   return (
     <header className="z-20 flex h-16 shrink-0 items-center justify-between border-b border-[#d9e1df] bg-[#fcfcfa]/95 px-3 backdrop-blur sm:px-5">
       <div className="flex min-w-0 items-center gap-2.5">
@@ -43,11 +49,11 @@ export function Header({ hasActiveCase = false, isHealthy, onOpenCase, onOpenMob
         )}
         <div
           className="inline-flex items-center gap-2 rounded-full border border-[#d9e1df] bg-white px-2.5 py-1.5"
-          title={isHealthy ? 'Hệ thống sẵn sàng' : 'Không thể kết nối tới máy chủ'}
+          title={status.title}
         >
-          <span className={`h-2 w-2 rounded-full ${isHealthy ? 'bg-[#1d8b66]' : 'bg-[#ba1a1a]'}`} />
+          <span className={`h-2 w-2 rounded-full ${status.color}`} />
           <span className="hidden text-[11px] font-medium text-[#667085] sm:inline">
-            {isHealthy ? 'Sẵn sàng' : 'Ngoại tuyến'}
+            {status.label}
           </span>
         </div>
       </div>

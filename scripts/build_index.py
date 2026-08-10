@@ -662,6 +662,8 @@ def upsert_to_qdrant(articles: list[dict], summaries: list[str]) -> None:
             muc_name = article.get("Mục_Content") or article.get("Muc_Name") or ""
 
             payload = {
+                "source": "legal",
+                "source_title": settings.law_citation_label,
                 "Dieu": dieu,
                 "Dieu_Name": dieu_name,
                 "Chuong": chuong,
@@ -683,12 +685,21 @@ def upsert_to_qdrant(articles: list[dict], summaries: list[str]) -> None:
                 "Text": article.get("Text", article.get("text", "")),
                 "summary": summary,
                 "embedding_text": batch_embedding_texts[j],
+                "Corpus_ID": settings.corpus_id,
+                "Corpus_Version": settings.corpus_version,
+                "Corpus_SHA256": os.getenv("CORPUS_SHA256", ""),
+                "Index_Schema_Version": settings.index_schema_version,
+                "provenance": "data/law.json",
             }
 
             point_id = _stable_point_id(
                 settings=settings,
                 article=article,
                 fallback_seq=i + j + 1,
+            )
+            payload["document_id"] = point_id
+            payload["legal_anchor"] = " / ".join(
+                value for value in (str(article.get("Parent_Dieu") or dieu or ""), str(article.get("Khoan") or ""), str(article.get("Diem") or "")) if value
             )
 
             points.append(PointStruct(id=point_id, vector=vector, payload=payload))

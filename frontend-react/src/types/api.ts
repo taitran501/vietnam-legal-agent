@@ -8,7 +8,6 @@ export interface ChatRequest {
   query: string;
   conversation_id?: string;
   session_id?: string;
-  faq_threshold?: number;
 }
 
 export interface SSEEvent {
@@ -32,6 +31,8 @@ export interface SSEEvent {
   citations?: Array<Record<string, unknown>>;
   evidence_assessment?: EvidenceAssessment;
   termination_reason?: string;
+  corpus_id?: string;
+  pipeline_version?: string;
   metadata?: WorkflowMetadata;
 }
 
@@ -76,4 +77,16 @@ export interface HealthResponse {
   qdrant: string;
   redis: string;
   openai: string;
+}
+
+export interface ReadinessResponse {
+  status: 'ready' | 'not_ready';
+  dependencies: Record<string, 'ok' | 'error'>;
+  corpus: {
+    status: 'ready' | 'missing' | 'version_mismatch';
+    points_count: number;
+    corpus_id: string;
+    corpus_version: string;
+    index_schema_version: string;
+  };
 }

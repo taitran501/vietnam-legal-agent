@@ -9,8 +9,7 @@ request
   -> structured task understanding
   -> rewrite a dependent follow-up into a retrievable query
   -> [legal_lookup only] scoped answer-cache lookup
-  -> FAQ retrieval
-  -> legal hybrid retrieval
+  -> legal-first hybrid retrieval
   -> deterministic evidence check
   -> EPR-only web fallback when the corpus is insufficient
   -> compose answer / assessment / checklist
@@ -63,6 +62,5 @@ legacy FastAPI entry point:
 python -m pip install -e ".[dev]"
 ```
 
-The existing `backend/core/pipeline.py` remains available for the 33-case
-legacy evaluation and comparison. The `/api/v1/chat` route now presents the new
+The retired legacy pipeline is no longer part of the active repository. The `/api/v1/chat` route presents the new
 workflow while preserving the existing request fields and SSE event types.

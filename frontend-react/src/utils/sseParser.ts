@@ -27,7 +27,6 @@ export function parseSSEEvent(line: string): SSEEvent | null {
 export async function* streamChat(
   query: string,
   conversationId: string,
-  faqThreshold = 0.75,
   signal?: AbortSignal
 ): AsyncGenerator<SSEEvent> {
   // Use relative URL for Vite proxy, or full URL if needed
@@ -43,7 +42,6 @@ export async function* streamChat(
     body: JSON.stringify({
       query,
       conversation_id: conversationId,
-      faq_threshold: faqThreshold,
     }),
     signal,
   });

@@ -29,7 +29,8 @@ class CachedAnswer:
     evidence: list[dict[str, Any]]
     citations: list[dict[str, Any]]
     source: str
-    schema_version: int = 2
+    corpus_id: str = "epr"
+    schema_version: int = 3
 
     def serialise(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False, separators=(",", ":"))
@@ -42,7 +43,7 @@ class CachedAnswer:
             value = json.loads(raw)
         except (TypeError, json.JSONDecodeError):
             return None
-        if not isinstance(value, dict) or value.get("schema_version") != 2:
+        if not isinstance(value, dict) or value.get("schema_version") != 3:
             return None
         answer = str(value.get("answer") or "").strip()
         evidence = value.get("evidence")
@@ -55,6 +56,7 @@ class CachedAnswer:
             evidence=[dict(item) for item in evidence if isinstance(item, dict)],
             citations=[dict(item) for item in citations if isinstance(item, dict)],
             source=source,
+            corpus_id=str(value.get("corpus_id") or "epr"),
         )
 
 
@@ -86,9 +88,18 @@ class InMemoryAnswerCache:
 
 
 class ScopedAnswerCache:
-    def __init__(self, backend: AnswerCache, *, corpus_version: str = "epr-corpus-v1") -> None:
+    def __init__(
+        self,
+        backend: AnswerCache,
+        *,
+        corpus_id: str = "epr",
+        corpus_version: str = "epr-corpus-v1",
+        policy_version: str = "legal-only-v2",
+    ) -> None:
         self.backend = backend
+        self.corpus_id = corpus_id
         self.corpus_version = corpus_version
+        self.policy_version = policy_version
 
     @staticmethod
     def is_cacheable(task_type: str | TaskType) -> bool:
@@ -98,7 +109,7 @@ class ScopedAnswerCache:
         task = TaskType(task_type).value
         normalised = " ".join((standalone_query or "").lower().split())
         digest = hashlib.sha256(normalised.encode("utf-8")).hexdigest()
-        return f"epr:answer:v2:{task}:{self.corpus_version}:{digest}"
+        return f"legal:answer:v3:{self.policy_version}:{self.corpus_id}:{task}:{self.corpus_version}:{digest}"
 
     async def lookup(self, task_type: str | TaskType, standalone_query: str) -> tuple[CachedAnswer | None, str]:
         key = self.build_key(task_type, standalone_query)
@@ -120,7 +131,7 @@ class ScopedAnswerCache:
             not answer
             or not evidence
             or not citations
-            or source not in {"faq", "legal"}
+            or source != "legal"
             or not self.is_cacheable(task_type)
         ):
             return
@@ -129,5 +140,6 @@ class ScopedAnswerCache:
             evidence=evidence,
             citations=citations,
             source=source,
+            corpus_id=self.corpus_id,
         )
         await self.backend.store(self.build_key(task_type, standalone_query), payload.serialise())

@@ -38,7 +38,6 @@ class Settings(BaseSettings):
     qdrant_local_path: str = Field(default="./qdrant_db")
 
     # Collection names
-    faq_collection: str = Field(default="faq_collection")
     law_collection: str = Field(default="law_collection")
     cache_collection: str = Field(default="cache_collection")
 
@@ -47,9 +46,13 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = Field(default=3600)       # exact-match cache TTL
     semantic_cache_threshold: float = Field(default=0.95)  # cosine similarity
     corpus_version: str = Field(
-        default="epr-corpus-v1",
+        default="epr-law-structure-v2",
         description="Version included in bounded answer-cache keys after corpus changes",
     )
+    corpus_id: str = Field(default="epr")
+    index_schema_version: str = Field(default="legal-structure-v1")
+    auto_index_law: bool = Field(default=False)
+    enable_trace_debug_api: bool = Field(default=False)
     database_url: str | None = Field(
         default=None,
         description="PostgreSQL production source of truth; SQLite is used locally when unset",
@@ -104,17 +107,7 @@ class Settings(BaseSettings):
     )
 
     # ── Pipeline tuning ──────────────────────────────────────────────────────
-    faq_score_threshold: float = Field(default=0.75)
-    faq_keyword_boost: float = Field(default=0.3)
-    faq_semantic_cache_threshold: float = Field(
-        default=0.92,
-        description="High-confidence FAQ threshold for cache-like direct answers",
-    )
-    faq_semantic_cache_margin: float = Field(
-        default=0.08,
-        description="Minimum gap between top FAQ candidate and runner-up",
-    )
-    max_retrieval_docs: int = Field(default=5)
+    max_retrieval_docs: int = Field(default=3, description="Evidence chunks passed to generation")
     max_chat_history_exchanges: int = Field(default=3)
 
     # ── Pipeline feature flags (Option A: small, reversible improvements) ──
@@ -125,10 +118,6 @@ class Settings(BaseSettings):
     enable_llm_router_fallback: bool = Field(
         default=False,
         description="Allow router to call LLM when deterministic fast-route is inconclusive",
-    )
-    enable_strict_faq_gate: bool = Field(
-        default=True,
-        description="Require strict FAQ hit criteria before short-circuiting legal retrieval",
     )
     enable_relevance_gate: bool = Field(
         default=True,

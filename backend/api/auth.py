@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 # Public endpoints that don't require authentication
 PUBLIC_ENDPOINTS = {
     "/api/v1/health",
+    "/api/v1/ready",
     "/metrics",
     "/",
 }
