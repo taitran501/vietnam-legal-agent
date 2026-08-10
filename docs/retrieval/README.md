@@ -16,8 +16,8 @@ metric regression, has complete explicit-article hit@3, preserves source
 metadata, and is marked `promotable: true` in
 `candidate_legal_structure_v1.json`.
 
-Nightly/release automation sets `LIVE_EVAL_QUERY_BUDGET=16`; the benchmark
-enforces that value as a hard cap on variable-cost live retrieval calls.
+For a manual live run, set `LIVE_EVAL_QUERY_BUDGET=16`; the benchmark enforces
+that value as a hard cap on variable-cost retrieval calls.
 
 Committed evidence:
 

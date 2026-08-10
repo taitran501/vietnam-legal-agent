@@ -105,6 +105,9 @@ Qdrant storage, logs, or cache files.
 
 ## Tests
 
+Run verification manually from the project virtual environment. This repository
+does not define a CI/CD workflow.
+
 ```powershell
 pytest -q
 ruff check src/epr_agent tests/agent tests/trajectory tests/tools
@@ -120,8 +123,8 @@ The committed source baseline records 49 FAQ entries and 178 legal records in
 [docs/retrieval/baseline_manifest.json](docs/retrieval/baseline_manifest.json).
 Named local Qdrant baseline and candidate results, collection audits, and the
 promotion decision are committed under [docs/retrieval](docs/retrieval/README.md).
-The 33-case live golden run is reported separately from deterministic CI because
-its generated answer text and latency depend on the configured model service.
+Run the 33-case live golden evaluation manually when needed because generated
+answer text and latency depend on the configured model service.
 
 ## Design handoff
 

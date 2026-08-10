@@ -32,7 +32,7 @@ and file-backed Qdrant collections.
   progress, clarification and safe-stop states, case facts, source drawer,
   assessment, and checklist output.
 
-## Automated verification
+## Local verification
 
 - Python suite: 233 passed, 1 skipped (234 collected).
 - Mypy: success for all 22 files in `src/epr_agent`.
@@ -63,14 +63,14 @@ legal-anchor, source-metadata, and deterministic offline gates. It is marked
 The 33-case golden runner now supports `--isolated-state`, which removes
 history/cache side effects while keeping live routing, retrieval, and generation.
 This prevents Redis or an old SQLite history file from contaminating a release
-comparison. LLM-as-judge and Tavily are intentionally disabled in this snapshot;
-nightly/release evaluation owns those variable-cost checks.
+comparison. LLM-as-judge and Tavily are intentionally disabled in this snapshot.
+Run those variable-cost checks manually only when a release candidate needs them.
 
 The final isolated live snapshot passed its configured release gate: 33/33
 routes correct, 84.03% average keyword hit rate, 10.106 s p95 latency, and no
 pipeline errors. The gate used routing >= 90%, keyword hit >= 80%, and p95 <=
 15 s. Generated answers remain model-dependent, so this snapshot is reported
-separately from deterministic PR tests.
+separately from deterministic local tests.
 
 ## Deployment boundary
 
