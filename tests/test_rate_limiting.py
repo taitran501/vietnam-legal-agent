@@ -9,12 +9,12 @@ Tests cover:
 - Client ID extraction (API key vs IP)
 """
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from starlette.testclient import TestClient
-from fastapi import FastAPI
+from unittest.mock import AsyncMock, patch
 
+import pytest
 from backend.api.middleware import RateLimiter, RateLimitMiddleware
+from fastapi import FastAPI
+from starlette.testclient import TestClient
 
 
 class TestRateLimiter:
@@ -38,7 +38,7 @@ class TestRateLimiter:
             mock_redis.pipeline.return_value.execute.return_value = [3, 120, 50, 7200]
             mock_get_redis.return_value = mock_redis
 
-            allowed, headers = await limiter.is_allowed("test-client")
+            allowed, _headers = await limiter.is_allowed("test-client")
             assert allowed is True
 
     @pytest.mark.asyncio
@@ -160,8 +160,6 @@ class TestClientIDExtraction:
 
     def test_client_id_from_api_key(self):
         """Should use API key as client ID when present."""
-        from starlette.datastructures import Headers
-        from starlette.requests import Request
 
         # This is tested via the middleware, so we test the logic indirectly
         assert True  # Covered in middleware tests

@@ -13,20 +13,22 @@ stream_legal_answer(query, docs)      → AsyncIterator[str]
 
 from __future__ import annotations
 
+import json as _json_module
+import logging
 import os
 import re
 import warnings
-import json as _json_module
-from typing import AsyncIterator, List
+from collections.abc import AsyncIterator
 
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-
 from pydantic import BaseModel
-from backend.config import get_settings
-from backend.core.llm_instances import get_llm_smart, get_llm_fast, get_llm_stream, get_llm_router
 
+from backend.config import get_settings
+from backend.core.llm_instances import get_llm_fast, get_llm_router, get_llm_smart, get_llm_stream
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -65,7 +67,7 @@ def _meta_heading(name_key: str, fallback_key: str, meta: dict) -> str:
 
 
 def format_docs(
-    docs: List[Document],
+    docs: list[Document],
     max_docs: int | None = None,
     max_tokens_per_doc: int | None = None,
 ) -> str:
@@ -87,10 +89,10 @@ def format_docs(
             f'\"📚 Nguồn tham khảo:\", không được rút gọn): {law_label}\n\n'
         )
 
-    parts: List[str] = []
+    parts: list[str] = []
     for i, doc in enumerate(docs[:max_docs], 1):
         meta = doc.metadata
-        citations: List[str] = []
+        citations: list[str] = []
         seg = _citation_segment("dieu", meta.get("Dieu"))
         if seg:
             citations.append(seg)
@@ -154,7 +156,7 @@ Tài liệu này có chứa thông tin để trả lời câu hỏi không?
 ])
 
 
-def is_retrieval_relevant(question: str, docs: List[Document]) -> bool:
+def is_retrieval_relevant(question: str, docs: list[Document]) -> bool:
     """Binary relevance check: do the retrieved docs actually answer the question?
 
     Uses gpt-4o-mini structured output. The snippet passed to the gate includes
@@ -177,12 +179,12 @@ def is_retrieval_relevant(question: str, docs: List[Document]) -> bool:
         result = chain.invoke({"question": question, "doc_snippet": snippet})
         relevant = result.get("relevant") if isinstance(result, dict) else getattr(result, "relevant", True)
         return bool(relevant)
-    except Exception:
+    except Exception:  # noqa: BLE001 - relevance gate failure is explicitly fail-open
         return True  # fail-open: if gate errors, proceed normally
 
 
 def check_legal_evidence(
-    docs: List[Document],
+    docs: list[Document],
     *,
     min_docs: int = 1,
     min_chars: int = 160,
@@ -327,7 +329,7 @@ async def generate_follow_ups(question: str, answer: str) -> list[str]:
         if isinstance(followups, list) and len(followups) >= 2:
             return followups[:3]
     except Exception:
-        pass
+        logger.debug("Follow-up suggestion generation failed", exc_info=True)
 
     # Fallback: return empty (no suggestions)
     return []
@@ -374,7 +376,7 @@ CÂU HỎI: {question}"""
 _legal_gen_prompt = ChatPromptTemplate.from_template(_LEGAL_GEN_SYSTEM)
 
 
-def generate_legal(question: str, docs: List[Document]) -> str:
+def generate_legal(question: str, docs: list[Document]) -> str:
     """Synchronous legal RAG generation (used as fallback)."""
     if not docs:
         return "Xin lỗi, tôi không tìm thấy thông tin liên quan trong cơ sở dữ liệu."
@@ -549,7 +551,7 @@ Trả lời:"""
     try:
         chain = synthesis_prompt | get_llm_smart() | StrOutputParser()
         return chain.invoke({"context": context, "question": question})
-    except Exception:
+    except Exception:  # noqa: BLE001 - legacy non-streaming generation returns no answer on provider failure
         return None
 
 
@@ -597,7 +599,7 @@ def web_fallback(question: str) -> str:
                 )
                 return tool.invoke({"query": query})
 
-        except Exception:
+        except Exception:  # noqa: BLE001 - this boundary supports either Tavily integration at runtime
             # Backward-compatible fallback for older environments.
             from langchain_community.tools.tavily_search import TavilySearchResults
 
@@ -634,8 +636,8 @@ def web_fallback(question: str) -> str:
 
         # Fallback: show cleaned snippets if synthesis fails
         lines = [
-            f"Không tìm thấy trong cơ sở dữ liệu nội bộ. "
-            f"Dưới đây là thông tin từ web về EPR:\n"
+            ("Không tìm thấy trong cơ sở dữ liệu nội bộ. "
+            "Dưới đây là thông tin từ web về EPR:\n")
         ]
         for i, r in enumerate(results, 1):
             title = r.get("title", "Không có tiêu đề")
@@ -650,7 +652,7 @@ def web_fallback(question: str) -> str:
         lines.append("\n---")
         lines.append("\n⚠️ Các nguồn trên từ Internet — vui lòng đối chiếu với văn bản pháp luật chính thức.")
         return "\n".join(lines)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - legacy web helper returns a safe user-facing failure
         return f"Không thể thực hiện tìm kiếm: {exc}"
 
 
@@ -714,7 +716,7 @@ Trả lời:"""
 _legal_stream_prompt = ChatPromptTemplate.from_template(_LEGAL_STREAM_SYSTEM)
 
 
-async def stream_legal_answer(question: str, docs: List[Document]) -> AsyncIterator[str]:
+async def stream_legal_answer(question: str, docs: list[Document]) -> AsyncIterator[str]:
     """Stream a legal RAG answer token-by-token."""
     context = format_docs(docs)
     chain = _legal_stream_prompt | get_llm_stream()

@@ -1,4 +1,5 @@
-import json, sys
+import json
+
 with open('tests/eval/results_e2e.json', encoding='utf-8') as f:
     results = json.load(f)
 

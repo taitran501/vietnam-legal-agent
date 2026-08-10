@@ -10,12 +10,10 @@ Tests cover:
 - Rate limiting on failed attempts
 """
 
-import pytest
 import hmac
-from unittest.mock import AsyncMock, MagicMock, patch
-from starlette.testclient import TestClient
-from fastapi import FastAPI
+from unittest.mock import AsyncMock, patch
 
+import pytest
 from backend.api.auth import APIKeyMiddleware, get_valid_api_keys
 
 
@@ -24,13 +22,11 @@ class TestAPIKeyValidation:
 
     def test_constant_time_comparison(self):
         """Should use hmac.compare_digest for constant-time comparison."""
-        import hmac
         assert hmac.compare_digest("test-key", "test-key") is True
         assert hmac.compare_digest("test-key", "wrong-key") is False
 
     def test_valid_api_keys_parsing(self):
         """Should parse comma-separated API keys correctly."""
-        from backend.api.auth import get_valid_api_keys
         with patch('backend.api.auth.get_settings') as mock_settings:
             mock_settings.return_value.api_keys = "key1,key2,key3"
             keys = get_valid_api_keys()
@@ -48,7 +44,7 @@ class TestAPIKeyValidation:
 
 class TestConstantTimeComparison:
     """Test that constant-time comparison is used."""
-    pass  # Tests moved to TestAPIKeyValidation
+    # Tests moved to TestAPIKeyValidation
 
 
 class TestAuthRateLimiting:

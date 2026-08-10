@@ -12,17 +12,15 @@ Provides:
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 from prometheus_client import (
-    Counter,
-    Histogram,
-    Gauge,
-    CollectorRegistry,
-    generate_latest,
     CONTENT_TYPE_LATEST,
+    CollectorRegistry,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
 )
-from starlette.responses import Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
@@ -59,7 +57,7 @@ HTTP_REQUESTS_IN_PROGRESS = Gauge(
 CACHE_HITS = Counter(
     "cache_hits_total",
     "Cache hits",
-    ["cache_type"],  # exact, semantic
+    ["cache_type"],  # e.g. redis_exact
     registry=REGISTRY,
 )
 
@@ -71,7 +69,7 @@ CACHE_MISSES = Counter(
 
 CACHE_SIZE = Gauge(
     "cache_size_entries",
-    "Number of entries in semantic cache",
+    "Number of entries in the answer cache",
     registry=REGISTRY,
 )
 
@@ -234,6 +232,7 @@ def track_rerank_fallback(reason: str, from_engine: str, to_engine: str) -> None
 # ---------------------------------------------------------------------------
 
 from fastapi.responses import Response as FastAPIResponse
+
 
 def metrics_endpoint():
     """Return Prometheus metrics."""

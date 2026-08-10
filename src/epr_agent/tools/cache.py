@@ -63,11 +63,10 @@ class CachedAnswer:
 class RedisExactAnswerCache:
     """V3 answer cache with an exact, corpus-scoped Redis key.
 
-    The legacy semantic cache was built for generic chat answers.  Similar
-    legal questions such as ``Điều 77`` and ``Điều 78`` can have highly similar
-    embeddings but require different evidence, so V3 deliberately never calls
-    it.  ``ScopedAnswerCache.build_key`` already includes the normalized-query
-    digest and corpus identity; Redis is only the durable TTL store.
+    A former generic semantic cache could treat questions about ``Điều 77``
+    and ``Điều 78`` as equivalent despite their different evidence. V3 uses
+    only the exact normalized-query digest and corpus identity; Redis is the
+    durable TTL store.
     """
 
     async def lookup(self, key: str) -> str | None:

@@ -16,9 +16,9 @@ import os
 import statistics
 import sys
 import time
-from dataclasses import dataclass, asdict
+from collections.abc import Iterable
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -179,7 +179,7 @@ async def _main() -> None:
 
     _print_summary(scores)
 
-    output_path = (ROOT / args.output).resolve() if args.output.startswith(".") or "/" in args.output or "\\" in args.output else (ROOT / args.output).resolve()
+    output_path = (ROOT / args.output).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
         json.dumps([asdict(s) for s in scores], ensure_ascii=False, indent=2),
@@ -190,4 +190,3 @@ async def _main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(_main())
-

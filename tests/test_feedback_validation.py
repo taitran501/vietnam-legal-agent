@@ -11,9 +11,8 @@ Tests cover:
 """
 
 import pytest
-from pydantic import ValidationError
-
 from backend.api.routes.feedback import FeedbackRequest
+from pydantic import ValidationError
 
 
 class TestFeedbackValidation:

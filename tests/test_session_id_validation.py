@@ -10,9 +10,8 @@ Tests cover:
 """
 
 import pytest
-from pydantic import ValidationError
-
 from backend.api.schemas import ChatRequest
+from pydantic import ValidationError
 
 
 class TestSessionIDValidation:

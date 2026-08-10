@@ -14,7 +14,6 @@ from __future__ import annotations
 import hmac
 import logging
 import time
-from typing import Set
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -37,7 +36,7 @@ PUBLIC_ENDPOINTS = {
 class APIKeyMiddleware(BaseHTTPMiddleware):
     """Validates API keys on incoming requests with constant-time comparison."""
 
-    def __init__(self, app, valid_keys: Set[str] = None):
+    def __init__(self, app, valid_keys: set[str] | None = None):
         super().__init__(app)
         self.valid_keys = valid_keys or set()
         self._failed_attempts = {}  # In-memory rate limiting for failed auths
@@ -64,11 +63,8 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             attempts = await redis_client.get(key)
             attempts = int(attempts) if attempts else 0
             
-            if attempts >= self._max_failed_attempts:
-                return False  # Rate limited
-            
-            return True
-        except Exception:
+            return attempts < self._max_failed_attempts
+        except Exception:  # noqa: BLE001 - authentication must retain its local rate-limit fallback
             # Fall back to in-memory tracking
             now = time.time()
             if client_ip in self._failed_attempts:
@@ -89,7 +85,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             pipe.incr(key)
             pipe.expire(key, self._ban_window)
             await pipe.execute()
-        except Exception:
+        except Exception:  # noqa: BLE001 - authentication must retain its local rate-limit fallback
             # Fall back to in-memory
             now = time.time()
             if client_ip in self._failed_attempts:
@@ -163,7 +159,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-def get_valid_api_keys() -> Set[str]:
+def get_valid_api_keys() -> set[str]:
     """Get set of valid API keys from settings."""
     settings = get_settings()
     if not settings.api_keys:

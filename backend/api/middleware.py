@@ -11,9 +11,8 @@ Supports:
 
 from __future__ import annotations
 
-import time
 import logging
-from typing import Optional, Tuple, Dict
+import time
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -37,7 +36,7 @@ class RateLimiter:
         self.rph = rph
         self.burst = burst
     
-    async def is_allowed(self, client_id: str) -> Tuple[bool, Dict[str, str]]:
+    async def is_allowed(self, client_id: str) -> tuple[bool, dict[str, str]]:
         """
         Check if request is allowed for the given client using Redis.
         
@@ -89,7 +88,7 @@ class RateLimiter:
             
             return True, headers
             
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - rate limiting deliberately fails open during Redis outages
             logger.warning("Rate limiter check failed: %s", exc)
             # Fail-open: allow request if Redis is unavailable
             return True, {}
@@ -98,7 +97,7 @@ class RateLimiter:
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """FastAPI middleware that enforces distributed rate limits."""
     
-    def __init__(self, app, limiter: Optional[RateLimiter] = None):
+    def __init__(self, app, limiter: RateLimiter | None = None):
         super().__init__(app)
         self.limiter = limiter or RateLimiter()
     

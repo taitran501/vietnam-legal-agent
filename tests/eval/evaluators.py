@@ -13,11 +13,12 @@ Usage:
     print(score.score, score.reasoning)
 """
 
+# An evaluator must convert any third-party model failure into an EvalScore.
+# ruff: noqa: BLE001
+
 from __future__ import annotations
 
-import json
 import logging
-from typing import List
 
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
@@ -76,7 +77,7 @@ Hãy chấm điểm FAITHFULNESS.""",
 def eval_faithfulness(
     question: str,
     answer: str,
-    documents: List[dict],
+    documents: list[dict],
 ) -> EvalScore:
     """Score how faithfully the answer is grounded in the retrieved documents."""
     if not documents:

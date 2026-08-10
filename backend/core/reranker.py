@@ -41,7 +41,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from functools import lru_cache
-from typing import List, Tuple
 
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
@@ -120,7 +119,7 @@ def _format_doc_for_rerank(doc: Document, index: int) -> str:
     return f"[{label}]\n{content}"
 
 
-def _parse_rerank_scores(output: str, num_docs: int) -> List[float]:
+def _parse_rerank_scores(output: str, num_docs: int) -> list[float]:
     """Parse LLM output into list of scores.
 
     Expected format: "5,3,1,4,2"
@@ -149,7 +148,7 @@ def _parse_rerank_scores(output: str, num_docs: int) -> List[float]:
         # Return only first num_docs scores
         return scores[:num_docs]
 
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - malformed model output must preserve retrieval availability
         logger.warning("Failed to parse re-rank scores: %s, output was: %r", exc, output)
         # Fail-safe: return equal scores (no re-ranking)
         return [2.5] * num_docs
@@ -163,9 +162,9 @@ def _get_reranker():
 
 def rerank_documents(
     query: str,
-    docs: List[Document],
+    docs: list[Document],
     top_k: int = 3,
-) -> List[Document]:
+) -> list[Document]:
     """
     Re-rank documents by relevance using LLM cross-encoder.
 
@@ -233,7 +232,7 @@ def rerank_documents(
 
         return reranked
 
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - reranking is optional and returns the original order on failure
         logger.warning("Re-ranking failed: %s, returning original order", exc)
         # Fail-safe: return original docs (no re-ranking)
         return docs_to_rerank[:top_k]
@@ -245,9 +244,9 @@ def rerank_documents(
 
 async def rerank_documents_async(
     query: str,
-    docs: List[Document],
+    docs: list[Document],
     top_k: int = 3,
-) -> List[Document]:
+) -> list[Document]:
     """
     Async wrapper for re-ranking to avoid blocking event loop.
 
@@ -269,9 +268,9 @@ async def rerank_documents_async(
 
 def rerank_by_keyword_boost(
     query: str,
-    docs: List[Document],
+    docs: list[Document],
     boost_weight: float = 0.3,
-) -> List[Document]:
+) -> list[Document]:
     """
     Fast keyword-based re-ranking without LLM cost.
 

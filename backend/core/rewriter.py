@@ -79,5 +79,5 @@ def rewrite_question(question: str, chat_history: str) -> str:
             "question": question,
             "chat_history": chat_history,
         })
-    except Exception:
+    except Exception:  # noqa: BLE001 - rewrite failure must preserve the original user question
         return question

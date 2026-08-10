@@ -16,8 +16,9 @@ import argparse
 import json
 import statistics
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Dict, List, Sequence
+from typing import Any
 
 import tiktoken
 
@@ -29,7 +30,7 @@ DEFAULT_LAW = ROOT / "data" / "law.json"
 DEFAULT_TOKEN_MODEL = "text-embedding-3-small"
 
 
-def load_articles(path: Path) -> List[Dict[str, Any]]:
+def load_articles(path: Path) -> list[dict[str, Any]]:
     with open(path, encoding="utf-8") as f:
         raw = json.load(f)
     if isinstance(raw, list):
@@ -68,12 +69,12 @@ def percentile_nearest(values: Sequence[float | int], p: float) -> float:
 
 def histogram_bins(
     values: Sequence[int], edges: Sequence[int]
-) -> List[tuple[str, int, float]]:
+) -> list[tuple[str, int, float]]:
     """
     Bucket counts for [0, e0), [e0, e1), ... [last, inf).
     edges must be sorted strictly increasing.
     """
-    rows: List[tuple[str, int, float]] = []
+    rows: list[tuple[str, int, float]] = []
     n = len(values)
     prev = 0
     for edge in edges:
@@ -155,7 +156,7 @@ def main() -> int:
         print("(note: --bins deduplicated and sorted ascending)", file=sys.stderr)
     print_section("Histogram — tokens (per article)")
     for label, cnt, pct in histogram_bins(tok_lens, edges):
-        bar = "#" * max(1, int(round(pct / 2)))
+        bar = "#" * max(1, round(pct / 2))
         print(f"  {label:16} {cnt:4}  ({pct:5.1f}%) {bar}")
 
     # Chunking hints: how many articles exceed common chunk sizes
