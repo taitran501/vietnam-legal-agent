@@ -19,8 +19,8 @@ import uuid
 from fastapi import APIRouter, Request
 from sse_starlette.sse import EventSourceResponse
 
-from backend.api.schemas import ChatRequest
 from backend.api.routes.health import readiness_payload
+from backend.api.schemas import ChatRequest
 from epr_agent.api.routes import stream_chat_events as agentic_stream_chat
 
 logger = logging.getLogger(__name__)
@@ -70,6 +70,7 @@ async def chat(request: Request, body: ChatRequest):
                 user_id=user_id,
                 conversation_id=conversation_id,
                 legacy_session_id=body.session_id,
+                mode=body.mode,
                 runtime=runtime,
             ):
                 # CRITICAL: Check if client disconnected

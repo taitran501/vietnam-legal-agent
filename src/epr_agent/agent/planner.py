@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from epr_agent.domain.models import Action, AgentState, TaskType
+from epr_agent.domain.models import Action, AgentState
+from epr_agent.domain.routes import RouteType
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,7 +22,7 @@ class PlannerDecision:
 class BoundedPlanner:
     """Choose only safe, known actions with explicit budgets."""
 
-    def __init__(self, *, max_retrieval_actions: int = 3, max_repairs: int = 1, max_iterations: int = 12) -> None:
+    def __init__(self, *, max_retrieval_actions: int = 2, max_repairs: int = 1, max_iterations: int = 12) -> None:
         self.max_retrieval_actions = max_retrieval_actions
         self.max_repairs = max_repairs
         self.max_iterations = max_iterations
@@ -36,9 +37,15 @@ class BoundedPlanner:
         return int(state.get("iteration", 0)) < self.max_iterations
 
     def after_understanding(self, state: AgentState) -> PlannerDecision:
-        task = TaskType(state.get("task_type", TaskType.LEGAL_LOOKUP.value))
-        if task == TaskType.CHITCHAT:
+        route = RouteType(state.get("route", RouteType.LEGAL_LOOKUP.value))
+        if route == RouteType.CHITCHAT:
             return PlannerDecision(Action.COMPOSE_ANSWER, "greeting_or_small_talk")
+        if route == RouteType.OUT_OF_SCOPE:
+            return PlannerDecision(Action.SAFE_STOP, "outside_registered_corpus")
+        if route == RouteType.RESEARCH_WEB:
+            return PlannerDecision(Action.RETRIEVE_WEB, "user_selected_research_web")
+        if state.get("clarification_required"):
+            return PlannerDecision(Action.ASK_USER, "route_confidence_below_calibrated_threshold")
         if state.get("missing_facts"):
             return PlannerDecision(Action.ASK_USER, "required_case_facts_missing")
         return PlannerDecision(Action.CHECK_CACHE, "task_is_ready_for_retrieval")
@@ -52,9 +59,7 @@ class BoundedPlanner:
         assessment = state.get("evidence_assessment") or {}
         if assessment.get("sufficient"):
             return PlannerDecision(Action.COMPOSE_ANSWER, "evidence_sufficient")
-        if state.get("is_epr_scope") and self.can_retrieve(state):
-            return PlannerDecision(Action.RETRIEVE_WEB, "corpus_evidence_insufficient_but_scope_is_epr")
-        return PlannerDecision(Action.SAFE_STOP, "evidence_insufficient_or_out_of_scope")
+        return PlannerDecision(Action.SAFE_STOP, "corpus_evidence_insufficient")
 
     def after_verification(self, state: AgentState) -> PlannerDecision:
         if state.get("citation_valid"):

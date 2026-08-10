@@ -59,7 +59,11 @@ services:
       LAW_COLLECTION: law_collection
       LAW_COLLECTION_ALIAS: law_collection
       CORPUS_ID: epr
-      INDEX_SCHEMA_VERSION: legal-structure-v1
+      INDEX_SCHEMA_VERSION: legal-structure-v2
+      CHUNKING_PROFILE: legal-structure-v2
+      EMBEDDING_PROFILE: openai-text-embedding-3-small-v1
+      EMBEDDING_MODEL: text-embedding-3-small
+      EMBEDDING_DIMENSIONS: "1536"
       ENABLE_TRACE_DEBUG_API: ${ENABLE_TRACE_DEBUG_API:-false}
     depends_on:
       postgres:
@@ -89,8 +93,12 @@ services:
       QDRANT_URL: http://qdrant:6333
       LAW_COLLECTION_ALIAS: law_collection
       CORPUS_ID: epr
-      INDEX_SCHEMA_VERSION: legal-structure-v1
-      CHUNKING_STRATEGY: legal_structure_v1
+      INDEX_SCHEMA_VERSION: legal-structure-v2
+      CHUNKING_PROFILE: legal-structure-v2
+      CHUNKING_STRATEGY: legal_structure_v2
+      EMBEDDING_PROFILE: openai-text-embedding-3-small-v1
+      EMBEDDING_MODEL: text-embedding-3-small
+      EMBEDDING_DIMENSIONS: "1536"
       SUMMARY_CACHE_PATH: /app/artifacts/index_summary_cache.json
     volumes:
       - indexer_cache:/app/artifacts

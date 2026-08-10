@@ -67,7 +67,7 @@ export function useChatStream() {
   } = useChatStore();
 
   const runAssistantStream = useCallback(
-    async (query: string, sessionId: string) => {
+    async (query: string, sessionId: string, mode: 'auto' | 'research_web' = 'auto') => {
       // Abort any existing stream before starting a new one
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -90,7 +90,8 @@ export function useChatStream() {
         for await (const event of streamChat(
           query,
           sessionId,
-          abortControllerRef.current.signal
+          abortControllerRef.current.signal,
+          mode,
         )) {
           if (event.type === 'status') {
             setStatusMessage(event.message || '');
@@ -111,6 +112,13 @@ export function useChatStream() {
             documents = (event.documents as SourceDocument[]) || [];
             workflow = {
               task_type: event.task_type,
+              route: event.route,
+              source_scope: event.source_scope,
+              corpus_version: event.corpus_version,
+              corpus_sha: event.corpus_sha,
+              embedding_profile: event.embedding_profile,
+              evidence_status: event.evidence_status,
+              available_actions: event.available_actions,
               case_state: event.case_state,
               assessment: event.assessment,
               checklist: event.checklist,
@@ -161,7 +169,7 @@ export function useChatStream() {
    * Send message and stream response
    */
   const sendMessage = useCallback(
-    async (query: string, sessionId: string) => {
+    async (query: string, sessionId: string, mode: 'auto' | 'research_web' = 'auto') => {
       // Prevent double submission: check if already streaming
       const { isStreaming: currentlyStreaming } = useChatStore.getState();
       if (currentlyStreaming) {
@@ -187,7 +195,7 @@ export function useChatStream() {
 
       ensureSessionVisibleInSidebar(sessionId, query);
 
-      await runAssistantStream(query, sessionId);
+      await runAssistantStream(query, sessionId, mode);
     },
     [addMessage, runAssistantStream]
   );

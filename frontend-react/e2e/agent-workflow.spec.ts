@@ -2,6 +2,15 @@ import { expect, test, type Page } from '@playwright/test';
 
 async function mockBaseApi(page: Page) {
   await page.route('**/api/v1/health', (route) => route.fulfill({ status: 200, body: '{}' }));
+  await page.route('**/api/v1/ready', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      status: 'ready',
+      dependencies: { database: 'ok', redis: 'ok', qdrant: 'ok', openai: 'ok' },
+      corpus: { status: 'ready', corpus_id: 'epr' },
+    }),
+  }));
   await page.route('**/api/v1/sessions?*', (route) => route.fulfill({ status: 200, body: '[]' }));
   await page.route('**/api/v1/sessions', (route) => route.fulfill({ status: 200, body: '[]' }));
 }

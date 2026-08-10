@@ -12,7 +12,9 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from .legal import LegalAnchor, explicit_anchors
 from .models import TaskType
+from .routes import RouteType, route_for_task
 
 EPR_TERMS = (
     "epr",
@@ -39,6 +41,8 @@ GREETING_TERMS = (
     "tạm biệt",
     "bạn là ai",
     "hôm nay trời",
+    "hôm nay thế nào",
+    "chào buổi sáng",
 )
 
 CHECKLIST_TERMS = (
@@ -47,6 +51,9 @@ CHECKLIST_TERMS = (
     "các bước",
     "cần làm gì",
     "hồ sơ cần",
+    "danh sách hồ sơ",
+    "cần chuẩn bị",
+    "các việc cần",
     "lộ trình tuân thủ",
     "kế hoạch tuân thủ",
 )
@@ -55,9 +62,6 @@ ASSESSMENT_TERMS = (
     "tôi có phải",
     "doanh nghiệp tôi",
     "công ty tôi",
-    "có thuộc đối tượng",
-    "có phải thực hiện",
-    "có phải tuân thủ",
     "nghĩa vụ của tôi",
     "đánh giá nghĩa vụ",
     "xác định nghĩa vụ",
@@ -123,12 +127,16 @@ class ExtractedFacts(BaseModel):
         return {key: value for key, value in self.model_dump().items() if value}
 
 
-class TaskUnderstanding(BaseModel):
+class QueryPlan(BaseModel):
     """Validated structured result produced before the planner chooses a tool."""
 
     task_type: TaskType = TaskType.LEGAL_LOOKUP
+    route: RouteType = RouteType.LEGAL_LOOKUP
     is_follow_up: bool = False
     standalone_query: str = ""
+    explicit_anchors: list[LegalAnchor] = Field(default_factory=list)
+    legal_topics: list[str] = Field(default_factory=list)
+    research_requested: bool = False
     facts: ExtractedFacts = Field(default_factory=ExtractedFacts)
     missing_facts: list[str] = Field(default_factory=list)
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -142,6 +150,17 @@ class TaskUnderstanding(BaseModel):
     @classmethod
     def _allow_known_fact_keys(cls, values: list[str]) -> list[str]:
         return [value for value in values if value in FACT_LABELS]
+
+    @field_validator("legal_topics")
+    @classmethod
+    def _clean_topics(cls, values: list[str]) -> list[str]:
+        return [" ".join(str(value).split())[:120] for value in values if str(value).strip()][:8]
+
+
+# The old name remains import-compatible for callers and persisted V2 tests.
+# Runtime structured output and documentation use the more precise QueryPlan
+# name: understanding creates a plan; it does not choose tools.
+TaskUnderstanding = QueryPlan
 
 
 def _normalise(text: str) -> str:
@@ -171,7 +190,7 @@ def is_epr_scope(query: str, history: list[dict[str, Any]] | None = None, active
         TaskType.BUILD_COMPLIANCE_CHECKLIST.value,
     }:
         return True
-    return any(term in text for term in EPR_TERMS)
+    return bool(explicit_anchors(query)) or any(term in text for term in EPR_TERMS)
 
 
 def classify_task(query: str, history: list[dict[str, Any]] | None = None, active_case: dict[str, Any] | None = None) -> TaskType:
@@ -194,6 +213,33 @@ def classify_task(query: str, history: list[dict[str, Any]] | None = None, activ
         return TaskType(active_case["task_type"])
 
     return TaskType.LEGAL_LOOKUP
+
+
+def research_requested(query: str) -> bool:
+    q = _normalise(query)
+    return any(term in q for term in ("tìm trên web", "tìm web", "nguồn công khai", "tra cứu internet", "tìm nguồn mới"))
+
+
+def classify_route(
+    query: str,
+    history: list[dict[str, Any]] | None = None,
+    active_case: dict[str, Any] | None = None,
+) -> RouteType:
+    """Choose a product route while preserving legacy task type compatibility."""
+
+    if research_requested(query):
+        return RouteType.RESEARCH_WEB
+    if is_greeting(query):
+        return RouteType.CHITCHAT
+    if not is_epr_scope(query, history, active_case):
+        return RouteType.OUT_OF_SCOPE
+    task = classify_task(query, history, active_case)
+    if task != TaskType.LEGAL_LOOKUP:
+        return route_for_task(task)
+    q = _normalise(query)
+    if any(term in q for term in ("giải thích", "so sánh", "khác nhau", "khác gì", "phân biệt", "tóm tắt điều")):
+        return RouteType.LEGAL_EXPLAIN_COMPARE
+    return RouteType.LEGAL_LOOKUP
 
 
 def extract_facts(query: str) -> dict[str, str]:
@@ -277,7 +323,22 @@ def rewrite_follow_up(query: str, history: list[dict[str, Any]] | None, active_c
 
     facts = ", ".join(f"{key}={value}" for key, value in (active_case or {}).get("facts", {}).items())
     context = f" Cùng vụ việc hiện tại: {facts}." if facts else ""
-    return f"Câu hỏi trước: {previous}. Câu hỏi tiếp theo: {q}.{context}"
+    return preserve_explicit_anchors(q, f"Câu hỏi trước: {previous}. Câu hỏi tiếp theo: {q}.{context}")
+
+
+def preserve_explicit_anchors(original_query: str, rewritten_query: str) -> str:
+    """Ensure rewriting cannot silently remove a named source or legal anchor."""
+
+    rewritten = " ".join((rewritten_query or "").split())
+    missing = [
+        value
+        for anchor in explicit_anchors(original_query)
+        for value in (anchor.document_number, anchor.article, anchor.clause, anchor.point)
+        if value and value.casefold() not in rewritten.casefold()
+    ]
+    if missing:
+        rewritten = f"{rewritten} Tham chiếu gốc: {', '.join(dict.fromkeys(missing))}."
+    return rewritten
 
 
 def build_active_case(task_type: TaskType, facts: dict[str, str], query: str) -> dict[str, Any]:
@@ -307,8 +368,12 @@ def deterministic_task_understanding(
     is_follow_up = standalone != " ".join((query or "").split())
     return TaskUnderstanding(
         task_type=task,
+        route=classify_route(query, history, active_case),
         is_follow_up=is_follow_up,
         standalone_query=standalone,
+        explicit_anchors=explicit_anchors(query),
+        legal_topics=[],
+        research_requested=research_requested(query),
         facts=ExtractedFacts(**facts),
         missing_facts=missing_facts(task, facts),
         confidence=0.5,

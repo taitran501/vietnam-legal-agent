@@ -3,7 +3,7 @@ Tests for chat request validation.
 
 Tests cover:
 - Empty query rejection (min_length=1)
-- Query over 2000 characters rejection
+- Query over 3000 characters rejection
 - Valid queries
 - Special characters in queries
 """
@@ -42,14 +42,14 @@ class TestChatRequestValidation:
         assert req.query == "A"
 
     def test_query_at_max_length(self):
-        """Query at exactly 2000 characters should be allowed."""
-        max_query = "A" * 2000
+        """Query at exactly 3000 characters should be allowed."""
+        max_query = "A" * 3000
         req = ChatRequest(query=max_query)
-        assert len(req.query) == 2000
+        assert len(req.query) == 3000
 
     def test_query_over_max_length_rejected(self):
-        """Query over 2000 characters should be rejected."""
-        over_query = "A" * 2001
+        """Query over the V3 3000-character cap should be rejected."""
+        over_query = "A" * 3001
         with pytest.raises(ValidationError):
             ChatRequest(query=over_query)
 

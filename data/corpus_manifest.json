@@ -1,0 +1,18 @@
+{
+  "corpus_id": "epr",
+  "corpus_version": "epr-law-structure-v3",
+  "documents": [
+    {
+      "document_id": "nd-08-2022-nd-cp",
+      "title": "Nghị định số 08/2022/NĐ-CP quy định chi tiết thi hành một số điều của Luật Bảo vệ môi trường",
+      "number": "08/2022/NĐ-CP",
+      "issuer": "Chính phủ",
+      "jurisdiction": "Việt Nam",
+      "effective_from": "2022-01-10",
+      "effective_to": null,
+      "scope": "Quy định EPR về trách nhiệm tái chế và xử lý sản phẩm, bao bì.",
+      "source_file": "data/08_2022_ND-CP_479457.doc",
+      "source_uri": null
+    }
+  ]
+}

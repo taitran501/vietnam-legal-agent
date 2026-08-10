@@ -25,12 +25,20 @@ class History:
 async def test_article_77_is_legal_first_top_evidence_without_faq_or_repair() -> None:
     article_76 = DocumentRecord(
         content="Điều 76 có nội dung khác về EPR. " * 20,
-        metadata={"Dieu": "Điều 76", "source": "Nghị định 08/2022", "Corpus_Version": "test-v1"},
+        metadata={
+            "Dieu": "Điều 76", "source": "Nghị định 08/2022", "source_file": "data/08_2022_ND-CP_479457.doc",
+            "Corpus_Version": "test-v1", "Corpus_SHA256": "a" * 64,
+            "Embedding_Profile": "openai-text-embedding-3-small-v1", "legal_anchor": "Điều 76",
+        },
         document_id="law-76", source="legal", score=0.99,
     )
     article_77 = DocumentRecord(
         content="Điều 77 quy định trách nhiệm tái chế của nhà sản xuất, nhập khẩu. " * 20,
-        metadata={"Dieu": "Điều 77", "source": "Nghị định 08/2022", "Corpus_Version": "test-v1"},
+        metadata={
+            "Dieu": "Điều 77", "source": "Nghị định 08/2022", "source_file": "data/08_2022_ND-CP_479457.doc",
+            "Corpus_Version": "test-v1", "Corpus_SHA256": "a" * 64,
+            "Embedding_Profile": "openai-text-embedding-3-small-v1", "legal_anchor": "Điều 77",
+        },
         document_id="law-77", source="legal", score=0.8,
     )
     deps = WorkflowDependencies(

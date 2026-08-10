@@ -9,6 +9,7 @@ interface MessageListProps {
   isStreaming: boolean;
   messages: ChatMessage[];
   onOpenCase?: () => void;
+  onResearch?: (query: string) => void;
   onOpenSources: (documents: SourceDocument[], citations: Array<Record<string, unknown>>) => void;
   onRegenerate?: () => void;
   statusMessage?: string;
@@ -20,6 +21,7 @@ export function MessageList({
   isStreaming,
   messages,
   onOpenCase,
+  onResearch,
   onOpenSources,
   onRegenerate,
   statusMessage,
@@ -44,6 +46,9 @@ export function MessageList({
               key={`${message.id}-${index}`}
               message={message}
               onOpenCase={onOpenCase}
+              onResearch={message.role === 'assistant' && message.workflow?.available_actions?.includes('research_web')
+                ? () => onResearch?.(messages[index - 1]?.content || '')
+                : undefined}
               onOpenSources={onOpenSources}
               onRegenerate={
                 message.role === 'assistant' && index === visibleMessages.length - 1 && !hidePendingAssistant

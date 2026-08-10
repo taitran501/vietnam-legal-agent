@@ -10,6 +10,7 @@ from epr_agent.tools.evidence import EvidenceEvaluator
 from epr_agent.tools.generation import StaticGenerationGateway
 from epr_agent.tools.history import ContextSnapshot
 from epr_agent.tools.retrieval import StaticRetrievalGateway
+from epr_agent.tools.verifier import StaticClaimSupportVerifier
 
 
 class FakeHistory:
@@ -39,7 +40,7 @@ class FakeHistory:
         self.runs.append(state)
 
 
-def make_dependencies(*, legal=None, history=None, generation=None, cache_backend=None):
+def make_dependencies(*, legal=None, history=None, generation=None, cache_backend=None, claim_verifier=None):
     return WorkflowDependencies(
         history=history or FakeHistory(),
         cache=ScopedAnswerCache(cache_backend or InMemoryAnswerCache()),
@@ -47,6 +48,7 @@ def make_dependencies(*, legal=None, history=None, generation=None, cache_backen
         evidence=EvidenceEvaluator(min_chars=20),
         generation=generation or StaticGenerationGateway(),
         planner=BoundedPlanner(max_retrieval_actions=3, max_repairs=1, max_iterations=12),
+        claim_verifier=claim_verifier,
     )
 
 
@@ -56,7 +58,11 @@ def legal_doc(source="legal"):
         metadata={
             "Dieu": "Điều 77",
             "source": "Nghị định 08/2022/NĐ-CP",
+            "source_file": "data/08_2022_ND-CP_479457.doc",
             "Corpus_Version": "epr-law-structure-v2",
+            "Corpus_SHA256": "a" * 64,
+            "Embedding_Profile": "openai-text-embedding-3-small-v1",
+            "legal_anchor": "Điều 77",
             "document_id": "law-77",
         },
         document_id="law-77",
@@ -157,7 +163,7 @@ async def test_answer_cache_is_only_used_for_standalone_legal_lookup():
 
 
 @pytest.mark.asyncio
-async def test_missing_corpus_evidence_uses_epr_only_web_fallback():
+async def test_missing_corpus_evidence_stops_and_offers_explicit_web_research():
     deps = make_dependencies(legal=[])
 
     state = await run_workflow(
@@ -167,10 +173,26 @@ async def test_missing_corpus_evidence_uses_epr_only_web_fallback():
         deps=deps,
     )
 
-    assert state["source"] == "web_search"
-    assert state["termination_reason"] == "web_fallback"
-    assert state["citation_valid"] is True
+    assert state["source"] == "error"
+    assert state["termination_reason"] == "insufficient_evidence"
+    assert state["available_actions"] == ["research_web"]
+    assert "retrieve_web" not in state["action_sequence"]
+
+
+@pytest.mark.asyncio
+async def test_web_research_runs_only_when_user_selects_mode():
+    deps = make_dependencies(legal=[])
+
+    state = await run_workflow(
+        "Tìm nguồn công khai về trách nhiệm tái chế EPR.",
+        user_id="u1",
+        conversation_id="c5-web",
+        mode="research_web",
+        deps=deps,
+    )
+
     assert "retrieve_web" in state["action_sequence"]
+    assert state["route"] == "research_web"
 
 
 @pytest.mark.asyncio
@@ -204,3 +226,21 @@ async def test_one_citation_repair_is_allowed_then_workflow_finishes():
     assert state["repair_count"] == 1
     assert state["citation_valid"] is True
     assert "repair_answer" in state["action_sequence"]
+
+
+@pytest.mark.asyncio
+async def test_claim_support_verifier_can_block_a_structurally_valid_answer():
+    verifier = StaticClaimSupportVerifier(supported=False, reason_code="claim_not_supported")
+    deps = make_dependencies(legal=[legal_doc()], claim_verifier=verifier)
+
+    state = await run_workflow(
+        "Điều 77 quy định gì?",
+        user_id="u1",
+        conversation_id="c8",
+        deps=deps,
+    )
+
+    assert verifier.calls == 2  # initial answer plus the one permitted repair
+    assert state["termination_reason"] == "citation_verification_failed"
+    assert state["citation_valid"] is False
+    assert "claim_support_verifier" in [item["tool"] for item in state["tool_results"]]

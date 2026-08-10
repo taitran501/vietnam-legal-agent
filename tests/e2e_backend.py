@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.api.routes import chat as chat_routes
 from backend.api.routes.chat import router as chat_router
 from fastapi import FastAPI
 
@@ -21,6 +22,21 @@ from epr_agent.tools.evidence import EvidenceEvaluator
 from epr_agent.tools.generation import StaticGenerationGateway
 from epr_agent.tools.history import ContextSnapshot
 from epr_agent.tools.retrieval import StaticRetrievalGateway
+
+
+async def _deterministic_ready() -> tuple[dict[str, object], bool]:
+    """Keep browser acceptance isolated from Docker/Qdrant readiness.
+
+    The production router correctly checks the versioned corpus before every
+    chat request.  This dedicated browser host exercises the same SSE route
+    with deterministic adapters, so it supplies the ready contract without
+    requiring the real local stack during UI tests.
+    """
+
+    return ({"status": "ready", "dependencies": {}, "corpus": {"status": "ready"}}, True)
+
+
+chat_routes.readiness_payload = _deterministic_ready
 
 
 class BrowserHistoryGateway:
@@ -90,7 +106,17 @@ legal_document = DocumentRecord(
         "nhập khẩu sản phẩm hoặc bao bì đưa ra thị trường Việt Nam. "
     )
     * 4,
-    metadata={"Dieu": "Điều 77", "source": "Nghị định 08/2022/NĐ-CP"},
+    metadata={
+        "Dieu": "Điều 77",
+        "Parent_Dieu": "Điều 77",
+        "legal_anchor": "08/2022/NĐ-CP | Điều 77",
+        "Document_Number": "08/2022/NĐ-CP",
+        "source": "Nghị định 08/2022/NĐ-CP",
+        "source_file": "data/08_2022_ND-CP_479457.doc",
+        "Corpus_Version": "browser-e2e-v3",
+        "Corpus_SHA256": "browser-e2e-corpus",
+        "Embedding_Profile": "openai-text-embedding-3-small-v1",
+    },
     document_id="law-77",
     score=0.94,
     source="legal",
@@ -112,6 +138,14 @@ app.include_router(chat_router, prefix="/api/v1")
 @app.get("/api/v1/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/v1/ready")
+async def ready() -> dict[str, object]:
+    """Frontend readiness contract for deterministic browser acceptance."""
+
+    payload, _ = await _deterministic_ready()
+    return payload
 
 
 @app.get("/api/v1/sessions")

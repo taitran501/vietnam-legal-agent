@@ -96,7 +96,10 @@ class AgentRunRecord(Base):
         ForeignKey("conversations.id", ondelete="CASCADE"), index=True, nullable=False
     )
     task_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    route: Mapped[str | None] = mapped_column(String(64), nullable=True)
     corpus_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    corpus_sha: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    embedding_profile: Mapped[str | None] = mapped_column(String(128), nullable=True)
     pipeline_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     source: Mapped[str | None] = mapped_column(String(32), nullable=True)
     duration_ms: Mapped[float | None] = mapped_column(nullable=True)
@@ -486,12 +489,46 @@ class PersistenceStore:
 
     @staticmethod
     def _event_payload(value: Any) -> dict[str, Any]:
-        """Keep trace records operational: never duplicate raw conversation content."""
+        """Persist an allowlisted operational trace, never conversation data.
 
-        payload = dict(value or {}) if isinstance(value, dict) else {}
-        for key in ("query", "standalone_query", "history", "prompt", "answer", "content"):
-            payload.pop(key, None)
-        return payload
+        Trace debug is useful only when it shows the decision and score path.
+        It must not become a second store for raw user messages, prompts, or
+        generated prose.  Nested values are filtered recursively because a
+        candidate object can otherwise smuggle source text through metadata.
+        """
+
+        allowed = {
+            "tool", "latency_ms", "count", "error_code", "cache_status",
+            "history_messages", "has_active_case", "task_type", "route",
+            "is_follow_up", "explicit_anchors", "confidence", "missing_facts",
+            "query_length", "documents_considered", "total_chars",
+            "has_legal_metadata", "relevance_checked", "sufficient", "citation_reason",
+            "citation_count", "candidates", "explicit_articles", "selected",
+            "rejection_reason", "reason", "source_scope", "model", "token_usage",
+            "retrieval_attempt", "evidence_status", "explicit_user_request",
+        }
+        candidate_allowed = {
+            "document_id", "legal_anchor", "dense_score", "bm25_score",
+            "rrf_score", "combined_score", "rerank_score", "selected",
+            "rejection_reason", "rank", "shadow_rank", "cross_encoder_score",
+        }
+        sensitive = {"query", "standalone_query", "history", "prompt", "answer", "content", "system_prompt", "api_key"}
+
+        def clean(item: Any, *, candidate: bool = False) -> Any:
+            if isinstance(item, list):
+                return [clean(entry, candidate=candidate) for entry in item][:20]
+            if not isinstance(item, dict):
+                return item
+            result: dict[str, Any] = {}
+            valid_keys = candidate_allowed if candidate else allowed
+            for key, raw in item.items():
+                key_text = str(key)
+                if key_text in sensitive or key_text not in valid_keys:
+                    continue
+                result[key_text] = clean(raw, candidate=(key_text == "candidates"))
+            return result
+
+        return clean(dict(value or {}) if isinstance(value, dict) else {})
 
     async def record_run(self, state: dict[str, Any], started_at: float, ended_at: float) -> None:
         now = _utcnow()
@@ -514,13 +551,19 @@ class PersistenceStore:
                 "user_id": str(state.get("user_id") or "dev-local"),
                 "conversation_id": conversation_id,
                 "task_type": state.get("task_type"),
+                "route": state.get("route"),
                 "corpus_id": state.get("corpus_id"),
+                "corpus_sha": state.get("corpus_sha"),
+                "embedding_profile": state.get("embedding_profile"),
                 "pipeline_version": state.get("pipeline_version"),
                 "source": state.get("source"),
                 "duration_ms": float(state.get("run_duration_ms") or max(0.0, (ended_at - started_at) * 1000)),
                 "evidence_count": len(state.get("evidence") or []),
                 "cache_status": state.get("cache_status"),
-                "error_code": state.get("citation_error") or state.get("error"),
+                "error_code": (
+                    state.get("error")
+                    or (state.get("citation_error") if state.get("citation_error") not in (None, "", "ok") else None)
+                ),
                 "action_sequence": list(state.get("action_sequence") or []),
                 "tool_results": list(state.get("tool_results") or []),
                 "termination_reason": state.get("termination_reason"),
@@ -556,7 +599,10 @@ class PersistenceStore:
             "trace_id": record.trace_id,
             "conversation_id": record.conversation_id,
             "task_type": record.task_type,
+            "route": record.route,
             "corpus_id": record.corpus_id,
+            "corpus_sha": record.corpus_sha,
+            "embedding_profile": record.embedding_profile,
             "pipeline_version": record.pipeline_version,
             "source": record.source,
             "duration_ms": record.duration_ms,

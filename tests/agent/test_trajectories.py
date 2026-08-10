@@ -28,13 +28,21 @@ class TrajectoryHistory:
 class NoWebGeneration(StaticGenerationGateway):
     async def web(self, query: str):
         self.calls.append("web")
-        return "", None
+        return "", []
 
 
 def legal_document() -> DocumentRecord:
     return DocumentRecord(
         content="Nội dung Điều 77 về trách nhiệm tái chế và thực hiện nghĩa vụ EPR. " * 8,
-        metadata={"Dieu": "Điều 77", "source": "Nghị định 08/2022/NĐ-CP", "Corpus_Version": "epr-law-structure-v2"},
+        metadata={
+            "Dieu": "Điều 77",
+            "source": "Nghị định 08/2022/NĐ-CP",
+            "source_file": "data/08_2022_ND-CP_479457.doc",
+            "Corpus_Version": "epr-law-structure-v2",
+            "Corpus_SHA256": "a" * 64,
+            "Embedding_Profile": "openai-text-embedding-3-small-v1",
+            "legal_anchor": "Điều 77",
+        },
         document_id="law-77",
         source="legal",
         score=0.94,

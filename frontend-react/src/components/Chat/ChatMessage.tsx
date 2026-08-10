@@ -10,6 +10,7 @@ import { Icon } from '@/components/UI/Icon';
 interface ChatMessageProps {
   message: ChatMessage;
   onOpenCase?: () => void;
+  onResearch?: () => void;
   onOpenSources: (documents: SourceDocument[], citations: Array<Record<string, unknown>>) => void;
   onRegenerate?: () => void;
 }
@@ -22,7 +23,7 @@ const sourceLabels: Record<string, string> = {
   follow_up: 'Đang làm rõ',
 };
 
-export function ChatMessageComponent({ message, onOpenCase, onOpenSources, onRegenerate }: ChatMessageProps) {
+export function ChatMessageComponent({ message, onOpenCase, onOpenSources, onRegenerate, onResearch }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
 
@@ -59,7 +60,7 @@ export function ChatMessageComponent({ message, onOpenCase, onOpenSources, onReg
             <MarkdownRenderer content={message.content} />
           </div>
 
-          <WorkflowResultCard onOpenCase={onOpenCase} workflow={message.workflow} />
+          <WorkflowResultCard onOpenCase={onOpenCase} onResearch={onResearch} workflow={message.workflow} />
           <SourceDocuments
             citations={message.workflow?.citations}
             documents={message.documents || []}

@@ -6,11 +6,11 @@ Run ONCE before starting the backend:
 
 What it does
 ------------
-1. Load data/law.json (list of article dicts with Điều/Chương/Mục/Text keys)
-2. Summarise each article with gpt-3.5-turbo (batch=5, bounded input)
-3. Chunk each article with sliding window (overlap) for long-form legal recall
-4. Embed chunk-level hybrid text with text-embedding-3-small
-5. Upsert into Qdrant `law_collection` (create if absent)
+1. Load and audit the canonical corpus source contract
+2. Chunk each article at Điều/Khoản/Điểm boundaries
+3. Build deterministic retrieval and lexical text without LLM summaries
+4. Embed chunks with the configured embedding profile
+5. Upsert a versioned, citation-ready Qdrant collection
 
 The resulting collection is used at runtime by backend/core/retrieval.py.
 """
@@ -42,6 +42,9 @@ load_dotenv(ROOT / ".env")
 
 from backend.config import get_settings
 from backend.core.llm_instances import get_embeddings, get_llm_fast
+from scripts.canonical_corpus import canonical_articles, canonical_chunks
+
+from epr_agent.domain.legal import EMBEDDING_DIMENSIONS, normalise_embedding_text
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -51,7 +54,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 # ---------------------------------------------------------------------------
 SUMMARY_BATCH_SIZE = 5  # articles summarised per LLM call
 EMBED_BATCH_SIZE = max(1, int(os.getenv("EMBED_BATCH_SIZE", "32")))
-VECTOR_DIM = 1536       # text-embedding-3-small
+VECTOR_DIM = EMBEDDING_DIMENSIONS
 
 _SUMMARISE_PROMPT = """Tóm tắt quy định pháp luật Việt Nam sau đây thành 3-4 đoạn văn bằng tiếng Việt.
 Bao gồm: yêu cầu pháp lý chính, đối tượng áp dụng, nghĩa vụ/quyền lợi quan trọng.
@@ -66,7 +69,7 @@ _EMBED_TEXT_MAX_CHARS = max(1000, int(os.getenv("EMBED_TEXT_MAX_CHARS", "7000"))
 _SUMMARY_INPUT_MAX_CHARS = max(2000, int(os.getenv("SUMMARY_INPUT_MAX_CHARS", "12000")))
 _CHUNK_SIZE_CHARS = max(500, int(os.getenv("CHUNK_SIZE_CHARS", "1800")))
 _CHUNK_OVERLAP_CHARS = max(100, int(os.getenv("CHUNK_OVERLAP_CHARS", "300")))
-_CHUNKING_STRATEGY = os.getenv("CHUNKING_STRATEGY", "sliding_window").strip().lower()
+_CHUNKING_STRATEGY = os.getenv("CHUNKING_STRATEGY", "legal_structure_v2").strip().lower()
 _SUMMARY_CACHE_VERSION = "legal-summary-v1"
 
 ZERO_WIDTH_RE = re.compile(r"[\u200B-\u200F\uFEFF]")
@@ -81,6 +84,18 @@ ENUM_FIX_RE = re.compile(r"(?<=\d)\.(?=[A-Za-zÀ-ỹà-ỹ])")
 # ---------------------------------------------------------------------------
 
 def load_articles() -> list[dict[str, Any]]:
+    """Return only source-traceable records accepted for production indexing."""
+
+    if os.getenv("CANONICAL_CORPUS", "true").strip().lower() not in {"0", "false", "no"}:
+        articles, audit = canonical_articles()
+        logger.info("Canonical corpus audit: %s", audit.to_dict())
+        return articles
+    return load_raw_articles()
+
+
+def load_raw_articles() -> list[dict[str, Any]]:
+    """Read raw extraction data for local diagnostics only."""
+
     settings = get_settings()
     law_json_path = Path(os.getenv("LAW_JSON_PATH", str(settings.law_data_path))).resolve()
     logger.info("Loading %s…", law_json_path)
@@ -450,12 +465,18 @@ def chunk_articles(
     summaries: list[str],
 ) -> tuple[list[dict[str, Any]], list[str], dict[str, Any]]:
     """Expand articles using the configured candidate-safe chunking strategy."""
-    if _CHUNKING_STRATEGY == "legal_structure_v1":
+    if _CHUNKING_STRATEGY in {"legal_structure_v1", "legal_structure_v2"}:
         from scripts.structural_chunking import structural_chunk_articles
 
-        return structural_chunk_articles(articles, summaries, max_chars=_CHUNK_SIZE_CHARS)
+        return structural_chunk_articles(
+            articles,
+            summaries,
+            max_chars=_CHUNK_SIZE_CHARS,
+            min_chars=250,
+            strategy="legal_structure_v2",
+        )
     if _CHUNKING_STRATEGY != "sliding_window":
-        raise ValueError("CHUNKING_STRATEGY must be 'sliding_window' or 'legal_structure_v1'")
+        raise ValueError("CHUNKING_STRATEGY must be 'sliding_window', 'legal_structure_v1', or 'legal_structure_v2'")
     chunked_articles: list[dict[str, Any]] = []
     chunked_summaries: list[str] = []
     max_chunks_per_article = 0
@@ -498,21 +519,26 @@ def _build_embedding_text(article: dict[str, Any], summary: str) -> str:
     """
     Build a richer embedding string than summary-only indexing.
 
-    Using only LLM summaries loses article-specific legal phrases such as
-    procedural triggers, exact conditions, and compliance actions. The vector
-    text keeps the summary, but also carries the article heading hierarchy and
-    a leading excerpt of the original law text so cosine retrieval can anchor
-    on exact legal wording.
+    The legal corpus must never depend on a generated summary.  ``summary`` is
+    kept in this function signature for backwards-compatible callers but is
+    deliberately ignored.
     """
     dieu = _article_field(article, "Điều", "Dieu", "Điều_Number")
     chuong = _article_field(article, "Chương", "Chuong", "Chương_Number")
     muc = _article_field(article, "Mục", "Muc", "Mục_Number")
-    text = _article_field(article, "Text", "text")
+    text = _article_field(article, "Original_Text", "Text", "text")
     text_excerpt = " ".join(text.split())[:_EMBED_TEXT_MAX_CHARS]
     chunk_idx = article.get("Chunk_Index")
     chunk_count = article.get("Chunk_Count")
 
     parts = []
+    source_title = _article_field(article, "Source_Title")
+    document_number = _article_field(article, "Document_Number")
+    hierarchy = _article_field(article, "Hierarchy")
+    if source_title:
+        parts.append(f"Văn bản: {source_title}")
+    if document_number:
+        parts.append(f"Số hiệu: {document_number}")
     if dieu:
         parts.append(f"Điều: {dieu}")
     if chuong:
@@ -521,8 +547,8 @@ def _build_embedding_text(article: dict[str, Any], summary: str) -> str:
         parts.append(f"Mục: {muc}")
     if chunk_idx is not None and chunk_count is not None:
         parts.append(f"Chunk: {int(chunk_idx) + 1}/{int(chunk_count)}")
-    if summary:
-        parts.append(f"Tóm tắt: {summary}")
+    if hierarchy:
+        parts.append(f"Phân cấp: {hierarchy}")
     if text_excerpt:
         parts.append(f"Toàn văn trích đoạn: {text_excerpt}")
     return "\n".join(parts)
@@ -566,7 +592,7 @@ def _stable_point_id(
 # Qdrant upsert
 # ---------------------------------------------------------------------------
 
-def upsert_to_qdrant(articles: list[dict], summaries: list[str]) -> None:
+def upsert_to_qdrant(chunks) -> None:
     settings = get_settings()
     from qdrant_client import QdrantClient
     from qdrant_client.models import Distance, HnswConfigDiff, PointStruct, VectorParams
@@ -635,79 +661,60 @@ def upsert_to_qdrant(articles: list[dict], summaries: list[str]) -> None:
         logger.debug("Payload index creation skipped: %s", exc)
 
     embedder = get_embeddings()
-    total = len(articles)
+    total = len(chunks)
 
     for i in range(0, total, EMBED_BATCH_SIZE):
-        batch_articles = articles[i: i + EMBED_BATCH_SIZE]
-        batch_summaries = summaries[i: i + EMBED_BATCH_SIZE]
+        batch_chunks = chunks[i: i + EMBED_BATCH_SIZE]
 
-        logger.info("Embedding + upserting articles %d–%d / %d", i + 1, i + len(batch_articles), total)
+        logger.info("Embedding + upserting chunks %d–%d / %d", i + 1, i + len(batch_chunks), total)
 
-        batch_embedding_texts = [
-            _build_embedding_text(article, summary)
-            for article, summary in zip(batch_articles, batch_summaries)
-        ]
+        batch_embedding_texts = [normalise_embedding_text(chunk.retrieval_text) for chunk in batch_chunks]
         vectors = embedder.embed_documents(batch_embedding_texts)
+        if any(len(vector) != VECTOR_DIM for vector in vectors):
+            raise ValueError(f"embedding_dimension_mismatch: expected {VECTOR_DIM}")
 
         points = []
-        for j, (article, summary, vector) in enumerate(zip(batch_articles, batch_summaries, vectors)):
-            # Normalise metadata keys (handle both raw and pre-transformed formats)
-            dieu = article.get("Điều") or article.get("Dieu") or article.get("Điều_Number")
-            chuong = article.get("Chương") or article.get("Chuong") or article.get("Chương_Number")
-            muc = article.get("Mục") or article.get("Muc") or article.get("Mục_Number")
-
-            # Content names
-            dieu_name = article.get("Điều_Content") or article.get("Dieu_Name") or ""
-            chuong_name = article.get("Chương_Content") or article.get("Chuong_Name") or ""
-            muc_name = article.get("Mục_Content") or article.get("Muc_Name") or ""
-
+        for chunk, vector in zip(batch_chunks, vectors):
+            anchor = chunk.anchor
             payload = {
                 "source": "legal",
                 "source_title": settings.law_citation_label,
-                "Dieu": dieu,
-                "Dieu_Name": dieu_name,
-                "Chuong": chuong,
-                "Chuong_Name": chuong_name,
-                "Muc": muc,
-                "Muc_Name": muc_name,
-                "Pages": article.get("Pages", ""),
-                "Parent_Id": article.get("Parent_Id", ""),
-                "Chunk_Index": article.get("Chunk_Index", 0),
-                "Chunk_Count": article.get("Chunk_Count", 1),
-                "Full_Text_Chars": article.get("Full_Text_Chars", len(article.get("Text", article.get("text", "")))),
-                "Parent_Dieu": article.get("Parent_Dieu", dieu),
-                "Hierarchy": article.get("Hierarchy", ""),
-                "Khoan": article.get("Khoan", ""),
-                "Diem": article.get("Diem", ""),
-                "Source_Start": article.get("Source_Start", 0),
-                "Source_End": article.get("Source_End", len(article.get("Text", article.get("text", "")))),
-                "Chunking_Strategy": article.get("Chunking_Strategy", _CHUNKING_STRATEGY),
-                "Text": article.get("Text", article.get("text", "")),
-                "summary": summary,
-                "embedding_text": batch_embedding_texts[j],
-                "Corpus_ID": settings.corpus_id,
-                "Corpus_Version": settings.corpus_version,
-                "Corpus_SHA256": os.getenv("CORPUS_SHA256", ""),
+                "source_file": chunk.source_file,
+                "source_uri": chunk.source_uri or "",
+                "Document_Number": anchor.document_number,
+                "Dieu": anchor.article,
+                "Parent_Dieu": anchor.article,
+                "Khoan": anchor.clause,
+                "Diem": anchor.point,
+                "Hierarchy": " → ".join(chunk.heading_path),
+                "Pages": chunk.pages,
+                "Parent_Id": chunk.parent_id,
+                "Source_Start": chunk.source_start,
+                "Source_End": chunk.source_end,
+                "Chunking_Strategy": chunk.chunking_profile,
+                "Text": chunk.original_text,
+                "Original_Text": chunk.original_text,
+                "retrieval_text": chunk.retrieval_text,
+                "lexical_text": chunk.lexical_text,
+                "embedding_text": chunk.retrieval_text,
+                "Corpus_ID": chunk.corpus_id,
+                "Corpus_Version": chunk.corpus_version,
+                "Corpus_SHA256": chunk.corpus_sha256,
                 "Index_Schema_Version": settings.index_schema_version,
-                "provenance": "data/law.json",
+                "Embedding_Profile": chunk.embedding_profile,
+                "Embedding_Model": chunk.embedding_model,
+                "Embedding_Dimensions": chunk.embedding_dimensions,
+                "Document_Id": chunk.document_id,
+                "provenance": chunk.source_file,
             }
-
-            point_id = _stable_point_id(
-                settings=settings,
-                article=article,
-                fallback_seq=i + j + 1,
-            )
-            payload["document_id"] = point_id
-            payload["legal_anchor"] = " / ".join(
-                value for value in (str(article.get("Parent_Dieu") or dieu or ""), str(article.get("Khoan") or ""), str(article.get("Diem") or "")) if value
-            )
-
-            points.append(PointStruct(id=point_id, vector=vector, payload=payload))
+            payload["document_id"] = chunk.chunk_id
+            payload["legal_anchor"] = chunk.legal_anchor
+            points.append(PointStruct(id=chunk.chunk_id, vector=vector, payload=payload))
 
         client.upsert(collection_name=collection, points=points)
         time.sleep(0.5)
 
-    logger.info("✅ Upserted %d articles into '%s'", total, collection)
+    logger.info("✅ Upserted %d canonical chunks into '%s'", total, collection)
 
 
 # ---------------------------------------------------------------------------
@@ -741,10 +748,13 @@ def main() -> None:
         )
         logger.info("Exported cleaned law dataset to %s", out_path)
 
-    summaries = summarise_articles(articles)
-    chunked_articles, chunked_summaries, chunk_stats = chunk_articles(articles, summaries)
+    chunked_articles, _, chunk_stats = chunk_articles(articles, [""] * len(articles))
     logger.info("Chunking stats: %s", chunk_stats)
-    upsert_to_qdrant(chunked_articles, chunked_summaries)
+    chunks, chunk_audit = canonical_chunks(chunked_articles)
+    logger.info("Canonical chunk audit: %s", chunk_audit.to_dict())
+    if chunk_audit.duplicate_chunk_ids or chunk_audit.invalid_offsets:
+        raise ValueError("canonical_chunk_audit_failed")
+    upsert_to_qdrant(chunks)
     logger.info("Index build complete.")
 
 
