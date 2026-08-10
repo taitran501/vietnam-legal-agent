@@ -1,35 +1,66 @@
 # Pipeline V4 local acceptance report
 
-Status: **V4 default cutover**. The server and local Compose stack now use
-`AGENT_PIPELINE_VERSION=pipeline-v4` by default. V3 remains available only as
-an explicit rollback setting while the remaining live quality gates are
-measured.
+Status: **V4 test matrix accepted locally**. The server-selected runtime is
+`pipeline-v4`; V3-only manifests and trajectory tests were retired after the
+V4 report passed. The previous V3 collection and Git tag remain rollback
+artifacts.
 
-## Verified locally
+## Evaluated build
 
-- Behavior contracts: a quick action only pre-fills the composer; the
-  screenshot regression enters `case_assessment`, reports
-  `needs_information`, makes no retrieval call, and renders no assessment
-  result card.
-- V4 issues are retrieved and covered independently.  A completed assessment
-  requires every mandatory issue; missing Appendix XXII evidence stops safely.
-- V4 SSE emits `workflow_step`, `input_required`, `case_update` and a
-  backwards-compatible `response_complete` event.
-- The Docker V4 indexer extracted and audited Appendix XXII from the source
-  `.doc`, accepted 196 provenance-bearing canonical records, and built the
-  versioned collection
-  `law_epr_ac955ae960a7_legal_structure_v2_v4_appendix1_openai_text_embedding_3_small_v1`
-  with 1,324 points.  Its second run reused that collection without an
-  embedding request.
-- An isolated V4 backend returned `/api/v1/ready = 200` against that alias.
+- Evaluated commit: `4835d8e` (`test: complete V4 behavior and integration matrix`)
+- Corpus ID: `epr`
+- Corpus SHA256: `ac955ae960a7b4d3499c8633c30593bfe55795bcb5a5665fa86e510a9ece1695`
+- Appendix XXII artifact SHA256: `08be57c08ce4a266192bb1f1f2570cb92409f70f65f835bc8ce61f6fe6dc4e39`
+- Rule-pack version: `epr-article-77-v1`
+- Embedding profile: `openai-text-embedding-3-small-v1`
+- Embedding model/dimensions: `text-embedding-3-small` / `1536`
+- Index schema: `legal-structure-v2-v4-appendix1`
+- Active collection alias: `law_collection`
+- Indexed points: `1,324`
 
-## Still required before calling the cutover fully accepted
+## Quality gates
 
-- Measure the full route, retrieval and live E2E quality gates specified for
-  V4 (macro F1, Hit@1, coverage, P@1/NDCG/Recall and p95 latency).
-- Run the complete frontend suite and the real-stack Playwright flows against
-  the rebuilt V4 backend.
-- Record the final commit SHA, Appendix artifact hash and measured metrics,
-  then switch the default and retire V3 in a separate reviewed cutover.
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| Python unit/API/contract suite | PASS | 345 passed, 3 skipped |
+| V4 route matrix | PASS | 60/60; deterministic route macro-F1 = 1.0 |
+| V4 retrieval matrix | PASS | 60/60; P@1 = 1.0, NDCG@3 = 1.0, Recall@5 = 1.0, explicit Hit@1 = 100% |
+| V4 deterministic trajectories | PASS | 40/40; issue coverage = 1.0, citation rate = 1.0, p95 = 93.84 ms |
+| V4 live trajectories | PASS | 40/40 on source-mounted real stack; issue coverage = 1.0, citation rate = 1.0, p95 = 1,522.73 ms |
+| Quick-action prefill | PASS | 0 network requests before explicit submit |
+| FAQ runtime use | PASS | 0 FAQ action/source occurrences in V4 tests and trajectories |
+| Missing facts | PASS | All decision-fact gaps return `needs_information` |
+| Assessment/checklist completion | PASS | Completed results cover all required issues and material claims have citations |
+| Web research boundary | PASS | Web route is explicit; no automatic fallback in the tested V4 paths |
+| SSE contract | PASS | Stable trace ID, contiguous sequence, V4 pipeline envelope, progressive rendering and cancellation |
+| Frontend unit/build | PASS | Vitest 14/14; production build succeeds |
+| Browser E2E | PASS | Playwright 11/11, including mocked and real FastAPI/multi-turn flows |
+| Real-service integration | PASS | 2/2 with PostgreSQL, Redis, Qdrant and V4 SSE/trace API |
+| Index idempotence | PASS | Second indexer run exited 0, reused the same versioned collection without embedding calls |
+| Readiness | PASS | Final Compose stack returned HTTP 200; database, Redis, Qdrant, OpenAI, alias, corpus, Appendix and embedding metadata ready |
+| Final Docker smoke | PASS | Main image: 2/2 live SSE trajectories; p95 = 1,166.08 ms; out-of-scope and insufficient-evidence safe-stops verified |
 
-This report deliberately does not mark unmeasured live metrics as passed.
+## Runtime artifacts
+
+The deterministic report is generated with:
+
+```powershell
+python -m tests.eval.run_eval --suite all --output data/eval/v4-deterministic.json
+```
+
+The live 40-case report is generated with:
+
+```powershell
+python -m tests.eval.run_eval --live --live-url http://127.0.0.1 --suite e2e --output data/eval/v4-live.json
+```
+
+Both reports are ignored runtime artifacts. The versioned manifest, test
+contracts, and this concise report are the reviewable acceptance evidence.
+
+## Notes
+
+The standard Compose image was rebuilt locally after the evaluated code
+checkpoint. The final `/api/v1/ready` check and main-image SSE smoke passed
+after that restart. No CI/CD workflow was added. Live tests use the configured
+OpenAI embedding/generation services and therefore remain an explicit local
+command, not part of the default unit suite.
