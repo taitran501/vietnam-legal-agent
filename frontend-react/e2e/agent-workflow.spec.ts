@@ -27,8 +27,9 @@ async function captureReview(page: Page, name: string) {
 
 test('missing-facts trajectory stops safely and opens contextual case data', async ({ page }) => {
   await mockBaseApi(page);
+  let chatCalls = 0;
   await page.route('**/api/v1/chat', (route) =>
-    route.fulfill({
+    (chatCalls += 1, route.fulfill({
       status: 200,
       contentType: 'text/event-stream',
       body: eventStream([
@@ -46,17 +47,26 @@ test('missing-facts trajectory stops safely and opens contextual case data', asy
             status: 'collecting',
             facts: { business_role: 'nhà sản xuất' },
             missing_facts: ['product_or_packaging', 'material', 'activity_scope'],
+            fields: [
+              { key: 'business_role', label: 'Vai trò doanh nghiệp', kind: 'text', options: [], required: true, missing: false, value: 'nhà sản xuất' },
+              { key: 'material', label: 'Vật liệu chính', kind: 'text', options: [], required: true, missing: true, value: '' },
+            ],
           },
           missing_facts: ['product_or_packaging', 'material', 'activity_scope'],
           citations: [],
+          outcome: 'needs_information',
+          result_type: 'none',
           termination_reason: 'awaiting_user_input',
         },
       ]),
-    })
+    }))
   );
 
   await page.goto('/');
   await page.getByRole('button', { name: 'Kiểm tra nghĩa vụ' }).click();
+  await expect(page.getByLabel('Câu hỏi pháp lý')).toHaveValue('Tôi là nhà sản xuất bao bì nhựa tại Việt Nam, có phải thực hiện EPR không?');
+  expect(chatCalls).toBe(0);
+  await page.getByRole('button', { name: 'Gửi câu hỏi' }).click();
 
   const result = page.getByRole('region', { name: 'Kết quả workflow' });
   await expect(result.getByText('Cần thêm thông tin để tiếp tục')).toBeVisible();
@@ -96,6 +106,7 @@ test('safe-stop trajectory never renders a legal conclusion', async ({ page }) =
 
   await page.goto('/');
   await page.getByRole('button', { name: 'Tra cứu quy định' }).click();
+  await page.getByRole('button', { name: 'Gửi câu hỏi' }).click();
 
   const result = page.getByRole('region', { name: 'Kết quả workflow' });
   await expect(result.getByText('Chưa đủ căn cứ để trả lời chắc chắn')).toBeVisible();
@@ -134,6 +145,7 @@ test('completed legal lookup reveals its evidence in a temporary source drawer',
 
   await page.goto('/');
   await page.getByRole('button', { name: 'Tra cứu quy định' }).click();
+  await page.getByRole('button', { name: 'Gửi câu hỏi' }).click();
   await captureReview(page, 'integrated-completed-answer');
   await page.getByRole('button', { name: 'Xem 1 nguồn tham khảo' }).click();
 

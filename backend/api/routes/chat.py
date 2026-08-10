@@ -77,6 +77,10 @@ async def chat(request: Request, body: ChatRequest):
                 conversation_id=conversation_id,
                 legacy_session_id=body.session_id,
                 mode=body.mode,
+                operation=body.operation,
+                intent_hint=body.intent_hint,
+                interaction_source=body.interaction_source,
+                case_patch=body.case_patch,
                 runtime=runtime,
             ):
                 # CRITICAL: Check if client disconnected

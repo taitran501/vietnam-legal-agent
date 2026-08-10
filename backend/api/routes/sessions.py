@@ -11,7 +11,7 @@ Provides:
 from __future__ import annotations
 
 import logging
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
@@ -46,8 +46,10 @@ from backend.history import (
 from backend.history import (
     save_case_state as save_case_state_persistent,
 )
+from epr_agent.domain.epr_rules import case_fields, missing_fact_keys
 from epr_agent.domain.models import TaskType
 from epr_agent.domain.tasks import missing_facts
+from epr_agent.domain.v4 import CaseStateV4, FactSource, FactValue
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -107,9 +109,14 @@ class CaseStateResponse(BaseModel):
 
     task_type: Literal["assess_epr_obligation", "build_compliance_checklist"]
     status: Literal["collecting", "ready", "completed"]
-    facts: dict[str, str] = Field(default_factory=dict)
+    schema_version: str = "legacy-v3"
+    facts: dict[str, Any] = Field(default_factory=dict)
     missing_facts: list[str] = Field(default_factory=list)
     last_query: str = ""
+    decision_status: str | None = None
+    issue_states: dict[str, Any] = Field(default_factory=dict)
+    as_of_date: str = ""
+    fields: list[dict[str, Any]] = Field(default_factory=list)
     updated_at: float | None = None
 
 
@@ -122,10 +129,6 @@ class UpdateCaseRequest(BaseModel):
     @field_validator("facts")
     @classmethod
     def validate_facts(cls, facts: dict[str, str]) -> dict[str, str]:
-        allowed = {"business_role", "product_or_packaging", "material", "activity_scope"}
-        unknown = set(facts) - allowed
-        if unknown:
-            raise ValueError(f"Unknown case facts: {', '.join(sorted(unknown))}")
         return {key: " ".join(str(value).split())[:160] for key, value in facts.items()}
 
 
@@ -311,7 +314,12 @@ async def get_session_case(request: Request, session_id: str):
     if conversation is None:
         raise HTTPException(status_code=404, detail="Session not found")
     case_state = await get_case_state_persistent(user_id=user_id, conversation_id=session_id)
-    return CaseStateResponse(**case_state) if case_state is not None else None
+    if case_state is None:
+        return None
+    if case_state.get("schema_version") == "v4":
+        parsed = {key: FactValue.model_validate(value) for key, value in dict(case_state.get("facts") or {}).items()}
+        case_state["fields"] = [field.model_dump() for field in case_fields(parsed, list(case_state.get("missing_facts") or []))]
+    return CaseStateResponse(**case_state)
 
 
 @router.patch("/sessions/{session_id}/case", response_model=CaseStateResponse, tags=["case"])
@@ -327,16 +335,39 @@ async def update_session_case(request: Request, session_id: str, body: UpdateCas
     task = TaskType(task_value)
     if task not in {TaskType.ASSESS_EPR_OBLIGATION, TaskType.BUILD_COMPLIANCE_CHECKLIST}:
         raise HTTPException(status_code=422, detail="Case workspace supports assessment or checklist only")
-    facts = dict((current or {}).get("facts") or {})
-    facts.update(body.facts)
-    facts = {key: value for key, value in facts.items() if value}
-    state = {
-        "task_type": task.value,
-        "facts": facts,
-        "missing_facts": missing_facts(task, facts),
-        "last_query": (current or {}).get("last_query", ""),
-    }
+    if (current or {}).get("schema_version") == "v4":
+        facts = {
+            key: FactValue.model_validate(value)
+            for key, value in dict((current or {}).get("facts") or {}).items()
+        }
+        for key, value in body.facts.items():
+            if value:
+                facts[key] = FactValue(value=value, source=FactSource.CASE_PANEL, confidence=1.0, verified=True)
+        missing = missing_fact_keys(facts)
+        state = CaseStateV4(
+            task_type=task.value,
+            status="collecting" if missing else "ready",
+            facts=facts,
+            missing_facts=missing,
+            issue_states=dict((current or {}).get("issue_states") or {}),
+            as_of_date=str((current or {}).get("as_of_date") or ""),
+            last_query=(current or {}).get("last_query", ""),
+        ).model_dump(mode="json")
+        state["fields"] = [field.model_dump() for field in case_fields(facts, missing)]
+    else:
+        facts = dict((current or {}).get("facts") or {})
+        facts.update(body.facts)
+        facts = {key: value for key, value in facts.items() if value}
+        state = {
+            "task_type": task.value,
+            "facts": facts,
+            "missing_facts": missing_facts(task, facts),
+            "last_query": (current or {}).get("last_query", ""),
+        }
     saved = await save_case_state_persistent(user_id=user_id, conversation_id=session_id, state=state)
+    if saved.get("schema_version") == "v4":
+        parsed = {key: FactValue.model_validate(value) for key, value in dict(saved.get("facts") or {}).items()}
+        saved["fields"] = [field.model_dump() for field in case_fields(parsed, list(saved.get("missing_facts") or []))]
     return CaseStateResponse(**saved)
 
 

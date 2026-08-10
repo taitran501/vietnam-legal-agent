@@ -15,6 +15,10 @@ async def stream_chat_events(
     conversation_id: str,
     legacy_session_id: str = "",
     mode: str = "auto",
+    operation: str = "message",
+    intent_hint: str = "auto",
+    interaction_source: str = "composer",
+    case_patch: dict[str, str] | None = None,
     runtime: WorkflowRuntime | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Return the stable SSE event contract for FastAPI or another HTTP host."""
@@ -25,6 +29,10 @@ async def stream_chat_events(
         conversation_id=conversation_id,
         legacy_session_id=legacy_session_id,
         mode=mode,
+        operation=operation,
+        intent_hint=intent_hint,
+        interaction_source=interaction_source,
+        case_patch=case_patch or {},
         runtime=runtime,
     ):
         yield event

@@ -22,7 +22,17 @@ def _configure() -> tuple[Any, str, str]:
 
     base = get_settings()
     corpus_id, corpus_version, _ = load_document_manifest(Path(base.corpus_manifest_path))
-    digest = corpus_sha256(law_path=Path(base.law_data_path), manifest_path=Path(base.corpus_manifest_path))
+    is_v4 = base.agent_pipeline_version == "pipeline-v4"
+    appendix_path = Path(base.appendix_xxii_data_path)
+    if is_v4 and not appendix_path.exists():
+        from scripts.extract_appendix_xxii import extract
+
+        extract(Path(base.law_data_path).with_name("08_2022_ND-CP_479457.doc"), appendix_path)
+    if is_v4 and not appendix_path.exists():
+        raise RuntimeError("pipeline_v4_requires_appendix_xxii_provenance")
+    digest = corpus_sha256(
+        law_path=Path(base.law_data_path), manifest_path=Path(base.corpus_manifest_path), appendix_path=appendix_path
+    )
     schema = base.index_schema_version.replace("-", "_")
     profile = base.embedding_profile.replace("-", "_")
     target = f"law_{corpus_id}_{digest[:12]}_{schema}_{profile}"
@@ -31,6 +41,9 @@ def _configure() -> tuple[Any, str, str]:
     os.environ["CORPUS_VERSION"] = corpus_version
     os.environ["CORPUS_SHA256"] = digest
     os.environ["CHUNKING_STRATEGY"] = base.chunking_profile.replace("-", "_")
+    os.environ["INDEX_SCHEMA_VERSION"] = schema.replace("_", "-")
+    os.environ["REQUIRE_APPENDIX_XXII"] = "true" if is_v4 else "false"
+    os.environ["APPENDIX_XXII_DATA_PATH"] = str(appendix_path)
     get_settings.cache_clear()
     return get_settings(), target, digest
 
@@ -126,7 +139,7 @@ def main() -> None:
     chunks, _, _ = build_index.chunk_articles(articles, [""] * len(articles))
     from scripts.canonical_corpus import canonical_chunks
 
-    canonical, chunk_audit = canonical_chunks(chunks)
+    canonical, chunk_audit = canonical_chunks(chunks, appendix_path=Path(settings.appendix_xxii_data_path))
     if chunk_audit.duplicate_chunk_ids or chunk_audit.invalid_offsets:
         raise RuntimeError("canonical_chunk_audit_failed")
     client = _client(settings)

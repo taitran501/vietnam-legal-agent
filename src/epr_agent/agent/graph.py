@@ -70,9 +70,19 @@ def default_dependencies() -> WorkflowDependencies:
     from scripts.canonical_corpus import corpus_sha256
 
     settings = get_settings()
+    # Pipeline V4 is allowed to operate only on a corpus that includes the
+    # provenance-audited Appendix XXII extraction.  The digest is part of the
+    # runtime state, cache scope and trace so a V3 answer can never be
+    # presented as evidence from the V4 collection.
+    appendix_path = (
+        settings.appendix_xxii_data_path
+        if getattr(settings, "agent_pipeline_version", "pipeline-v3") == "pipeline-v4"
+        else None
+    )
     corpus_sha = corpus_sha256(
         law_path=settings.law_data_path,
         manifest_path=settings.corpus_manifest_path,
+        appendix_path=appendix_path,
     )
     return WorkflowDependencies(
         history=UnifiedHistoryGateway(),

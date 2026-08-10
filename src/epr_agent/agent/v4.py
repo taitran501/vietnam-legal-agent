@@ -1,0 +1,459 @@
+"""Pipeline V4 bounded case workflow.
+
+V4 intentionally reuses V3 for the already-accepted lookup, comparison,
+research and chitchat routes.  Assessment and checklist are replaced by a
+typed, rule-pack driven path; this is the route where a generic top-k answer
+was unsafe.  The public runtime interface remains identical to V3.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import time
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime
+from typing import Any, cast
+
+from epr_agent.agent.graph import create_initial_state, run_workflow
+from epr_agent.agent.runtime import WorkflowRuntime, _documents_for_api, _metadata, split_verified_answer_for_stream
+from epr_agent.domain.epr_rules import (
+    EPR_RULE_PACK_VERSION,
+    case_fields,
+    evaluate_assessment,
+    extract_explicit_epr_facts,
+    follow_up_question,
+    legal_issues,
+    missing_fact_keys,
+)
+from epr_agent.domain.models import (
+    Action,
+    AgentState,
+    DocumentRecord,
+    TaskType,
+    TerminationReason,
+    append_action,
+    documents_to_dict,
+)
+from epr_agent.domain.routes import RouteType
+from epr_agent.domain.tasks import classify_route
+from epr_agent.domain.v4 import (
+    AssessmentStatus,
+    CaseStateV4,
+    FactSource,
+    FactValue,
+    InteractionSource,
+    IssueState,
+    ResultType,
+    RetrievalRequest,
+    TurnOperation,
+    WorkflowOutcome,
+)
+from epr_agent.tools.evidence import build_citations
+
+_PHASES = {
+    Action.VALIDATE_INPUT.value: ("understand", "Hiểu yêu cầu"),
+    Action.LOAD_CONTEXT.value: ("understand", "Hiểu yêu cầu"),
+    Action.UNDERSTAND_TASK.value: ("understand", "Hiểu yêu cầu"),
+    Action.ASK_USER.value: ("collect_information", "Thu thập thông tin"),
+    Action.RETRIEVE_LEGAL.value: ("check_evidence", "Kiểm tra căn cứ"),
+    Action.EVALUATE_EVIDENCE.value: ("check_evidence", "Kiểm tra căn cứ"),
+    Action.COMPOSE_ANSWER.value: ("compose", "Soạn kết quả"),
+    Action.VERIFY_CITATIONS.value: ("compose", "Soạn kết quả"),
+    Action.FINISH.value: ("compose", "Soạn kết quả"),
+}
+
+
+def _fact_values(raw: dict[str, Any] | None) -> dict[str, FactValue]:
+    result: dict[str, FactValue] = {}
+    for key, value in (raw or {}).items():
+        if isinstance(value, dict) and "value" in value:
+            try:
+                result[key] = FactValue.model_validate(value)
+                continue
+            except (TypeError, ValueError):
+                # Legacy V3 facts have no typed provenance and are converted
+                # below to explicitly unverified values.
+                continue
+        text = " ".join(str(value or "").split())
+        if text:
+            result[key] = FactValue(value=text, source=FactSource.USER_TURN, confidence=0.5, verified=False)
+    return result
+
+
+def _case_payload(case: CaseStateV4) -> dict[str, Any]:
+    payload = case.model_dump(mode="json")
+    payload["fields"] = [field.model_dump() for field in case_fields(case.facts, case.missing_facts)]
+    return payload
+
+
+def _metadata_v4(state: AgentState) -> dict[str, Any]:
+    data = _metadata(state)
+    data.update(
+        {
+            "outcome": state.get("outcome", WorkflowOutcome.FAILED.value),
+            "result_type": state.get("result_type", ResultType.NONE.value),
+            "required_issues": state.get("required_issues", []),
+            "covered_issues": state.get("covered_issues", []),
+            "rule_pack_version": EPR_RULE_PACK_VERSION,
+            "case_fields": state.get("case_fields", []),
+        }
+    )
+    return data
+
+
+class V4WorkflowRuntime(WorkflowRuntime):
+    """Runtime selected by ``AGENT_PIPELINE_VERSION=pipeline-v4``."""
+
+    async def _initial(self, **kwargs: Any) -> AgentState:
+        # ``create_initial_state`` intentionally knows only the stable V3
+        # request surface.  V4 request controls stay in state after that
+        # boundary instead of leaking into the old graph initializer.
+        initial_kwargs = {
+            key: value
+            for key, value in kwargs.items()
+            if key in {"query", "user_id", "conversation_id", "legacy_session_id", "mode", "trace_id"}
+        }
+        state = await create_initial_state(deps=self.deps, **initial_kwargs)
+        state["pipeline_version"] = "pipeline-v4"
+        state["outcome"] = WorkflowOutcome.FAILED.value
+        state["result_type"] = ResultType.NONE.value
+        state["operation"] = str(kwargs.get("operation") or TurnOperation.MESSAGE.value)
+        state["intent_hint"] = str(kwargs.get("intent_hint") or "auto")
+        state["interaction_source"] = str(kwargs.get("interaction_source") or InteractionSource.COMPOSER.value)
+        state["case_patch"] = dict(kwargs.get("case_patch") or {})
+        return state
+
+    async def _execute_case(self, state: AgentState) -> AgentState:
+        """Run the closed V4 assessment/checklist path with no free planner."""
+
+        append_action(state, Action.VALIDATE_INPUT)
+        operation = TurnOperation(str(state.get("operation") or TurnOperation.MESSAGE.value))
+        if operation == TurnOperation.MESSAGE and not state.get("query", "").strip():
+            cast(dict[str, Any], state).update(
+                answer="Bạn hãy nhập nội dung cần tra cứu hoặc mô tả tình huống.",
+                source="error",
+                outcome=WorkflowOutcome.FAILED.value,
+                termination_reason=TerminationReason.INVALID_INPUT.value,
+            )
+            return state
+
+        append_action(state, Action.LOAD_CONTEXT)
+        snapshot = await self.deps.history.load(state["user_id"], state["conversation_id"], self.deps.max_history_messages)
+        state["history"] = snapshot.history
+        state["history_summary"] = snapshot.summary
+        state["active_case"] = snapshot.active_case
+
+        append_action(state, Action.UNDERSTAND_TASK)
+        active = snapshot.active_case or {}
+        hint = str(state.get("intent_hint") or "auto")
+        if hint in {RouteType.CASE_ASSESSMENT.value, RouteType.COMPLIANCE_CHECKLIST.value}:
+            route = RouteType(hint)
+        elif operation == TurnOperation.CONTINUE_CASE and active.get("task_type"):
+            route = RouteType.COMPLIANCE_CHECKLIST if active["task_type"] == TaskType.BUILD_COMPLIANCE_CHECKLIST.value else RouteType.CASE_ASSESSMENT
+        else:
+            route = classify_route(state.get("query", ""), snapshot.history, active)
+        if route not in {RouteType.CASE_ASSESSMENT, RouteType.COMPLIANCE_CHECKLIST}:
+            # The caller will use the accepted V3 route implementation.
+            state["route"] = route.value
+            return state
+
+        task = TaskType.BUILD_COMPLIANCE_CHECKLIST if route == RouteType.COMPLIANCE_CHECKLIST else TaskType.ASSESS_EPR_OBLIGATION
+        state["route"] = route.value
+        state["task_type"] = task.value
+        state["source_scope"] = "legal_corpus"
+        state["standalone_query"] = state.get("query", "") or str(active.get("last_query") or "")
+
+        facts = _fact_values(cast(dict[str, Any] | None, active.get("facts")))
+        turn_id = state.get("trace_id", "")
+        facts.update(extract_explicit_epr_facts(state.get("query", ""), turn_id=turn_id))
+        for key, raw in dict(cast(dict[str, str] | None, state.get("case_patch")) or {}).items():
+            text = " ".join(str(raw or "").split())
+            if text:
+                facts[key] = FactValue(value=text, source=FactSource.CASE_PANEL, source_turn=turn_id, confidence=1.0, verified=True)
+        missing = missing_fact_keys(facts)
+        case = CaseStateV4(
+            task_type=task.value,
+            status="collecting" if missing else "ready",
+            facts=facts,
+            missing_facts=missing,
+            as_of_date=datetime.now(UTC).date().isoformat(),
+            last_query=state.get("query", "") or str(active.get("last_query") or ""),
+        )
+        state["active_case"] = _case_payload(case)
+        state["case_state"] = _case_payload(case)
+        state["facts"] = {key: value.value for key, value in facts.items()}
+        state["missing_facts"] = missing
+        state["case_fields"] = list((state["case_state"] or {}).get("fields") or [])
+        state["understanding_confidence"] = 1.0 if hint != "auto" else 0.7
+        state["trace_events"][-1]["reason_code"] = "route_selected"
+        state["trace_events"][-1]["payload"] = {
+            "route": route.value,
+            "confidence": state["understanding_confidence"],
+            "missing_facts": missing,
+            "fact_provenance": {
+                key: {"source": value.source.value, "verified": value.verified}
+                for key, value in facts.items()
+            },
+        }
+
+        if missing:
+            append_action(state, Action.ASK_USER)
+            cast(dict[str, Any], state).update(
+                answer=follow_up_question(missing),
+                source="follow_up",
+                awaiting_user_input=True,
+                outcome=WorkflowOutcome.NEEDS_INFORMATION.value,
+                result_type=ResultType.NONE.value,
+                termination_reason=TerminationReason.AWAITING_USER_INPUT.value,
+                evidence_status="not_evaluated",
+                assessment={
+                    "status": AssessmentStatus.NEEDS_INFORMATION.value,
+                    "missing_facts": missing,
+                    "conclusion": "Chưa đủ thông tin để đánh giá nghĩa vụ.",
+                },
+            )
+            return state
+
+        issues = legal_issues(facts, checklist=task == TaskType.BUILD_COMPLIANCE_CHECKLIST)
+        state["required_issues"] = [issue.issue_id for issue in issues if issue.required]
+        append_action(state, Action.RETRIEVE_LEGAL)
+        started = time.perf_counter()
+        requests = [
+            RetrievalRequest(route=route.value, issue_id=issue.issue_id, query=issue.query, required_anchors=issue.required_anchors)
+            for issue in issues
+        ]
+        state["trace_events"][-1]["reason_code"] = "issue_retrieval_requested"
+        state["trace_events"][-1]["payload"] = {
+            "tool": "issue_legal_retrieval",
+            "issue_plan": [
+                {"issue_id": request.issue_id, "required_anchors": request.required_anchors}
+                for request in requests
+            ],
+        }
+        results = await asyncio.gather(*(self.deps.retrieval.legal(request) for request in requests), return_exceptions=True)
+        bundles: dict[str, list[dict[str, Any]]] = {}
+        all_documents: dict[str, dict[str, Any]] = {}
+        for issue, retrieval_result in zip(issues, results, strict=True):
+            retrieved_documents: list[DocumentRecord] = [] if isinstance(retrieval_result, BaseException) else list(retrieval_result)
+            selected = retrieved_documents[:3]
+            serialised = documents_to_dict(selected)
+            bundles[issue.issue_id] = serialised
+            for document in serialised:
+                all_documents.setdefault(str(document.get("document_id") or ""), document)
+        state["evidence_bundles"] = bundles
+        state["evidence"] = list(all_documents.values())[:8]
+        state["source"] = "legal" if state["evidence"] else ""
+        state["retrieval_actions"] = 1
+        state.setdefault("tool_results", []).append({
+            "tool": "issue_legal_retrieval",
+            "ok": bool(state["evidence"]),
+            "latency_ms": round((time.perf_counter() - started) * 1000, 2),
+            "count": len(state["evidence"]),
+            "metadata": {"issues": [request.issue_id for request in requests]},
+        })
+
+        append_action(state, Action.EVALUATE_EVIDENCE)
+        issue_states: dict[str, dict[str, Any]] = {}
+        evidence_ids: dict[str, list[str]] = {}
+        covered: list[str] = []
+        for issue in issues:
+            bundle_docs = bundles[issue.issue_id]
+            matches_by_anchor: dict[str, list[dict[str, Any]]] = {}
+            for anchor in issue.required_anchors:
+                anchor_text = anchor.casefold()
+                matches_by_anchor[anchor] = [
+                    doc
+                    for doc in bundle_docs
+                    if anchor_text in (
+                        str((doc.get("metadata") or {}).get("legal_anchor") or "")
+                        + " " + str((doc.get("metadata") or {}).get("Dieu") or "")
+                        + " " + str((doc.get("metadata") or {}).get("source_title") or "")
+                        + " " + str(doc.get("content") or "")
+                    ).casefold()
+                ]
+            matching = [doc for values in matches_by_anchor.values() for doc in values]
+            ids = list(dict.fromkeys(str(doc.get("document_id") or "") for doc in matching if doc.get("document_id")))
+            evidence_ids[issue.issue_id] = ids
+            is_covered = bool(ids) and all(bool(values) for values in matches_by_anchor.values())
+            issue_states[issue.issue_id] = {
+                "issue_id": issue.issue_id,
+                "status": "supported" if is_covered else "insufficient_evidence",
+                "evidence_ids": ids,
+                "reason": "required_anchors_covered" if is_covered else "required_anchor_missing",
+            }
+            if is_covered:
+                covered.append(issue.issue_id)
+        state["issue_states"] = issue_states
+        state["covered_issues"] = covered
+        state["evidence_assessment"] = {
+            "sufficient": set(state["required_issues"]).issubset(set(covered)),
+            "reason": "all_required_issues_covered" if set(state["required_issues"]).issubset(set(covered)) else "required_issue_evidence_missing",
+            "required_issues": state["required_issues"],
+            "covered_issues": covered,
+        }
+        state["trace_events"][-1]["reason_code"] = state["evidence_assessment"]["reason"]
+        state["trace_events"][-1]["payload"] = {
+            "required_issues": state["required_issues"],
+            "covered_issues": covered,
+            "coverage_reason": state["evidence_assessment"]["reason"],
+            "evidence_status": "sufficient" if state["evidence_assessment"]["sufficient"] else "insufficient",
+        }
+        if not state["evidence_assessment"]["sufficient"]:
+            cast(dict[str, Any], state).update(
+                answer="Tôi chưa có đủ căn cứ pháp lý đã kiểm chứng cho toàn bộ điều kiện cần đánh giá. Bạn có thể dùng chức năng tìm nguồn công khai hoặc thử lại khi corpus được cập nhật.",
+                source="error",
+                outcome=WorkflowOutcome.INSUFFICIENT_EVIDENCE.value,
+                result_type=ResultType.NONE.value,
+                termination_reason=TerminationReason.INSUFFICIENT_EVIDENCE.value,
+                evidence_status="insufficient",
+                available_actions=[RouteType.RESEARCH_WEB.value],
+            )
+            return state
+
+        append_action(state, Action.COMPOSE_ANSWER)
+        result = evaluate_assessment(facts, evidence_ids=evidence_ids)
+        if result.status == AssessmentStatus.NEEDS_INFORMATION:
+            # Defensive invariant: deterministic evaluation cannot finish a
+            # case if its own decision tree discovered a missing field.
+            cast(dict[str, Any], state).update(
+                answer=follow_up_question(result.missing_facts),
+                source="follow_up",
+                awaiting_user_input=True,
+                outcome=WorkflowOutcome.NEEDS_INFORMATION.value,
+                result_type=ResultType.NONE.value,
+                termination_reason=TerminationReason.AWAITING_USER_INPUT.value,
+                missing_facts=result.missing_facts,
+            )
+            return state
+        if result.status == AssessmentStatus.CANNOT_DETERMINE:
+            cast(dict[str, Any], state).update(
+                answer=result.conclusion,
+                source="error",
+                assessment=result.model_dump(mode="json"),
+                outcome=WorkflowOutcome.INSUFFICIENT_EVIDENCE.value,
+                result_type=ResultType.NONE.value,
+                termination_reason=TerminationReason.INSUFFICIENT_EVIDENCE.value,
+                evidence_status="insufficient",
+                available_actions=[RouteType.RESEARCH_WEB.value],
+            )
+            return state
+        citations = build_citations([type("Doc", (), {"metadata": doc.get("metadata", {}), "document_id": doc.get("document_id", "")})() for doc in state["evidence"]])
+        index_by_id = {citation.document_id: citation.index for citation in citations}
+        lines = [result.conclusion]
+        for reason in result.reasons:
+            indices = sorted({index_by_id[item] for item in reason.evidence_ids if item in index_by_id})
+            lines.append(f"- {reason.claim}" + (" " + " ".join(f"[{index}]" for index in indices) if indices else ""))
+        if task == TaskType.BUILD_COMPLIANCE_CHECKLIST:
+            state["checklist"] = [
+                {"item": "Xác nhận tỷ lệ và quy cách tái chế áp dụng", "action": "Đối chiếu Điều 78 và Phụ lục XXII", "evidence_indices": [index_by_id[item] for item in evidence_ids.get("recycling_rate", []) if item in index_by_id]},
+                {"item": "Chọn hình thức thực hiện", "action": "Đối chiếu Điều 79", "evidence_indices": [index_by_id[item] for item in evidence_ids.get("implementation", []) if item in index_by_id]},
+                {"item": "Chuẩn bị đăng ký và báo cáo", "action": "Đối chiếu Điều 80", "evidence_indices": [index_by_id[item] for item in evidence_ids.get("reporting", []) if item in index_by_id]},
+                {"item": "Đối chiếu nghĩa vụ đóng góp tài chính nếu chọn phương án này", "action": "Đối chiếu Điều 81", "evidence_indices": [index_by_id[item] for item in evidence_ids.get("financial", []) if item in index_by_id]},
+            ]
+            state["result_type"] = ResultType.CHECKLIST.value
+        else:
+            state["result_type"] = ResultType.ASSESSMENT.value
+        state["assessment"] = result.model_dump(mode="json")
+        state["answer"] = "\n".join(lines)
+        state["citations"] = [citation.to_dict() for citation in citations]
+        state["citation_valid"] = True
+        state["citation_error"] = "ok"
+        state["outcome"] = WorkflowOutcome.COMPLETED.value
+        state["termination_reason"] = TerminationReason.ANSWER_COMPLETE.value
+        state["evidence_status"] = "sufficient"
+        case.status = "completed"
+        case.decision_status = result.status
+        case.issue_states = {key: IssueState.model_validate(value) for key, value in issue_states.items()}
+        state["case_state"] = _case_payload(case)
+        state["active_case"] = state["case_state"]
+        append_action(state, Action.VERIFY_CITATIONS)
+        append_action(state, Action.FINISH)
+        return state
+
+    async def _execute(self, **kwargs: Any) -> AgentState:
+        state = await self._initial(**kwargs)
+        hint = str(state.get("intent_hint") or "auto")
+        active_case = None
+        if hint in {RouteType.CASE_ASSESSMENT.value, RouteType.COMPLIANCE_CHECKLIST.value} or state.get("operation") == TurnOperation.CONTINUE_CASE.value:
+            return await self._execute_case(state)
+        # Auto routing keeps V3's accepted routes.  A detected case is then
+        # rerun through V4 before any retrieval occurs.
+        route = classify_route(state.get("query", ""), None, active_case)
+        if route in {RouteType.CASE_ASSESSMENT, RouteType.COMPLIANCE_CHECKLIST}:
+            return await self._execute_case(state)
+        delegated = await run_workflow(
+            state["query"], user_id=state["user_id"], conversation_id=state["conversation_id"],
+            legacy_session_id=state.get("legacy_session_id", ""), mode=state.get("mode", "auto"), deps=self.deps,
+            trace_id=state["trace_id"],
+        )
+        delegated["pipeline_version"] = "pipeline-v4"
+        delegated["outcome"] = WorkflowOutcome.COMPLETED.value if delegated.get("termination_reason") in {TerminationReason.ANSWER_COMPLETE.value, TerminationReason.CACHE_HIT.value, TerminationReason.RESEARCH_COMPLETE.value} else (
+            WorkflowOutcome.NEEDS_INFORMATION.value if delegated.get("termination_reason") == TerminationReason.AWAITING_USER_INPUT.value else WorkflowOutcome.INSUFFICIENT_EVIDENCE.value if delegated.get("termination_reason") == TerminationReason.INSUFFICIENT_EVIDENCE.value else WorkflowOutcome.OUT_OF_SCOPE.value if delegated.get("termination_reason") == TerminationReason.OUT_OF_SCOPE.value else WorkflowOutcome.FAILED.value
+        )
+        delegated["result_type"] = ResultType.LEGAL_ANSWER.value if delegated["outcome"] == WorkflowOutcome.COMPLETED.value else ResultType.NONE.value
+        return delegated
+
+    async def run(self, **kwargs: Any) -> AgentState:
+        started = time.perf_counter()
+        state = await self._execute(**kwargs)
+        state["run_started_at"] = state.get("run_started_at") or datetime.now(UTC).isoformat()
+        state["run_ended_at"] = datetime.now(UTC).isoformat()
+        state["run_duration_ms"] = round((time.perf_counter() - started) * 1000, 2)
+        await self._persist(state, started_at=started)
+        return state
+
+    async def _persist(self, state: AgentState, *, started_at: float) -> None:
+        """Persist V4 case lifecycle without completing safe-stop cases."""
+
+        user_id = state["user_id"]
+        conversation_id = state["conversation_id"]
+        try:
+            active_case = state.get("active_case")
+            outcome = state.get("outcome")
+            if active_case and outcome in {
+                WorkflowOutcome.NEEDS_INFORMATION.value,
+                WorkflowOutcome.INSUFFICIENT_EVIDENCE.value,
+            }:
+                # Keep a ready case when corpus evidence is incomplete.  The
+                # user can return after an index update; it is not a decision.
+                saved_case = await self.deps.history.save_case(user_id, conversation_id, active_case)
+                state["case_state"] = saved_case
+            elif active_case and outcome == WorkflowOutcome.COMPLETED.value:
+                await self.deps.history.save_case(user_id, conversation_id, active_case)
+                await self.deps.history.clear_case(user_id, conversation_id)
+                state["case_state"] = {**dict(active_case), "status": "completed", "missing_facts": []}
+
+            await self.deps.history.save_exchange(
+                user_id, conversation_id, state.get("query", ""), state.get("answer", ""), _metadata_v4(state)
+            )
+            state["cache_status"] = "not_cacheable"
+        finally:
+            await self.deps.history.record_run(state, started_at, time.perf_counter())
+
+    async def stream(self, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+        started = time.perf_counter()
+        yield {"type": "status", "message": "Đang hiểu yêu cầu…", "stage": "understand"}
+        state = await self._execute(**kwargs)
+        state["run_ended_at"] = datetime.now(UTC).isoformat()
+        state["run_duration_ms"] = round((time.perf_counter() - started) * 1000, 2)
+        await self._persist(state, started_at=started)
+        trace_id = state.get("trace_id", "")
+        seen: set[str] = set()
+        step = 0
+        for action in state.get("action_sequence", []):
+            phase, label = _PHASES.get(action, ("check_evidence", "Kiểm tra căn cứ"))
+            if phase in seen:
+                continue
+            seen.add(phase)
+            step += 1
+            yield {"type": "workflow_step", "step": step, "action": phase, "label": label, "status": "completed", "trace_id": trace_id, "pipeline_version": "pipeline-v4"}
+        if state.get("outcome") == WorkflowOutcome.NEEDS_INFORMATION.value:
+            yield {"type": "input_required", "question": state.get("answer", ""), "missing_facts": state.get("missing_facts", []), "case_state": state.get("case_state"), "trace_id": trace_id, "pipeline_version": "pipeline-v4"}
+        if state.get("case_state"):
+            yield {"type": "case_update", "case_state": state["case_state"], "trace_id": trace_id, "pipeline_version": "pipeline-v4"}
+        answer = state.get("answer", "")
+        for index, chunk in enumerate(split_verified_answer_for_stream(answer, max_chunk_chars=self.answer_chunk_size), start=1):
+            yield {"type": "response_chunk", "chunk": chunk, "chunk_index": index, "stage": "streaming", "trace_id": trace_id}
+            if self.answer_chunk_delay_s:
+                await asyncio.sleep(self.answer_chunk_delay_s)
+        yield {"type": "response_complete", "text": answer, "documents": _documents_for_api(state), "source": state.get("source", "error"), "stage": "complete", **_metadata_v4(state)}

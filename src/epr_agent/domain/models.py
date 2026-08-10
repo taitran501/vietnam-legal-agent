@@ -144,6 +144,18 @@ class AgentState(TypedDict, total=False):
     corpus_sha: str
     embedding_profile: str
     mode: str
+    operation: str
+    intent_hint: str
+    interaction_source: str
+    case_patch: dict[str, str]
+    outcome: str
+    result_type: str
+    understanding_confidence: float
+    required_issues: list[str]
+    covered_issues: list[str]
+    issue_states: dict[str, Any]
+    evidence_bundles: dict[str, list[dict[str, Any]]]
+    case_fields: list[dict[str, Any]]
     route: str
     source_scope: str
     available_actions: list[str]

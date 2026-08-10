@@ -12,6 +12,7 @@ interface ChatState {
   statusMessage: string;
   workflowSteps: WorkflowStep[];
   activeCase: CaseState | null;
+  composerDraft: { text: string; intent: string; interactionSource: string };
   
   // UI state
   isLoading: boolean;
@@ -34,6 +35,7 @@ interface ChatState {
   addWorkflowStep: (step: WorkflowStep) => void;
   setWorkflowSteps: (steps: WorkflowStep[]) => void;
   setActiveCase: (caseState: CaseState | null) => void;
+  setComposerDraft: (draft: Partial<ChatState['composerDraft']>) => void;
   setLoading: (isLoading: boolean) => void;
   setError: (error: string | null) => void;
   clearChat: () => void;
@@ -49,6 +51,7 @@ export const useChatStore = create<ChatState>((set) => ({
   statusMessage: '',
   workflowSteps: [],
   activeCase: null,
+  composerDraft: { text: '', intent: 'auto', interactionSource: 'composer' },
   isLoading: false,
   error: null,
 
@@ -99,6 +102,7 @@ export const useChatStore = create<ChatState>((set) => ({
     })),
   setWorkflowSteps: (workflowSteps) => set({ workflowSteps }),
   setActiveCase: (activeCase) => set({ activeCase }),
+  setComposerDraft: (draft) => set((state) => ({ composerDraft: { ...state.composerDraft, ...draft } })),
   
   setLoading: (isLoading) =>
     set({ isLoading }),
@@ -115,6 +119,7 @@ export const useChatStore = create<ChatState>((set) => ({
       statusMessage: '',
       workflowSteps: [],
       activeCase: null,
+      composerDraft: { text: '', intent: 'auto', interactionSource: 'composer' },
       error: null,
     }),
 

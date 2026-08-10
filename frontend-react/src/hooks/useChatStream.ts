@@ -6,6 +6,13 @@ import * as sessionsApi from '@/api/sessions';
 import { toast } from '@/state/toastStore';
 import type { ChatMessage, ResponseSource, SourceDocument, WorkflowMetadata } from '@/types';
 
+type TurnOptions = {
+  operation?: 'message' | 'continue_case';
+  intentHint?: 'auto' | 'legal_lookup' | 'legal_explain_compare' | 'case_assessment' | 'compliance_checklist';
+  interactionSource?: 'composer' | 'quick_action' | 'case_panel';
+  casePatch?: Record<string, string>;
+};
+
 const responseSources: ReadonlySet<ResponseSource> = new Set([
   'legal',
   'chitchat',
@@ -73,7 +80,7 @@ export function useChatStream() {
   } = useChatStore();
 
   const runAssistantStream = useCallback(
-    async (query: string, sessionId: string, mode: 'auto' | 'research_web' = 'auto') => {
+    async (query: string, sessionId: string, mode: 'auto' | 'research_web' = 'auto', options: TurnOptions = {}) => {
       // Abort any existing stream before starting a new one
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -98,6 +105,7 @@ export function useChatStream() {
           sessionId,
           abortControllerRef.current.signal,
           mode,
+          options,
         )) {
           if (event.type === 'status') {
             setStatusMessage(event.message || '');
@@ -140,9 +148,17 @@ export function useChatStream() {
               corpus_id: event.corpus_id,
               pipeline_version: event.pipeline_version,
               termination_reason: event.termination_reason,
+              outcome: event.outcome,
+              result_type: event.result_type,
+              required_issues: event.required_issues,
+              covered_issues: event.covered_issues,
             };
             if (event.case_state) setActiveCase(event.case_state);
             break;
+          } else if (event.type === 'case_update' && event.case_state) {
+            setActiveCase(event.case_state);
+          } else if (event.type === 'input_required') {
+            if (event.case_state) setActiveCase(event.case_state);
           } else if (event.type === 'error') {
             throw new Error(event.message || 'Unknown error occurred');
           }
@@ -183,7 +199,7 @@ export function useChatStream() {
    * Send message and stream response
    */
   const sendMessage = useCallback(
-    async (query: string, sessionId: string, mode: 'auto' | 'research_web' = 'auto') => {
+    async (query: string, sessionId: string, mode: 'auto' | 'research_web' = 'auto', options: TurnOptions = {}) => {
       // Prevent double submission: check if already streaming
       const { isStreaming: currentlyStreaming } = useChatStore.getState();
       if (currentlyStreaming) {
@@ -209,7 +225,7 @@ export function useChatStream() {
 
       ensureSessionVisibleInSidebar(sessionId, query);
 
-      await runAssistantStream(query, sessionId, mode);
+      await runAssistantStream(query, sessionId, mode, options);
     },
     [addMessage, runAssistantStream]
   );

@@ -130,6 +130,10 @@ class LegalChunk(BaseModel):
     lexical_text: str = Field(min_length=1)
     source_file: str = Field(min_length=1)
     source_uri: str | None = None
+    appendix_table_id: str = ""
+    appendix_row_id: str = ""
+    appendix_bbox: list[float] = Field(default_factory=list)
+    appendix_cell_text: list[str] = Field(default_factory=list)
     embedding_profile: Literal["openai-text-embedding-3-small-v1"] = "openai-text-embedding-3-small-v1"
     embedding_model: Literal["text-embedding-3-small"] = "text-embedding-3-small"
     embedding_dimensions: Literal[1536] = 1536
