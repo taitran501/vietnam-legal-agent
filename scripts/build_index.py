@@ -87,7 +87,10 @@ def load_articles() -> list[dict[str, Any]]:
     """Return only source-traceable records accepted for production indexing."""
 
     if os.getenv("CANONICAL_CORPUS", "true").strip().lower() not in {"0", "false", "no"}:
-        articles, audit = canonical_articles()
+        articles, audit = canonical_articles(
+            require_appendix=os.getenv("REQUIRE_APPENDIX_XXII", "false").strip().lower() in {"1", "true", "yes"},
+            appendix_path=Path(os.getenv("APPENDIX_XXII_DATA_PATH", str(get_settings().appendix_xxii_data_path))),
+        )
         logger.info("Canonical corpus audit: %s", audit.to_dict())
         return articles
     return load_raw_articles()
@@ -706,6 +709,10 @@ def upsert_to_qdrant(chunks) -> None:
                 "Embedding_Dimensions": chunk.embedding_dimensions,
                 "Document_Id": chunk.document_id,
                 "provenance": chunk.source_file,
+                "Appendix_Table_Id": chunk.appendix_table_id,
+                "Appendix_Row_Id": chunk.appendix_row_id,
+                "Appendix_BBox": chunk.appendix_bbox,
+                "Appendix_Cell_Text": chunk.appendix_cell_text,
             }
             payload["document_id"] = chunk.chunk_id
             payload["legal_anchor"] = chunk.legal_anchor
@@ -750,7 +757,10 @@ def main() -> None:
 
     chunked_articles, _, chunk_stats = chunk_articles(articles, [""] * len(articles))
     logger.info("Chunking stats: %s", chunk_stats)
-    chunks, chunk_audit = canonical_chunks(chunked_articles)
+    chunks, chunk_audit = canonical_chunks(
+        chunked_articles,
+        appendix_path=Path(os.getenv("APPENDIX_XXII_DATA_PATH", str(get_settings().appendix_xxii_data_path))),
+    )
     logger.info("Canonical chunk audit: %s", chunk_audit.to_dict())
     if chunk_audit.duplicate_chunk_ids or chunk_audit.invalid_offsets:
         raise ValueError("canonical_chunk_audit_failed")

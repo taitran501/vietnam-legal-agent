@@ -8,6 +8,8 @@ export type {
   CaseState,
   EvidenceAssessment,
   WorkflowStep,
+  CaseField,
+  FactValue,
 } from './chat';
 export type {
   ChatRequest,

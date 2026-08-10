@@ -46,7 +46,16 @@ function LegalAssistantWorkspace() {
     activeCase,
     workflowSteps,
     error,
+    composerDraft,
+    setComposerDraft,
   } = useChatStore();
+
+  const intentLabels: Record<string, string> = {
+    legal_lookup: 'Tra cứu quy định',
+    legal_explain_compare: 'Giải thích hoặc so sánh',
+    case_assessment: 'Kiểm tra nghĩa vụ',
+    compliance_checklist: 'Lập checklist',
+  };
 
   useEffect(() => {
     localStorage.setItem('legal-sidebar', sidebarCollapsed ? 'collapsed' : 'expanded');
@@ -89,7 +98,26 @@ function LegalAssistantWorkspace() {
       useChatStore.getState().setActiveSession(sessionId);
       navigate(`/conversations/${sessionId}`);
     }
-    void sendMessage(query, sessionId);
+    void sendMessage(query, sessionId, 'auto', {
+      intentHint: composerDraft.intent as 'auto' | 'legal_lookup' | 'legal_explain_compare' | 'case_assessment' | 'compliance_checklist',
+      interactionSource: composerDraft.interactionSource as 'composer' | 'quick_action' | 'case_panel',
+    });
+    setComposerDraft({ text: '', intent: 'auto', interactionSource: 'composer' });
+  };
+
+  const handlePrefill = (text: string, intent: string) => {
+    setComposerDraft({ text, intent, interactionSource: 'quick_action' });
+  };
+
+  const handleContinueCase = (facts: Record<string, string>) => {
+    if (!activeSessionId || !isHealthy) return;
+    const prompt = activeCase?.last_query || 'Tiếp tục đánh giá tình huống này.';
+    void sendMessage(prompt, activeSessionId, 'auto', {
+      operation: 'continue_case',
+      intentHint: activeCase?.task_type === 'build_compliance_checklist' ? 'compliance_checklist' : 'case_assessment',
+      interactionSource: 'case_panel',
+      casePatch: facts,
+    });
   };
 
   const handleNewSession = () => {
@@ -176,7 +204,12 @@ function LegalAssistantWorkspace() {
             disabled={!isHealthy}
             isStreaming={isStreaming}
             onSendPrompt={handleSend}
+            onPrefillPrompt={handlePrefill}
             onStop={stopGeneration}
+            draftText={composerDraft.text}
+            onDraftChange={(text) => setComposerDraft({ text, interactionSource: 'composer' })}
+            intentLabel={intentLabels[composerDraft.intent]}
+            onClearIntent={() => setComposerDraft({ intent: 'auto', interactionSource: 'composer' })}
           />
         ) : (
           <>
@@ -199,6 +232,10 @@ function LegalAssistantWorkspace() {
                   isStreaming={isStreaming}
                   onSend={handleSend}
                   onStop={stopGeneration}
+                  value={composerDraft.text}
+                  onValueChange={(text) => setComposerDraft({ text, interactionSource: 'composer' })}
+                  intentLabel={intentLabels[composerDraft.intent]}
+                  onClearIntent={() => setComposerDraft({ intent: 'auto', interactionSource: 'composer' })}
                 />
               </div>
             </div>
@@ -223,6 +260,7 @@ function LegalAssistantWorkspace() {
           caseState={activeCase}
           conversationId={activeSessionId}
           onCaseChange={(caseState) => useChatStore.getState().setActiveCase(caseState)}
+          onContinue={handleContinueCase}
         />
       </Drawer>
 

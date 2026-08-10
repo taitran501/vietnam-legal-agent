@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     chunking_profile: str = Field(default="legal-structure-v2")
     auto_index_law: bool = Field(default=False)
     enable_trace_debug_api: bool = Field(default=False)
+    agent_pipeline_version: str = Field(
+        default="pipeline-v4",
+        description="Server-selected workflow runtime. Clients never choose a pipeline version.",
+    )
+    v4_route_confidence_threshold: float = Field(default=0.70, ge=0.0, le=1.0)
+    appendix_xxii_data_path: Path = Field(default=BASE_DIR / "artifacts" / "appendix_xxii.jsonl")
     database_url: str | None = Field(
         default=None,
         description="PostgreSQL production source of truth; SQLite is used locally when unset",
@@ -224,6 +230,10 @@ class Settings(BaseSettings):
                 "Pipeline V3 requires embedding profile openai-text-embedding-3-small-v1 "
                 "(text-embedding-3-small, 1536 dimensions)"
             )
+        if self.agent_pipeline_version not in {"pipeline-v3", "pipeline-v4"}:
+            raise ValueError("AGENT_PIPELINE_VERSION must be pipeline-v3 or pipeline-v4")
+        if self.agent_pipeline_version == "pipeline-v4" and self.index_schema_version == "legal-structure-v2":
+            self.index_schema_version = "legal-structure-v2-v4-appendix1"
         return self
 
     @model_validator(mode="after")

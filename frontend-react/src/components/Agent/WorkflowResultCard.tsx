@@ -13,6 +13,14 @@ const missingFactLabels: Record<string, string> = {
   product_or_packaging: 'sản phẩm hoặc bao bì',
   material: 'vật liệu chính',
   activity_scope: 'phạm vi hoạt động',
+  object_kind: 'loại đối tượng',
+  product_group: 'nhóm sản phẩm EPR',
+  packaged_goods_category: 'nhóm hàng hóa được đóng gói',
+  market_placement: 'phạm vi đưa ra thị trường',
+  activity_purpose: 'mục đích hoạt động',
+  annual_revenue_vnd: 'doanh thu liên quan',
+  reused_by_producer: 'trường hợp thu hồi và tái sử dụng bao bì',
+  recovery_rate: 'tỷ lệ thu hồi và tái sử dụng',
 };
 
 export function WorkflowResultCard({ onOpenCase, onResearch, workflow }: WorkflowResultCardProps) {
@@ -20,8 +28,14 @@ export function WorkflowResultCard({ onOpenCase, onResearch, workflow }: Workflo
   const safeStop = ['insufficient_evidence', 'out_of_scope', 'citation_verification_failed'].includes(
     workflow.termination_reason || ''
   );
-  const hasAssessment = Boolean(workflow.assessment);
-  const hasChecklist = Boolean(workflow.checklist?.length);
+  const completedDecision = workflow.outcome === 'completed'
+    && ['likely_in_scope', 'likely_out_of_scope'].includes(String(workflow.assessment?.status || ''));
+  const hasAssessment = (workflow.result_type === 'assessment' && completedDecision)
+    || (!workflow.outcome && !workflow.result_type && Boolean(workflow.assessment));
+  const hasChecklist = (
+    (workflow.result_type === 'checklist' && workflow.outcome === 'completed')
+    || (!workflow.outcome && !workflow.result_type)
+  ) && Boolean(workflow.checklist?.length);
   const hasMissingFacts = Boolean(workflow.missing_facts?.length);
   const hasAssumptions = Boolean(workflow.assumptions?.length);
 

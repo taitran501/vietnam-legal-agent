@@ -5,10 +5,17 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from epr_agent.domain.models import DocumentRecord
+from epr_agent.domain.v4 import RetrievalRequest
 
 
 class RetrievalGateway(Protocol):
-    async def legal(self, query: str) -> list[DocumentRecord]: ...
+    async def legal(self, query: str | RetrievalRequest) -> list[DocumentRecord]: ...
+
+
+def retrieval_query(value: str | RetrievalRequest) -> str:
+    """Keep the V3 retriever compatible while V4 sends typed requests."""
+
+    return value if isinstance(value, str) else value.query
 
 
 def _to_record(document: Any, *, source: str, index: int) -> DocumentRecord:
@@ -36,17 +43,21 @@ def _to_record(document: Any, *, source: str, index: int) -> DocumentRecord:
 class QdrantLegalRetrievalGateway:
     """Call the versioned V3 hybrid retriever without leaking Qdrant objects upward."""
 
-    async def legal(self, query: str) -> list[DocumentRecord]:
+    async def legal(self, query: str | RetrievalRequest) -> list[DocumentRecord]:
         from backend.config import get_settings
         from backend.core.retrieval import retrieve_legal_async
 
-        documents = await retrieve_legal_async(query)
+        request = query if isinstance(query, RetrievalRequest) else None
+        documents = await retrieve_legal_async(retrieval_query(query))
         settings = get_settings()
         records = [_to_record(document, source="legal", index=i) for i, document in enumerate(documents)]
         for record in records:
             record.metadata.setdefault("source", str(getattr(settings, "law_citation_label", "EPR legal corpus")))
             record.metadata.setdefault("Corpus_Version", str(getattr(settings, "corpus_version", "epr-corpus-v1")))
             record.metadata.setdefault("document_id", record.document_id)
+            if request is not None:
+                record.metadata.setdefault("v4_issue_id", request.issue_id)
+                record.metadata.setdefault("v4_required_anchors", request.required_anchors)
         return records
 
 
@@ -56,7 +67,25 @@ class StaticRetrievalGateway:
     def __init__(self, *, legal_documents: list[DocumentRecord] | None = None) -> None:
         self.legal_documents = legal_documents or []
         self.calls: list[tuple[str, str]] = []
+        self.requests: list[RetrievalRequest] = []
 
-    async def legal(self, query: str) -> list[DocumentRecord]:
-        self.calls.append(("legal", query))
+    async def legal(self, query: str | RetrievalRequest) -> list[DocumentRecord]:
+        if isinstance(query, RetrievalRequest):
+            self.requests.append(query)
+        self.calls.append(("legal", retrieval_query(query)))
+        if isinstance(query, RetrievalRequest) and query.required_anchors:
+            selected = [
+                document
+                for document in self.legal_documents
+                if any(
+                    anchor.casefold() in (
+                        str(document.metadata.get("legal_anchor") or "")
+                        + " " + str(document.metadata.get("Dieu") or "")
+                        + " " + str(document.metadata.get("source_title") or "")
+                        + " " + document.content
+                    ).casefold()
+                    for anchor in query.required_anchors
+                )
+            ]
+            return list(selected)
         return list(self.legal_documents)

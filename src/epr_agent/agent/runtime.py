@@ -92,7 +92,11 @@ def _metadata(state: AgentState) -> dict[str, Any]:
     checklist = state.get("checklist", [])
     assumptions = [item.get("assumption") for item in checklist if item.get("assumption")]
     if state.get("assessment"):
-        assumptions.append("Kết quả đánh giá là sơ bộ và phụ thuộc vào các facts đã cung cấp.")
+        assumptions.extend(
+            item for item in (state.get("assessment") or {}).get("assumptions", []) if item
+        )
+        if not assumptions:
+            assumptions.append("Kết quả đánh giá là sơ bộ và phụ thuộc vào các facts đã cung cấp.")
     return {
         "task_type": state.get("task_type", TaskType.LEGAL_LOOKUP.value),
         "route": state.get("route", "legal_lookup"),
@@ -113,6 +117,10 @@ def _metadata(state: AgentState) -> dict[str, Any]:
         "corpus_id": state.get("corpus_id", "epr"),
         "pipeline_version": state.get("pipeline_version", "pipeline-v3"),
         "termination_reason": state.get("termination_reason", TerminationReason.ERROR.value),
+        "outcome": state.get("outcome"),
+        "result_type": state.get("result_type"),
+        "required_issues": state.get("required_issues", []),
+        "covered_issues": state.get("covered_issues", []),
     }
 
 
@@ -284,6 +292,14 @@ class WorkflowRuntime:
 
 @lru_cache(maxsize=1)
 def get_default_runtime() -> WorkflowRuntime:
+    # Runtime selection is server-owned.  The public request schema has no
+    # pipeline field, so a browser cannot force an experimental workflow.
+    from backend.config import get_settings
+
+    if get_settings().agent_pipeline_version == "pipeline-v4":
+        from epr_agent.agent.v4 import V4WorkflowRuntime
+
+        return V4WorkflowRuntime(default_dependencies())
     return WorkflowRuntime(default_dependencies())
 
 
@@ -294,16 +310,28 @@ async def stream_chat(
     conversation_id: str,
     legacy_session_id: str = "",
     mode: str = "auto",
+    operation: str = "message",
+    intent_hint: str = "auto",
+    interaction_source: str = "composer",
+    case_patch: dict[str, Any] | None = None,
     runtime: WorkflowRuntime | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Public SSE event generator used by the compatibility API route."""
 
     selected = runtime or get_default_runtime()
-    async for event in selected.stream(
-        query=query,
-        user_id=user_id,
-        conversation_id=conversation_id,
-        legacy_session_id=legacy_session_id,
-        mode=mode,
-    ):
+    request_kwargs: dict[str, Any] = {
+        "query": query,
+        "user_id": user_id,
+        "conversation_id": conversation_id,
+        "legacy_session_id": legacy_session_id,
+        "mode": mode,
+    }
+    if selected.__class__.__name__ == "V4WorkflowRuntime":
+        request_kwargs.update(
+            operation=operation,
+            intent_hint=intent_hint,
+            interaction_source=interaction_source,
+            case_patch=case_patch or {},
+        )
+    async for event in selected.stream(**request_kwargs):
         yield event

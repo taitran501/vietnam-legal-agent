@@ -7,7 +7,7 @@ its own.
 
 > It provides document-grounded information, not legal advice.
 
-## Pipeline V3
+## Pipeline versions
 
 ```text
 official legal source
@@ -24,6 +24,16 @@ official legal source
 
 The only active V3 corpus is EPR. The corpus abstraction and route contracts
 are reusable for another legal domain, but no other domain is silently searched.
+
+Pipeline V4 is now the default runtime. It
+replaces generic case-answer generation with issue-oriented EPR assessment and
+checklist workflows: a quick action only prefills the composer, facts retain
+their user/panel provenance, evidence is checked per legal issue, and a result
+card is rendered only after the deterministic case decision completes.  The
+official Appendix XXII table must be extracted and audited before V4 can build
+or activate its versioned index. Operators can temporarily roll back with
+`AGENT_PIPELINE_VERSION=pipeline-v3`. See
+[`docs/pipeline_v4_behavior_contract.md`](docs/pipeline_v4_behavior_contract.md).
 
 ## Route contracts
 

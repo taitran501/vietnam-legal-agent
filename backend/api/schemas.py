@@ -5,11 +5,11 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ChatRequest(BaseModel):
-    query: str = Field(..., min_length=1, max_length=3000, description="User's question")
+    query: str = Field(default="", max_length=3000, description="User's question")
     conversation_id: str = Field(
         default="",
         min_length=0,
@@ -21,6 +21,24 @@ class ChatRequest(BaseModel):
         default="auto",
         description="Explicit workflow mode. Web research is never selected automatically.",
     )
+    operation: Literal["message", "continue_case"] = "message"
+    intent_hint: Literal[
+        "auto", "legal_lookup", "legal_explain_compare", "case_assessment", "compliance_checklist"
+    ] = "auto"
+    interaction_source: Literal["composer", "quick_action", "case_panel"] = "composer"
+    case_patch: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_turn_contract(self) -> ChatRequest:
+        self.query = " ".join(self.query.split())
+        if self.operation == "message" and not self.query:
+            raise ValueError("query is required when operation=message")
+        self.case_patch = {
+            str(key): " ".join(str(value).split())[:240]
+            for key, value in self.case_patch.items()
+            if str(value).strip()
+        }
+        return self
 
     @field_validator("conversation_id", "session_id")
     @classmethod

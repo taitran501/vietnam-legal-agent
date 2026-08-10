@@ -37,6 +37,12 @@ export async function* streamChat(
   conversationId: string,
   signal?: AbortSignal,
   mode: 'auto' | 'research_web' = 'auto',
+  options: {
+    operation?: 'message' | 'continue_case';
+    intentHint?: 'auto' | 'legal_lookup' | 'legal_explain_compare' | 'case_assessment' | 'compliance_checklist';
+    interactionSource?: 'composer' | 'quick_action' | 'case_panel';
+    casePatch?: Record<string, string>;
+  } = {},
 ): AsyncGenerator<SSEEvent> {
   // Use relative URL for Vite proxy, or full URL if needed
   const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
@@ -54,6 +60,10 @@ export async function* streamChat(
       query,
       conversation_id: conversationId,
       mode,
+      operation: options.operation || 'message',
+      intent_hint: options.intentHint || 'auto',
+      interaction_source: options.interactionSource || 'composer',
+      case_patch: options.casePatch || {},
     }),
     signal,
   });

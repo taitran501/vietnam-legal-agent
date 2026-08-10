@@ -39,6 +39,7 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
         expected_sha = corpus_sha256(
             law_path=settings.law_data_path,
             manifest_path=settings.corpus_manifest_path,
+            appendix_path=settings.appendix_xxii_data_path,
         )
         corpus["corpus_sha"] = expected_sha
         from backend.core.retrieval import _get_qdrant_client

@@ -1,14 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { updateCaseState } from '@/api/sessions';
 import { toast } from '@/state/toastStore';
-import type { CaseFacts, CaseState } from '@/types';
-
-const fields: Array<{ key: keyof CaseFacts; label: string; placeholder: string }> = [
-  { key: 'business_role', label: 'Vai trò doanh nghiệp', placeholder: 'Ví dụ: Nhà sản xuất' },
-  { key: 'product_or_packaging', label: 'Sản phẩm hoặc bao bì', placeholder: 'Ví dụ: Bao bì thực phẩm' },
-  { key: 'material', label: 'Vật liệu chính', placeholder: 'Ví dụ: Nhựa PET' },
-  { key: 'activity_scope', label: 'Phạm vi hoạt động', placeholder: 'Ví dụ: Thị trường Việt Nam' },
-];
+import type { CaseField, CaseState, FactValue } from '@/types';
 
 const taskLabel = {
   assess_epr_obligation: 'Đánh giá nghĩa vụ',
@@ -19,20 +12,34 @@ interface CaseFactsPanelProps {
   conversationId: string | null;
   caseState: CaseState | null;
   onCaseChange: (caseState: CaseState) => void;
+  onContinue: (facts: Record<string, string>) => void;
 }
 
-export function CaseFactsPanel({ conversationId, caseState, onCaseChange }: CaseFactsPanelProps) {
-  const [facts, setFacts] = useState<CaseFacts>({});
+function plainFactValue(value: string | FactValue | undefined): string {
+  return typeof value === 'string' ? value : value?.value || '';
+}
+
+export function CaseFactsPanel({ conversationId, caseState, onCaseChange, onContinue }: CaseFactsPanelProps) {
+  const [facts, setFacts] = useState<Record<string, string>>({});
   const [taskType, setTaskType] = useState<CaseState['task_type']>('assess_epr_obligation');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    setFacts(caseState?.facts || {});
+    setFacts(Object.fromEntries(Object.entries(caseState?.facts || {}).map(([key, value]) => [key, plainFactValue(value)])));
     setTaskType(caseState?.task_type || 'assess_epr_obligation');
   }, [caseState]);
 
   const missing = useMemo(() => new Set(caseState?.missing_facts || []), [caseState]);
   const isDisabled = !conversationId || saving;
+  const dynamicFields: CaseField[] = caseState?.fields || Object.keys(facts).map((key) => ({
+    key,
+    label: key,
+    kind: 'text',
+    options: [],
+    required: false,
+    missing: missing.has(key),
+    value: facts[key] || '',
+  }));
 
   const save = async () => {
     if (!conversationId) {
@@ -79,21 +86,20 @@ export function CaseFactsPanel({ conversationId, caseState, onCaseChange }: Case
       </label>
 
       <div className="space-y-3">
-        {fields.map((field) => (
+        {dynamicFields.map((field) => (
           <label key={field.key} className="block text-sm font-medium text-[#3e4947]">
             <span className="flex items-center gap-1.5">
               {field.label}
               {missing.has(field.key) && <span className="text-xs font-normal text-[#9a5b18]">cần bổ sung</span>}
             </span>
-            <input
-              value={facts[field.key] || ''}
-              disabled={isDisabled}
-              onChange={(event) => setFacts((current) => ({ ...current, [field.key]: event.target.value }))}
-              placeholder={field.placeholder}
-              className={`mt-1.5 w-full rounded-lg border bg-white px-3 py-2.5 text-sm text-[#172033] outline-none transition placeholder:text-[#98a29f] focus:ring-2 focus:ring-[#0f766e]/15 disabled:bg-[#f1f4f3] ${
-                missing.has(field.key) ? 'border-[#d7a65a] focus:border-[#b7791f]' : 'border-[#bdc9c6] focus:border-[#0f766e]'
-              }`}
-            />
+            {field.kind === 'select' ? (
+              <select value={facts[field.key] || ''} disabled={isDisabled} onChange={(event) => setFacts((current) => ({ ...current, [field.key]: event.target.value }))} className={`mt-1.5 w-full rounded-lg border bg-white px-3 py-2.5 text-sm text-[#172033] outline-none transition focus:ring-2 focus:ring-[#0f766e]/15 disabled:bg-[#f1f4f3] ${missing.has(field.key) ? 'border-[#d7a65a] focus:border-[#b7791f]' : 'border-[#bdc9c6] focus:border-[#0f766e]'}`}>
+                <option value="">Chọn thông tin</option>
+                {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            ) : (
+              <input value={facts[field.key] || ''} disabled={isDisabled} onChange={(event) => setFacts((current) => ({ ...current, [field.key]: event.target.value }))} placeholder={field.help_text || `Nhập ${field.label.toLowerCase()}`} type={field.kind === 'number' ? 'number' : 'text'} className={`mt-1.5 w-full rounded-lg border bg-white px-3 py-2.5 text-sm text-[#172033] outline-none transition placeholder:text-[#98a29f] focus:ring-2 focus:ring-[#0f766e]/15 disabled:bg-[#f1f4f3] ${missing.has(field.key) ? 'border-[#d7a65a] focus:border-[#b7791f]' : 'border-[#bdc9c6] focus:border-[#0f766e]'}`} />
+            )}
           </label>
         ))}
       </div>
@@ -108,6 +114,9 @@ export function CaseFactsPanel({ conversationId, caseState, onCaseChange }: Case
         className="mt-4 rounded-lg bg-[#0f766e] px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-[#005c55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-[#bdc9c6]"
       >
         {saving ? 'Đang lưu…' : 'Lưu thông tin trường hợp'}
+      </button>
+      <button type="button" onClick={() => onContinue(facts)} disabled={isDisabled || Boolean(caseState?.missing_facts.length)} className="mt-2 rounded-lg border border-[#0f766e] bg-white px-3 py-2.5 text-sm font-semibold text-[#006a63] transition hover:bg-[#f0faf8] disabled:cursor-not-allowed disabled:border-[#bdc9c6] disabled:text-[#7a8582]">
+        Tiếp tục đánh giá
       </button>
     </section>
   );

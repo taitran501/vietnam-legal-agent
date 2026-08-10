@@ -52,13 +52,32 @@ export interface WorkflowMetadata {
   corpus_id?: string;
   pipeline_version?: string;
   termination_reason?: string;
+  outcome?: 'completed' | 'needs_information' | 'insufficient_evidence' | 'out_of_scope' | 'failed';
+  result_type?: 'legal_answer' | 'assessment' | 'checklist' | 'none';
+  required_issues?: string[];
+  covered_issues?: string[];
 }
 
-export interface CaseFacts {
-  business_role?: string;
-  product_or_packaging?: string;
-  material?: string;
-  activity_scope?: string;
+export type CaseFacts = Record<string, string | FactValue>;
+
+export interface FactValue {
+  value: string;
+  source: 'user_turn' | 'case_panel' | 'system_default';
+  source_turn?: string;
+  evidence_span?: string;
+  confidence?: number;
+  verified?: boolean;
+}
+
+export interface CaseField {
+  key: string;
+  label: string;
+  kind: 'text' | 'select' | 'number' | 'boolean';
+  options: Array<{ value: string; label: string }>;
+  required: boolean;
+  missing: boolean;
+  value: string;
+  help_text?: string;
 }
 
 export interface CaseState {
@@ -68,6 +87,11 @@ export interface CaseState {
   missing_facts: string[];
   last_query?: string;
   updated_at?: number;
+  schema_version?: string;
+  decision_status?: string | null;
+  issue_states?: Record<string, unknown>;
+  as_of_date?: string;
+  fields?: CaseField[];
 }
 
 export interface EvidenceAssessment {

@@ -65,6 +65,10 @@ services:
       EMBEDDING_MODEL: text-embedding-3-small
       EMBEDDING_DIMENSIONS: "1536"
       ENABLE_TRACE_DEBUG_API: ${ENABLE_TRACE_DEBUG_API:-false}
+      AGENT_PIPELINE_VERSION: ${AGENT_PIPELINE_VERSION:-pipeline-v4}
+      APPENDIX_XXII_DATA_PATH: /app/artifacts/appendix_xxii.jsonl
+    volumes:
+      - indexer_cache:/app/artifacts:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -100,6 +104,8 @@ services:
       EMBEDDING_MODEL: text-embedding-3-small
       EMBEDDING_DIMENSIONS: "1536"
       SUMMARY_CACHE_PATH: /app/artifacts/index_summary_cache.json
+      AGENT_PIPELINE_VERSION: ${AGENT_PIPELINE_VERSION:-pipeline-v4}
+      APPENDIX_XXII_DATA_PATH: /app/artifacts/appendix_xxii.jsonl
     volumes:
       - indexer_cache:/app/artifacts
     depends_on:

@@ -9,6 +9,10 @@ interface ChatInputProps {
   onSend: (message: string) => void;
   onStop: () => void;
   variant?: 'conversation' | 'welcome';
+  value?: string;
+  intentLabel?: string;
+  onValueChange?: (value: string) => void;
+  onClearIntent?: () => void;
 }
 
 export function ChatInput({
@@ -18,8 +22,17 @@ export function ChatInput({
   onSend,
   onStop,
   variant = 'conversation',
+  value,
+  intentLabel,
+  onValueChange,
+  onClearIntent,
 }: ChatInputProps) {
-  const [input, setInput] = useState('');
+  const [localInput, setLocalInput] = useState('');
+  const input = value ?? localInput;
+  const setInput = (next: string) => {
+    if (value === undefined) setLocalInput(next);
+    onValueChange?.(next);
+  };
   const lastSendTime = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -42,6 +55,7 @@ export function ChatInput({
     lastSendTime.current = now;
     onSend(input.trim());
     setInput('');
+    onClearIntent?.();
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -56,6 +70,12 @@ export function ChatInput({
 
   return (
     <div className={cn('w-full', variant === 'welcome' ? 'max-w-[760px]' : 'max-w-[820px]')}>
+      {intentLabel && (
+        <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-[#e7f4f1] px-2.5 py-1 text-xs font-semibold text-[#006a63]">
+          {intentLabel}
+          <button aria-label="Xóa tác vụ đã chọn" className="rounded p-0.5 hover:bg-[#cce9e4]" onClick={onClearIntent} type="button">×</button>
+        </div>
+      )}
       <div
         className={cn(
           'relative flex items-end border border-[#bdc9c6] bg-white transition-[border-color,box-shadow] duration-200 focus-within:border-[#0f766e] focus-within:ring-2 focus-within:ring-[#0f766e]/15',

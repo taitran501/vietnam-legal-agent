@@ -71,7 +71,9 @@ def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def corpus_sha256(*, law_path: Path | None = None, manifest_path: Path | None = None) -> str:
+def corpus_sha256(
+    *, law_path: Path | None = None, manifest_path: Path | None = None, appendix_path: Path | None = None
+) -> str:
     """Fingerprint all checked-in inputs which define the active legal corpus."""
 
     law_path = law_path or ROOT / "data" / "law.json"
@@ -83,6 +85,9 @@ def corpus_sha256(*, law_path: Path | None = None, manifest_path: Path | None = 
         "chunking_profile": CHUNKING_PROFILE,
         "embedding_profile": EMBEDDING_PROFILE,
     }
+    appendix = appendix_path or ROOT / "data" / "appendix_xxii.jsonl"
+    if appendix.exists():
+        payload["appendix_xxii_sha256"] = sha256_file(appendix)
     for document in manifest.get("documents", []):
         source = ROOT / str(document["source_file"])
         payload.setdefault("source_sha256", {})[str(document["document_id"])] = sha256_file(source)
@@ -108,6 +113,33 @@ def load_extracted_records(path: Path | None = None) -> list[dict[str, Any]]:
     if not isinstance(records, list):
         raise TypeError("law.json must be a list or an object containing 'meta'")
     return [dict(record) for record in records if isinstance(record, dict)]
+
+
+def load_appendix_xxii_records(path: Path | None = None, *, required: bool = False) -> list[dict[str, Any]]:
+    """Load only row-level Appendix data produced by the source extractor."""
+
+    path = path or ROOT / "data" / "appendix_xxii.jsonl"
+    if not path.exists():
+        if required:
+            raise RuntimeError("appendix_xxii_provenance_missing")
+        return []
+    rows: list[dict[str, Any]] = []
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        required_fields = ("Text", "Pages", "Source_Page", "Source_BBox", "Table_Id", "Row_Id", "Cell_Text", "Source_SHA256")
+        if not isinstance(record, dict) or any(record.get(field) in (None, "", []) for field in required_fields):
+            raise RuntimeError(f"appendix_xxii_invalid_provenance_row:{number}")
+        if _clean(" ".join(str(cell) for cell in record["Cell_Text"])) != _clean(record["Text"]):
+            raise RuntimeError(f"appendix_xxii_cell_text_mismatch:{number}")
+        rows.append(dict(record))
+    ids = [str(row["Row_Id"]) for row in rows]
+    if required and not rows:
+        raise RuntimeError("appendix_xxii_empty")
+    if len(ids) != len(set(ids)):
+        raise RuntimeError("appendix_xxii_duplicate_row_id")
+    return rows
 
 
 def _clean(value: Any) -> str:
@@ -142,12 +174,16 @@ def _record_is_traceable(record: dict[str, Any]) -> tuple[bool, str]:
     return True, ""
 
 
-def canonical_articles() -> tuple[list[dict[str, Any]], CorpusAudit]:
+def canonical_articles(
+    *, require_appendix: bool = False, appendix_path: Path | None = None
+) -> tuple[list[dict[str, Any]], CorpusAudit]:
     corpus_id, corpus_version, document = load_document_manifest()
     digest = corpus_sha256()
     accepted: list[dict[str, Any]] = []
     excluded: list[dict[str, str]] = []
-    for index, record in enumerate(load_extracted_records(), start=1):
+    source_records = load_extracted_records()
+    appendix_rows = load_appendix_xxii_records(appendix_path, required=require_appendix)
+    for index, record in enumerate([*source_records, *appendix_rows], start=1):
         valid, reason = _record_is_traceable(record)
         if not valid:
             excluded.append({"row": str(index), "reason": reason, "anchor": _article_value(record, "Điều", "Dieu")})
@@ -156,7 +192,7 @@ def canonical_articles() -> tuple[list[dict[str, Any]], CorpusAudit]:
         article = _article_value(record, "Điều", "Dieu", "Điều_Number")
         chapter = _article_value(record, "Chương", "Chuong", "Chương_Number")
         section = _article_value(record, "Mục", "Muc", "Mục_Number")
-        accepted.append(
+        item: dict[str, Any] = (
             {
                 "Document_Id": document.document_id,
                 "Corpus_Id": corpus_id,
@@ -175,8 +211,18 @@ def canonical_articles() -> tuple[list[dict[str, Any]], CorpusAudit]:
                 "_Structural_Text": text,
             }
         )
+        if record.get("Row_Id"):
+            item.update(
+                {
+                    "Appendix_Table_Id": str(record["Table_Id"]),
+                    "Appendix_Row_Id": str(record["Row_Id"]),
+                    "Appendix_Cell_Text": list(record["Cell_Text"]),
+                    "Appendix_BBox": list(record["Source_BBox"]),
+                }
+            )
+        accepted.append(item)
     audit = CorpusAudit(
-        input_records=len(load_extracted_records()),
+        input_records=len(source_records) + len(appendix_rows),
         accepted_records=len(accepted),
         excluded_records=len(excluded),
         duplicate_chunk_ids=0,
@@ -227,9 +273,11 @@ def build_lexical_text(*, document: LegalDocument, article: dict[str, Any]) -> s
     )
 
 
-def canonical_chunks(chunked_articles: list[dict[str, Any]]) -> tuple[list[LegalChunk], CorpusAudit]:
+def canonical_chunks(
+    chunked_articles: list[dict[str, Any]], *, appendix_path: Path | None = None
+) -> tuple[list[LegalChunk], CorpusAudit]:
     corpus_id, corpus_version, document = load_document_manifest()
-    digest = corpus_sha256()
+    digest = corpus_sha256(appendix_path=appendix_path)
     chunks: list[LegalChunk] = []
     seen: set[str] = set()
     duplicate_count = 0
@@ -275,6 +323,10 @@ def canonical_chunks(chunked_articles: list[dict[str, Any]]) -> tuple[list[Legal
                 lexical_text=build_lexical_text(document=document, article=article),
                 source_file=document.source_file,
                 source_uri=document.source_uri,
+                appendix_table_id=str(article.get("Appendix_Table_Id") or ""),
+                appendix_row_id=str(article.get("Appendix_Row_Id") or ""),
+                appendix_bbox=[float(value) for value in list(article.get("Appendix_BBox") or [])],
+                appendix_cell_text=[str(value) for value in list(article.get("Appendix_Cell_Text") or [])],
             )
         )
     audit = CorpusAudit(

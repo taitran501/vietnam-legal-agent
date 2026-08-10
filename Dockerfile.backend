@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential curl libreoffice-writer && rm -rf /var/lib/apt/lists/*
 
 # pyproject.toml is the dependency source of truth. This step installs the
 # bounded workflow package so imports from src/epr_agent work in containers.

@@ -83,6 +83,10 @@ class CaseStateRecord(Base):
     facts: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     missing_facts: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     last_query: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(32), default="legacy-v3", nullable=False)
+    decision_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    issue_states: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    as_of_date: Mapped[str] = mapped_column(String(32), default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
@@ -109,6 +113,11 @@ class AgentRunRecord(Base):
     action_sequence: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     tool_results: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, nullable=False)
     termination_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    outcome: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    result_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    understanding_confidence: Mapped[float | None] = mapped_column(nullable=True)
+    required_issue_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    covered_issue_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -190,11 +199,15 @@ class PersistenceStore:
     @staticmethod
     def _case_payload(record: CaseStateRecord) -> dict[str, Any]:
         return {
+            "schema_version": record.schema_version,
             "task_type": record.task_type,
             "status": record.status,
             "facts": dict(record.facts or {}),
             "missing_facts": list(record.missing_facts or []),
             "last_query": record.last_query,
+            "decision_status": record.decision_status,
+            "issue_states": dict(record.issue_states or {}),
+            "as_of_date": record.as_of_date,
             "updated_at": _timestamp(record.updated_at),
         }
 
@@ -249,6 +262,8 @@ class PersistenceStore:
             if conversation is None:
                 raise PermissionError("Conversation does not belong to current user")
             conversation.updated_at = now
+            if conversation.title == "New Conversation" and user_message.strip():
+                conversation.title = self._title(user_message)
             session.add_all(
                 [
                     MessageRecord(conversation_id=conversation_id, role="user", content=user_message, message_metadata={}),
@@ -436,7 +451,7 @@ class PersistenceStore:
         now = _utcnow()
         facts = {key: value for key, value in dict(state.get("facts") or {}).items() if value}
         missing = list(state.get("missing_facts") or [])
-        status = "ready" if not missing else "collecting"
+        status = str(state.get("status") or ("ready" if not missing else "collecting"))
         async with self.sessions() as session:
             async with session.begin():
                 record = await session.get(CaseStateRecord, conversation_id)
@@ -451,6 +466,10 @@ class PersistenceStore:
                         facts=facts,
                         missing_facts=missing,
                         last_query=str(state.get("last_query") or state.get("query") or ""),
+                        schema_version=str(state.get("schema_version") or "legacy-v3"),
+                        decision_status=state.get("decision_status"),
+                        issue_states=dict(state.get("issue_states") or {}),
+                        as_of_date=str(state.get("as_of_date") or ""),
                         created_at=now,
                         updated_at=now,
                     )
@@ -461,6 +480,10 @@ class PersistenceStore:
                     record.facts = facts
                     record.missing_facts = missing
                     record.last_query = str(state.get("last_query") or state.get("query") or record.last_query)
+                    record.schema_version = str(state.get("schema_version") or record.schema_version)
+                    record.decision_status = state.get("decision_status")
+                    record.issue_states = dict(state.get("issue_states") or {})
+                    record.as_of_date = str(state.get("as_of_date") or record.as_of_date)
                     record.updated_at = now
             return self._case_payload(record)
 
@@ -506,6 +529,8 @@ class PersistenceStore:
             "citation_count", "candidates", "explicit_articles", "selected",
             "rejection_reason", "reason", "source_scope", "model", "token_usage",
             "retrieval_attempt", "evidence_status", "explicit_user_request",
+            "pipeline_version", "outcome", "result_type", "required_issues", "covered_issues",
+            "issue_plan", "fact_provenance", "coverage_reason",
         }
         candidate_allowed = {
             "document_id", "legal_anchor", "dense_score", "bm25_score",
@@ -525,7 +550,26 @@ class PersistenceStore:
                 key_text = str(key)
                 if key_text in sensitive or key_text not in valid_keys:
                     continue
-                result[key_text] = clean(raw, candidate=(key_text == "candidates"))
+                if key_text == "issue_plan" and isinstance(raw, list):
+                    result[key_text] = [
+                        {
+                            "issue_id": str(entry.get("issue_id") or ""),
+                            "required_anchors": [str(anchor) for anchor in list(entry.get("required_anchors") or [])][:6],
+                        }
+                        for entry in raw[:20]
+                        if isinstance(entry, dict)
+                    ]
+                elif key_text == "fact_provenance" and isinstance(raw, dict):
+                    result[key_text] = {
+                        str(name): {
+                            "source": str(value.get("source") or ""),
+                            "verified": bool(value.get("verified")),
+                        }
+                        for name, value in raw.items()
+                        if isinstance(value, dict)
+                    }
+                else:
+                    result[key_text] = clean(raw, candidate=(key_text == "candidates"))
             return result
 
         return clean(dict(value or {}) if isinstance(value, dict) else {})
@@ -567,6 +611,11 @@ class PersistenceStore:
                 "action_sequence": list(state.get("action_sequence") or []),
                 "tool_results": list(state.get("tool_results") or []),
                 "termination_reason": state.get("termination_reason"),
+                "outcome": state.get("outcome"),
+                "result_type": state.get("result_type"),
+                "understanding_confidence": state.get("understanding_confidence"),
+                "required_issue_count": len(state.get("required_issues") or []),
+                "covered_issue_count": len(state.get("covered_issues") or []),
                 "started_at": self._trace_time(state.get("run_started_at"), now),
                 "ended_at": self._trace_time(state.get("run_ended_at"), _utcnow()),
             }
@@ -612,6 +661,11 @@ class PersistenceStore:
             "action_sequence": list(record.action_sequence or []),
             "tool_results": list(record.tool_results or []),
             "termination_reason": record.termination_reason,
+            "outcome": record.outcome,
+            "result_type": record.result_type,
+            "understanding_confidence": record.understanding_confidence,
+            "required_issue_count": record.required_issue_count,
+            "covered_issue_count": record.covered_issue_count,
             "started_at": _timestamp(record.started_at),
             "ended_at": _timestamp(record.ended_at),
             "events": [

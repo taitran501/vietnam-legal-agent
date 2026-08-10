@@ -9,10 +9,14 @@ export interface ChatRequest {
   conversation_id?: string;
   session_id?: string;
   mode?: 'auto' | 'research_web';
+  operation?: 'message' | 'continue_case';
+  intent_hint?: 'auto' | 'legal_lookup' | 'legal_explain_compare' | 'case_assessment' | 'compliance_checklist';
+  interaction_source?: 'composer' | 'quick_action' | 'case_panel';
+  case_patch?: Record<string, string>;
 }
 
 export interface SSEEvent {
-  type: 'status' | 'workflow_step' | 'response_chunk' | 'response_complete' | 'error';
+  type: 'status' | 'workflow_step' | 'response_chunk' | 'response_complete' | 'case_update' | 'input_required' | 'error';
   message?: string;
   chunk?: string;
   chunk_index?: number;
@@ -43,6 +47,10 @@ export interface SSEEvent {
   termination_reason?: string;
   corpus_id?: string;
   pipeline_version?: string;
+  outcome?: WorkflowMetadata['outcome'];
+  result_type?: WorkflowMetadata['result_type'];
+  required_issues?: string[];
+  covered_issues?: string[];
   metadata?: WorkflowMetadata;
 }
 

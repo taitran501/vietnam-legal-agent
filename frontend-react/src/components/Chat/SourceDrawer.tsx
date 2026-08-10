@@ -25,8 +25,7 @@ function metadataValue(document: SourceDocument, keys: string[]): string | undef
 
 function documentTitle(document: SourceDocument, index: number): string {
   return (
-    metadataValue(document, ['title', 'document_title', 'ten_van_ban', 'source', 'file_name']) ||
-    textValue(document.source) ||
+    metadataValue(document, ['source_title', 'title', 'document_title', 'ten_van_ban', 'source', 'file_name', 'Document_Number']) ||
     `Nguồn pháp lý ${index + 1}`
   );
 }
@@ -64,7 +63,6 @@ export function SourceDrawer({ citations = [], documents, isOpen, onClose }: Sou
         {documents.map((document, index) => {
           const anchor = documentAnchor(document);
           const url = documentUrl(document);
-          const score = typeof document.score === 'number' ? document.score : null;
           return (
             <article
               className="rounded-lg border border-[#d9e1df] bg-white p-4"
@@ -84,9 +82,6 @@ export function SourceDrawer({ citations = [], documents, isOpen, onClose }: Sou
                         <Icon name="fileText" size={13} />
                         {anchor}
                       </span>
-                    )}
-                    {score !== null && score >= 0 && score <= 1 && (
-                      <span>Độ liên quan {Math.round(score * 100)}%</span>
                     )}
                   </div>
                 </div>

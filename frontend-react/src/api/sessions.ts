@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { CaseState, CaseFacts, SessionInfo, SessionDetail } from '@/types';
+import type { CaseState, SessionInfo, SessionDetail } from '@/types';
 
 const SESSIONS_ENDPOINT = '/api/v1/sessions';
 
@@ -51,7 +51,7 @@ export async function getCaseState(sessionId: string): Promise<CaseState | null>
 
 export async function updateCaseState(
   sessionId: string,
-  facts: CaseFacts,
+  facts: Record<string, string>,
   taskType?: CaseState['task_type']
 ): Promise<CaseState> {
   const response = await apiClient.patch<CaseState>(`${SESSIONS_ENDPOINT}/${sessionId}/case`, {
