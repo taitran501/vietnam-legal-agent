@@ -16,6 +16,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
+from backend.api.principal import principal_from_request_state
 from backend.history import (
     archive_conversation as archive_conversation_persistent,
 )
@@ -46,10 +47,10 @@ from backend.history import (
 from backend.history import (
     save_case_state as save_case_state_persistent,
 )
-from epr_agent.domain.epr_rules import case_fields, missing_fact_keys
+from epr_agent.domain.epr_rules import case_fields, missing_fact_keys, validate_fact_value
 from epr_agent.domain.models import TaskType
 from epr_agent.domain.tasks import missing_facts
-from epr_agent.domain.v4 import CaseStateV4, FactSource, FactValue
+from epr_agent.domain.v4 import CaseStateV4, FactConfirmationStatus, FactSource, FactValue
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -120,11 +121,22 @@ class CaseStateResponse(BaseModel):
     updated_at: float | None = None
 
 
+class FactUpdate(BaseModel):
+    value: str = Field(default="", max_length=240)
+    confirmation_status: FactConfirmationStatus = FactConfirmationStatus.UNKNOWN
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def clean_value(cls, value: object) -> str:
+        return " ".join(str(value or "").split())[:240]
+
+
 class UpdateCaseRequest(BaseModel):
     """User-editable case facts. Server derives status and missing fields."""
 
     task_type: Literal["assess_epr_obligation", "build_compliance_checklist"] | None = None
     facts: dict[str, str] = Field(default_factory=dict)
+    fact_updates: dict[str, FactUpdate] = Field(default_factory=dict)
 
     @field_validator("facts")
     @classmethod
@@ -133,7 +145,7 @@ class UpdateCaseRequest(BaseModel):
 
 
 def _current_user_id(request: Request) -> str:
-    return getattr(request.state, "api_key_hash", None) or "dev-local"
+    return principal_from_request_state(request).id
 
 
 @router.post("/sessions", response_model=SessionInfo, tags=["sessions"])
@@ -340,9 +352,31 @@ async def update_session_case(request: Request, session_id: str, body: UpdateCas
             key: FactValue.model_validate(value)
             for key, value in dict((current or {}).get("facts") or {}).items()
         }
-        for key, value in body.facts.items():
+        # ``facts`` is the one-release compatibility shape.  A typed update
+        # carries the authoritative confirmation status when both shapes are
+        # present, as the browser sends both during the compatibility window.
+        updates: dict[str, FactUpdate] = {
+            key: FactUpdate(value=value, confirmation_status=FactConfirmationStatus.UNKNOWN)
+            for key, value in body.facts.items()
+        }
+        updates.update(body.fact_updates)
+        for key, update in updates.items():
+            try:
+                value = validate_fact_value(key, update.value)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail={"field": key, "message": str(exc)}) from exc
             if value:
-                facts[key] = FactValue(value=value, source=FactSource.CASE_PANEL, confidence=1.0, verified=True)
+                facts[key] = FactValue(
+                    value=value,
+                    source=FactSource.CASE_PANEL,
+                    confidence=1.0,
+                    # A panel edit records what the user confirmed; it is not
+                    # an independent legal or document verification.
+                    verified=False,
+                    confirmation_status=update.confirmation_status,
+                )
+            else:
+                facts.pop(key, None)
         missing = missing_fact_keys(facts)
         state = CaseStateV4(
             task_type=task.value,
@@ -357,6 +391,7 @@ async def update_session_case(request: Request, session_id: str, body: UpdateCas
     else:
         facts = dict((current or {}).get("facts") or {})
         facts.update(body.facts)
+        facts.update({key: update.value for key, update in body.fact_updates.items()})
         facts = {key: value for key, value in facts.items() if value}
         state = {
             "task_type": task.value,

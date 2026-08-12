@@ -11,6 +11,8 @@ type TurnOptions = {
   intentHint?: 'auto' | 'legal_lookup' | 'legal_explain_compare' | 'case_assessment' | 'compliance_checklist';
   interactionSource?: 'composer' | 'quick_action' | 'case_panel';
   casePatch?: Record<string, string>;
+  factUpdates?: Record<string, { value: string; confirmation_status?: 'user_confirmed' | 'document_verified' | 'unknown' }>;
+  replayMetadata?: Record<string, unknown>;
 };
 
 const responseSources: ReadonlySet<ResponseSource> = new Set([
@@ -96,9 +98,10 @@ export function useChatStream() {
       let fullContent = '';
 
       try {
-        let source: ResponseSource | undefined;
-        let documents: SourceDocument[] = [];
-        let workflow: WorkflowMetadata = {};
+      let source: ResponseSource | undefined;
+      let documents: SourceDocument[] = [];
+      let workflow: WorkflowMetadata = {};
+      let assistantMessageId: number | undefined;
 
         for await (const event of streamChat(
           query,
@@ -153,7 +156,17 @@ export function useChatStream() {
               result_type: event.result_type,
               required_issues: event.required_issues,
               covered_issues: event.covered_issues,
+              rule_id: event.rule_id,
+              rule_pack_version: event.rule_pack_version,
+              effective_dates: event.effective_dates,
+              corpus_as_of_date: event.corpus_as_of_date,
+              sources: event.sources,
+              replay_metadata: event.replay_metadata,
+              validation_errors: event.validation_errors,
+              citation_error: event.citation_error,
+              safe_stop_reason: event.safe_stop_reason,
             };
+            assistantMessageId = event.assistant_message_id ? Number(event.assistant_message_id) : undefined;
             if (event.case_state) setActiveCase(event.case_state);
             break;
           } else if (event.type === 'case_update' && event.case_state) {
@@ -165,7 +178,7 @@ export function useChatStream() {
           }
         }
 
-        updateLastAssistantMessage(fullContent, source, documents, workflow);
+        updateLastAssistantMessage(fullContent, source, documents, workflow, assistantMessageId);
         await refreshSessionList();
       } catch (error: unknown) {
         if (error instanceof Error && error.name === 'AbortError') {
@@ -241,6 +254,16 @@ export function useChatStream() {
 
       const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
       if (!lastUserMsg) return;
+      const previousAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
+      const replay = previousAssistant?.workflow?.replay_metadata;
+      const replayOptions: TurnOptions = replay ? {
+        operation: replay.operation === 'continue_case' ? 'continue_case' : 'message',
+        intentHint: replay.intent as TurnOptions['intentHint'],
+        interactionSource: replay.interaction_source as TurnOptions['interactionSource'],
+        casePatch: (replay.case_patch || {}) as Record<string, string>,
+        factUpdates: (replay.fact_updates || {}) as TurnOptions['factUpdates'],
+        replayMetadata: replay,
+      } : {};
 
       state.removeLastMessage();
 
@@ -252,7 +275,7 @@ export function useChatStream() {
       };
       state.addMessage(assistantMessage);
 
-      await runAssistantStream(lastUserMsg.content, sessionId);
+      await runAssistantStream(lastUserMsg.content, sessionId, 'auto', replayOptions);
     },
     [runAssistantStream]
   );

@@ -61,6 +61,23 @@ class MessageRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
 
+class FeedbackRecord(Base):
+    __tablename__ = "message_feedback"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    message_id: Mapped[int] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+
 class ConversationSummaryRecord(Base):
     __tablename__ = "conversation_summaries"
 
@@ -246,7 +263,7 @@ class PersistenceStore:
         user_message: str,
         assistant_message: str,
         metadata: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> int:
         await self.ensure_conversation(user_id, conversation_id, user_message)
         now = _utcnow()
         summary = "\n".join(
@@ -264,23 +281,106 @@ class PersistenceStore:
             conversation.updated_at = now
             if conversation.title == "New Conversation" and user_message.strip():
                 conversation.title = self._title(user_message)
-            session.add_all(
-                [
-                    MessageRecord(conversation_id=conversation_id, role="user", content=user_message, message_metadata={}),
-                    MessageRecord(
-                        conversation_id=conversation_id,
-                        role="assistant",
-                        content=assistant_message,
-                        message_metadata=dict(metadata or {}),
-                    ),
-                ]
+            user_record = MessageRecord(conversation_id=conversation_id, role="user", content=user_message, message_metadata={})
+            assistant_record = MessageRecord(
+                conversation_id=conversation_id,
+                role="assistant",
+                content=assistant_message,
+                message_metadata=dict(metadata or {}),
             )
+            session.add_all([user_record, assistant_record])
+            await session.flush()
             existing = await session.get(ConversationSummaryRecord, conversation_id)
             if existing is None:
                 session.add(ConversationSummaryRecord(conversation_id=conversation_id, summary=summary, updated_at=now))
             else:
                 existing.summary = summary
                 existing.updated_at = now
+            return int(assistant_record.id)
+
+    async def resolve_assistant_message_id(self, user_id: str, conversation_id: str, message_index: int) -> int | None:
+        """Resolve the legacy array index only inside the owned conversation."""
+
+        async with self.sessions() as session:
+            if await self._owned_conversation(session, user_id, conversation_id) is None:
+                return None
+            result = await session.execute(
+                select(MessageRecord)
+                .where(MessageRecord.conversation_id == conversation_id)
+                .order_by(MessageRecord.id)
+            )
+            messages = list(result.scalars().all())
+            if message_index < 0 or message_index >= len(messages):
+                return None
+            message = messages[message_index]
+            return int(message.id) if message.role == "assistant" else None
+
+    async def save_feedback(
+        self,
+        user_id: str,
+        conversation_id: str,
+        message_id: int,
+        rating: int,
+        comment: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Create or update feedback after enforcing conversation ownership."""
+
+        if rating not in {1, 2}:
+            raise ValueError("rating must be 1 or 2")
+        async with self.sessions() as session, session.begin():
+            conversation = await self._owned_conversation(session, user_id, conversation_id)
+            message = await session.get(MessageRecord, message_id)
+            if conversation is None or message is None or message.conversation_id != conversation_id or message.role != "assistant":
+                return None
+            result = await session.execute(
+                select(FeedbackRecord).where(
+                    FeedbackRecord.user_id == user_id,
+                    FeedbackRecord.message_id == message_id,
+                )
+            )
+            feedback = result.scalar_one_or_none()
+            now = _utcnow()
+            if feedback is None:
+                feedback = FeedbackRecord(
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    message_id=message_id,
+                    rating=rating,
+                    comment=comment,
+                    created_at=now,
+                    updated_at=now,
+                )
+                session.add(feedback)
+            else:
+                feedback.rating = rating
+                feedback.comment = comment
+                feedback.updated_at = now
+            await session.flush()
+            message_metadata = dict(message.message_metadata or {})
+            message_metadata["feedback"] = {"rating": rating, "comment": comment}
+            message.message_metadata = message_metadata
+            return {
+                "id": int(feedback.id) if feedback.id else None,
+                "conversation_id": conversation_id,
+                "message_id": message_id,
+                "rating": rating,
+                "comment": comment,
+                "updated_at": _timestamp(now),
+            }
+
+    async def feedback_stats(self) -> dict[str, Any]:
+        async with self.sessions() as session:
+            result = await session.execute(select(FeedbackRecord.rating))
+            ratings = [int(value) for value in result.scalars().all()]
+        total_up = sum(1 for rating in ratings if rating == 2)
+        total_down = sum(1 for rating in ratings if rating == 1)
+        total = len(ratings)
+        return {
+            "total_up": total_up,
+            "total_down": total_down,
+            "total_feedback": total,
+            "satisfaction_rate": round(total_up / total * 100, 1) if total else 0.0,
+        }
 
     async def get_recent_history(self, user_id: str, conversation_id: str, max_messages: int) -> list[dict[str, Any]]:
         async with self.sessions() as session:
@@ -430,6 +530,7 @@ class PersistenceStore:
             await session.execute(
                 delete(ConversationSummaryRecord).where(ConversationSummaryRecord.conversation_id == conversation_id)
             )
+            await session.execute(delete(FeedbackRecord).where(FeedbackRecord.conversation_id == conversation_id))
             await session.execute(delete(MessageRecord).where(MessageRecord.conversation_id == conversation_id))
             await session.delete(conversation)
         return True

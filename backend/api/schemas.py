@@ -27,6 +27,8 @@ class ChatRequest(BaseModel):
     ] = "auto"
     interaction_source: Literal["composer", "quick_action", "case_panel"] = "composer"
     case_patch: dict[str, str] = Field(default_factory=dict)
+    fact_updates: dict[str, ChatFactUpdate] = Field(default_factory=dict)
+    replay_metadata: dict[str, object] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_turn_contract(self) -> ChatRequest:
@@ -67,6 +69,18 @@ class ChatRequest(BaseModel):
                 "identifier must contain only letters, numbers, hyphens, or underscores"
             )
         return v
+
+
+class ChatFactUpdate(BaseModel):
+    """Typed case patch carried through chat and replay metadata."""
+
+    value: str = Field(default="", max_length=240)
+    confirmation_status: Literal["user_confirmed", "document_verified", "unknown"] = "unknown"
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def clean_value(cls, value: object) -> str:
+        return " ".join(str(value or "").split())[:240]
 
 
 class HealthResponse(BaseModel):

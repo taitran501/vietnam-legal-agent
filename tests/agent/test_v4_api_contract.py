@@ -42,3 +42,18 @@ def test_continue_case_can_be_patch_only_for_legacy_clients() -> None:
     assert request.query == ""
     assert request.operation == "continue_case"
     assert request.case_patch["activity_purpose"] == "kinh doanh thương mại"
+
+
+def test_typed_fact_updates_validate_confirmation_status() -> None:
+    request = ChatRequest(
+        operation="continue_case",
+        conversation_id="conversation-v4",
+        fact_updates={"annual_revenue_vnd": {"value": "30000000000", "confirmation_status": "user_confirmed"}},
+    )
+    assert request.fact_updates["annual_revenue_vnd"].confirmation_status == "user_confirmed"
+    with pytest.raises(ValidationError):
+        ChatRequest(
+            operation="continue_case",
+            conversation_id="conversation-v4",
+            fact_updates={"annual_revenue_vnd": {"value": "30000000000", "confirmation_status": "guessed"}},
+        )

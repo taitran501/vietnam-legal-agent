@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     redis_url: str = Field(default="redis://localhost:6379/0")
     cache_ttl_seconds: int = Field(default=3600)       # exact-match cache TTL
     corpus_version: str = Field(
-        default="epr-law-structure-v3",
+        default="epr-law-structure-v4-amendment-chain",
         description="Version included in bounded answer-cache keys after corpus changes",
     )
     corpus_id: str = Field(default="epr")
@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     )
     v4_route_confidence_threshold: float = Field(default=0.70, ge=0.0, le=1.0)
     appendix_xxii_data_path: Path = Field(default=BASE_DIR / "artifacts" / "appendix_xxii.jsonl")
+    amendment_map_path: Path = Field(default=BASE_DIR / "data" / "amendment_map.json")
+    rule_pack_path: Path = Field(default=BASE_DIR / "data" / "epr_rule_pack.json")
+    corpus_as_of_date: str | None = Field(
+        default=None,
+        description="Legally approved as-of date; build time is never substituted automatically",
+    )
     database_url: str | None = Field(
         default=None,
         description="PostgreSQL production source of truth; SQLite is used locally when unset",
@@ -97,6 +103,21 @@ class Settings(BaseSettings):
         default="",
         description="Comma-separated list of valid API keys (e.g. 'key1,key2')",
     )
+    service_token_definitions: str = Field(
+        default="",
+        description="name:sha256(token):scope1|scope2:role1|role2 entries separated by commas",
+    )
+    oidc_issuer: str | None = Field(default=None)
+    oidc_audience: str | None = Field(default=None)
+    oidc_client_id: str | None = Field(default=None)
+    oidc_required_group: str | None = Field(default=None)
+    oidc_allowed_algorithms: str = Field(default="RS256")
+    oidc_jwks_cache_seconds: int = Field(default=3600, ge=60, le=86400)
+    trusted_proxy_ips: str = Field(
+        default="",
+        description="Comma-separated proxy IPs allowed to supply X-Forwarded-For",
+    )
+    auth_migration_backup_path: Path = Field(default=BASE_DIR / "data" / "owner_migration_backup.json")
     require_auth: bool = Field(
         default=True,
         description="Whether to require API key authentication",
@@ -234,6 +255,10 @@ class Settings(BaseSettings):
             raise ValueError("AGENT_PIPELINE_VERSION must be pipeline-v3 or pipeline-v4")
         if self.agent_pipeline_version == "pipeline-v4" and self.index_schema_version == "legal-structure-v2":
             self.index_schema_version = "legal-structure-v2-v4-appendix1"
+        if self.oidc_issuer and not self.oidc_audience:
+            raise ValueError("OIDC_AUDIENCE is required when OIDC_ISSUER is configured")
+        if self.oidc_required_group and not self.oidc_issuer:
+            raise ValueError("OIDC_REQUIRED_GROUP requires OIDC_ISSUER")
         return self
 
     @model_validator(mode="after")

@@ -17,7 +17,7 @@ const fieldLabels: Record<string, string> = {
   market_placement: 'Phạm vi đưa ra thị trường',
   activity_purpose: 'Mục đích sản xuất hoặc nhập khẩu',
   annual_revenue_vnd: 'Doanh thu bán sản phẩm liên quan mỗi năm',
-  reused_by_producer: 'Doanh nghiệp có tự thu hồi và tái sử dụng bao bì không',
+  reused_by_producer: 'Bao bì có được chính doanh nghiệp thu hồi để tái sử dụng không',
   recovery_rate: 'Tỷ lệ thu hồi và tái sử dụng',
 };
 
@@ -97,7 +97,10 @@ interface CaseFactsPanelProps {
   conversationId: string | null;
   caseState: CaseState | null;
   onCaseChange: (caseState: CaseState) => void;
-  onContinue: (facts: Record<string, string>) => void;
+  onContinue: (
+    facts: Record<string, string>,
+    confirmationStatuses?: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>,
+  ) => void;
 }
 
 function plainFactValue(value: string | FactValue | undefined): string {
@@ -108,6 +111,10 @@ export function CaseFactsPanel({ conversationId, caseState, onCaseChange, onCont
   const [facts, setFacts] = useState<Record<string, string>>({});
   const [taskType, setTaskType] = useState<CaseState['task_type']>('assess_epr_obligation');
   const [saving, setSaving] = useState(false);
+  const [baseline, setBaseline] = useState<Record<string, string>>({});
+  const [confirmationStatuses, setConfirmationStatuses] = useState<Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>>({});
+  const [baselineConfirmationStatuses, setBaselineConfirmationStatuses] = useState<Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>>({});
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const nextFacts = Object.fromEntries(Object.entries(caseState?.facts || {}).map(([key, value]) => [key, plainFactValue(value)]));
@@ -115,6 +122,14 @@ export function CaseFactsPanel({ conversationId, caseState, onCaseChange, onCont
       if (!nextFacts[field.key] && field.value) nextFacts[field.key] = field.value;
     }
     setFacts(nextFacts);
+    setBaseline(nextFacts);
+    const nextStatuses = Object.fromEntries(Object.entries(caseState?.facts || {}).map(([key, value]) => [
+      key,
+      typeof value === 'string' ? 'unknown' : value.confirmation_status || 'unknown',
+    ])) as Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>;
+    setConfirmationStatuses(nextStatuses);
+    setBaselineConfirmationStatuses(nextStatuses);
+    setValidationErrors({});
     setTaskType(caseState?.task_type || 'assess_epr_obligation');
   }, [caseState]);
 
@@ -126,27 +141,74 @@ export function CaseFactsPanel({ conversationId, caseState, onCaseChange, onCont
     kind: fallbackOptions[key] ? 'select' : 'text',
     options: fallbackOptions[key] || [],
     required: true,
+    importance: 'required',
     missing: missing.has(key),
     value: facts[key] || '',
   }));
   const requiredFields = dynamicFields.filter((field) => field.required);
-  const filledRequired = requiredFields.filter((field) => Boolean(facts[field.key] || field.value)).length;
+  const filledRequired = requiredFields.filter((field) => Boolean(facts[field.key])).length;
+  const isDirty = JSON.stringify(facts) !== JSON.stringify(baseline);
+  const hasRequiredFacts = filledRequired === requiredFields.length && Object.keys(validationErrors).length === 0;
 
-  const save = async () => {
+  const validateField = (key: string, value: string): string | undefined => {
+    if (!value.trim()) return undefined;
+    if (key === 'annual_revenue_vnd' && (!/^\d+$/.test(value) || Number(value) > 1_000_000_000_000_000)) {
+      return 'Doanh thu phải là số nguyên không âm và không vượt quá 1.000.000.000.000.000 VNĐ.';
+    }
+    if (key === 'recovery_rate' && (!/^\d+(\.\d+)?$/.test(value) || Number(value) < 0 || Number(value) > 100)) {
+      return 'Tỷ lệ phải nằm trong khoảng 0–100.';
+    }
+    return undefined;
+  };
+
+  const changeFact = (key: string, value: string) => {
+    setFacts((current) => ({ ...current, [key]: value }));
+    setConfirmationStatuses((current) => ({ ...current, [key]: 'user_confirmed' }));
+    const error = validateField(key, value);
+    setValidationErrors((current) => {
+      const next = { ...current };
+      if (error) next[key] = error;
+      else delete next[key];
+      return next;
+    });
+  };
+
+  const save = async (): Promise<boolean> => {
     if (!conversationId) {
       toast.info('Hãy gửi câu hỏi đầu tiên để tạo hồ sơ đánh giá.');
-      return;
+      return false;
     }
+    if (Object.keys(validationErrors).length > 0) return false;
     setSaving(true);
     try {
-      const next = await updateCaseState(conversationId, facts, taskType);
+      const next = await updateCaseState(conversationId, facts, taskType, confirmationStatuses);
       onCaseChange(next);
+      setBaseline(facts);
+      setBaselineConfirmationStatuses(confirmationStatuses);
       toast.success('Đã cập nhật thông tin trường hợp');
+      return true;
     } catch {
       toast.error('Không thể lưu thông tin trường hợp');
+      return false;
     } finally {
       setSaving(false);
     }
+  };
+
+  const continueCase = async () => {
+    if (!hasRequiredFacts) {
+      toast.info('Hãy bổ sung và kiểm tra các thông tin bắt buộc trước khi tiếp tục.');
+      return;
+    }
+    const saved = isDirty ? await save() : true;
+    if (saved) onContinue(facts, confirmationStatuses);
+  };
+
+  const discard = () => {
+    if (isDirty && !window.confirm('Bỏ các thay đổi chưa lưu?')) return;
+    setFacts(baseline);
+    setConfirmationStatuses(baselineConfirmationStatuses);
+    setValidationErrors({});
   };
 
   return (
@@ -189,25 +251,29 @@ export function CaseFactsPanel({ conversationId, caseState, onCaseChange, onCont
           <label key={field.key} className="block text-sm font-medium text-[#3e4947]">
             <span className="flex items-center gap-1.5">
               {label}
+              {field.importance && <span className="text-[10px] font-normal uppercase tracking-wide text-[#667085]">{field.importance === 'required' ? 'bắt buộc' : field.importance === 'conditional' ? 'tùy trường hợp' : 'tham khảo'}</span>}
               {(missing.has(field.key) || field.missing) && <span className="text-xs font-normal text-[#9a5b18]">cần bổ sung</span>}
             </span>
-            {field.help_text && <span className="mt-1 block text-xs font-normal leading-5 text-[#7a8582]">{field.help_text}</span>}
+            <span className="mt-1 block text-xs font-normal leading-5 text-[#7a8582]">{field.help_text || 'Thông tin này có thể thay đổi kết luận hoặc căn cứ cần đối chiếu.'}</span>
             {field.kind === 'select' ? (
-              <select aria-label={label} value={facts[field.key] || field.value || ''} disabled={isDisabled} onChange={(event) => setFacts((current) => ({ ...current, [field.key]: event.target.value }))} className={`mt-1.5 w-full rounded-lg border bg-white px-3 py-2.5 text-sm text-[#172033] outline-none transition focus:ring-2 focus:ring-[#0f766e]/15 disabled:bg-[#f1f4f3] ${(missing.has(field.key) || field.missing) ? 'border-[#d7a65a] focus:border-[#b7791f]' : 'border-[#bdc9c6] focus:border-[#0f766e]'}`}>
+              <select aria-label={label} value={facts[field.key] || field.value || ''} disabled={isDisabled} onChange={(event) => changeFact(field.key, event.target.value)} className={`mt-1.5 w-full rounded-lg border bg-white px-3 py-2.5 text-sm text-[#172033] outline-none transition focus:ring-2 focus:ring-[#0f766e]/15 disabled:bg-[#f1f4f3] ${(missing.has(field.key) || field.missing) ? 'border-[#d7a65a] focus:border-[#b7791f]' : 'border-[#bdc9c6] focus:border-[#0f766e]'}`}>
                 <option value="">Chọn thông tin</option>
                 {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
             ) : (
-              <input aria-label={label} value={facts[field.key] || field.value || ''} disabled={isDisabled} onChange={(event) => setFacts((current) => ({ ...current, [field.key]: event.target.value }))} placeholder={field.kind === 'number' ? 'Nhập số tiền bằng VNĐ' : `Nhập ${label.toLowerCase()}`} type={field.kind === 'number' ? 'number' : 'text'} className={`mt-1.5 w-full rounded-lg border bg-white px-3 py-2.5 text-sm text-[#172033] outline-none transition placeholder:text-[#98a29f] focus:ring-2 focus:ring-[#0f766e]/15 disabled:bg-[#f1f4f3] ${(missing.has(field.key) || field.missing) ? 'border-[#d7a65a] focus:border-[#b7791f]' : 'border-[#bdc9c6] focus:border-[#0f766e]'}`} />
+              <input aria-label={label} value={facts[field.key] || field.value || ''} disabled={isDisabled} onChange={(event) => changeFact(field.key, event.target.value)} min={field.key === 'annual_revenue_vnd' || field.key === 'recovery_rate' ? 0 : undefined} max={field.key === 'annual_revenue_vnd' ? 1_000_000_000_000_000 : field.key === 'recovery_rate' ? 100 : undefined} step={field.key === 'recovery_rate' ? '0.01' : field.kind === 'number' ? '1' : undefined} placeholder={field.kind === 'number' ? 'Nhập số tiền bằng VNĐ' : `Nhập ${label.toLowerCase()}`} type={field.kind === 'number' ? 'number' : 'text'} className={`mt-1.5 w-full rounded-lg border bg-white px-3 py-2.5 text-sm text-[#172033] outline-none transition placeholder:text-[#98a29f] focus:ring-2 focus:ring-[#0f766e]/15 disabled:bg-[#f1f4f3] ${(missing.has(field.key) || field.missing) ? 'border-[#d7a65a] focus:border-[#b7791f]' : 'border-[#bdc9c6] focus:border-[#0f766e]'}`} />
             )}
+            {validationErrors[field.key] && <span className="mt-1 block text-xs font-normal text-[#ba1a1a]" role="alert">{validationErrors[field.key]}</span>}
+            {field.key === 'packaged_goods_category' && facts[field.key] === 'other' && <span className="mt-1 block text-xs font-normal text-[#9a5b18]">Nhóm “Khác” sẽ được giữ ở trạng thái chưa xác định nếu chưa có điều khoản đang áp dụng.</span>}
           </label>
           );
         })}
       </div>
 
       <div className="mt-5 rounded-lg border border-[#ead6b8] bg-[#fff8ea] p-3 text-xs leading-5 text-[#714b18]">
-        Chỉ nhập thông tin đã được xác nhận. Trợ lý không tự suy đoán dữ liệu doanh nghiệp còn thiếu.
+        Bạn đang xác nhận thông tin do mình nhập; điều này không có nghĩa là tài liệu hoặc cơ quan độc lập đã xác minh. Trợ lý không tự suy đoán dữ liệu doanh nghiệp còn thiếu.
       </div>
+      {isDirty && <button type="button" onClick={discard} disabled={isDisabled} className="mt-3 rounded-lg border border-[#bdc9c6] bg-white px-3 py-2 text-sm font-semibold text-[#3e4947] disabled:cursor-not-allowed">Bỏ thay đổi</button>}
       <button
         type="button"
         onClick={save}
@@ -216,8 +282,8 @@ export function CaseFactsPanel({ conversationId, caseState, onCaseChange, onCont
       >
         {saving ? 'Đang lưu…' : 'Lưu thông tin trường hợp'}
       </button>
-      <button type="button" onClick={() => onContinue(facts)} disabled={isDisabled || Boolean(caseState?.missing_facts.length)} className="mt-2 rounded-lg border border-[#0f766e] bg-white px-3 py-2.5 text-sm font-semibold text-[#006a63] transition hover:bg-[#f0faf8] disabled:cursor-not-allowed disabled:border-[#bdc9c6] disabled:text-[#7a8582]">
-        Tiếp tục đánh giá
+      <button type="button" onClick={() => void continueCase()} disabled={isDisabled || !hasRequiredFacts} className="mt-2 rounded-lg border border-[#0f766e] bg-white px-3 py-2.5 text-sm font-semibold text-[#006a63] transition hover:bg-[#f0faf8] disabled:cursor-not-allowed disabled:border-[#bdc9c6] disabled:text-[#7a8582]">
+        {isDirty ? 'Lưu và tiếp tục' : 'Tiếp tục đánh giá'}
       </button>
     </section>
   );

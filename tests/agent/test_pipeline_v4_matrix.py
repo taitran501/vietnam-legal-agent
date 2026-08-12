@@ -23,10 +23,10 @@ from epr_agent.domain.v4 import FactSource
 def test_v4_manifest_has_the_complete_contract_counts() -> None:
     assert len(QUERY_UNDERSTANDING_CASES) == 60
     assert len(E2E_TRAJECTORIES) == 40
-    assert len(ASSESSMENT_COMPLETE_CASES) == 12
+    assert len(ASSESSMENT_COMPLETE_CASES) == 11
     assert len(ASSESSMENT_MISSING_CASES) == 12
     assert len(EXEMPTION_CASES) == 8
-    assert len(INSUFFICIENT_EVIDENCE_CASES) == 4
+    assert len(INSUFFICIENT_EVIDENCE_CASES) == 5
     assert len(CHECKLIST_CASES) == 4
 
 

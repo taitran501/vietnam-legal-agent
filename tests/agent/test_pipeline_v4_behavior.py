@@ -202,3 +202,50 @@ async def test_v4_explicit_no_evidence_signal_stops_without_claim():
     assert state["result_type"] == "none"
     assert state["available_actions"] == ["research_web"]
     assert retrieval.requests == []
+
+
+@pytest.mark.asyncio
+async def test_delegated_legal_lookup_preserves_replay_descriptor(monkeypatch: pytest.MonkeyPatch):
+    history = MemoryHistory()
+    app, _ = runtime(history)
+    replay = {
+        "query_mode": "auto",
+        "intent": "legal_lookup",
+        "operation": "message",
+        "interaction_source": "composer",
+        "case_patch": {"market_placement": "vietnam_market"},
+        "fact_updates": {
+            "annual_revenue_vnd": {
+                "value": "30000000000",
+                "confirmation_status": "user_confirmed",
+            }
+        },
+    }
+
+    async def fake_run_workflow(*args, **kwargs):
+        return {
+            "query": args[0],
+            "user_id": kwargs["user_id"],
+            "conversation_id": kwargs["conversation_id"],
+            "trace_id": kwargs["trace_id"],
+            "termination_reason": "answer_complete",
+            "answer": "Điều 77 [1]",
+            "source": "legal",
+        }
+
+    monkeypatch.setattr("epr_agent.agent.v4.run_workflow", fake_run_workflow)
+    state = await app._execute(
+        query="Nghị định 08 Điều 77",
+        user_id="v4-user",
+        conversation_id="v4-replay",
+        intent_hint="legal_lookup",
+        interaction_source="composer",
+        case_patch=replay["case_patch"],
+        fact_updates=replay["fact_updates"],
+        replay_metadata=replay,
+    )
+
+    assert state["replay_metadata"] == replay
+    assert state["case_patch"] == replay["case_patch"]
+    assert state["fact_updates"] == replay["fact_updates"]
+    assert state["pipeline_version"] == "pipeline-v4"

@@ -23,9 +23,10 @@ cp .env.example .env
 npm run dev
 ```
 
-`VITE_API_BASE_URL` defaults to `http://localhost:8000`; `VITE_API_KEY` is
-optional for local development and must match the backend API-key configuration
-when authentication is enabled.
+`VITE_API_BASE_URL` defaults to `http://localhost:8000`. In an authenticated
+deployment configure `VITE_OIDC_ISSUER`, `VITE_OIDC_CLIENT_ID`, and the exact
+registered `VITE_OIDC_REDIRECT_URI`; the browser uses authorization-code PKCE
+and never receives a backend API key.
 
 ## Validation
 

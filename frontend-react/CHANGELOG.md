@@ -72,7 +72,7 @@ frontend-react/
 
 #### 🔧 Configuration
 - `VITE_API_BASE_URL` - Backend API URL (default: proxy to localhost:8000)
-- `VITE_API_KEY` - API key for authentication (optional)
+- `VITE_OIDC_ISSUER`, `VITE_OIDC_CLIENT_ID`, and `VITE_OIDC_REDIRECT_URI` - browser OIDC login configuration
 
 #### 🚀 Scripts
 ```bash

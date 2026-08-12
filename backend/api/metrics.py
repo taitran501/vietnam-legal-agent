@@ -254,7 +254,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         endpoint = request.url.path
         
         # Skip metrics endpoint itself
-        if endpoint == "/metrics":
+        if endpoint == "/internal/metrics":
             return await call_next(request)
         
         start_time = time.time()

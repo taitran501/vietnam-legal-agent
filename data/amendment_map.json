@@ -1,0 +1,35 @@
+{
+  "map_version": "epr-amendment-map-v1",
+  "supported_anchor_range": ["Điều 77", "Điều 86"],
+  "appendices": ["Phụ lục XXII"],
+  "review_status": "pending_legal_review",
+  "entries": [
+    {
+      "anchor": "Điều 77",
+      "base_document_id": "nd-08-2022-nd-cp",
+      "amendment_document_ids": ["nd-05-2025-nd-cp", "nd-48-2026-nd-cp"],
+      "active_source_document_id": "nd-48-2026-nd-cp",
+      "resolution_status": "source_chain_verified_text_extraction_pending",
+      "verified_by": null,
+      "notes": "The official 2026 record states that it amends the 2022 decree as amended in 2025. Exact changed paragraphs must be checked against signed source pages before promotion."
+    },
+    {
+      "anchor": "Điều 78-86",
+      "base_document_id": "nd-08-2022-nd-cp",
+      "amendment_document_ids": ["nd-05-2025-nd-cp", "nd-48-2026-nd-cp"],
+      "active_source_document_id": "nd-48-2026-nd-cp",
+      "resolution_status": "source_chain_verified_text_extraction_pending",
+      "verified_by": null,
+      "notes": "The range remains blocked as one unresolved group until each modified provision and relevant appendix row has a page-level source anchor."
+    },
+    {
+      "anchor": "Phụ lục XXII",
+      "base_document_id": "nd-08-2022-nd-cp",
+      "amendment_document_ids": ["nd-05-2025-nd-cp", "nd-48-2026-nd-cp"],
+      "active_source_document_id": "nd-48-2026-nd-cp",
+      "resolution_status": "source_chain_verified_text_extraction_pending",
+      "verified_by": null,
+      "notes": "Existing row-level extraction is tied to the 2022 source and cannot independently support a current-law conclusion until amendment rows are audited."
+    }
+  ]
+}

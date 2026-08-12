@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { ChatInput } from '@/components/Chat/ChatInput';
 import { MessageList } from '@/components/Chat/MessageList';
@@ -18,6 +18,8 @@ import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useChatStore } from '@/state/chatStore';
 import type { ReadinessResponse } from '@/types/api';
 import type { SourceDocument } from '@/types';
+import { beginLogin, completeLogin, getAuthSession, isOidcConfigured } from '@/auth/oidc';
+import { getMe } from '@/api/me';
 
 interface OpenSources {
   citations: Array<Record<string, unknown>>;
@@ -36,7 +38,7 @@ function LegalAssistantWorkspace() {
   const { conversationId } = useParams();
   const navigate = useNavigate();
   const { sendMessage, stopGeneration, regenerateResponse } = useChatStream();
-  const { loadSession, loadSessions } = useSessions();
+  const { loadSession } = useSessions();
   const {
     messages,
     isStreaming,
@@ -61,25 +63,25 @@ function LegalAssistantWorkspace() {
     localStorage.setItem('legal-sidebar', sidebarCollapsed ? 'collapsed' : 'expanded');
   }, [sidebarCollapsed]);
 
-  useEffect(() => {
-    const checkHealth = async () => {
+  const checkHealth = useCallback(async () => {
       try {
         const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
         const response = await fetch(`${baseUrl}/api/v1/ready`);
         const payload = await response.json().catch(() => null) as ReadinessResponse | null;
         if (response.ok && payload?.status === 'ready') {
           setReadiness('ready');
-          void loadSessions();
         } else if (payload?.corpus?.status === 'missing') setReadiness('missing');
         else setReadiness('preparing');
       } catch {
         setReadiness('offline');
       }
-    };
+    }, []);
+
+  useEffect(() => {
     void checkHealth();
     const interval = window.setInterval(() => void checkHealth(), 30_000);
     return () => window.clearInterval(interval);
-  }, [loadSessions]);
+  }, [checkHealth]);
 
   useEffect(() => {
     if (conversationId && conversationId !== activeSessionId) void loadSession(conversationId);
@@ -109,7 +111,10 @@ function LegalAssistantWorkspace() {
     setComposerDraft({ text, intent, interactionSource: 'quick_action' });
   };
 
-  const handleContinueCase = (facts: Record<string, string>) => {
+  const handleContinueCase = (
+    facts: Record<string, string>,
+    confirmationStatuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'> = {},
+  ) => {
     if (!activeSessionId || !isHealthy) return;
     const prompt = activeCase?.last_query || 'Tiếp tục đánh giá tình huống này.';
     void sendMessage(prompt, activeSessionId, 'auto', {
@@ -117,6 +122,10 @@ function LegalAssistantWorkspace() {
       intentHint: activeCase?.task_type === 'build_compliance_checklist' ? 'compliance_checklist' : 'case_assessment',
       interactionSource: 'case_panel',
       casePatch: facts,
+      factUpdates: Object.fromEntries(Object.entries(facts).map(([key, value]) => [key, {
+        value,
+        confirmation_status: confirmationStatuses[key] || 'user_confirmed',
+      }])),
     });
   };
 
@@ -195,7 +204,8 @@ function LegalAssistantWorkspace() {
         {!isHealthy && (
           <div className="flex shrink-0 items-center justify-center gap-2 border-b border-[#ead6b8] bg-[#fff8ea] px-4 py-2 text-center text-xs text-[#714b18]" role="status">
             <Icon name="wifiOff" size={15} />
-            {readiness === 'missing' ? 'Thiếu dữ liệu pháp luật. Hãy chạy indexer trước khi tra cứu.' : readiness === 'preparing' ? 'Đang chuẩn bị dữ liệu pháp luật. Bạn sẽ có thể hỏi ngay khi index hoàn tất.' : 'Không thể kết nối tới máy chủ. Lịch sử hiện có vẫn có thể xem, nhưng chưa thể gửi câu hỏi mới.'}
+            {readiness === 'missing' ? 'Thiếu dữ liệu pháp luật. Hãy chạy indexer trước khi tra cứu.' : readiness === 'preparing' ? 'Đang chuẩn bị hoặc kiểm duyệt dữ liệu pháp luật. Bạn sẽ có thể hỏi ngay khi corpus được phê duyệt.' : 'Không thể kết nối tới máy chủ. Lịch sử hiện có vẫn có thể xem, nhưng chưa thể gửi câu hỏi mới.'}
+            <button className="rounded border border-[#d8b77c] px-2 py-1 font-medium hover:bg-[#fff0cf]" onClick={() => void checkHealth()} type="button">Thử lại</button>
           </div>
         )}
 
@@ -270,6 +280,55 @@ function LegalAssistantWorkspace() {
 }
 
 export default function App() {
+  const [authState, setAuthState] = useState<'ready' | 'loading' | 'error'>('loading');
+  const [authError, setAuthError] = useState('');
+  const initialised = useRef(false);
+
+  const initialiseAuth = useCallback(async () => {
+    if (!isOidcConfigured()) {
+      setAuthState('ready');
+      return;
+    }
+    setAuthState('loading');
+    setAuthError('');
+    try {
+      await completeLogin();
+      if (!getAuthSession()) {
+        await beginLogin();
+        return;
+      }
+      await getMe();
+      setAuthState('ready');
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Không thể xác thực với SSO');
+      setAuthState('error');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (initialised.current) return;
+    initialised.current = true;
+    void initialiseAuth();
+  }, [initialiseAuth]);
+
+  if (isOidcConfigured() && authState !== 'ready') {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#fcfcfa] p-6 text-[#172033]">
+        <section className="w-full max-w-md rounded-2xl border border-[#d9e1df] bg-white p-7 shadow-sm">
+          <h1 className="text-lg font-semibold">Trợ lý pháp lý EPR</h1>
+          <p className="mt-2 text-sm text-[#667085]">
+            {authState === 'loading' ? 'Đang xác thực tài khoản nội bộ…' : authError}
+          </p>
+          {authState === 'error' && (
+            <button className="mt-5 rounded-lg bg-[#0f766e] px-4 py-2 text-sm font-semibold text-white" onClick={() => void initialiseAuth()} type="button">
+              Đăng nhập lại
+            </button>
+          )}
+        </section>
+      </main>
+    );
+  }
+
   return (
     <Routes>
       <Route path="/" element={<LegalAssistantWorkspace />} />

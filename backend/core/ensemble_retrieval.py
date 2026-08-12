@@ -953,20 +953,29 @@ class _EnsembleRetriever:
         # absent, detect that once and keep the active heuristic ranking quiet.
         self._cross_encoder_shadow_available = True
 
-    def invoke(self, query: str) -> list[Document]:
+    def invoke(
+        self,
+        query: str,
+        *,
+        required_anchors: list[str] | None = None,
+        metadata_filters: dict[str, str] | None = None,
+    ) -> list[Document]:
         """Retrieve documents using semantic-first approach."""
         started = time.perf_counter()
         stage_ms: dict[str, float] = {}
+        required_anchors = [str(anchor).strip() for anchor in (required_anchors or []) if str(anchor).strip()]
+        metadata_filters = {str(key): str(value) for key, value in (metadata_filters or {}).items() if str(value).strip()}
+        retrieval_query = " ".join([query, *required_anchors]).strip()
 
         # Step 1: Run semantic + lexical retrieval in parallel.
         def _timed_semantic() -> tuple[list[Document], float]:
             stage_started = time.perf_counter()
-            docs = self._retrieve_semantic(query, k=self.semantic_k)
+            docs = self._retrieve_semantic(retrieval_query, k=self.semantic_k)
             return docs, (time.perf_counter() - stage_started) * 1000
 
         def _timed_lexical() -> tuple[list[Document], float]:
             stage_started = time.perf_counter()
-            docs = self._retrieve_lexical(query, k=self.lexical_k)
+            docs = self._retrieve_lexical(retrieval_query, k=self.lexical_k)
             return docs, (time.perf_counter() - stage_started) * 1000
 
         stage_started = time.perf_counter()
@@ -982,7 +991,7 @@ class _EnsembleRetriever:
 
         # Step 2: Parse every explicit anchor before an LLM can rewrite it.
         stage_started = time.perf_counter()
-        anchors = explicit_anchors(query)
+        anchors = explicit_anchors(retrieval_query)
         stage_ms["parse"] = round((time.perf_counter() - stage_started) * 1000, 1)
         explicit_articles = [anchor.article for anchor in anchors if anchor.article]
 
@@ -1003,6 +1012,21 @@ class _EnsembleRetriever:
             query,
             explicit_articles,
         )
+        if metadata_filters:
+            final_docs = [
+                document
+                for document in final_docs
+                if all(
+                    str(document.metadata.get(key, "")).casefold() == value.casefold()
+                    for key, value in metadata_filters.items()
+                )
+            ]
+        for document in final_docs:
+            document.metadata.setdefault("typed_retrieval", {})
+            document.metadata["typed_retrieval"].update({
+                "required_anchors": required_anchors,
+                "metadata_filters": metadata_filters,
+            })
         stage_ms["rerank_merge"] = round((time.perf_counter() - stage_started) * 1000, 1)
 
         stage_ms["total"] = round((time.perf_counter() - started) * 1000, 1)
@@ -1447,7 +1471,13 @@ class _EnsembleRetriever:
 # Public API
 # ---------------------------------------------------------------------------
 
-def retrieve_legal_ensemble(query: str, k: int = 10) -> list[Document]:
+def retrieve_legal_ensemble(
+    query: str,
+    k: int = 10,
+    *,
+    required_anchors: list[str] | None = None,
+    metadata_filters: dict[str, str] | None = None,
+) -> list[Document]:
     """
     Retrieve legal documents using semantic-first ensemble.
 
@@ -1461,4 +1491,8 @@ def retrieve_legal_ensemble(query: str, k: int = 10) -> list[Document]:
         List of relevant documents, ranked by relevance score
     """
     retriever = _get_ensemble_retriever(k=k)
-    return retriever.invoke(query)
+    return retriever.invoke(
+        query,
+        required_anchors=required_anchors,
+        metadata_filters=metadata_filters,
+    )

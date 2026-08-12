@@ -1,6 +1,11 @@
 {
   "corpus_id": "epr",
-  "corpus_version": "epr-law-structure-v3",
+  "corpus_version": "epr-law-structure-v4-amendment-chain",
+  "corpus_as_of_date": null,
+  "legal_review_status": "pending",
+  "promotion_status": "blocked_until_legal_review_and_extraction",
+  "amendment_map_file": "data/amendment_map.json",
+  "rule_pack_file": "data/epr_rule_pack.json",
   "documents": [
     {
       "document_id": "nd-08-2022-nd-cp",
@@ -12,7 +17,54 @@
       "effective_to": null,
       "scope": "Quy định EPR về trách nhiệm tái chế và xử lý sản phẩm, bao bì.",
       "source_file": "data/08_2022_ND-CP_479457.doc",
-      "source_uri": null
+      "source_uri": "https://vanban.chinhphu.vn/?docid=205092&pageid=27160",
+      "source_sha256": "2B7D7C57AA9FAC226BC56D480622A5FBE6BDC6C3FF6EBFD566C6987250113854",
+      "signed_source_file": "data/08_2022_ND-CP.signed.pdf",
+      "signed_source_sha256": "28F893CCBBA3A8E3B13F15816840140A2BCB6838D2FD6A1C053AFC05AC82D35F",
+      "records_file": "data/law.json",
+      "precedence": 10,
+      "amends": [],
+      "status": "base_source"
+    },
+    {
+      "document_id": "nd-05-2025-nd-cp",
+      "title": "Nghị định số 05/2025/NĐ-CP sửa đổi, bổ sung một số điều của Nghị định số 08/2022/NĐ-CP",
+      "number": "05/2025/NĐ-CP",
+      "issuer": "Chính phủ",
+      "jurisdiction": "Việt Nam",
+      "effective_from": "2025-01-10",
+      "effective_to": null,
+      "scope": "Sửa đổi, bổ sung các quy định có liên quan đến trách nhiệm mở rộng của nhà sản xuất, nhập khẩu.",
+      "source_file": "data/05_2025_ND-CP.signed.pdf",
+      "source_uri": "https://vanban.chinhphu.vn/?classid=1&docid=212284&orggroupid=2&pageid=27160",
+      "source_sha256": "5EA433F7C4D94981C86478D050A28EEAB99F36F8E620F367BE90DF1A8DEAC916",
+      "signed_source_file": "data/05_2025_ND-CP.signed.pdf",
+      "signed_source_sha256": "5EA433F7C4D94981C86478D050A28EEAB99F36F8E620F367BE90DF1A8DEAC916",
+      "records_file": null,
+      "precedence": 20,
+      "amends": ["nd-08-2022-nd-cp"],
+      "affected_anchors": ["Điều 77", "Điều 78", "Điều 79", "Điều 80", "Điều 81", "Điều 82", "Điều 83", "Điều 84", "Điều 85", "Điều 86", "Phụ lục XXII"],
+      "status": "source_verified_extraction_pending"
+    },
+    {
+      "document_id": "nd-48-2026-nd-cp",
+      "title": "Nghị định số 48/2026/NĐ-CP sửa đổi, bổ sung một số điều của Nghị định số 08/2022/NĐ-CP đã được sửa đổi, bổ sung bởi Nghị định số 05/2025/NĐ-CP",
+      "number": "48/2026/NĐ-CP",
+      "issuer": "Chính phủ",
+      "jurisdiction": "Việt Nam",
+      "effective_from": "2026-01-29",
+      "effective_to": null,
+      "scope": "Sửa đổi, bổ sung Nghị định số 08/2022/NĐ-CP theo chuỗi văn bản đã được cập nhật.",
+      "source_file": "data/48_2026_ND-CP.signed.pdf",
+      "source_uri": "https://vanban.chinhphu.vn/?classid=1&docid=216867&pageid=27160&typegroupid=4",
+      "source_sha256": "3902145D9D3FB8201B501076A5ABB3C828A97E5D877206E2220456DC9A17ABBB",
+      "signed_source_file": "data/48_2026_ND-CP.signed.pdf",
+      "signed_source_sha256": "3902145D9D3FB8201B501076A5ABB3C828A97E5D877206E2220456DC9A17ABBB",
+      "records_file": null,
+      "precedence": 30,
+      "amends": ["nd-08-2022-nd-cp", "nd-05-2025-nd-cp"],
+      "affected_anchors": ["Điều 77", "Điều 78", "Điều 79", "Điều 80", "Điều 81", "Điều 82", "Điều 83", "Điều 84", "Điều 85", "Điều 86", "Phụ lục XXII"],
+      "status": "source_verified_extraction_pending"
     }
   ]
 }

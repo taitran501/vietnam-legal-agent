@@ -9,6 +9,7 @@ was unsafe.  The public runtime interface remains identical to V3.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -18,6 +19,8 @@ from uuid import uuid4
 from epr_agent.agent.graph import create_initial_state, run_workflow
 from epr_agent.agent.runtime import WorkflowRuntime, _documents_for_api, _metadata, split_verified_answer_for_stream
 from epr_agent.domain.epr_rules import (
+    EPR_EFFECTIVE_DATES,
+    EPR_RULE_ID,
     EPR_RULE_PACK_VERSION,
     case_fields,
     evaluate_assessment,
@@ -25,6 +28,7 @@ from epr_agent.domain.epr_rules import (
     follow_up_question,
     legal_issues,
     missing_fact_keys,
+    validate_fact_value,
 )
 from epr_agent.domain.models import (
     Action,
@@ -40,6 +44,7 @@ from epr_agent.domain.tasks import classify_route, has_explicit_no_evidence_sign
 from epr_agent.domain.v4 import (
     AssessmentStatus,
     CaseStateV4,
+    FactConfirmationStatus,
     FactSource,
     FactValue,
     InteractionSource,
@@ -50,6 +55,8 @@ from epr_agent.domain.v4 import (
     WorkflowOutcome,
 )
 from epr_agent.tools.evidence import build_citations
+
+logger = logging.getLogger(__name__)
 
 _PHASES = {
     Action.VALIDATE_INPUT.value: ("understand", "Hiểu yêu cầu"),
@@ -153,6 +160,8 @@ def _metadata_v4(state: AgentState) -> dict[str, Any]:
             "required_issues": state.get("required_issues", []),
             "covered_issues": state.get("covered_issues", []),
             "rule_pack_version": EPR_RULE_PACK_VERSION,
+            "rule_id": state.get("rule_id", EPR_RULE_ID),
+            "effective_dates": EPR_EFFECTIVE_DATES,
             "case_fields": state.get("case_fields", []),
         }
     )
@@ -183,6 +192,10 @@ def _terminal_safe_stop(
     state["available_actions"] = list(available_actions or [])
     state["citation_valid"] = False
     state["citation_error"] = reason_code
+    state["safe_stop_reason"] = {
+        "outside_registered_corpus": "out_of_scope",
+        "explicit_no_evidence_signal": "missing_provision",
+    }.get(reason_code, reason_code)
     if state.get("trace_events"):
         state["trace_events"][-1]["reason_code"] = reason_code
         state["trace_events"][-1]["payload"] = {
@@ -214,6 +227,21 @@ class V4WorkflowRuntime(WorkflowRuntime):
         state["intent_hint"] = str(kwargs.get("intent_hint") or "auto")
         state["interaction_source"] = str(kwargs.get("interaction_source") or InteractionSource.COMPOSER.value)
         state["case_patch"] = dict(kwargs.get("case_patch") or {})
+        state["fact_updates"] = dict(kwargs.get("fact_updates") or {})
+        replay_defaults = {
+            "query_mode": state.get("mode", "auto"),
+            "intent": state.get("intent_hint", "auto"),
+            "operation": state.get("operation", TurnOperation.MESSAGE.value),
+            "interaction_source": state.get("interaction_source", InteractionSource.COMPOSER.value),
+            "case_patch": state.get("case_patch", {}),
+            "fact_updates": state.get("fact_updates", {}),
+        }
+        replay_defaults.update(dict(kwargs.get("replay_metadata") or {}))
+        state["replay_metadata"] = replay_defaults
+        from backend.config import get_settings
+
+        state["corpus_as_of_date"] = str(get_settings().corpus_as_of_date or "")
+        state["rule_id"] = EPR_RULE_ID
         return state
 
     async def _execute_case(self, state: AgentState) -> AgentState:
@@ -259,10 +287,57 @@ class V4WorkflowRuntime(WorkflowRuntime):
         facts = _fact_values(cast(dict[str, Any] | None, active.get("facts")))
         turn_id = state.get("trace_id", "")
         facts.update(extract_explicit_epr_facts(state.get("query", ""), turn_id=turn_id))
+        invalid_facts: dict[str, str] = {}
         for key, raw in dict(cast(dict[str, str] | None, state.get("case_patch")) or {}).items():
-            text = " ".join(str(raw or "").split())
+            try:
+                text = validate_fact_value(key, " ".join(str(raw or "").split()))
+            except ValueError as exc:
+                invalid_facts[key] = str(exc)
+                continue
             if text:
-                facts[key] = FactValue(value=text, source=FactSource.CASE_PANEL, source_turn=turn_id, confidence=1.0, verified=True)
+                facts[key] = FactValue(
+                    value=text,
+                    source=FactSource.CASE_PANEL,
+                    source_turn=turn_id,
+                    confidence=1.0,
+                    verified=False,
+                    confirmation_status=FactConfirmationStatus.USER_CONFIRMED,
+                )
+        for key, raw in dict(state.get("fact_updates") or {}).items():
+            update = raw if isinstance(raw, dict) else {"value": raw}
+            raw_value = " ".join(str(update.get("value") or "").split())
+            if not raw_value:
+                facts.pop(key, None)
+                continue
+            try:
+                text = validate_fact_value(key, raw_value)
+                confirmation_status = FactConfirmationStatus(
+                    str(update.get("confirmation_status") or FactConfirmationStatus.UNKNOWN.value)
+                )
+            except (ValueError, TypeError) as exc:
+                invalid_facts[key] = str(exc)
+                continue
+            facts[key] = FactValue(
+                value=text,
+                source=FactSource.CASE_PANEL,
+                source_turn=turn_id,
+                confidence=1.0,
+                verified=False,
+                confirmation_status=confirmation_status,
+            )
+        if invalid_facts:
+            state["route"] = route.value
+            state["source_scope"] = "legal_corpus"
+            state["answer"] = "Một hoặc nhiều thông tin chưa hợp lệ: " + "; ".join(
+                f"{key}: {message}" for key, message in invalid_facts.items()
+            )
+            state["source"] = "error"
+            state["outcome"] = WorkflowOutcome.NEEDS_INFORMATION.value
+            state["result_type"] = ResultType.NONE.value
+            state["termination_reason"] = TerminationReason.AWAITING_USER_INPUT.value
+            state["missing_facts"] = list(invalid_facts)
+            state["validation_errors"] = invalid_facts
+            return state
         missing = missing_fact_keys(facts)
         case = CaseStateV4(
             task_type=task.value,
@@ -335,7 +410,13 @@ class V4WorkflowRuntime(WorkflowRuntime):
                 for request in requests
             ],
         }
-        results = await asyncio.gather(*(self.deps.retrieval.legal(request) for request in requests), return_exceptions=True)
+        semaphore = asyncio.Semaphore(4)
+
+        async def retrieve_issue(request: RetrievalRequest):
+            async with semaphore:
+                return await self.deps.retrieval.legal(request)
+
+        results = await asyncio.gather(*(retrieve_issue(request) for request in requests), return_exceptions=True)
         bundles: dict[str, list[dict[str, Any]]] = {}
         all_documents: dict[str, dict[str, Any]] = {}
         for issue, retrieval_result in zip(issues, results, strict=True):
@@ -412,11 +493,18 @@ class V4WorkflowRuntime(WorkflowRuntime):
                 termination_reason=TerminationReason.INSUFFICIENT_EVIDENCE.value,
                 evidence_status="insufficient",
                 available_actions=[RouteType.RESEARCH_WEB.value],
+                safe_stop_reason="incomplete_issue_coverage",
             )
             return state
 
         append_action(state, Action.COMPOSE_ANSWER)
         result = evaluate_assessment(facts, evidence_ids=evidence_ids)
+        result = result.model_copy(update={
+            "rule_id": state.get("rule_id", EPR_RULE_ID),
+            "active_evidence_ids": list(dict.fromkeys(item for values in evidence_ids.values() for item in values)),
+            "corpus_version": str(state.get("corpus_version", "")),
+            "corpus_as_of_date": str(state.get("corpus_as_of_date", "")),
+        })
         if result.status == AssessmentStatus.NEEDS_INFORMATION:
             # Defensive invariant: deterministic evaluation cannot finish a
             # case if its own decision tree discovered a missing field.
@@ -440,9 +528,24 @@ class V4WorkflowRuntime(WorkflowRuntime):
                 termination_reason=TerminationReason.INSUFFICIENT_EVIDENCE.value,
                 evidence_status="insufficient",
                 available_actions=[RouteType.RESEARCH_WEB.value],
+                safe_stop_reason="invalid_or_unresolved_fact",
             )
             return state
         citations = build_citations([type("Doc", (), {"metadata": doc.get("metadata", {}), "document_id": doc.get("document_id", "")})() for doc in state["evidence"]])
+        if not citations:
+            cast(dict[str, Any], state).update(
+                answer="Chưa thể hoàn tất vì các nguồn truy xuất chưa tạo được vị trí trích dẫn kiểm chứng.",
+                source="error",
+                outcome=WorkflowOutcome.INSUFFICIENT_EVIDENCE.value,
+                result_type=ResultType.NONE.value,
+                termination_reason=TerminationReason.INSUFFICIENT_EVIDENCE.value,
+                evidence_status="insufficient",
+                available_actions=[RouteType.RESEARCH_WEB.value],
+                citation_valid=False,
+                citation_error="citation_verification_failed",
+                safe_stop_reason="failed_citation_verification",
+            )
+            return state
         index_by_id = {citation.document_id: citation.index for citation in citations}
         lines = [result.conclusion]
         for reason in result.reasons:
@@ -481,9 +584,15 @@ class V4WorkflowRuntime(WorkflowRuntime):
         active_case = None
         if hint in {RouteType.CASE_ASSESSMENT.value, RouteType.COMPLIANCE_CHECKLIST.value} or state.get("operation") == TurnOperation.CONTINUE_CASE.value:
             return await self._execute_case(state)
-        # Auto routing keeps V3's accepted routes.  A detected case is then
-        # rerun through V4 before any retrieval occurs.
-        route = classify_route(state.get("query", ""), None, active_case)
+        # Load the active case before automatic routing.  Terse follow-ups
+        # such as "doanh thu 20 tỷ" must continue the existing assessment
+        # instead of being treated as an out-of-scope standalone query.
+        snapshot = await self.deps.history.load(state["user_id"], state["conversation_id"], self.deps.max_history_messages)
+        state["history"] = snapshot.history
+        state["history_summary"] = snapshot.summary
+        active_case = snapshot.active_case
+        state["active_case"] = active_case
+        route = classify_route(state.get("query", ""), snapshot.history, active_case)
         if route in {RouteType.CASE_ASSESSMENT, RouteType.COMPLIANCE_CHECKLIST}:
             return await self._execute_case(state)
         if route == RouteType.OUT_OF_SCOPE:
@@ -510,8 +619,23 @@ class V4WorkflowRuntime(WorkflowRuntime):
         delegated = await run_workflow(
             state["query"], user_id=state["user_id"], conversation_id=state["conversation_id"],
             legacy_session_id=state.get("legacy_session_id", ""), mode=state.get("mode", "auto"), deps=self.deps,
-            trace_id=state["trace_id"],
+            trace_id=state["trace_id"], compiled_workflow=self._compiled_workflow,
         )
+        # The bounded V4 router delegates ordinary legal lookups to the
+        # already-accepted V3 graph.  Copy the V4 request descriptor back onto
+        # that result so replay, retry, regeneration, and persistence retain
+        # the user's original operation instead of silently falling back to
+        # the legacy defaults.
+        delegated["operation"] = state.get("operation", TurnOperation.MESSAGE.value)
+        delegated["intent_hint"] = state.get("intent_hint", "auto")
+        delegated["interaction_source"] = state.get(
+            "interaction_source", InteractionSource.COMPOSER.value
+        )
+        delegated["case_patch"] = dict(state.get("case_patch") or {})
+        delegated["fact_updates"] = dict(state.get("fact_updates") or {})
+        delegated["replay_metadata"] = dict(state.get("replay_metadata") or {})
+        delegated["corpus_as_of_date"] = state.get("corpus_as_of_date", "")
+        delegated["rule_id"] = state.get("rule_id", EPR_RULE_ID)
         delegated["pipeline_version"] = "pipeline-v4"
         delegated["outcome"] = WorkflowOutcome.COMPLETED.value if delegated.get("termination_reason") in {TerminationReason.ANSWER_COMPLETE.value, TerminationReason.CACHE_HIT.value, TerminationReason.RESEARCH_COMPLETE.value} else (
             WorkflowOutcome.NEEDS_INFORMATION.value if delegated.get("termination_reason") == TerminationReason.AWAITING_USER_INPUT.value else WorkflowOutcome.INSUFFICIENT_EVIDENCE.value if delegated.get("termination_reason") == TerminationReason.INSUFFICIENT_EVIDENCE.value else WorkflowOutcome.OUT_OF_SCOPE.value if delegated.get("termination_reason") == TerminationReason.OUT_OF_SCOPE.value else WorkflowOutcome.FAILED.value
@@ -551,9 +675,11 @@ class V4WorkflowRuntime(WorkflowRuntime):
                 await self.deps.history.clear_case(user_id, conversation_id)
                 state["case_state"] = {**dict(active_case), "status": "completed", "missing_facts": []}
 
-            await self.deps.history.save_exchange(
+            assistant_message_id = await self.deps.history.save_exchange(
                 user_id, conversation_id, state.get("query", ""), state.get("answer", ""), _metadata_v4(state)
             )
+            if assistant_message_id is not None:
+                state["assistant_message_id"] = str(assistant_message_id)
             state["cache_status"] = "not_cacheable"
         finally:
             await self.deps.history.record_run(state, started_at, time.perf_counter())
@@ -588,10 +714,36 @@ class V4WorkflowRuntime(WorkflowRuntime):
             "label": "Hiểu yêu cầu",
             "status": "running",
         })
-        state = await self._execute(**request_kwargs)
+        try:
+            state = await self._execute(**request_kwargs)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("V4 workflow execution failed", extra={"trace_id": trace_id})
+            yield emit({
+                "type": "error",
+                "code": "v4_execution_failed",
+                "message": "Không thể hoàn tất workflow. Bạn có thể thử lại.",
+                "retryable": True,
+                "retry_after_seconds": 2,
+            })
+            return
         state["run_ended_at"] = datetime.now(UTC).isoformat()
         state["run_duration_ms"] = round((time.perf_counter() - started) * 1000, 2)
-        await self._persist(state, started_at=started)
+        try:
+            await self._persist(state, started_at=started)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("V4 workflow persistence failed", extra={"trace_id": trace_id})
+            yield emit({
+                "type": "error",
+                "code": "v4_persistence_failed",
+                "message": "Câu trả lời đã được tạo nhưng chưa lưu được vào lịch sử. Bạn có thể thử lại.",
+                "retryable": True,
+                "retry_after_seconds": 2,
+            })
+            return
         trace_id = str(state.get("trace_id") or trace_id)
         seen: set[str] = set()
         step = 0

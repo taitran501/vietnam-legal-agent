@@ -1,12 +1,8 @@
-"""
-Authentication middleware for API key validation.
+"""Authentication middleware for OIDC principals and service credentials.
 
-Supports:
-- Multiple API keys via comma-separated API_KEYS env var
-- Optional auth for development (REQUIRE_AUTH=false)
-- Public endpoints (health, metrics) that don't require auth
-- Constant-time comparison to prevent timing attacks
-- Rate limiting on failed auth attempts
+Legacy API keys remain available only as a short compatibility bridge for
+existing non-browser callers and tests.  Routes receive a typed principal and
+never use a raw credential as an owner or rate-limit identifier.
 """
 
 from __future__ import annotations
@@ -19,149 +15,143 @@ from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
+from backend.api.principal import (
+    AuthenticationError,
+    Principal,
+    principal_from_legacy_api_key,
+    principal_from_service_token,
+    validate_oidc_token,
+)
 from backend.config import get_settings
 from backend.memory.session_store import get_redis
 
 logger = logging.getLogger(__name__)
 
-# Public endpoints that don't require authentication
 PUBLIC_ENDPOINTS = {
     "/api/v1/health",
     "/api/v1/ready",
-    "/metrics",
     "/",
 }
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
-    """Validates API keys on incoming requests with constant-time comparison."""
+    """Resolve OIDC, service-token, and legacy test principals."""
 
     def __init__(self, app, valid_keys: set[str] | None = None):
         super().__init__(app)
         self.valid_keys = valid_keys or set()
-        self._failed_attempts = {}  # In-memory rate limiting for failed auths
+        self._failed_attempts = {}
         self._max_failed_attempts = 10
-        self._ban_window = 300  # 5 minutes
+        self._ban_window = 300
 
     def _is_valid_key(self, api_key: str) -> bool:
-        """Validate API key using constant-time comparison to prevent timing attacks.
-        
-        CRITICAL FIX: Uses hmac.compare_digest() instead of == operator
-        to prevent timing-based side-channel attacks.
-        """
-        for valid_key in self.valid_keys:
-            if hmac.compare_digest(api_key, valid_key):
-                return True
-        return False
+        return any(hmac.compare_digest(api_key, valid_key) for valid_key in self.valid_keys)
 
     async def _check_rate_limit(self, client_ip: str) -> bool:
-        """Check if client has exceeded failed auth attempts."""
         try:
-            # Use Redis for distributed rate limiting on failed auths
             redis_client = await get_redis()
-            key = f"auth:failed:{client_ip}"
-            attempts = await redis_client.get(key)
-            attempts = int(attempts) if attempts else 0
-            
-            return attempts < self._max_failed_attempts
-        except Exception:  # noqa: BLE001 - authentication must retain its local rate-limit fallback
-            # Fall back to in-memory tracking
+            attempts = await redis_client.get(f"auth:failed:{client_ip}")
+            return (int(attempts) if attempts else 0) < self._max_failed_attempts
+        except Exception:  # noqa: BLE001 - auth keeps a local fallback
             now = time.time()
-            if client_ip in self._failed_attempts:
-                count, timestamp = self._failed_attempts[client_ip]
-                if now - timestamp > self._ban_window:
-                    del self._failed_attempts[client_ip]
-                elif count >= self._max_failed_attempts:
+            current = self._failed_attempts.get(client_ip)
+            if current:
+                count, timestamp = current
+                if now - timestamp <= self._ban_window and count >= self._max_failed_attempts:
                     return False
-            
+                if now - timestamp > self._ban_window:
+                    self._failed_attempts.pop(client_ip, None)
             return True
 
-    async def _record_failed_attempt(self, client_ip: str):
-        """Record failed authentication attempt."""
+    async def _record_failed_attempt(self, client_ip: str) -> None:
         try:
             redis_client = await get_redis()
-            key = f"auth:failed:{client_ip}"
             pipe = redis_client.pipeline()
-            pipe.incr(key)
-            pipe.expire(key, self._ban_window)
+            pipe.incr(f"auth:failed:{client_ip}")
+            pipe.expire(f"auth:failed:{client_ip}", self._ban_window)
             await pipe.execute()
-        except Exception:  # noqa: BLE001 - authentication must retain its local rate-limit fallback
-            # Fall back to in-memory
+        except Exception:  # noqa: BLE001 - auth keeps a local fallback
             now = time.time()
-            if client_ip in self._failed_attempts:
-                count, timestamp = self._failed_attempts[client_ip]
-                if now - timestamp > self._ban_window:
-                    self._failed_attempts[client_ip] = (1, now)
-                else:
-                    self._failed_attempts[client_ip] = (count + 1, now)
-            else:
-                self._failed_attempts[client_ip] = (1, now)
+            count, timestamp = self._failed_attempts.get(client_ip, (0, now))
+            self._failed_attempts[client_ip] = (count + 1 if now - timestamp <= self._ban_window else 1, now)
+
+    @staticmethod
+    def _client_ip(request: Request, settings) -> str:
+        client_host = request.client.host if request.client else "unknown"
+        trusted = {
+            value.strip()
+            for value in str(getattr(settings, "trusted_proxy_ips", "") or "").split(",")
+            if value.strip()
+        }
+        if client_host in trusted:
+            forwarded = request.headers.get("X-Forwarded-For", "")
+            if forwarded:
+                return forwarded.split(",")[0].strip()
+        return client_host
 
     async def dispatch(self, request: Request, call_next):
         settings = get_settings()
-
-        # Skip auth if disabled (for development)
         if not settings.require_auth:
+            request.state.principal = Principal(
+                id="dev-local",
+                type="local",
+                scopes=frozenset({"chat", "feedback", "quality_admin", "ops"}),
+            )
+            request.state.api_key_hash = "dev-local"
             return await call_next(request)
 
-        # Skip public endpoints
         if request.url.path in PUBLIC_ENDPOINTS:
             return await call_next(request)
-        
-        # CRITICAL FIX: Disable Swagger/OpenAPI in production
-        # These expose full API spec to attackers
-        if request.url.path in ["/docs", "/openapi.json", "/redoc"]:
-            return JSONResponse(
-                status_code=404,
-                content={"detail": "Not found"},
-            )
+        if request.url.path in {"/docs", "/openapi.json", "/redoc"}:
+            return JSONResponse(status_code=404, content={"detail": "Not found"})
 
-        # Check rate limiting on failed auths
-        client_ip = request.client.host
+        client_ip = self._client_ip(request, settings)
         if not await self._check_rate_limit(client_ip):
-            logger.warning("Auth rate limit exceeded from %s", client_ip)
             return JSONResponse(
                 status_code=429,
                 content={"detail": "Too many failed authentication attempts. Try again later."},
                 headers={"Retry-After": str(self._ban_window)},
             )
 
-        # Extract API key from header
-        api_key = request.headers.get("X-API-Key") or request.headers.get("Authorization", "").replace("Bearer ", "")
+        service_token = request.headers.get("X-Service-Token", "")
+        authorization = request.headers.get("Authorization", "")
+        bearer = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
+        api_key = request.headers.get("X-API-Key", "")
+        principal: Principal | None = None
 
-        if not api_key:
-            return JSONResponse(
-                status_code=401,
-                content={
-                    "detail": "Authentication required. Provide X-API-Key header.",
-                    "documentation": "Contact administrator to obtain an API key.",
-                },
-                headers={"WWW-Authenticate": "ApiKey"},
-            )
+        if service_token:
+            principal = principal_from_service_token(service_token)
+        elif bearer and settings.oidc_issuer:
+            try:
+                principal = await validate_oidc_token(bearer)
+            except AuthenticationError as exc:
+                logger.info("OIDC authentication failed from %s: %s", client_ip, exc)
+        elif api_key or bearer:
+            # Compatibility only.  Browser clients are configured for OIDC and
+            # do not ship VITE_API_KEY anymore.
+            candidate = api_key or bearer
+            if self._is_valid_key(candidate):
+                principal = principal_from_legacy_api_key(candidate)
 
-        # CRITICAL FIX: Use constant-time comparison
-        if not self._is_valid_key(api_key):
-            logger.warning("Invalid API key attempt from %s", client_ip)
+        if principal is None:
             await self._record_failed_attempt(client_ip)
             return JSONResponse(
-                status_code=403,
-                content={
-                    "detail": "Invalid API key.",
-                },
-                headers={"X-RateLimit-Remaining": "0"},
+                status_code=401,
+                content={"detail": "Authentication required or credential is invalid."},
+                headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Add API key to request state for logging/auditing
-        request.state.api_key = api_key
-        # Store hash instead of raw key for audit logs
-        request.state.api_key_hash = hmac.new(b"audit", api_key.encode(), "sha256").hexdigest()
+        if service_token and not principal.scopes:
+            return JSONResponse(status_code=403, content={"detail": "Service token has no configured scope."})
 
+        request.state.principal = principal
+        request.state.api_key_hash = principal.id
+        request.state.api_key = None
         return await call_next(request)
 
 
 def get_valid_api_keys() -> set[str]:
-    """Get set of valid API keys from settings."""
+    """Return legacy compatibility keys from settings."""
+
     settings = get_settings()
-    if not settings.api_keys:
-        return set()
     return {key.strip() for key in settings.api_keys.split(",") if key.strip()}

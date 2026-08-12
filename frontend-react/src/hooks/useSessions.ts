@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSessionStore } from '@/state/sessionStore';
 import { useChatStore } from '@/state/chatStore';
 import * as sessionsApi from '@/api/sessions';
@@ -22,6 +22,7 @@ export function useSessions() {
 
   const { setActiveSession, setMessages, setActiveCase, clearChat } = useChatStore();
   const [searchQuery, setSearchQuery] = useState('');
+  const loadRequestId = useRef(0);
 
   /**
    * Load session list
@@ -56,26 +57,53 @@ export function useSessions() {
    */
   const loadSession = useCallback(
     async (sessionId: string) => {
+      const requestId = ++loadRequestId.current;
       try {
         const detail = await sessionsApi.getSession(sessionId);
+        if (requestId !== loadRequestId.current) return;
 
         // Set active session
         setActiveSession(sessionId);
 
         // Convert messages to ChatMessage format
         const messages: ChatMessage[] = detail.messages.map((msg, idx) => ({
-          id: `${msg.role}-${msg.timestamp}-${idx}`,
+          id: msg.id ? `${msg.role}-${msg.id}` : `${msg.role}-${msg.timestamp}-${idx}`,
+          serverMessageId: msg.id,
           role: msg.role as 'user' | 'assistant',
           content: msg.content,
           timestamp: msg.timestamp,
+          feedback: (msg.metadata as { feedback?: ChatMessage['feedback'] } | undefined)?.feedback,
+          documents: (msg.metadata?.sources || []).map((source) => ({
+            page_content: source.excerpt || '',
+            document_id: source.source_id,
+            source: 'legal',
+            metadata: {
+              Source_Title: source.title,
+              Document_Number: source.instrument_number,
+              legal_anchor: source.anchor,
+              Pages: source.page,
+              Source_Start: source.offset_start,
+              Source_End: source.offset_end,
+              Source_URI: source.official_url,
+              effective_status: source.effective_status,
+              effective_from: source.effective_from,
+              effective_to: source.effective_to,
+              amendment_relationship: source.amendment_relationship,
+              corpus_as_of_date: source.corpus_as_of_date,
+            },
+          })),
           workflow: (msg.metadata || undefined) as ChatMessage['workflow'],
         }));
 
+        if (requestId !== loadRequestId.current) return;
+
         setMessages(messages);
-        setActiveCase(await sessionsApi.getCaseState(sessionId));
+        const caseState = await sessionsApi.getCaseState(sessionId);
+        if (requestId !== loadRequestId.current) return;
+        setActiveCase(caseState);
       } catch (error) {
         console.error('Failed to load session:', error);
-        toast.error('Không thể tải cuộc trò chuyện');
+        if (requestId === loadRequestId.current) toast.error('Không thể tải cuộc trò chuyện');
       }
     },
     [setActiveCase, setActiveSession, setMessages]

@@ -16,9 +16,25 @@ import json
 import logging
 import uuid
 
-from fastapi import APIRouter, Request
-from sse_starlette.sse import EventSourceResponse
+from fastapi import APIRouter, HTTPException, Request
 
+try:
+    from sse_starlette.sse import EventSourceResponse
+except ImportError:  # pragma: no cover - production installs sse-starlette
+    from starlette.responses import StreamingResponse
+
+    class EventSourceResponse(StreamingResponse):
+        """Small test/runtime fallback when the optional SSE package is absent."""
+
+        def __init__(self, content, *, status_code=200, headers=None, ping=None):
+            async def frames():
+                async for item in content:
+                    payload = item.get("data", item) if isinstance(item, dict) else item
+                    yield f"data: {payload}\n\n"
+
+            super().__init__(frames(), status_code=status_code, headers=headers, media_type="text/event-stream")
+
+from backend.api.principal import principal_from_request_state
 from backend.api.routes.health import readiness_payload
 from backend.api.schemas import ChatRequest
 from epr_agent.api.routes import stream_chat_events as agentic_stream_chat
@@ -42,8 +58,24 @@ async def chat(request: Request, body: ChatRequest):
 
     # User scope for durable history: API key hash set by auth middleware.
     # Fallback keeps local development functional when auth is disabled.
-    user_id = getattr(request.state, "api_key_hash", None) or "dev-local"
+    principal = principal_from_request_state(request)
+    if principal.type == "service" and not principal.has_scope("chat"):
+        raise HTTPException(status_code=403, detail="Service token lacks the chat scope")
+    user_id = principal.id
+    trace_id = str(uuid.uuid4())
     runtime = getattr(request.app.state, "workflow_runtime", None)
+    typed_case_patch = {
+        key: value.value
+        for key, value in body.fact_updates.items()
+        if value.value.strip()
+    }
+    typed_fact_updates = {
+        key: value.model_dump(mode="json")
+        for key, value in body.fact_updates.items()
+    }
+    # Keep the legacy string patch for one compatibility release, but pass
+    # typed updates separately so confirmation status survives into V4 state.
+    case_patch = {**body.case_patch, **typed_case_patch}
 
     readiness, is_ready = await readiness_payload()
     if not is_ready:
@@ -54,6 +86,10 @@ async def chat(request: Request, body: ChatRequest):
                         "type": "error",
                         "code": "corpus_not_ready",
                         "message": "Dữ liệu pháp luật đang chưa sẵn sàng. Vui lòng thử lại sau khi index hoàn tất.",
+                        "retryable": True,
+                        "retry_after_seconds": 30,
+                        "trace_id": trace_id,
+                        "pipeline_version": "pipeline-v4",
                         "readiness": readiness,
                     },
                     ensure_ascii=False,
@@ -80,7 +116,16 @@ async def chat(request: Request, body: ChatRequest):
                 operation=body.operation,
                 intent_hint=body.intent_hint,
                 interaction_source=body.interaction_source,
-                case_patch=body.case_patch,
+                case_patch=case_patch,
+                fact_updates=typed_fact_updates,
+                replay_metadata=body.replay_metadata or {
+                    "query_mode": body.mode,
+                    "intent": body.intent_hint,
+                    "operation": body.operation,
+                    "interaction_source": body.interaction_source,
+                    "case_patch": case_patch,
+                    "fact_updates": typed_fact_updates,
+                },
                 runtime=runtime,
             ):
                 # CRITICAL: Check if client disconnected
@@ -100,7 +145,12 @@ async def chat(request: Request, body: ChatRequest):
             yield {
                 "data": json.dumps({
                     "type": "error",
-                    "message": "Internal server error. Please try again.",
+                    "code": "pipeline_error",
+                    "message": "Không thể hoàn tất yêu cầu. Bạn có thể thử lại.",
+                    "retryable": True,
+                    "retry_after_seconds": 2,
+                    "trace_id": trace_id,
+                    "pipeline_version": "pipeline-v4",
                 })
             }
 

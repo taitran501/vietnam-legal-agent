@@ -5,6 +5,7 @@ from .store import (
     archive_conversation,
     delete_conversation,
     ensure_conversation,
+    feedback_stats,
     get_case_state,
     get_conversation,
     get_conversation_summary,
@@ -16,7 +17,9 @@ from .store import (
     list_traces,
     pin_conversation,
     rename_conversation,
+    resolve_assistant_message_id,
     save_case_state,
+    save_feedback,
 )
 
 __all__ = [
@@ -24,6 +27,7 @@ __all__ = [
     "archive_conversation",
     "delete_conversation",
     "ensure_conversation",
+    "feedback_stats",
     "get_case_state",
     "get_conversation",
     "get_conversation_summary",
@@ -35,5 +39,7 @@ __all__ = [
     "list_traces",
     "pin_conversation",
     "rename_conversation",
+    "resolve_assistant_message_id",
     "save_case_state",
+    "save_feedback",
 ]

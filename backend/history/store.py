@@ -46,8 +46,26 @@ async def append_exchange(
     user_msg: str,
     assistant_msg: str,
     metadata: dict[str, Any] | None = None,
-) -> None:
-    await (await _store()).append_exchange(user_id, conversation_id, user_msg, assistant_msg, metadata)
+) -> int | None:
+    return await (await _store()).append_exchange(user_id, conversation_id, user_msg, assistant_msg, metadata)
+
+
+async def resolve_assistant_message_id(user_id: str, conversation_id: str, message_index: int) -> int | None:
+    return await (await _store()).resolve_assistant_message_id(user_id, conversation_id, message_index)
+
+
+async def save_feedback(
+    user_id: str,
+    conversation_id: str,
+    message_id: int,
+    rating: int,
+    comment: str | None = None,
+) -> dict[str, Any] | None:
+    return await (await _store()).save_feedback(user_id, conversation_id, message_id, rating, comment)
+
+
+async def feedback_stats() -> dict[str, Any]:
+    return await (await _store()).feedback_stats()
 
 
 async def get_recent_history(user_id: str, conversation_id: str, max_messages: int) -> list[dict[str, Any]]:

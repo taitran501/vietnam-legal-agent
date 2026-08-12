@@ -4,6 +4,8 @@ import { copyToClipboard } from '@/utils/clipboard';
 import { toast } from '@/state/toastStore';
 import { cn } from '@/lib/cn';
 import { Icon } from '@/components/UI/Icon';
+import { submitFeedback } from '@/api/feedback';
+import { useChatStore } from '@/state/chatStore';
 
 interface MessageActionsProps {
   copied: boolean;
@@ -13,7 +15,9 @@ interface MessageActionsProps {
 }
 
 export function MessageActions({ copied, message, onCopy, onRegenerate }: MessageActionsProps) {
-  const [feedback, setFeedback] = useState<'up' | 'down' | null>(null);
+  const [feedback, setFeedback] = useState<'up' | 'down' | null>(message.feedback?.rating === 2 ? 'up' : message.feedback?.rating === 1 ? 'down' : null);
+  const [feedbackState, setFeedbackState] = useState<'idle' | 'pending' | 'saved' | 'failed'>(message.feedback ? 'saved' : 'idle');
+  const sessionId = useChatStore((state) => state.activeSessionId);
   const isAssistant = message.role === 'assistant';
 
   const handleCopy = async () => {
@@ -25,9 +29,22 @@ export function MessageActions({ copied, message, onCopy, onRegenerate }: Messag
     }
   };
 
-  const handleFeedback = (type: 'up' | 'down') => {
+  const handleFeedback = async (type: 'up' | 'down') => {
+    if (feedbackState === 'pending') return;
+    if (!sessionId || !message.serverMessageId) {
+      toast.error('Chưa có mã tin nhắn đã lưu để ghi nhận phản hồi');
+      return;
+    }
     setFeedback(type);
-    toast.info(type === 'up' ? 'Cảm ơn bạn đã đánh giá!' : 'Cảm ơn bạn đã gửi phản hồi');
+    setFeedbackState('pending');
+    try {
+      await submitFeedback({ session_id: sessionId, message_id: message.serverMessageId, rating: type === 'up' ? 2 : 1 });
+      setFeedbackState('saved');
+      toast.info(type === 'up' ? 'Đã lưu đánh giá hữu ích.' : 'Đã lưu phản hồi chưa hữu ích.');
+    } catch {
+      setFeedbackState('failed');
+      toast.error('Không thể lưu phản hồi. Hãy thử lại.');
+    }
   };
 
   const baseClass =
@@ -62,8 +79,8 @@ export function MessageActions({ copied, message, onCopy, onRegenerate }: Messag
           <button
             aria-label="Câu trả lời hữu ích"
             className={cn(baseClass, feedback === 'up' && 'bg-[#e7eceb] text-[#006a63]')}
-            onClick={() => handleFeedback('up')}
-            title="Hữu ích"
+            onClick={() => void handleFeedback('up')}
+            title={feedbackState === 'pending' ? 'Đang lưu…' : feedbackState === 'saved' ? 'Đã lưu' : 'Hữu ích'}
             type="button"
           >
             <span aria-hidden="true" className="text-sm leading-none">↑</span>
@@ -71,8 +88,8 @@ export function MessageActions({ copied, message, onCopy, onRegenerate }: Messag
           <button
             aria-label="Câu trả lời chưa hữu ích"
             className={cn(baseClass, feedback === 'down' && 'bg-[#fff0ef] text-[#ba1a1a]')}
-            onClick={() => handleFeedback('down')}
-            title="Chưa hữu ích"
+            onClick={() => void handleFeedback('down')}
+            title={feedbackState === 'pending' ? 'Đang lưu…' : feedbackState === 'failed' ? 'Lưu thất bại — thử lại' : 'Chưa hữu ích'}
             type="button"
           >
             <span aria-hidden="true" className="text-sm leading-none">↓</span>

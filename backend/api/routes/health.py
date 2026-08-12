@@ -28,6 +28,11 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
         "corpus_version": settings.corpus_version,
         "corpus_sha": "",
         "appendix_sha256": "",
+        "amendment_map_sha256": "",
+        "rule_pack_sha256": "",
+        "source_completeness": "unknown",
+        "amendment_chain_status": "unknown",
+        "promotion_status": "unknown",
         "index_schema_version": settings.index_schema_version,
         "embedding_profile": settings.embedding_profile,
         "embedding_dimensions": settings.embedding_dimensions,
@@ -36,7 +41,19 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
         "status": "missing",
     }
     try:
-        from scripts.canonical_corpus import corpus_sha256
+        from scripts.canonical_corpus import corpus_readiness_audit, corpus_sha256
+
+        audit = corpus_readiness_audit(
+            manifest_path=settings.corpus_manifest_path,
+            rule_pack_path=settings.rule_pack_path,
+            amendment_map_path=settings.amendment_map_path,
+            appendix_path=settings.appendix_xxii_data_path,
+        )
+        corpus["amendment_map_sha256"] = audit["amendment_map_sha256"]
+        corpus["rule_pack_sha256"] = audit["rule_pack_sha256"]
+        corpus["source_completeness"] = "complete" if not audit["source_errors"] else "incomplete"
+        corpus["amendment_chain_status"] = "ready" if not audit["amendment_errors"] else "blocked"
+        corpus["promotion_status"] = "ready" if audit["ready_for_promotion"] else "blocked"
 
         expected_sha = corpus_sha256(
             law_path=settings.law_data_path,
@@ -61,10 +78,11 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
             and payload.get("Index_Schema_Version") == settings.index_schema_version
             and payload.get("Embedding_Profile") == settings.embedding_profile
             and int(payload.get("Embedding_Dimensions") or 0) == settings.embedding_dimensions
+            and audit["ready_for_promotion"]
         ):
             corpus["status"] = "ready"
         else:
-            corpus["status"] = "version_mismatch"
+            corpus["status"] = "promotion_blocked" if not audit["ready_for_promotion"] else "version_mismatch"
     except Exception as exc:  # noqa: BLE001 - readiness must be safe when a collection is absent
         logger.info("Legal corpus is not ready: %s", exc)
         dependencies["qdrant"] = "error"

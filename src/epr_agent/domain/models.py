@@ -148,6 +148,7 @@ class AgentState(TypedDict, total=False):
     intent_hint: str
     interaction_source: str
     case_patch: dict[str, str]
+    fact_updates: dict[str, dict[str, Any]]
     outcome: str
     result_type: str
     understanding_confidence: float
@@ -186,6 +187,7 @@ class AgentState(TypedDict, total=False):
     explicit_articles: list[str]
     explicit_anchor_details: list[dict[str, str]]
     citation_error: str
+    safe_stop_reason: str
     evidence: list[dict[str, Any]]
     evidence_assessment: dict[str, Any]
     tool_results: list[ToolResult]
@@ -195,6 +197,11 @@ class AgentState(TypedDict, total=False):
     assessment: dict[str, Any] | None
     checklist: list[dict[str, Any]]
     source: str
+    assistant_message_id: str
+    corpus_as_of_date: str
+    sources: list[dict[str, Any]]
+    replay_metadata: dict[str, Any]
+    validation_errors: dict[str, str]
 
     current_action: str
     action_sequence: list[str]

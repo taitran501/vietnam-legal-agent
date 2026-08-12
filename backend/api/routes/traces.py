@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 
+from backend.api.principal import principal_from_request_state
 from backend.config import get_settings
 from backend.history import get_trace, list_traces
 
@@ -17,7 +18,7 @@ def _debug_enabled() -> None:
 
 
 def _owner(request: Request) -> str:
-    return getattr(request.state, "api_key_hash", None) or "dev-local"
+    return principal_from_request_state(request).id
 
 
 @router.get("/debug/traces/{trace_id}", tags=["debug"])

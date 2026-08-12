@@ -52,10 +52,15 @@ export async function getCaseState(sessionId: string): Promise<CaseState | null>
 export async function updateCaseState(
   sessionId: string,
   facts: Record<string, string>,
-  taskType?: CaseState['task_type']
+  taskType?: CaseState['task_type'],
+  confirmationStatuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'> = {}
 ): Promise<CaseState> {
   const response = await apiClient.patch<CaseState>(`${SESSIONS_ENDPOINT}/${sessionId}/case`, {
     facts,
+    fact_updates: Object.fromEntries(Object.entries(facts).map(([key, value]) => [key, {
+      value,
+      confirmation_status: confirmationStatuses[key] || 'user_confirmed',
+    }])),
     task_type: taskType,
   });
   return response.data;

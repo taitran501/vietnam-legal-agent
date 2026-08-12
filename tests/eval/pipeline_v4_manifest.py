@@ -100,12 +100,6 @@ ASSESSMENT_COMPLETE_CASES = [
         "Tôi là nhà nhập khẩu máy tính điện tử, bán tại Việt Nam, kinh doanh thương mại.",
         product_group="dien_tu",
     ),
-    _assessment(
-        "assessment_bao_bi_plastic_other",
-        "Tôi là nhà sản xuất bao bì nhựa dùng cho hàng hóa khác, đưa ra thị trường Việt Nam, kinh doanh thương mại, doanh thu 40 tỷ đồng, không thu hồi để tái sử dụng.",
-        product_group="bao_bi",
-        expected_status="likely_out_of_scope",
-    ),
 ]
 
 
@@ -206,6 +200,7 @@ INSUFFICIENT_EVIDENCE_CASES = [
     _case("evidence_missing_appendix", "Tỷ lệ tái chế của nhóm chưa có trong corpus là bao nhiêu?", "legal_lookup", expected_outcome="insufficient_evidence", expected_result_type="none", expected_ui="safe_stop"),
     _case("evidence_assessment_gap", "Tôi là nhà sản xuất bao bì nhựa dùng cho thực phẩm, đưa ra thị trường Việt Nam, kinh doanh thương mại, doanh thu 40 tỷ đồng, không thu hồi để tái sử dụng; cần áp dụng cho nhóm chưa có trong corpus.", "case_assessment", expected_outcome="insufficient_evidence", expected_result_type="none", expected_ui="safe_stop"),
     _case("evidence_checklist_gap", "Lập checklist EPR cho nhà sản xuất bao bì nhựa dùng cho thực phẩm, đưa ra thị trường Việt Nam, kinh doanh thương mại, doanh thu 40 tỷ đồng, không thu hồi để tái sử dụng; cần áp dụng cho nhóm chưa có trong corpus.", "compliance_checklist", expected_outcome="insufficient_evidence", expected_result_type="none", expected_ui="safe_stop"),
+    _case("evidence_generic_other_category", "Tôi là nhà sản xuất bao bì nhựa dùng cho hàng hóa khác, đưa ra thị trường Việt Nam, kinh doanh thương mại, doanh thu 40 tỷ đồng, không thu hồi để tái sử dụng.", "case_assessment", expected_outcome="insufficient_evidence", expected_result_type="none", expected_ui="safe_stop"),
 ]
 
 

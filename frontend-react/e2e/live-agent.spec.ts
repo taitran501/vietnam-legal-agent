@@ -70,7 +70,7 @@ test('real multi-turn case waits for facts and resumes without using web search'
 
   await expect(page.getByText('Đánh giá sơ bộ', { exact: true })).toBeVisible();
   await expect(
-    page.getByText(/Kết quả dựa trên thông tin đã cung cấp và các nguồn hiển thị/)
+    page.getByText(/Kết quả dựa trên thông tin đã cung cấp và nguồn hiển thị/)
   ).toBeVisible();
   await expect(page.getByText(/nguồn web/i)).not.toBeVisible();
 });

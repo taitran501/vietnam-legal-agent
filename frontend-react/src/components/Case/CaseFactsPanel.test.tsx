@@ -63,6 +63,7 @@ describe('CaseFactsPanel', () => {
       'case-1',
       { business_role: 'manufacturer', market_placement: 'vietnam_market' },
       'assess_epr_obligation',
+      { business_role: 'unknown', market_placement: 'user_confirmed' },
     );
     expect(onCaseChange).toHaveBeenCalledWith(next);
     expect(onContinue).not.toHaveBeenCalled();
@@ -86,7 +87,10 @@ describe('CaseFactsPanel', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'Tiếp tục đánh giá' }));
-    expect(onContinue).toHaveBeenCalledWith({ business_role: 'manufacturer', market_placement: 'vietnam_market' });
+    expect(onContinue).toHaveBeenCalledWith(
+      { business_role: 'manufacturer', market_placement: 'vietnam_market' },
+      { business_role: 'unknown', market_placement: 'unknown' },
+    );
   });
 
   it('keeps persisted keys out of the visible case panel when field metadata is absent', () => {

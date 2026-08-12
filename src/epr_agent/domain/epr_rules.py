@@ -7,7 +7,9 @@ unknown business facts or decides coverage from a similarity score.
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 from typing import Literal, cast
 
 from epr_agent.domain.v4 import (
@@ -21,7 +23,55 @@ from epr_agent.domain.v4 import (
     LegalIssue,
 )
 
-EPR_RULE_PACK_VERSION = "epr-article-77-v1"
+
+def _load_rule_pack() -> dict[str, object]:
+    path = Path(__file__).resolve().parents[3] / "data" / "epr_rule_pack.json"
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        return raw if isinstance(raw, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+_RULE_PACK = _load_rule_pack()
+_THRESHOLDS = _RULE_PACK.get("thresholds") if isinstance(_RULE_PACK.get("thresholds"), dict) else {}
+_EFFECTIVE_DATES = _RULE_PACK.get("effective_dates") if isinstance(_RULE_PACK.get("effective_dates"), dict) else {}
+_REQUIRED_FACTS = _RULE_PACK.get("required_facts") if isinstance(_RULE_PACK.get("required_facts"), dict) else {}
+_EXCLUSIONS = _RULE_PACK.get("exclusions") if isinstance(_RULE_PACK.get("exclusions"), dict) else {}
+EPR_RULE_PACK_VERSION = str(_RULE_PACK.get("rule_pack_version") or "epr-article-77-v2")
+EPR_RULE_ID = str(_RULE_PACK.get("rule_id") or "epr-article-77-current-law-v2")
+PACKAGING_REVENUE_THRESHOLD_VND = int(_THRESHOLDS.get("packaging_revenue_exemption_vnd") or 30_000_000_000)
+MAX_ANNUAL_REVENUE_VND = int(_THRESHOLDS.get("max_annual_revenue_vnd") or 10**15)
+RECOVERY_RATE_MIN_PERCENT = float(_THRESHOLDS.get("recovery_rate_min_percent") or 0)
+RECOVERY_RATE_MAX_PERCENT = float(_THRESHOLDS.get("recovery_rate_max_percent") or 100)
+
+
+def _configured_values(key: str, fallback: tuple[str, ...]) -> set[str]:
+    value = _EXCLUSIONS.get(key)
+    if isinstance(value, list):
+        return {str(item) for item in value}
+    return set(fallback)
+
+
+_EXPORT_EXCLUSIONS = _configured_values("market_placement", ("export_only", "temporary_import_reexport"))
+_RESEARCH_EXCLUSIONS = _configured_values("activity_purpose", ("research_study_test",))
+_UNRESOLVED_CATEGORIES = _configured_values("unresolved_packaged_categories", ("other",))
+_UNRESOLVED_REUSE_VALUES = _configured_values("unresolved_reuse_values", ("yes",))
+EPR_EFFECTIVE_DATES = {
+    str(key): str(value)
+    for key, value in _EFFECTIVE_DATES.items()
+}
+
+_ALLOWED_FACT_VALUES = {
+    "business_role": {"manufacturer", "importer", "nhà sản xuất", "nhà nhập khẩu"},
+    "object_kind": {"product", "commercial_packaging", "raw_material", "production_waste", "packaging"},
+    "product_group": {"bao_bi", "ac_quy", "pin", "dau_nhot", "sam_lop", "dien_tu", "phuong_tien"},
+    "packaged_goods_category": {"thuc_pham", "my_pham", "thuoc", "phan_bon_thuc_an_thu_y", "che_pham_tay_rua", "xi_mang", "other"},
+    "material": {"plastic", "pet", "pe_pp", "paper", "glass", "metal", "rubber", "nhựa", "giấy", "kim loại", "cao su"},
+    "market_placement": {"vietnam_market", "export_only", "temporary_import_reexport", "thị trường Việt Nam"},
+    "activity_purpose": {"commercial", "research_study_test", "kinh doanh", "nghiên cứu", "học tập", "thử nghiệm"},
+    "reused_by_producer": {"yes", "no", "có", "không"},
+}
 
 _PRODUCT_GROUPS = {
     "bao bì": "bao_bi",
@@ -121,7 +171,7 @@ def extract_explicit_epr_facts(query: str, *, source: FactSource = FactSource.US
         # role or the phrase "tại Việt Nam" is not enough to infer this fact.
         found["activity_purpose"] = _fact("commercial", source, "hoạt động thương mại", turn_id=turn_id)
 
-    revenue = re.search(r"(?:doanh thu[^\d]{0,40})?(\d+(?:[.,]\d+)?)\s*(tỷ|triệu)?\s*(?:đồng|vnđ|vnd)?", text)
+    revenue = re.search(r"(?:doanh thu[^\d+\-]{0,40})?([-+]?\d+(?:[.,]\d+)?)\s*(tỷ|triệu)?\s*(?:đồng|vnđ|vnd)?", text)
     if revenue and ("doanh thu" in text or "tỷ" in text):
         amount = float(revenue.group(1).replace(",", "."))
         unit = revenue.group(2) or ""
@@ -129,7 +179,15 @@ def extract_explicit_epr_facts(query: str, *, source: FactSource = FactSource.US
             amount *= 1_000_000_000
         elif unit == "triệu":
             amount *= 1_000_000
-        found["annual_revenue_vnd"] = _fact(str(int(amount)), source, revenue.group(0), turn_id=turn_id)
+        # Preserve fractional input instead of truncating it.  The validator
+        # will reject it as an invalid VND amount rather than treating it as
+        # a smaller revenue and accidentally granting an exemption.
+        found["annual_revenue_vnd"] = _fact(
+            str(int(amount)) if amount.is_integer() else str(amount),
+            source,
+            revenue.group(0),
+            turn_id=turn_id,
+        )
     if "không thu hồi" in text or "không tái sử dụng" in text:
         found["reused_by_producer"] = _fact("no", source, "không thu hồi", turn_id=turn_id)
     elif "thu hồi" in text and ("tái sử dụng" in text or "đóng gói lại" in text):
@@ -142,21 +200,59 @@ def _value(facts: dict[str, FactValue], key: str) -> str:
     return item.value if item else ""
 
 
+def validate_fact_value(key: str, value: str) -> str:
+    """Validate values that can change a deterministic legal decision.
+
+    Validation deliberately rejects rather than coercing malformed numeric
+    input.  A rejected value cannot silently become zero and create a false
+    exemption.
+    """
+
+    cleaned = " ".join(str(value or "").split())
+    if key == "annual_revenue_vnd" and cleaned:
+        if not re.fullmatch(r"\d+", cleaned):
+            raise ValueError("annual_revenue_vnd must be a whole number of VND")
+        amount = int(cleaned)
+        if amount < 0 or amount > MAX_ANNUAL_REVENUE_VND:
+            raise ValueError("annual_revenue_vnd is outside the supported range")
+    if key == "recovery_rate" and cleaned:
+        try:
+            rate = float(cleaned)
+        except ValueError as exc:
+            raise ValueError("recovery_rate must be a number from 0 to 100") from exc
+        if rate < RECOVERY_RATE_MIN_PERCENT or rate > RECOVERY_RATE_MAX_PERCENT:
+            raise ValueError("recovery_rate must be a number from 0 to 100")
+    if key in _ALLOWED_FACT_VALUES and cleaned and cleaned not in _ALLOWED_FACT_VALUES[key]:
+        raise ValueError(f"{key} is not a supported value; choose a listed option")
+    return cleaned
+
+
+def validate_case_facts(facts: dict[str, FactValue]) -> dict[str, str]:
+    """Return field-level validation errors without changing user facts."""
+
+    errors: dict[str, str] = {}
+    for key, fact in facts.items():
+        try:
+            validate_fact_value(key, fact.value)
+        except ValueError as exc:
+            errors[key] = str(exc)
+    return errors
+
+
 def required_fact_keys(facts: dict[str, FactValue]) -> list[str]:
     """Return decision-changing facts in the order the agent should ask them."""
 
-    required = ["business_role", "object_kind", "product_group", "market_placement"]
+    required = list(_REQUIRED_FACTS.get("base") or ["business_role", "object_kind", "product_group", "market_placement"])
     product_group = _value(facts, "product_group")
     market = _value(facts, "market_placement")
-    if market not in {"export_only", "temporary_import_reexport"}:
-        required.append("activity_purpose")
+    if market not in _EXPORT_EXCLUSIONS:
+        required.extend(str(item) for item in (_REQUIRED_FACTS.get("domestic_market") or ["activity_purpose"]))
     if product_group == "bao_bi":
-        required.append("packaged_goods_category")
+        required.extend(str(item) for item in (_REQUIRED_FACTS.get("packaging") or ["packaged_goods_category"]))
         if market == "vietnam_market":
-            required.append("annual_revenue_vnd")
-            required.append("reused_by_producer")
+            required.extend(str(item) for item in (_REQUIRED_FACTS.get("packaging_domestic_market") or ["annual_revenue_vnd", "reused_by_producer"]))
             if _value(facts, "reused_by_producer") == "yes":
-                required.append("recovery_rate")
+                required.extend(str(item) for item in (_REQUIRED_FACTS.get("packaging_reuse") or ["recovery_rate"]))
     return required
 
 
@@ -190,6 +286,7 @@ def case_fields(facts: dict[str, FactValue], missing: list[str]) -> list[CaseFie
             kind=kind,
             options=[{"value": value, "label": option_label} for value, option_label in options.get(key, [])],
             required=key in required,
+            importance="required" if key in required else "conditional" if key in {"packaged_goods_category", "annual_revenue_vnd", "reused_by_producer", "recovery_rate"} else "informational",
             missing=key in missing,
             value=_value(facts, key),
             help_text=_CASE_FIELD_HELP_TEXT.get(key, ""),
@@ -198,21 +295,11 @@ def case_fields(facts: dict[str, FactValue], missing: list[str]) -> list[CaseFie
 
 
 def legal_issues(facts: dict[str, FactValue], *, checklist: bool = False) -> list[LegalIssue]:
-    issues = [
-        LegalIssue(issue_id="actor", label="Đối tượng chịu trách nhiệm", query="Điều 77 khoản 1: nhà sản xuất, nhập khẩu chịu trách nhiệm", required_anchors=["Điều 77"], required_facts=["business_role"]),
-        LegalIssue(issue_id="covered_object", label="Sản phẩm hoặc bao bì thuộc phạm vi", query="Điều 77 khoản 1, khoản 2 và Phụ lục XXII: đối tượng sản phẩm, bao bì", required_anchors=["Điều 77", "Phụ lục XXII"], required_facts=["object_kind", "product_group"]),
-        LegalIssue(issue_id="market_scope", label="Đưa ra thị trường Việt Nam", query="Điều 77 khoản 1: đưa ra thị trường Việt Nam", required_anchors=["Điều 77"], required_facts=["market_placement"]),
-        LegalIssue(issue_id="exemption", label="Trường hợp không phải thực hiện", query="Điều 77 khoản 3: xuất khẩu, nghiên cứu, doanh thu và thu hồi bao bì", required_anchors=["Điều 77"], required_facts=["activity_purpose"]),
-        LegalIssue(issue_id="effective_date", label="Lộ trình áp dụng", query="Điều 77 khoản 4: lộ trình trách nhiệm tái chế", required_anchors=["Điều 77"], required_facts=[]),
-    ]
-    if checklist:
-        issues.extend([
-            LegalIssue(issue_id="recycling_rate", label="Tỷ lệ và quy cách tái chế", query="Điều 78 và Phụ lục XXII: tỷ lệ, quy cách tái chế", required_anchors=["Điều 78", "Phụ lục XXII"]),
-            LegalIssue(issue_id="implementation", label="Hình thức thực hiện", query="Điều 79: hình thức thực hiện trách nhiệm tái chế", required_anchors=["Điều 79"]),
-            LegalIssue(issue_id="reporting", label="Đăng ký và báo cáo", query="Điều 80: đăng ký kế hoạch và báo cáo kết quả", required_anchors=["Điều 80"]),
-            LegalIssue(issue_id="financial", label="Đóng góp tài chính", query="Điều 81: đóng góp tài chính hỗ trợ tái chế", required_anchors=["Điều 81"]),
-        ])
-    return issues
+    raw_issues = _RULE_PACK.get("legal_issues")
+    if isinstance(raw_issues, list):
+        configured = [LegalIssue.model_validate(item) for item in raw_issues if isinstance(item, dict)]
+        return configured if checklist else configured[:5]
+    return []
 
 
 def evaluate_assessment(facts: dict[str, FactValue], *, evidence_ids: dict[str, list[str]]) -> AssessmentResult:
@@ -227,16 +314,25 @@ def evaluate_assessment(facts: dict[str, FactValue], *, evidence_ids: dict[str, 
     purpose = _value(facts, "activity_purpose")
     product_group = _value(facts, "product_group")
     category = _value(facts, "packaged_goods_category")
-    try:
-        revenue = int(_value(facts, "annual_revenue_vnd") or "0")
-    except ValueError:
-        revenue = 0
-    exclusion = market in {"export_only", "temporary_import_reexport"} or purpose == "research_study_test"
-    if product_group == "bao_bi" and category == "other":
+    errors = validate_case_facts(facts)
+    if errors:
+        return AssessmentResult(
+            status=AssessmentStatus.CANNOT_DETERMINE,
+            conclusion="Chưa thể đánh giá vì một hoặc nhiều thông tin số chưa hợp lệ.",
+            assumptions=["Giá trị doanh thu và tỷ lệ thu hồi phải được sửa trước khi đối chiếu quy định."],
+        )
+    revenue_text = _value(facts, "annual_revenue_vnd")
+    revenue = int(revenue_text) if revenue_text else None
+    exclusion = market in _EXPORT_EXCLUSIONS or purpose in _RESEARCH_EXCLUSIONS
+    if product_group == "bao_bi" and category in _UNRESOLVED_CATEGORIES:
+        return AssessmentResult(
+            status=AssessmentStatus.CANNOT_DETERMINE,
+            conclusion="Chưa thể xác định nhóm hàng hóa ‘khác’ có thuộc trường hợp được loại trừ hay không.",
+            assumptions=["Cần xác định nhóm hàng hóa cụ thể hoặc cung cấp điều khoản đang áp dụng."],
+        )
+    if product_group == "bao_bi" and revenue is not None and revenue < PACKAGING_REVENUE_THRESHOLD_VND:
         exclusion = True
-    if product_group == "bao_bi" and revenue < 30_000_000_000:
-        exclusion = True
-    if _value(facts, "reused_by_producer") == "yes":
+    if _value(facts, "reused_by_producer") in _UNRESOLVED_REUSE_VALUES:
         # Article 77 refers to the rate in Appendix XXII.  A bare user-supplied
         # percentage is not enough: the applicable threshold must be read from
         # a provenance-verified Appendix row.  V4 therefore refuses to infer
