@@ -83,6 +83,7 @@ def _documents_for_api(state: AgentState) -> list[dict[str, Any]]:
         "source_uri", "Source_URI", "official_url", "effective_status", "Effective_Status", "amendment_relationship", "Amendment_Relationship",
         "Effective_From", "Effective_To", "effective_from", "effective_to", "Source_SHA256", "chunk_id",
         "Corpus_Version", "Corpus_SHA256", "corpus_as_of_date", "rule_id", "source_file", "Source_File",
+        "Active_Source_Document_Id", "Active_Source_Pages", "Amendment_Resolution_Status", "Amendment_Operations", "Current_Law_Support",
     }
     documents: list[dict[str, Any]] = []
     for item in state.get("evidence", []):
@@ -119,6 +120,11 @@ def _source_snapshots(state: AgentState) -> list[dict[str, Any]]:
             "effective_from": (item.get("metadata") or {}).get("Effective_From") or (item.get("metadata") or {}).get("effective_from"),
             "effective_to": (item.get("metadata") or {}).get("Effective_To") or (item.get("metadata") or {}).get("effective_to"),
             "amendment_relationship": (item.get("metadata") or {}).get("Amendment_Relationship") or (item.get("metadata") or {}).get("amendment_relationship") or [],
+            "active_source_document_id": str((item.get("metadata") or {}).get("Active_Source_Document_Id") or ""),
+            "active_source_pages": str((item.get("metadata") or {}).get("Active_Source_Pages") or ""),
+            "amendment_resolution_status": str((item.get("metadata") or {}).get("Amendment_Resolution_Status") or ""),
+            "amendment_operations": (item.get("metadata") or {}).get("Amendment_Operations") or [],
+            "current_law_support": bool((item.get("metadata") or {}).get("Current_Law_Support", False)),
             "corpus_as_of_date": str(state.get("corpus_as_of_date") or ""),
             "excerpt": str(item.get("content") or "")[:2000],
         }

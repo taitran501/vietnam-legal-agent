@@ -82,6 +82,11 @@ export interface SourceSnapshot {
   effective_from?: string | null;
   effective_to?: string | null;
   amendment_relationship?: string[] | Record<string, unknown>;
+  active_source_document_id?: string;
+  active_source_pages?: string;
+  amendment_resolution_status?: string;
+  amendment_operations?: Array<Record<string, unknown>>;
+  current_law_support?: boolean;
   corpus_as_of_date?: string;
   excerpt?: string;
 }

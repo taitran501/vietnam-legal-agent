@@ -14,6 +14,8 @@ def test_corpus_audit_blocks_unreviewed_amendment_chain() -> None:
     assert audit["source_errors"] == []
     assert "amendment_map_legal_review_pending" in audit["amendment_errors"]
     assert "rule_pack_legal_review_pending" in audit["rule_pack_errors"]
+    assert not any(item.endswith("active_source_pages_missing") for item in audit["amendment_errors"])
+    assert not any(item.endswith("operations_missing") for item in audit["amendment_errors"])
 
 
 def test_corpus_audit_detects_source_hash_tampering(tmp_path: Path) -> None:

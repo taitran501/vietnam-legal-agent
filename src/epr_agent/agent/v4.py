@@ -54,7 +54,7 @@ from epr_agent.domain.v4 import (
     TurnOperation,
     WorkflowOutcome,
 )
-from epr_agent.tools.evidence import build_citations
+from epr_agent.tools.evidence import build_citations, is_unresolved_current_law_source
 
 logger = logging.getLogger(__name__)
 
@@ -421,7 +421,11 @@ class V4WorkflowRuntime(WorkflowRuntime):
         all_documents: dict[str, dict[str, Any]] = {}
         for issue, retrieval_result in zip(issues, results, strict=True):
             retrieved_documents: list[DocumentRecord] = [] if isinstance(retrieval_result, BaseException) else list(retrieval_result)
-            selected = retrieved_documents[:3]
+            selected = [
+                document
+                for document in retrieved_documents
+                if not is_unresolved_current_law_source(document)
+            ][:3]
             serialised = documents_to_dict(selected)
             bundles[issue.issue_id] = serialised
             for document in serialised:

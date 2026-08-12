@@ -1,10 +1,17 @@
 {
-  "rule_pack_version": "epr-article-77-v2",
-  "rule_id": "epr-article-77-current-law-v2",
+  "rule_pack_version": "epr-article-77-v3-manual-amendment-map",
+  "rule_id": "epr-article-77-current-law-v3",
   "corpus_id": "epr",
   "corpus_version": "epr-law-structure-v4-amendment-chain",
-  "corpus_sha256": "6a7b7d599f81502f42475d7a6547ea992077b83d75209342b113bf9d0459dc3b",
+  "corpus_sha256": "11750f9b65ca86b44940b51ecaed5873f585cd3ebd68742ec3bc1e3ccb00eb4d",
   "legal_review_status": "pending",
+  "source_resolution": {
+    "status": "manual_operation_map_complete_pending_legal_review",
+    "substantive_source_document_id": "nd-05-2025-nd-cp",
+    "targeted_follow_up_document_id": "nd-48-2026-nd-cp",
+    "rule_pack_may_not_be_promoted": true,
+    "notes": "Decision rules consume explicit thresholds and facts; current-law support remains false until the map and extracted active sources receive legal approval."
+  },
   "supported_anchors": ["Điều 77", "Điều 78", "Điều 79", "Điều 80", "Điều 81", "Điều 82", "Điều 83", "Điều 84", "Điều 85", "Điều 86", "Phụ lục XXII"],
   "thresholds": {
     "packaging_revenue_exemption_vnd": 30000000000,
@@ -14,7 +21,7 @@
   },
   "effective_dates": {
     "base_decree": "2022-01-10",
-    "amendment_05_2025": "2025-01-10",
+    "amendment_05_2025": "2025-01-06",
     "amendment_48_2026": "2026-01-29"
   },
   "required_facts": {
@@ -41,5 +48,20 @@
     {"issue_id": "reporting", "label": "Đăng ký và báo cáo", "query": "Điều 80: đăng ký kế hoạch và báo cáo kết quả", "required_anchors": ["Điều 80"], "required_facts": []},
     {"issue_id": "financial", "label": "Đóng góp tài chính", "query": "Điều 81: đóng góp tài chính hỗ trợ tái chế", "required_anchors": ["Điều 81"], "required_facts": []}
   ],
+  "source_pages": {
+    "Điều 77": "48-49",
+    "Điều 78": "49-50",
+    "Điều 79": "50",
+    "Điều 80": "50-51",
+    "Điều 81": "51-52",
+    "Điều 82": "52-53",
+    "Điều 83": "53",
+    "Điều 84": "53-54",
+    "Điều 85": "54",
+    "Điều 86": "54",
+    "Phụ lục XXII": "86-89",
+    "nd-48-2026-targeted_terms": "29-31",
+    "nd-05-2025-repeals": "68"
+  },
   "promotion_gate": "Every modified provision must resolve to a legally reviewed active source and page-level evidence."
 }

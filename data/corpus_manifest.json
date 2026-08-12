@@ -32,7 +32,7 @@
       "number": "05/2025/NĐ-CP",
       "issuer": "Chính phủ",
       "jurisdiction": "Việt Nam",
-      "effective_from": "2025-01-10",
+      "effective_from": "2025-01-06",
       "effective_to": null,
       "scope": "Sửa đổi, bổ sung các quy định có liên quan đến trách nhiệm mở rộng của nhà sản xuất, nhập khẩu.",
       "source_file": "data/05_2025_ND-CP.signed.pdf",
@@ -44,7 +44,12 @@
       "precedence": 20,
       "amends": ["nd-08-2022-nd-cp"],
       "affected_anchors": ["Điều 77", "Điều 78", "Điều 79", "Điều 80", "Điều 81", "Điều 82", "Điều 83", "Điều 84", "Điều 85", "Điều 86", "Phụ lục XXII"],
-      "status": "source_verified_extraction_pending"
+      "amendment_scope": {
+        "operation": "substantive_replacement_and_repeal",
+        "source_pages": [48, 49, 50, 51, 52, 53, 54, 68, 86, 87, 88, 89],
+        "notes": "Manual page review identifies substantive EPR provisions in pages 48-54, repeals on page 68, and replacement Appendix XXII on pages 86-89."
+      },
+      "status": "source_verified_manual_map_pending_legal_review"
     },
     {
       "document_id": "nd-48-2026-nd-cp",
@@ -63,8 +68,14 @@
       "records_file": null,
       "precedence": 30,
       "amends": ["nd-08-2022-nd-cp", "nd-05-2025-nd-cp"],
-      "affected_anchors": ["Điều 77", "Điều 78", "Điều 79", "Điều 80", "Điều 81", "Điều 82", "Điều 83", "Điều 84", "Điều 85", "Điều 86", "Phụ lục XXII"],
-      "status": "source_verified_extraction_pending"
+      "affected_anchors": ["Điều 77", "Điều 78", "Điều 79", "Điều 80", "Điều 81", "Điều 82", "Điều 83", "Điều 84", "Điều 85", "Điều 86"],
+      "amendment_scope": {
+        "operation": "targeted_term_replacement",
+        "source_pages": [29, 30, 31],
+        "replacement": "Bộ Tài nguyên và Môi trường / Bộ Nông nghiệp và Phát triển nông thôn -> Bộ Nông nghiệp và Môi trường",
+        "notes": "The EPR provisions are listed as targeted locations; 48/2026 does not replace all text of Articles 77-86 and does not replace Appendix XXII."
+      },
+      "status": "source_verified_manual_map_pending_legal_review"
     }
   ]
 }

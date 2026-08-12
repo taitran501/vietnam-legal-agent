@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from datetime import date
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -141,6 +141,11 @@ class LegalChunk(BaseModel):
     effective_to: date | None = None
     effective_status: str = "unknown"
     amendment_relationship: list[str] = Field(default_factory=list)
+    active_source_document_id: str = ""
+    active_source_pages: str = ""
+    amendment_resolution_status: str = ""
+    amendment_operations: list[dict[str, Any]] = Field(default_factory=list)
+    current_law_support: bool = False
     appendix_table_id: str = ""
     appendix_row_id: str = ""
     appendix_bbox: list[float] = Field(default_factory=list)

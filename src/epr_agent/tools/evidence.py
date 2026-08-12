@@ -46,6 +46,9 @@ class EvidenceEvaluator:
         ):
             return EvidenceAssessment(False, "explicit_anchor_not_found", len(documents), total_chars, has_metadata)
 
+        if any(is_unresolved_current_law_source(document) for document in documents):
+            return EvidenceAssessment(False, "superseded_or_unresolved_source", len(documents), total_chars, has_metadata)
+
         if self.relevance_checker is not None:
             try:
                 relevant = bool(self.relevance_checker(query, documents))
@@ -71,6 +74,20 @@ class EvidenceEvaluator:
             and (metadata.get("Embedding_Profile") or metadata.get("embedding_profile"))
         )
         return bool(document.source == "legal" and document.document_id and has_anchor and has_primary_source and has_provenance)
+
+
+def is_unresolved_current_law_source(document: DocumentRecord) -> bool:
+    """Reject corpus chunks explicitly marked as not supporting current law."""
+
+    if document.source != "legal":
+        return False
+    metadata = document.metadata or {}
+    value = metadata.get("Current_Law_Support")
+    if value is None:
+        value = metadata.get("current_law_support")
+    if value is None:
+        return False
+    return str(value).strip().casefold() in {"false", "0", "no", "pending", "unresolved"}
 
 
 def legal_relevance_checker(*, min_rerank_score: float) -> Callable[[str, list[DocumentRecord]], bool]:

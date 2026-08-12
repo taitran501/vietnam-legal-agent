@@ -69,6 +69,9 @@ export function SourceDrawer({ citations = [], documents, isOpen, onClose }: Sou
           const effectiveStatus = metadataValue(document, ['effective_status', 'Effective_Status']) || 'unknown';
           const effectiveFrom = metadataValue(document, ['effective_from', 'Effective_From']);
           const asOf = metadataValue(document, ['corpus_as_of_date', 'Corpus_As_Of_Date']) || 'Chưa được pháp lý phê duyệt';
+          const amendmentStatus = metadataValue(document, ['amendment_resolution_status', 'Amendment_Resolution_Status']);
+          const activeSource = metadataValue(document, ['active_source_document_id', 'Active_Source_Document_Id']);
+          const activePages = metadataValue(document, ['active_source_pages', 'Active_Source_Pages']);
           return (
             <article
               className="rounded-lg border border-[#d9e1df] bg-white p-4"
@@ -101,6 +104,8 @@ export function SourceDrawer({ citations = [], documents, isOpen, onClose }: Sou
                 {document.page_content || 'Nguồn này chưa có đoạn trích để hiển thị.'}
               </blockquote>
               {metadataValue(document, ['amendment_relationship', 'Amendment_Relationship']) && <p className="mt-2 text-xs text-[#667085]">Quan hệ sửa đổi: {metadataValue(document, ['amendment_relationship', 'Amendment_Relationship'])}</p>}
+              {amendmentStatus && <p className="mt-1 text-xs text-[#667085]">Trạng thái đối chiếu sửa đổi: {amendmentStatus}</p>}
+              {activeSource && <p className="mt-1 text-xs text-[#667085]">Nguồn nội dung chính: {activeSource}{activePages ? ` · trang ${activePages}` : ''}</p>}
               {url && (
                 <a
                   className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-[#006a63] hover:underline"
