@@ -76,13 +76,57 @@ def split_verified_answer_for_stream(answer: str, *, max_chunk_chars: int = 180)
 
 
 def _documents_for_api(state: AgentState) -> list[dict[str, Any]]:
+    allowed_metadata = {
+        "document_id", "Document_Id", "Document_Number", "source_title", "Source_Title", "title",
+        "instrument_number", "anchor", "legal_anchor", "Dieu", "Chuong", "Khoan", "Diem",
+        "Pages", "page", "page_start", "page_end", "Source_Start", "Source_End", "offset_start", "offset_end",
+        "source_uri", "Source_URI", "official_url", "effective_status", "Effective_Status", "amendment_relationship", "Amendment_Relationship",
+        "Effective_From", "Effective_To", "effective_from", "effective_to", "Source_SHA256", "chunk_id",
+        "Corpus_Version", "Corpus_SHA256", "corpus_as_of_date", "rule_id", "source_file", "Source_File",
+        "Active_Source_Document_Id", "Active_Source_Pages", "Amendment_Resolution_Status", "Amendment_Operations", "Current_Law_Support",
+    }
+    documents: list[dict[str, Any]] = []
+    for item in state.get("evidence", []):
+        metadata = dict(item.get("metadata") or {})
+        safe_metadata = {key: metadata[key] for key in allowed_metadata if key in metadata}
+        safe_metadata.setdefault("document_id", item.get("document_id", ""))
+        if state.get("corpus_as_of_date"):
+            safe_metadata.setdefault("corpus_as_of_date", state.get("corpus_as_of_date"))
+        safe_metadata["excerpt"] = str(item.get("content", ""))[:2000]
+        documents.append(
+            {
+                "page_content": str(item.get("content", "")),
+                "metadata": safe_metadata,
+                "document_id": item.get("document_id", ""),
+                "score": item.get("score"),
+                "source": item.get("source", ""),
+            }
+        )
+    return documents
+
+
+def _source_snapshots(state: AgentState) -> list[dict[str, Any]]:
     return [
         {
-            "page_content": item.get("content", ""),
-            "metadata": item.get("metadata", {}),
-            "document_id": item.get("document_id", ""),
-            "score": item.get("score"),
-            "source": item.get("source", ""),
+            "source_id": str((item.get("metadata") or {}).get("chunk_id") or item.get("document_id") or ""),
+            "title": str((item.get("metadata") or {}).get("Source_Title") or (item.get("metadata") or {}).get("source_title") or item.get("source") or ""),
+            "instrument_number": str((item.get("metadata") or {}).get("Document_Number") or (item.get("metadata") or {}).get("instrument_number") or ""),
+            "anchor": str((item.get("metadata") or {}).get("legal_anchor") or (item.get("metadata") or {}).get("Dieu") or ""),
+            "page": (item.get("metadata") or {}).get("Pages") or (item.get("metadata") or {}).get("page"),
+            "offset_start": (item.get("metadata") or {}).get("Source_Start") or (item.get("metadata") or {}).get("offset_start"),
+            "offset_end": (item.get("metadata") or {}).get("Source_End") or (item.get("metadata") or {}).get("offset_end"),
+            "official_url": str((item.get("metadata") or {}).get("official_url") or (item.get("metadata") or {}).get("Source_URI") or (item.get("metadata") or {}).get("source_uri") or ""),
+            "effective_status": str((item.get("metadata") or {}).get("Effective_Status") or (item.get("metadata") or {}).get("effective_status") or "unknown"),
+            "effective_from": (item.get("metadata") or {}).get("Effective_From") or (item.get("metadata") or {}).get("effective_from"),
+            "effective_to": (item.get("metadata") or {}).get("Effective_To") or (item.get("metadata") or {}).get("effective_to"),
+            "amendment_relationship": (item.get("metadata") or {}).get("Amendment_Relationship") or (item.get("metadata") or {}).get("amendment_relationship") or [],
+            "active_source_document_id": str((item.get("metadata") or {}).get("Active_Source_Document_Id") or ""),
+            "active_source_pages": str((item.get("metadata") or {}).get("Active_Source_Pages") or ""),
+            "amendment_resolution_status": str((item.get("metadata") or {}).get("Amendment_Resolution_Status") or ""),
+            "amendment_operations": (item.get("metadata") or {}).get("Amendment_Operations") or [],
+            "current_law_support": bool((item.get("metadata") or {}).get("Current_Law_Support", False)),
+            "corpus_as_of_date": str(state.get("corpus_as_of_date") or ""),
+            "excerpt": str(item.get("content") or "")[:2000],
         }
         for item in state.get("evidence", [])
     ]
@@ -115,12 +159,20 @@ def _metadata(state: AgentState) -> dict[str, Any]:
         "evidence_assessment": state.get("evidence_assessment", {}),
         "trace_id": state.get("trace_id", ""),
         "corpus_id": state.get("corpus_id", "epr"),
+        "corpus_as_of_date": state.get("corpus_as_of_date", ""),
         "pipeline_version": state.get("pipeline_version", "pipeline-v3"),
         "termination_reason": state.get("termination_reason", TerminationReason.ERROR.value),
         "outcome": state.get("outcome"),
         "result_type": state.get("result_type"),
         "required_issues": state.get("required_issues", []),
         "covered_issues": state.get("covered_issues", []),
+        "assistant_message_id": state.get("assistant_message_id", ""),
+        "sources": state.get("sources") or _source_snapshots(state),
+        "replay_metadata": state.get("replay_metadata") or {},
+        "validation_errors": state.get("validation_errors") or {},
+        "rule_id": state.get("rule_id", ""),
+        "citation_error": state.get("citation_error", ""),
+        "safe_stop_reason": state.get("safe_stop_reason", ""),
     }
 
 
@@ -135,6 +187,9 @@ class WorkflowRuntime:
         self.deps = deps
         self.answer_chunk_size = answer_chunk_size
         self.answer_chunk_delay_s = max(answer_chunk_delay_s, 0.0)
+        # LangGraph compilation is independent of a turn's user data. Cache it
+        # per runtime so repeated messages do not rebuild the same graph.
+        self._compiled_workflow = build_workflow(deps)
 
     async def _persist(self, state: AgentState, *, started_at: float) -> None:
         user_id = state["user_id"]
@@ -157,13 +212,16 @@ class WorkflowRuntime:
                     "missing_facts": [],
                 }
 
-            await self.deps.history.save_exchange(
+            assistant_message_id = await self.deps.history.save_exchange(
                 user_id,
                 conversation_id,
                 state["query"],
                 answer,
                 _metadata(state),
             )
+            if assistant_message_id is not None:
+                state["assistant_message_id"] = str(assistant_message_id)
+            state["sources"] = _source_snapshots(state)
 
             # Only standalone legal answers from the corpus are reusable.  Case
             # assessments/checklists and web responses are deliberately excluded.
@@ -207,7 +265,7 @@ class WorkflowRuntime:
     async def run(self, **kwargs: Any) -> AgentState:
         started_at = time.perf_counter()
         started_wall = datetime.now(UTC)
-        state = await run_workflow(deps=self.deps, **kwargs)
+        state = await run_workflow(deps=self.deps, compiled_workflow=self._compiled_workflow, **kwargs)
         state["run_started_at"] = started_wall.isoformat()
         state["run_ended_at"] = datetime.now(UTC).isoformat()
         state["run_duration_ms"] = round((time.perf_counter() - started_at) * 1000, 2)
@@ -218,10 +276,11 @@ class WorkflowRuntime:
         yield {"type": "status", "message": "Đang nạp ngữ cảnh cuộc trò chuyện…", "stage": "load_context"}
         started_at = time.perf_counter()
         started_wall = datetime.now(UTC)
+        trace_id = str(kwargs.get("trace_id") or "")
         try:
             state = await create_initial_state(deps=self.deps, **kwargs)
             trace_id = state.get("trace_id", "")
-            compiled = build_workflow(self.deps)
+            compiled = self._compiled_workflow
             step = 0
             async for update in compiled.astream(state, stream_mode="updates"):
                 for node_state in update.values():
@@ -286,7 +345,12 @@ class WorkflowRuntime:
             logger.exception("Bounded workflow failed")
             yield {
                 "type": "error",
+                "code": "pipeline_error",
                 "message": "Internal server error. Please try again.",
+                "retryable": True,
+                "retry_after_seconds": 2,
+                "trace_id": trace_id,
+                "pipeline_version": "pipeline-v3",
             }
 
 
@@ -314,6 +378,8 @@ async def stream_chat(
     intent_hint: str = "auto",
     interaction_source: str = "composer",
     case_patch: dict[str, Any] | None = None,
+    fact_updates: dict[str, dict[str, Any]] | None = None,
+    replay_metadata: dict[str, Any] | None = None,
     runtime: WorkflowRuntime | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Public SSE event generator used by the compatibility API route."""
@@ -332,6 +398,8 @@ async def stream_chat(
             intent_hint=intent_hint,
             interaction_source=interaction_source,
             case_patch=case_patch or {},
+            fact_updates=fact_updates or {},
+            replay_metadata=replay_metadata or {},
         )
     async for event in selected.stream(**request_kwargs):
         yield event

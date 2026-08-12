@@ -49,7 +49,7 @@ test('missing-facts trajectory stops safely and opens contextual case data', asy
             missing_facts: ['product_or_packaging', 'material', 'activity_scope'],
             fields: [
               { key: 'business_role', label: 'Vai trò doanh nghiệp', kind: 'text', options: [], required: true, missing: false, value: 'nhà sản xuất' },
-              { key: 'material', label: 'Vật liệu chính', kind: 'text', options: [], required: true, missing: true, value: '' },
+              { key: 'material', label: 'Vật liệu hoặc quy cách', kind: 'text', options: [], required: true, missing: true, value: '' },
             ],
           },
           missing_facts: ['product_or_packaging', 'material', 'activity_scope'],
@@ -73,8 +73,8 @@ test('missing-facts trajectory stops safely and opens contextual case data', asy
   await result.getByRole('button', { name: 'Bổ sung trong bảng thông tin' }).click();
 
   const drawer = page.getByRole('dialog', { name: 'Thông tin tình huống' });
-  await expect(drawer.getByText('Dữ liệu đánh giá')).toBeVisible();
-  await expect(drawer.getByText('Vật liệu chính')).toBeVisible();
+  await expect(drawer.getByText('Thông tin đã xác nhận')).toBeVisible();
+  await expect(drawer.getByText('Vật liệu hoặc quy cách')).toBeVisible();
   expect((await drawer.boundingBox())?.width).toBeGreaterThanOrEqual(390);
   await captureReview(page, 'integrated-missing-facts-drawer');
   await drawer.getByRole('button', { name: 'Đóng' }).click();

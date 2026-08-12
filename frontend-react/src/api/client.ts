@@ -1,4 +1,5 @@
 import axios, { type AxiosInstance, type AxiosError } from 'axios';
+import { authorizationHeader } from '@/auth/oidc';
 
 // Default to same-origin so Vite dev proxy handles /api consistently.
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
@@ -20,11 +21,7 @@ const apiClient: AxiosInstance = axios.create({
  */
 apiClient.interceptors.request.use(
   (config) => {
-    // Add API key if available
-    const apiKey = import.meta.env.VITE_API_KEY;
-    if (apiKey) {
-      config.headers['X-API-Key'] = apiKey;
-    }
+    Object.assign(config.headers, authorizationHeader());
     return config;
   },
   (error) => Promise.reject(error)

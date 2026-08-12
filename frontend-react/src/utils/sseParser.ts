@@ -1,4 +1,5 @@
 import type { SSEEvent } from '@/types';
+import { authorizationHeader } from '@/auth/oidc';
 
 /**
  * Parse one complete SSE frame from a response stream.
@@ -42,6 +43,8 @@ export async function* streamChat(
     intentHint?: 'auto' | 'legal_lookup' | 'legal_explain_compare' | 'case_assessment' | 'compliance_checklist';
     interactionSource?: 'composer' | 'quick_action' | 'case_panel';
     casePatch?: Record<string, string>;
+    factUpdates?: Record<string, { value: string; confirmation_status?: 'user_confirmed' | 'document_verified' | 'unknown' }>;
+    replayMetadata?: Record<string, unknown>;
   } = {},
 ): AsyncGenerator<SSEEvent> {
   // Use relative URL for Vite proxy, or full URL if needed
@@ -54,7 +57,7 @@ export async function* streamChat(
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
       'Cache-Control': 'no-cache',
-      ...(import.meta.env.VITE_API_KEY ? { 'X-API-Key': import.meta.env.VITE_API_KEY } : {}),
+      ...authorizationHeader(),
     },
     body: JSON.stringify({
       query,
@@ -64,6 +67,14 @@ export async function* streamChat(
       intent_hint: options.intentHint || 'auto',
       interaction_source: options.interactionSource || 'composer',
       case_patch: options.casePatch || {},
+      fact_updates: options.factUpdates || {},
+      replay_metadata: options.replayMetadata || {
+        query_mode: mode,
+        intent: options.intentHint || 'auto',
+        operation: options.operation || 'message',
+        interaction_source: options.interactionSource || 'composer',
+        case_patch: options.casePatch || {},
+      },
     }),
     signal,
   });

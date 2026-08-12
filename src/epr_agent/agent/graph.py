@@ -8,6 +8,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
 from langgraph.graph import END, StateGraph
 
@@ -605,6 +606,20 @@ def build_workflow(deps: WorkflowDependencies):
         state["evidence_status"] = "insufficient"
         if state.get("is_epr_scope") and not reason:
             state["available_actions"] = [RouteType.RESEARCH_WEB.value]
+        state["safe_stop_reason"] = {
+            "no_evidence": "missing_provision",
+            "not_enough_docs": "missing_provision",
+            "content_too_short": "missing_provision",
+            "missing_source_metadata": "missing_provision",
+            "explicit_article_not_found": "missing_provision",
+            "explicit_anchor_not_found": "missing_provision",
+            "relevance_check_failed": "missing_provision",
+            "claim_support_verifier_unavailable": "unavailable_dependencies",
+            "answer_has_no_citation": "failed_citation_verification",
+            "citation_out_of_range": "failed_citation_verification",
+            "legal_claim_without_citation": "failed_citation_verification",
+            "article_reference_not_in_evidence": "failed_citation_verification",
+        }.get(str(reason or ""), state.get("termination_reason", ""))
         _trace(state, reason_code=state["termination_reason"], payload={"citation_error": reason or ""})
         return state
 
@@ -732,6 +747,7 @@ async def create_initial_state(
         "corpus_version": deps.cache.corpus_version,
         "corpus_sha": (deps.corpus.corpus_sha if deps.corpus else deps.cache.corpus_sha),
         "embedding_profile": (deps.corpus.embedding_profile if deps.corpus else deps.cache.embedding_profile),
+        "corpus_as_of_date": "",
         "mode": mode,
         "route": RouteType.LEGAL_LOOKUP.value,
         "source_scope": "legal_corpus",
@@ -774,6 +790,7 @@ async def run_workflow(
     mode: str = "auto",
     deps: WorkflowDependencies,
     trace_id: str | None = None,
+    compiled_workflow: Any | None = None,
 ) -> AgentState:
     """Execute one bounded run and return its complete traceable state."""
 
@@ -786,5 +803,5 @@ async def run_workflow(
         deps=deps,
         trace_id=trace_id,
     )
-    compiled = build_workflow(deps)
+    compiled = compiled_workflow or build_workflow(deps)
     return await compiled.ainvoke(initial)

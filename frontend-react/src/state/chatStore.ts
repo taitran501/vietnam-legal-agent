@@ -26,7 +26,8 @@ interface ChatState {
     content: string,
     source?: ResponseSource,
     documents?: SourceDocument[],
-    workflow?: WorkflowMetadata
+    workflow?: WorkflowMetadata,
+    serverMessageId?: number
   ) => void;
   setStreaming: (isStreaming: boolean) => void;
   setStreamingContent: (content: string) => void;
@@ -67,17 +68,19 @@ export const useChatStore = create<ChatState>((set) => ({
       messages: [...state.messages, message],
     })),
   
-  updateLastAssistantMessage: (content, source, documents, workflow) =>
+  updateLastAssistantMessage: (content, source, documents, workflow, serverMessageId) =>
     set((state) => {
       const messages = [...state.messages];
       const lastIdx = messages.length - 1;
       if (lastIdx >= 0 && messages[lastIdx].role === 'assistant') {
+        const previous = messages[lastIdx];
         messages[lastIdx] = {
-          ...messages[lastIdx],
+          ...previous,
           content,
           source,
           documents,
           workflow,
+          serverMessageId: serverMessageId ?? previous.serverMessageId,
         };
       }
       return { messages, streamingContent: '' };

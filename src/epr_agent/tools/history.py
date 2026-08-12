@@ -33,7 +33,7 @@ class HistoryGateway(Protocol):
         user_message: str,
         assistant_message: str,
         metadata: dict[str, Any],
-    ) -> None: ...
+    ) -> int | None: ...
 
     async def save_case(self, user_id: str, conversation_id: str, state: dict[str, Any]) -> dict[str, Any]: ...
 
@@ -77,8 +77,8 @@ class UnifiedHistoryGateway:
         user_message: str,
         assistant_message: str,
         metadata: dict[str, Any],
-    ) -> None:
-        await (await self._resolve_store()).append_exchange(
+    ) -> int | None:
+        return await (await self._resolve_store()).append_exchange(
             user_id,
             conversation_id,
             user_message,

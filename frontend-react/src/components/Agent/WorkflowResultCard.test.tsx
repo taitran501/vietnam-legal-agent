@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { WorkflowResultCard } from './WorkflowResultCard';
 
 describe('WorkflowResultCard', () => {
@@ -36,5 +36,42 @@ describe('WorkflowResultCard', () => {
   it('uses a safe-stop state when evidence is insufficient', () => {
     render(<WorkflowResultCard workflow={{ termination_reason: 'insufficient_evidence' }} />);
     expect(screen.getByText('Chưa đủ căn cứ để trả lời chắc chắn')).toBeInTheDocument();
+  });
+
+  it('renders an assessment only for a completed decision', () => {
+    render(
+      <WorkflowResultCard
+        workflow={{
+          outcome: 'completed',
+          result_type: 'assessment',
+          assessment: { status: 'likely_in_scope' },
+          citations: [{ index: 1, label: 'Điều 77' }],
+        }}
+      />,
+    );
+    expect(screen.getByText('Đánh giá sơ bộ')).toBeInTheDocument();
+  });
+
+  it('does not present a conclusion while the agent is waiting for facts', () => {
+    render(
+      <WorkflowResultCard
+        workflow={{ outcome: 'needs_information', result_type: 'none', missing_facts: ['market_placement'], assessment: { status: 'needs_information' } }}
+      />,
+    );
+    expect(screen.getByText('Cần thêm thông tin để tiếp tục')).toBeInTheDocument();
+    expect(screen.queryByText('Đánh giá sơ bộ')).not.toBeInTheDocument();
+  });
+
+  it('exposes the explicit research action for an evidence safe-stop', async () => {
+    const onResearch = vi.fn();
+    render(
+      <WorkflowResultCard
+        onResearch={onResearch}
+        workflow={{ outcome: 'insufficient_evidence', result_type: 'none', termination_reason: 'insufficient_evidence', available_actions: ['research_web'] }}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Tìm nguồn công khai' })).toBeInTheDocument();
+    screen.getByRole('button', { name: 'Tìm nguồn công khai' }).click();
+    expect(onResearch).toHaveBeenCalledOnce();
   });
 });

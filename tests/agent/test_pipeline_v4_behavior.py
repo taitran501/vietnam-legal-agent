@@ -152,7 +152,100 @@ async def test_v4_sse_emits_case_update_and_input_required_before_completion():
     event_types = [event["type"] for event in events]
     assert "input_required" in event_types
     assert "case_update" in event_types
+    assert [event["sequence"] for event in events] == list(range(1, len(events) + 1))
+    assert {event["trace_id"] for event in events} == {events[0]["trace_id"]}
+    assert {event["pipeline_version"] for event in events} == {"pipeline-v4"}
+    steps = [event for event in events if event["type"] == "workflow_step"]
+    assert steps[0]["action"] == "understand_task"
+    assert steps[0]["status"] == "running"
+    assert any("còn thiếu 3 thông tin" in str(event.get("label")) for event in steps)
     complete = next(event for event in events if event["type"] == "response_complete")
     assert complete["outcome"] == "needs_information"
     assert complete["result_type"] == "none"
     assert complete["pipeline_version"] == "pipeline-v4"
+    assert {field["label"] for field in complete["case_state"]["fields"]} >= {
+        "Vai trò doanh nghiệp",
+        "Phạm vi đưa ra thị trường",
+        "Mục đích sản xuất hoặc nhập khẩu",
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", ["Quy định về chứng khoán là gì?", "Luật lao động quy định gì về hợp đồng?"])
+async def test_v4_out_of_scope_stops_before_legacy_retrieval(query: str):
+    history = MemoryHistory()
+    app, retrieval = runtime(history)
+
+    state = await app.run(query=query, user_id="v4-user", conversation_id="v4-out-of-scope")
+
+    assert state["route"] == "out_of_scope"
+    assert state["outcome"] == "out_of_scope"
+    assert state["result_type"] == "none"
+    assert state["termination_reason"] == "out_of_scope"
+    assert retrieval.requests == []
+
+
+@pytest.mark.asyncio
+async def test_v4_explicit_no_evidence_signal_stops_without_claim():
+    history = MemoryHistory()
+    app, retrieval = runtime(history)
+
+    state = await app.run(
+        query="Tỷ lệ tái chế của nhóm chưa có trong corpus là bao nhiêu?",
+        user_id="v4-user",
+        conversation_id="v4-no-evidence-signal",
+    )
+
+    assert state["route"] == "legal_lookup"
+    assert state["outcome"] == "insufficient_evidence"
+    assert state["termination_reason"] == "insufficient_evidence"
+    assert state["result_type"] == "none"
+    assert state["available_actions"] == ["research_web"]
+    assert retrieval.requests == []
+
+
+@pytest.mark.asyncio
+async def test_delegated_legal_lookup_preserves_replay_descriptor(monkeypatch: pytest.MonkeyPatch):
+    history = MemoryHistory()
+    app, _ = runtime(history)
+    replay = {
+        "query_mode": "auto",
+        "intent": "legal_lookup",
+        "operation": "message",
+        "interaction_source": "composer",
+        "case_patch": {"market_placement": "vietnam_market"},
+        "fact_updates": {
+            "annual_revenue_vnd": {
+                "value": "30000000000",
+                "confirmation_status": "user_confirmed",
+            }
+        },
+    }
+
+    async def fake_run_workflow(*args, **kwargs):
+        return {
+            "query": args[0],
+            "user_id": kwargs["user_id"],
+            "conversation_id": kwargs["conversation_id"],
+            "trace_id": kwargs["trace_id"],
+            "termination_reason": "answer_complete",
+            "answer": "Điều 77 [1]",
+            "source": "legal",
+        }
+
+    monkeypatch.setattr("epr_agent.agent.v4.run_workflow", fake_run_workflow)
+    state = await app._execute(
+        query="Nghị định 08 Điều 77",
+        user_id="v4-user",
+        conversation_id="v4-replay",
+        intent_hint="legal_lookup",
+        interaction_source="composer",
+        case_patch=replay["case_patch"],
+        fact_updates=replay["fact_updates"],
+        replay_metadata=replay,
+    )
+
+    assert state["replay_metadata"] == replay
+    assert state["case_patch"] == replay["case_patch"]
+    assert state["fact_updates"] == replay["fact_updates"]
+    assert state["pipeline_version"] == "pipeline-v4"

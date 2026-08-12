@@ -123,16 +123,41 @@ def _enrich_docs_from_qdrant(docs: list[Document], collection_name: str) -> list
     return docs
 
 
-def retrieve_legal(query: str) -> list[Document]:
+def retrieve_legal(
+    query: str,
+    *,
+    required_anchors: list[str] | None = None,
+    metadata_filters: dict[str, str] | None = None,
+    top_k: int = 10,
+) -> list[Document]:
     """Run the sole V3 hybrid legal retrieval implementation."""
 
     from backend.core.ensemble_retrieval import retrieve_legal_ensemble
 
-    return retrieve_legal_ensemble(query, k=10)
+    return retrieve_legal_ensemble(
+        query,
+        k=top_k,
+        required_anchors=required_anchors,
+        metadata_filters=metadata_filters,
+    )
 
 
-async def retrieve_legal_async(query: str) -> list[Document]:
+async def retrieve_legal_async(
+    query: str,
+    *,
+    required_anchors: list[str] | None = None,
+    metadata_filters: dict[str, str] | None = None,
+    top_k: int = 10,
+) -> list[Document]:
     """Execute blocking Qdrant retrieval away from the event loop."""
 
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, retrieve_legal, query)
+    return await loop.run_in_executor(
+        None,
+        lambda: retrieve_legal(
+            query,
+            required_anchors=required_anchors,
+            metadata_filters=metadata_filters,
+            top_k=top_k,
+        ),
+    )

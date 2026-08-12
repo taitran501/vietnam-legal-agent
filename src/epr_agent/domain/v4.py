@@ -52,6 +52,14 @@ class FactSource(StrEnum):
     SYSTEM_DEFAULT = "system_default"
 
 
+class FactConfirmationStatus(StrEnum):
+    """How a fact was confirmed without implying legal verification."""
+
+    USER_CONFIRMED = "user_confirmed"
+    DOCUMENT_VERIFIED = "document_verified"
+    UNKNOWN = "unknown"
+
+
 class FactValue(BaseModel):
     value: str = Field(max_length=240)
     source: FactSource
@@ -59,6 +67,7 @@ class FactValue(BaseModel):
     evidence_span: str = Field(default="", max_length=300)
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     verified: bool = False
+    confirmation_status: FactConfirmationStatus = FactConfirmationStatus.UNKNOWN
 
     @field_validator("value", "evidence_span", mode="before")
     @classmethod
@@ -72,6 +81,7 @@ class CaseField(BaseModel):
     kind: Literal["text", "select", "number", "boolean"] = "text"
     options: list[dict[str, str]] = Field(default_factory=list)
     required: bool = False
+    importance: Literal["required", "conditional", "informational"] = "informational"
     missing: bool = False
     value: str = ""
     help_text: str = ""
@@ -112,6 +122,10 @@ class AssessmentResult(BaseModel):
     assumptions: list[str] = Field(default_factory=list)
     missing_facts: list[str] = Field(default_factory=list)
     next_steps: list[str] = Field(default_factory=list)
+    rule_id: str = ""
+    active_evidence_ids: list[str] = Field(default_factory=list)
+    corpus_version: str = ""
+    corpus_as_of_date: str = ""
 
 
 class CaseStateV4(BaseModel):

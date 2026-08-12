@@ -13,6 +13,8 @@ export interface ChatRequest {
   intent_hint?: 'auto' | 'legal_lookup' | 'legal_explain_compare' | 'case_assessment' | 'compliance_checklist';
   interaction_source?: 'composer' | 'quick_action' | 'case_panel';
   case_patch?: Record<string, string>;
+  fact_updates?: Record<string, { value: string; confirmation_status?: 'user_confirmed' | 'document_verified' | 'unknown' }>;
+  replay_metadata?: Record<string, unknown>;
 }
 
 export interface SSEEvent {
@@ -27,7 +29,9 @@ export interface SSEEvent {
   stage?: string;
   step?: number;
   action?: string;
+  label?: string;
   status?: string;
+  sequence?: number;
   trace_id?: string;
   task_type?: string;
   route?: string;
@@ -51,7 +55,20 @@ export interface SSEEvent {
   result_type?: WorkflowMetadata['result_type'];
   required_issues?: string[];
   covered_issues?: string[];
+  rule_id?: string;
+  rule_pack_version?: string;
+  effective_dates?: Record<string, string>;
   metadata?: WorkflowMetadata;
+  code?: string;
+  retryable?: boolean;
+  retry_after_seconds?: number;
+  assistant_message_id?: string;
+  corpus_as_of_date?: string;
+  sources?: import('./chat').SourceSnapshot[];
+  replay_metadata?: Record<string, unknown>;
+  validation_errors?: Record<string, string>;
+  citation_error?: string;
+  safe_stop_reason?: string;
 }
 
 export interface SessionInfo {
@@ -60,6 +77,8 @@ export interface SessionInfo {
   created_at: number;
   updated_at?: number;
   message_count: number;
+  archived?: boolean;
+  pinned?: boolean;
 }
 
 export interface SessionDetail {
@@ -70,7 +89,7 @@ export interface SessionDetail {
     role: string;
     content: string;
     timestamp: string;
-    metadata?: WorkflowMetadata;
+    metadata?: WorkflowMetadata & { sources?: import('./chat').SourceSnapshot[] };
   }>;
   created_at: number;
   updated_at?: number;
@@ -79,7 +98,8 @@ export interface SessionDetail {
 
 export interface FeedbackRequest {
   session_id: string;
-  message_index: number;
+  message_index?: number;
+  message_id?: number;
   rating: 1 | 2; // 1 = thumbs down, 2 = thumbs up
   comment?: string;
 }
@@ -101,7 +121,7 @@ export interface ReadinessResponse {
   status: 'ready' | 'not_ready';
   dependencies: Record<string, 'ok' | 'error'>;
   corpus: {
-    status: 'ready' | 'missing' | 'version_mismatch';
+    status: 'ready' | 'missing' | 'version_mismatch' | 'promotion_blocked' | 'incomplete';
     points_count: number;
     corpus_id: string;
     corpus_version: string;
@@ -109,5 +129,9 @@ export interface ReadinessResponse {
     corpus_sha?: string;
     embedding_profile?: string;
     embedding_dimensions?: number;
+    corpus_as_of_date?: string | null;
+    source_completeness?: string;
+    amendment_chain_status?: string;
+    promotion_status?: string;
   };
 }

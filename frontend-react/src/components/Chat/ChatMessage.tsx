@@ -57,10 +57,22 @@ export function ChatMessageComponent({ message, onOpenCase, onOpenSources, onReg
 
         <div className="ml-0 mt-3 sm:ml-[42px]">
           <div className="legal-prose max-w-none text-[15px] leading-7 text-[#262d2c] sm:text-base">
-            <MarkdownRenderer content={message.content} />
+            <MarkdownRenderer
+              content={message.content}
+              onCitationClick={(index) => {
+                const document = message.documents?.[index - 1];
+                if (document) onOpenSources([document], message.workflow?.citations || []);
+                else onOpenSources(message.documents || [], message.workflow?.citations || []);
+              }}
+            />
           </div>
 
-          <WorkflowResultCard onOpenCase={onOpenCase} onResearch={onResearch} workflow={message.workflow} />
+          <WorkflowResultCard
+            onOpenCase={onOpenCase}
+            onOpenSources={() => onOpenSources(message.documents || [], message.workflow?.citations || [])}
+            onResearch={onResearch}
+            workflow={message.workflow}
+          />
           <SourceDocuments
             citations={message.workflow?.citations}
             documents={message.documents || []}

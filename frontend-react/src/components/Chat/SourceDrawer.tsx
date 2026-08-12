@@ -12,6 +12,7 @@ interface SourceDrawerProps {
 function textValue(value: unknown): string | undefined {
   if (typeof value === 'string' && value.trim()) return value.trim();
   if (typeof value === 'number') return String(value);
+  if (Array.isArray(value) && value.length) return value.map((item) => String(item)).join(', ');
   return undefined;
 }
 
@@ -41,7 +42,7 @@ function documentAnchor(document: SourceDocument): string | undefined {
 }
 
 function documentUrl(document: SourceDocument): string | undefined {
-  const value = metadataValue(document, ['url', 'source_url', 'link']);
+  const value = metadataValue(document, ['official_url', 'Source_URI', 'source_uri', 'url', 'source_url', 'link']);
   if (!value) return undefined;
   try {
     const url = new URL(value);
@@ -63,6 +64,14 @@ export function SourceDrawer({ citations = [], documents, isOpen, onClose }: Sou
         {documents.map((document, index) => {
           const anchor = documentAnchor(document);
           const url = documentUrl(document);
+          const instrument = metadataValue(document, ['Document_Number', 'instrument_number']);
+          const page = metadataValue(document, ['Pages', 'page']);
+          const effectiveStatus = metadataValue(document, ['effective_status', 'Effective_Status']) || 'unknown';
+          const effectiveFrom = metadataValue(document, ['effective_from', 'Effective_From']);
+          const asOf = metadataValue(document, ['corpus_as_of_date', 'Corpus_As_Of_Date']) || 'Chưa được pháp lý phê duyệt';
+          const amendmentStatus = metadataValue(document, ['amendment_resolution_status', 'Amendment_Resolution_Status']);
+          const activeSource = metadataValue(document, ['active_source_document_id', 'Active_Source_Document_Id']);
+          const activePages = metadataValue(document, ['active_source_pages', 'Active_Source_Pages']);
           return (
             <article
               className="rounded-lg border border-[#d9e1df] bg-white p-4"
@@ -83,12 +92,20 @@ export function SourceDrawer({ citations = [], documents, isOpen, onClose }: Sou
                         {anchor}
                       </span>
                     )}
+                    {instrument && <span>{instrument}</span>}
+                    {page && <span>Trang {page}</span>}
+                    <span className="rounded-full bg-[#e7eceb] px-2 py-0.5">{effectiveStatus === 'active' ? 'Đang hiệu lực' : effectiveStatus === 'unknown' ? 'Chưa xác định hiệu lực' : effectiveStatus}</span>
+                    {effectiveFrom && <span>Hiệu lực từ {effectiveFrom}</span>}
                   </div>
+                  <p className="mt-2 text-[11px] text-[#667085]">Corpus tính đến: {asOf}</p>
                 </div>
               </div>
               <blockquote className="mt-3 whitespace-pre-wrap rounded-md bg-[#f1f4f3] px-3 py-3 text-[13px] leading-6 text-[#3e4947]">
                 {document.page_content || 'Nguồn này chưa có đoạn trích để hiển thị.'}
               </blockquote>
+              {metadataValue(document, ['amendment_relationship', 'Amendment_Relationship']) && <p className="mt-2 text-xs text-[#667085]">Quan hệ sửa đổi: {metadataValue(document, ['amendment_relationship', 'Amendment_Relationship'])}</p>}
+              {amendmentStatus && <p className="mt-1 text-xs text-[#667085]">Trạng thái đối chiếu sửa đổi: {amendmentStatus}</p>}
+              {activeSource && <p className="mt-1 text-xs text-[#667085]">Nguồn nội dung chính: {activeSource}{activePages ? ` · trang ${activePages}` : ''}</p>}
               {url && (
                 <a
                   className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-[#006a63] hover:underline"

@@ -99,7 +99,19 @@ def _audit(client, collection: str, *, expected_count: int, digest: str, schema:
             if key in seen:
                 raise RuntimeError("index_duplicate_chunk")
             seen.add(key)
-            required = ("legal_anchor", "source", "source_file", "Original_Text", "retrieval_text", "lexical_text", "Source_Start", "Source_End")
+            required = (
+                "legal_anchor",
+                "source",
+                "source_file",
+                "source_uri",
+                "Source_SHA256",
+                "Effective_Status",
+                "Original_Text",
+                "retrieval_text",
+                "lexical_text",
+                "Source_Start",
+                "Source_End",
+            )
             if not all(payload.get(field) not in (None, "") for field in required):
                 raise RuntimeError("index_missing_citation_metadata")
             if int(payload["Source_End"]) < int(payload["Source_Start"]):
@@ -147,6 +159,20 @@ def main() -> None:
         if not _matching_collection(client, target, expected_count=len(canonical), digest=digest, schema=settings.index_schema_version, settings=settings):
             build_index.upsert_to_qdrant(canonical)
         _audit(client, target, expected_count=len(canonical), digest=digest, schema=settings.index_schema_version, settings=settings)
+        from scripts.canonical_corpus import corpus_readiness_audit
+
+        readiness = corpus_readiness_audit(
+            manifest_path=Path(settings.corpus_manifest_path),
+            rule_pack_path=Path(settings.rule_pack_path),
+            amendment_map_path=Path(settings.amendment_map_path),
+            appendix_path=Path(settings.appendix_xxii_data_path),
+        )
+        if not readiness["ready_for_promotion"]:
+            raise RuntimeError(
+                "corpus_promotion_blocked:" + ",".join(
+                    [*readiness["source_errors"], *readiness["amendment_errors"], *readiness["rule_pack_errors"]]
+                )
+            )
         _switch_alias(client, os.getenv("LAW_COLLECTION_ALIAS", "law_collection"), target)
         print(f"law_index_ready collection={target} corpus_sha256={digest}")
     finally:

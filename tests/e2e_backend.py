@@ -15,11 +15,13 @@ from fastapi import FastAPI
 
 from epr_agent.agent.graph import WorkflowDependencies
 from epr_agent.agent.planner import BoundedPlanner
-from epr_agent.agent.runtime import WorkflowRuntime
+from epr_agent.agent.v4 import V4WorkflowRuntime
+from epr_agent.domain.epr_rules import case_fields, missing_fact_keys
 from epr_agent.domain.models import DocumentRecord
+from epr_agent.domain.v4 import CaseStateV4, FactSource, FactValue
 from epr_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
 from epr_agent.tools.evidence import EvidenceEvaluator
-from epr_agent.tools.generation import StaticGenerationGateway
+from epr_agent.tools.generation import EvidenceGenerationGateway
 from epr_agent.tools.history import ContextSnapshot
 from epr_agent.tools.retrieval import StaticRetrievalGateway
 
@@ -100,40 +102,44 @@ class BrowserHistoryGateway:
 
 
 history = BrowserHistoryGateway()
-legal_document = DocumentRecord(
-    content=(
-        "Điều 77 quy định đối tượng, lộ trình và trách nhiệm tái chế đối với nhà sản xuất, "
+def _legal_document(anchor: str) -> DocumentRecord:
+    title = "Phụ lục XXII - Tỷ lệ và quy cách tái chế" if anchor == "Phụ lục XXII" else "Nghị định 08/2022/NĐ-CP"
+    content = (
+        f"{anchor} quy định đối tượng, lộ trình và trách nhiệm tái chế đối với nhà sản xuất, "
         "nhập khẩu sản phẩm hoặc bao bì đưa ra thị trường Việt Nam. "
+    ) * 4
+    return DocumentRecord(
+        content=content,
+        metadata={
+            "Dieu": anchor if anchor.startswith("Điều") else "",
+            "Parent_Dieu": anchor if anchor.startswith("Điều") else "",
+            "legal_anchor": anchor,
+            "Document_Number": "08/2022/NĐ-CP",
+            "source": title,
+            "source_title": title,
+            "source_file": "data/08_2022_ND-CP_479457.doc",
+            "Corpus_Version": "browser-e2e-v4",
+            "Corpus_SHA256": "browser-e2e-corpus-v4",
+            "Embedding_Profile": "openai-text-embedding-3-small-v1",
+        },
+        document_id=f"law-{anchor.replace(' ', '-')}",
+        score=0.94,
+        source="legal",
     )
-    * 4,
-    metadata={
-        "Dieu": "Điều 77",
-        "Parent_Dieu": "Điều 77",
-        "legal_anchor": "08/2022/NĐ-CP | Điều 77",
-        "Document_Number": "08/2022/NĐ-CP",
-        "source": "Nghị định 08/2022/NĐ-CP",
-        "source_file": "data/08_2022_ND-CP_479457.doc",
-        "Corpus_Version": "browser-e2e-v3",
-        "Corpus_SHA256": "browser-e2e-corpus",
-        "Embedding_Profile": "openai-text-embedding-3-small-v1",
-    },
-    document_id="law-77",
-    score=0.94,
-    source="legal",
-)
+
+
+legal_documents = [_legal_document(f"Điều {article}") for article in range(77, 93)] + [_legal_document("Phụ lục XXII")]
 dependencies = WorkflowDependencies(
     history=history,
     cache=ScopedAnswerCache(InMemoryAnswerCache(), corpus_version="browser-e2e"),
-    retrieval=StaticRetrievalGateway(legal_documents=[legal_document]),
+    retrieval=StaticRetrievalGateway(legal_documents=legal_documents),
     evidence=EvidenceEvaluator(min_chars=20),
-    generation=StaticGenerationGateway(
-        "Theo Điều 77 [1], nhà sản xuất và nhập khẩu phải đối chiếu trách nhiệm tái chế. " * 8
-    ),
+    generation=EvidenceGenerationGateway(),
     planner=BoundedPlanner(max_retrieval_actions=3, max_repairs=1, max_iterations=12),
 )
 
 app = FastAPI(title="EPR deterministic browser acceptance")
-app.state.workflow_runtime = WorkflowRuntime(
+app.state.workflow_runtime = V4WorkflowRuntime(
     dependencies,
     answer_chunk_size=90,
     answer_chunk_delay_s=0.04,
@@ -152,6 +158,36 @@ async def ready() -> dict[str, object]:
 
     payload, _ = await _deterministic_ready()
     return payload
+
+
+@app.get("/api/v1/sessions/{session_id}/case")
+async def get_case(session_id: str) -> dict[str, Any] | None:
+    return await history.get_case("dev-local", session_id)
+
+
+@app.patch("/api/v1/sessions/{session_id}/case")
+async def update_case(session_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Deterministic case-panel adapter used by the real browser suite."""
+
+    existing = await history.get_case("dev-local", session_id) or {}
+    task_type = str(body.get("task_type") or existing.get("task_type") or "assess_epr_obligation")
+    raw_facts = dict(body.get("facts") or {})
+    facts = {
+        key: FactValue(value=str(value), source=FactSource.CASE_PANEL, verified=True)
+        for key, value in raw_facts.items()
+        if str(value).strip()
+    }
+    missing = missing_fact_keys(facts)
+    case = CaseStateV4(
+        task_type=task_type,
+        status="ready" if not missing else "collecting",
+        facts=facts,
+        missing_facts=missing,
+        last_query=str(existing.get("last_query") or ""),
+    )
+    payload = case.model_dump(mode="json")
+    payload["fields"] = [field.model_dump() for field in case_fields(facts, missing)]
+    return await history.save_case("dev-local", session_id, payload)
 
 
 @app.get("/api/v1/sessions")

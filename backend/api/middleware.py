@@ -11,6 +11,7 @@ Supports:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 
@@ -18,6 +19,7 @@ from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
+from backend.config import get_settings
 from backend.memory.session_store import get_redis
 
 logger = logging.getLogger(__name__)
@@ -103,7 +105,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     
     async def dispatch(self, request: Request, call_next) -> Response:
         # Skip rate limiting for health checks and public endpoints
-        if request.url.path in ["/api/v1/health", "/api/v1/ready", "/metrics", "/docs", "/openapi.json", "/redoc", "/"]:
+        if request.url.path in ["/api/v1/health", "/api/v1/ready", "/internal/metrics", "/docs", "/openapi.json", "/redoc", "/"]:
             return await call_next(request)
         
         # Extract client identifier (prefer API key, fall back to IP)
@@ -132,14 +134,29 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     @staticmethod
     def _get_client_id(request: Request) -> str:
         """Extract unique client identifier for rate limiting."""
-        # Try API key first (from auth middleware)
-        api_key = getattr(request.state, 'api_key', None) or request.headers.get("X-API-Key")
-        if api_key:
-            return f"apikey:{api_key}"
-        
-        # Fall back to IP address
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return f"ip:{forwarded.split(',')[0].strip()}"
-        
-        return f"ip:{request.client.host}"
+        principal = getattr(request.state, "principal", None)
+        if principal is not None and getattr(principal, "id", None):
+            return f"principal:{principal.id}"
+
+        # Before authentication runs, use only a digest of a presented
+        # credential.  Raw API keys must never enter Redis keys or logs.
+        credential = (
+            request.headers.get("X-Service-Token")
+            or request.headers.get("X-API-Key")
+            or request.headers.get("Authorization")
+        )
+        if credential:
+            return f"credential:{hashlib.sha256(credential.encode('utf-8')).hexdigest()}"
+
+        settings = get_settings()
+        client_host = request.client.host if request.client else "unknown"
+        trusted = {
+            value.strip()
+            for value in str(getattr(settings, "trusted_proxy_ips", "") or "").split(",")
+            if value.strip()
+        }
+        if client_host in trusted:
+            forwarded = request.headers.get("X-Forwarded-For", "")
+            if forwarded:
+                return f"ip:{forwarded.split(',')[0].strip()}"
+        return f"ip:{client_host}"

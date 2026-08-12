@@ -35,6 +35,22 @@ def test_evidence_evaluator_requires_document_and_source_metadata():
     assert evaluator.evaluate("EPR", [short], TaskType.LEGAL_LOOKUP).sufficient is False
 
 
+def test_evidence_evaluator_rejects_explicitly_unresolved_current_law_source():
+    evaluator = EvidenceEvaluator(min_chars=20)
+    unresolved = document()
+    unresolved.metadata["Current_Law_Support"] = False
+
+    result = evaluator.evaluate("Điều 77 hiện hành", [unresolved], TaskType.LEGAL_LOOKUP)
+
+    assert result.sufficient is False
+    assert result.reason == "superseded_or_unresolved_source"
+
+
+def test_evidence_evaluator_preserves_legacy_documents_without_amendment_metadata():
+    evaluator = EvidenceEvaluator(min_chars=20)
+    assert evaluator.evaluate("Điều 77", [document()], TaskType.LEGAL_LOOKUP).sufficient is True
+
+
 def test_evidence_evaluator_requires_the_requested_clause_and_point():
     evaluator = EvidenceEvaluator(min_chars=20)
     detailed = document()

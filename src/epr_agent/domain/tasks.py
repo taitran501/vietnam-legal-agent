@@ -30,6 +30,29 @@ EPR_TERMS = (
     "nghị định 08/2022",
 )
 
+NON_EPR_SCOPE_TERMS = (
+    "chứng khoán",
+    "luật lao động",
+    "hợp đồng lao động",
+    "thuế thu nhập doanh nghiệp",
+    "thuế doanh nghiệp",
+    "luật đất đai",
+    "quyền sử dụng đất",
+)
+
+NO_EVIDENCE_TERMS = (
+    "chưa có trong corpus",
+    "chưa có trong kho văn bản",
+    "chưa được đề cập trong corpus",
+    "chưa được đề cập trong văn bản",
+    "ngoài nghị định 08",
+    "epr của eu",
+    "epr của châu âu",
+    "epr tại thái lan",
+    "epr ở thái lan",
+    "tiêu chuẩn quốc tế epr",
+)
+
 GREETING_TERMS = (
     "xin chào",
     "chào bạn",
@@ -193,6 +216,20 @@ def is_epr_scope(query: str, history: list[dict[str, Any]] | None = None, active
     return bool(explicit_anchors(query)) or any(term in text for term in EPR_TERMS)
 
 
+def is_known_non_epr_query(query: str) -> bool:
+    """Return true only for an explicit topic outside the registered corpus."""
+
+    q = _normalise(query)
+    return any(term in q for term in NON_EPR_SCOPE_TERMS)
+
+
+def has_explicit_no_evidence_signal(query: str) -> bool:
+    """Detect a user assertion that the requested material is not in corpus."""
+
+    q = _normalise(query)
+    return any(term in q for term in NO_EVIDENCE_TERMS)
+
+
 def classify_task(query: str, history: list[dict[str, Any]] | None = None, active_case: dict[str, Any] | None = None) -> TaskType:
     q = _normalise(query)
     if is_greeting(q):
@@ -231,6 +268,8 @@ def classify_route(
         return RouteType.RESEARCH_WEB
     if is_greeting(query):
         return RouteType.CHITCHAT
+    if is_known_non_epr_query(query):
+        return RouteType.OUT_OF_SCOPE
     if not is_epr_scope(query, history, active_case):
         return RouteType.OUT_OF_SCOPE
     task = classify_task(query, history, active_case)

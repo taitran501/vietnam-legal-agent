@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from datetime import date
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -42,6 +42,12 @@ class LegalDocument(BaseModel):
     source_file: str = Field(min_length=1, max_length=500)
     source_uri: str | None = None
     source_sha256: str = Field(min_length=64, max_length=64)
+    signed_source_file: str | None = None
+    signed_source_sha256: str | None = Field(default=None, min_length=64, max_length=64)
+    records_file: str | None = None
+    precedence: int = Field(default=0, ge=0)
+    amends: list[str] = Field(default_factory=list)
+    status: str = "active"
 
     @field_validator("source_uri")
     @classmethod
@@ -130,6 +136,16 @@ class LegalChunk(BaseModel):
     lexical_text: str = Field(min_length=1)
     source_file: str = Field(min_length=1)
     source_uri: str | None = None
+    source_sha256: str = Field(default="", max_length=64)
+    effective_from: date | None = None
+    effective_to: date | None = None
+    effective_status: str = "unknown"
+    amendment_relationship: list[str] = Field(default_factory=list)
+    active_source_document_id: str = ""
+    active_source_pages: str = ""
+    amendment_resolution_status: str = ""
+    amendment_operations: list[dict[str, Any]] = Field(default_factory=list)
+    current_law_support: bool = False
     appendix_table_id: str = ""
     appendix_row_id: str = ""
     appendix_bbox: list[float] = Field(default_factory=list)

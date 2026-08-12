@@ -183,8 +183,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "DELETE"],
-    allow_headers=["Content-Type", "Accept", "X-API-Key", "Authorization"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Content-Type", "Accept", "X-API-Key", "X-Service-Token", "Authorization"],
 )
 
 # Add request ID middleware (must be before other middleware for correlation)
@@ -216,6 +216,7 @@ app.add_middleware(metrics_module.MetricsMiddleware)
 from backend.api.routes.chat import router as chat_router
 from backend.api.routes.feedback import router as feedback_router
 from backend.api.routes.health import router as health_router
+from backend.api.routes.me import router as me_router
 from backend.api.routes.sessions import router as sessions_router
 from backend.api.routes.traces import router as traces_router
 
@@ -224,6 +225,7 @@ app.include_router(health_router, prefix="/api/v1")
 app.include_router(sessions_router, prefix="/api/v1")
 app.include_router(feedback_router, prefix="/api/v1")
 app.include_router(traces_router, prefix="/api/v1")
+app.include_router(me_router, prefix="/api/v1")
 
 
 @app.get("/", tags=["root"])
@@ -231,7 +233,7 @@ async def root():
     return {"message": "EPR Chatbot API is running. See /docs for the API reference."}
 
 
-@app.get("/metrics", tags=["metrics"])
+@app.get("/internal/metrics", tags=["metrics"])
 async def metrics():
-    """Prometheus metrics endpoint."""
-    return metrics_module.metricsEndpoint()
+    """Prometheus metrics endpoint for the authenticated monitoring path."""
+    return metrics_module.metrics_endpoint()

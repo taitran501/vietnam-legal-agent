@@ -7,7 +7,11 @@ import type { Components } from 'react-markdown';
 /**
  * Configure react-markdown with GFM and syntax highlighting
  */
-const markdownComponents: Components = {
+function citationAwareContent(content: string): string {
+  return content.replace(/\[(\d+)\]/g, '[$1](source-citation:$1)');
+}
+
+const markdownComponents = (onCitationClick?: (index: number) => void): Components => ({
     // Code blocks with syntax highlighting
     code({ className, children }) {
       const match = /language-(\w+)/.exec(className || '');
@@ -58,6 +62,10 @@ const markdownComponents: Components = {
     },
     // Link styling
     a({ children, href }) {
+      if (href?.startsWith('source-citation:')) {
+        const index = Number(href.slice('source-citation:'.length));
+        return <button className="font-semibold text-[#006a63] underline underline-offset-2" onClick={() => onCitationClick?.(index)} type="button">{children}</button>;
+      }
       return (
         <a
           href={href}
@@ -98,15 +106,15 @@ const markdownComponents: Components = {
     p({ children }) {
       return <p className="mb-2 leading-relaxed">{children}</p>;
     },
-};
+});
 
 /**
  * Simple MarkdownRenderer component
  */
-export function MarkdownRenderer({ content }: { content: string }) {
+export function MarkdownRenderer({ content, onCitationClick }: { content: string; onCitationClick?: (index: number) => void }) {
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-      {content}
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents(onCitationClick)}>
+      {citationAwareContent(content)}
     </ReactMarkdown>
   );
 }

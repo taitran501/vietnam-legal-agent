@@ -50,9 +50,11 @@ build/
 # Generated evaluation, audit, and indexing artifacts
 artifacts/
 output/
+.playwright-cli/
 .codex_tmp/
 tests/eval/results_*.json
 tests/eval/*_report.json
+data/eval/
 
 # Local runtime state and conversation data
 data/*.sqlite3

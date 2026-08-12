@@ -71,6 +71,185 @@ def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def load_amendment_map(path: Path | None = None) -> dict[str, Any]:
+    """Load the operation-level amendment map used by ingestion metadata.
+
+    This is deliberately metadata-only.  It records which signed instrument
+    owns the substantive provision and which later instruments apply narrow
+    operations (for example a ministry-name replacement).  It does not claim
+    that the base extraction has been legally consolidated.
+    """
+
+    if path is None:
+        manifest_path = ROOT / "data" / "corpus_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        reference = str(manifest.get("amendment_map_file") or "").strip()
+        path = ROOT / reference if reference else None
+    if path is None or not path.exists() or not path.is_file():
+        return {}
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    return raw if isinstance(raw, dict) else {}
+
+
+def _anchor_key(value: Any) -> str:
+    """Normalize article/appendix labels for amendment-map lookup."""
+
+    text = _clean(value)
+    match = re.search(r"(?:Điều|Dieu)\s+\d+[a-zđ]?", text, re.IGNORECASE)
+    if match:
+        return match.group(0).replace("Dieu", "Điều").strip()
+    if "xxii" in text.casefold():
+        return "Phụ lục XXII"
+    return text
+
+
+def _amendment_entry_for_anchor(amendment_map: dict[str, Any], anchor: Any) -> dict[str, Any] | None:
+    key = _anchor_key(anchor)
+    for entry in amendment_map.get("entries") or []:
+        entry_anchor = _clean(entry.get("anchor"))
+        if entry_anchor == key:
+            return dict(entry)
+        if entry_anchor == "Điều 78-86" and re.fullmatch(r"Điều (?:7[89]|8[0-6])", key):
+            return dict(entry)
+    return None
+
+
+def amendment_metadata_for_anchor(anchor: Any, *, amendment_map: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Return safe, serialisable amendment metadata for one legal anchor."""
+
+    entry = _amendment_entry_for_anchor(amendment_map or load_amendment_map(), anchor)
+    if not entry:
+        return {
+            "active_source_document_id": "",
+            "active_source_pages": "",
+            "amendment_document_ids": [],
+            "amendment_resolution_status": "unmapped",
+            "amendment_operations": [],
+            "current_law_support": False,
+        }
+    return {
+        "active_source_document_id": str(entry.get("substantive_source_document_id") or entry.get("active_source_document_id") or ""),
+        "active_source_pages": str(entry.get("substantive_source_pages") or ""),
+        "amendment_document_ids": list(entry.get("amendment_document_ids") or []),
+        "amendment_resolution_status": str(entry.get("resolution_status") or "unresolved"),
+        "amendment_operations": list(entry.get("operations") or []),
+        "current_law_support": bool(entry.get("current_law_support", False)),
+    }
+
+
+def corpus_readiness_audit(
+    *,
+    manifest_path: Path | None = None,
+    rule_pack_path: Path | None = None,
+    amendment_map_path: Path | None = None,
+    appendix_path: Path | None = None,
+) -> dict[str, Any]:
+    """Verify the complete amendment chain before an index can be promoted."""
+
+    manifest_path = manifest_path or ROOT / "data" / "corpus_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    documents = {str(item.get("document_id")): dict(item) for item in manifest.get("documents") or []}
+    source_errors: list[str] = []
+    for document_id, document in documents.items():
+        for field in ("source_file", "source_sha256", "source_uri", "signed_source_file", "signed_source_sha256"):
+            if not document.get(field):
+                source_errors.append(f"{document_id}:{field}_missing")
+        if document.get("source_uri") and not str(document["source_uri"]).startswith(("https://", "http://")):
+            source_errors.append(f"{document_id}:source_uri_invalid")
+        source_path = ROOT / str(document.get("source_file") or "")
+        if not source_path.exists():
+            source_errors.append(f"{document_id}:source_missing")
+        elif str(document.get("source_sha256", "")).lower() != sha256_file(source_path).lower():
+            source_errors.append(f"{document_id}:source_hash_mismatch")
+        signed_path_value = document.get("signed_source_file")
+        if signed_path_value:
+            signed_path = ROOT / str(signed_path_value)
+            expected_signed = str(document.get("signed_source_sha256") or "").lower()
+            if not signed_path.exists():
+                source_errors.append(f"{document_id}:signed_source_missing")
+            elif expected_signed and expected_signed != sha256_file(signed_path).lower():
+                source_errors.append(f"{document_id}:signed_source_hash_mismatch")
+        for amended_id in document.get("amends") or []:
+            if str(amended_id) not in documents:
+                source_errors.append(f"{document_id}:amends_missing:{amended_id}")
+
+    amendment_map_reference = str(manifest.get("amendment_map_file") or "").strip()
+    amendment_map_path = amendment_map_path or (ROOT / amendment_map_reference if amendment_map_reference else None)
+    amendment_errors: list[str] = []
+    amendment_map: dict[str, Any] = {}
+    if amendment_map_path is None or not amendment_map_path.exists() or not amendment_map_path.is_file():
+        amendment_errors.append("amendment_map_missing")
+    else:
+        amendment_map = json.loads(amendment_map_path.read_text(encoding="utf-8"))
+        known_anchors = {
+            _clean(entry.get("anchor"))
+            for entry in amendment_map.get("entries") or []
+            if isinstance(entry, dict)
+        }
+        expected_anchors = {f"Điều {number}" for number in range(77, 87)} | {"Phụ lục XXII"}
+        for missing_anchor in sorted(expected_anchors - known_anchors):
+            amendment_errors.append(f"anchor_missing:{missing_anchor}")
+        if str(amendment_map.get("review_status") or "") != "approved":
+            amendment_errors.append("amendment_map_legal_review_pending")
+        for index, entry in enumerate(amendment_map.get("entries") or []):
+            active_id = str(entry.get("substantive_source_document_id") or entry.get("active_source_document_id") or "")
+            if active_id not in documents:
+                amendment_errors.append(f"entry_{index}:active_source_missing")
+            elif not documents[active_id].get("signed_source_sha256"):
+                amendment_errors.append(f"entry_{index}:active_source_not_signed")
+            if not str(entry.get("substantive_source_pages") or "").strip():
+                amendment_errors.append(f"entry_{index}:active_source_pages_missing")
+            operations = entry.get("operations") or []
+            if not isinstance(operations, list) or not operations:
+                amendment_errors.append(f"entry_{index}:operations_missing")
+            else:
+                for operation_index, operation in enumerate(operations):
+                    if not isinstance(operation, dict):
+                        amendment_errors.append(f"entry_{index}:operation_{operation_index}_invalid")
+                        continue
+                    operation_document = str(operation.get("document_id") or "")
+                    if operation_document not in documents:
+                        amendment_errors.append(f"entry_{index}:operation_{operation_index}_document_missing")
+                    if not str(operation.get("source_pages") or "").strip():
+                        amendment_errors.append(f"entry_{index}:operation_{operation_index}_pages_missing")
+                    if not str(operation.get("operation") or "").strip():
+                        amendment_errors.append(f"entry_{index}:operation_{operation_index}_kind_missing")
+            if str(entry.get("resolution_status") or "").endswith("pending") or "pending" in str(entry.get("resolution_status") or ""):
+                amendment_errors.append(f"entry_{index}:resolution_pending")
+            if not entry.get("verified_by"):
+                amendment_errors.append(f"entry_{index}:legal_review_missing")
+
+    rule_pack_reference = str(manifest.get("rule_pack_file") or "").strip()
+    rule_pack_path = rule_pack_path or (ROOT / rule_pack_reference if rule_pack_reference else None)
+    rule_pack_errors: list[str] = []
+    rule_pack: dict[str, Any] = {}
+    expected_corpus_sha = corpus_sha256(manifest_path=manifest_path, appendix_path=appendix_path)
+    if rule_pack_path is None or not rule_pack_path.exists() or not rule_pack_path.is_file():
+        rule_pack_errors.append("rule_pack_missing")
+    else:
+        rule_pack = json.loads(rule_pack_path.read_text(encoding="utf-8"))
+        if str(rule_pack.get("corpus_version") or "") != str(manifest.get("corpus_version") or ""):
+            rule_pack_errors.append("rule_pack_corpus_version_mismatch")
+        if str(rule_pack.get("corpus_sha256") or "").lower() != expected_corpus_sha.lower():
+            rule_pack_errors.append("rule_pack_corpus_hash_mismatch")
+        if str(rule_pack.get("legal_review_status") or "") != "approved":
+            rule_pack_errors.append("rule_pack_legal_review_pending")
+
+    return {
+        "source_errors": source_errors,
+        "amendment_errors": amendment_errors,
+        "rule_pack_errors": rule_pack_errors,
+        "manifest_legal_review_status": manifest.get("legal_review_status"),
+        "promotion_status": manifest.get("promotion_status"),
+        "expected_corpus_sha": expected_corpus_sha,
+        "ready_for_promotion": not source_errors and not amendment_errors and not rule_pack_errors and manifest.get("legal_review_status") == "approved",
+        "amendment_map_sha256": sha256_file(amendment_map_path) if amendment_map_path and amendment_map_path.is_file() else "",
+        "rule_pack_sha256": sha256_file(rule_pack_path) if rule_pack_path and rule_pack_path.is_file() else "",
+        "document_count": len(documents),
+        "documents": sorted(documents),
+    }
+
+
 def corpus_sha256(
     *, law_path: Path | None = None, manifest_path: Path | None = None, appendix_path: Path | None = None
 ) -> str:
@@ -80,7 +259,7 @@ def corpus_sha256(
     manifest_path = manifest_path or ROOT / "data" / "corpus_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     payload: dict[str, Any] = {
-        "law_json_sha256": sha256_file(law_path),
+        "law_json_sha256": sha256_file(law_path) if law_path.exists() else "missing",
         "manifest": manifest,
         "chunking_profile": CHUNKING_PROFILE,
         "embedding_profile": EMBEDDING_PROFILE,
@@ -88,22 +267,64 @@ def corpus_sha256(
     appendix = appendix_path or ROOT / "data" / "appendix_xxii.jsonl"
     if appendix.exists():
         payload["appendix_xxii_sha256"] = sha256_file(appendix)
+    amendment_map_reference = str(manifest.get("amendment_map_file") or "").strip()
+    amendment_map = ROOT / amendment_map_reference if amendment_map_reference else None
+    if amendment_map and amendment_map.is_file():
+        payload["amendment_map_sha256"] = sha256_file(amendment_map)
     for document in manifest.get("documents", []):
         source = ROOT / str(document["source_file"])
-        payload.setdefault("source_sha256", {})[str(document["document_id"])] = sha256_file(source)
+        payload.setdefault("source_sha256", {})[str(document["document_id"])] = sha256_file(source) if source.is_file() else "missing"
+        records_file = document.get("records_file")
+        if records_file:
+            records_path = ROOT / str(records_file)
+            if records_path.is_file():
+                payload.setdefault("records_sha256", {})[str(document["document_id"])] = sha256_file(records_path)
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
-def load_document_manifest(path: Path | None = None) -> tuple[str, str, LegalDocument]:
+def load_document_manifests(path: Path | None = None) -> tuple[str, str, list[LegalDocument]]:
     path = path or ROOT / "data" / "corpus_manifest.json"
     raw = json.loads(path.read_text(encoding="utf-8"))
     documents = raw.get("documents") or []
-    if len(documents) != 1:
-        raise ValueError("EPR V3 currently requires exactly one canonical source document")
-    item = dict(documents[0])
-    item["source_sha256"] = sha256_file(ROOT / item["source_file"])
-    return str(raw["corpus_id"]), str(raw["corpus_version"]), LegalDocument.model_validate(item)
+    if not documents:
+        raise ValueError("corpus manifest must contain at least one source document")
+    validated: list[LegalDocument] = []
+    for item in documents:
+        entry = dict(item)
+        source_path = ROOT / str(entry["source_file"])
+        if not source_path.exists():
+            raise FileNotFoundError(f"corpus source is missing: {source_path}")
+        # The manifest carries an auditable expected hash.  Recompute it so a
+        # changed source cannot silently retain the old identity.
+        actual_hash = sha256_file(source_path)
+        expected_hash = str(entry.get("source_sha256") or actual_hash).upper()
+        if expected_hash != actual_hash.upper():
+            raise ValueError(f"source hash mismatch for {entry['document_id']}")
+        entry["source_sha256"] = actual_hash
+        validated.append(LegalDocument.model_validate(entry))
+    return str(raw["corpus_id"]), str(raw["corpus_version"]), validated
+
+
+def load_document_manifest(path: Path | None = None) -> tuple[str, str, LegalDocument]:
+    """Compatibility helper returning the document with checked-in records."""
+
+    corpus_id, corpus_version, documents = load_document_manifests(path)
+    for document in documents:
+        if document.document_id == "nd-08-2022-nd-cp":
+            return corpus_id, corpus_version, document
+    return corpus_id, corpus_version, min(documents, key=lambda item: item.effective_from or "")
+
+
+def _records_document_map(path: Path | None = None) -> dict[str, LegalDocument]:
+    _, _, documents = load_document_manifests(path)
+    result: dict[str, LegalDocument] = {}
+    for document in documents:
+        # Amendment PDFs are source evidence but are not promoted as chunks
+        # until their page-level text extraction has passed legal review.
+        if document.document_id == "nd-08-2022-nd-cp":
+            result[str(document.document_id)] = document
+    return result
 
 
 def load_extracted_records(path: Path | None = None) -> list[dict[str, Any]]:
@@ -178,7 +399,8 @@ def canonical_articles(
     *, require_appendix: bool = False, appendix_path: Path | None = None
 ) -> tuple[list[dict[str, Any]], CorpusAudit]:
     corpus_id, corpus_version, document = load_document_manifest()
-    digest = corpus_sha256()
+    digest = corpus_sha256(appendix_path=appendix_path)
+    amendment_map = load_amendment_map()
     accepted: list[dict[str, Any]] = []
     excluded: list[dict[str, str]] = []
     source_records = load_extracted_records()
@@ -190,6 +412,9 @@ def canonical_articles(
             continue
         text = _raw_text(record.get("Text", record.get("text", "")))
         article = _article_value(record, "Điều", "Dieu", "Điều_Number")
+        amendment_metadata = amendment_metadata_for_anchor(article, amendment_map=amendment_map)
+        if amendment_metadata["amendment_resolution_status"] == "unmapped":
+            amendment_metadata["current_law_support"] = not bool(document.amends)
         chapter = _article_value(record, "Chương", "Chuong", "Chương_Number")
         section = _article_value(record, "Mục", "Muc", "Mục_Number")
         item: dict[str, Any] = (
@@ -201,6 +426,14 @@ def canonical_articles(
                 "Source_File": document.source_file,
                 "Source_URI": document.source_uri or "",
                 "Source_SHA256": document.source_sha256,
+                "Effective_From": document.effective_from.isoformat() if document.effective_from else "",
+                "Effective_Status": "pending_amendment_review" if document.amends else document.status,
+                "Amendment_Relationship": amendment_metadata["amendment_document_ids"] or list(document.amends),
+                "Active_Source_Document_Id": amendment_metadata["active_source_document_id"],
+                "Active_Source_Pages": amendment_metadata["active_source_pages"],
+                "Amendment_Resolution_Status": amendment_metadata["amendment_resolution_status"],
+                "Amendment_Operations": amendment_metadata["amendment_operations"],
+                "Current_Law_Support": amendment_metadata["current_law_support"],
                 "Source_Title": document.title,
                 "Document_Number": document.number,
                 "Điều": article,
@@ -278,6 +511,7 @@ def canonical_chunks(
 ) -> tuple[list[LegalChunk], CorpusAudit]:
     corpus_id, corpus_version, document = load_document_manifest()
     digest = corpus_sha256(appendix_path=appendix_path)
+    amendment_map = load_amendment_map()
     chunks: list[LegalChunk] = []
     seen: set[str] = set()
     duplicate_count = 0
@@ -305,6 +539,9 @@ def canonical_chunks(
             clause=_article_value(article, "Khoan"),
             point=_article_value(article, "Diem"),
         )
+        amendment_metadata = amendment_metadata_for_anchor(anchor.article, amendment_map=amendment_map)
+        if amendment_metadata["amendment_resolution_status"] == "unmapped":
+            amendment_metadata["current_law_support"] = not bool(document.amends)
         chunks.append(
             LegalChunk(
                 chunk_id=chunk_id,
@@ -323,6 +560,16 @@ def canonical_chunks(
                 lexical_text=build_lexical_text(document=document, article=article),
                 source_file=document.source_file,
                 source_uri=document.source_uri,
+                source_sha256=document.source_sha256,
+                effective_from=document.effective_from,
+                effective_to=document.effective_to,
+                effective_status="pending_amendment_review" if document.amends else document.status,
+                amendment_relationship=amendment_metadata["amendment_document_ids"] or list(document.amends),
+                active_source_document_id=amendment_metadata["active_source_document_id"],
+                active_source_pages=amendment_metadata["active_source_pages"],
+                amendment_resolution_status=amendment_metadata["amendment_resolution_status"],
+                amendment_operations=amendment_metadata["amendment_operations"],
+                current_law_support=amendment_metadata["current_law_support"],
                 appendix_table_id=str(article.get("Appendix_Table_Id") or ""),
                 appendix_row_id=str(article.get("Appendix_Row_Id") or ""),
                 appendix_bbox=[float(value) for value in list(article.get("Appendix_BBox") or [])],

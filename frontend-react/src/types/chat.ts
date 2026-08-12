@@ -4,12 +4,14 @@
 
 export interface ChatMessage {
   id: string;
+  serverMessageId?: number;
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
   source?: ResponseSource;
   documents?: SourceDocument[];
   workflow?: WorkflowMetadata;
+  feedback?: { rating: 1 | 2; comment?: string | null };
 }
 
 export type ResponseSource = 
@@ -56,6 +58,37 @@ export interface WorkflowMetadata {
   result_type?: 'legal_answer' | 'assessment' | 'checklist' | 'none';
   required_issues?: string[];
   covered_issues?: string[];
+  rule_id?: string;
+  rule_pack_version?: string;
+  effective_dates?: Record<string, string>;
+  corpus_as_of_date?: string;
+  sources?: SourceSnapshot[];
+  replay_metadata?: Record<string, unknown>;
+  validation_errors?: Record<string, string>;
+  citation_error?: string;
+  safe_stop_reason?: string;
+}
+
+export interface SourceSnapshot {
+  source_id: string;
+  title?: string;
+  instrument_number?: string;
+  anchor?: string;
+  page?: string | number | null;
+  offset_start?: number | null;
+  offset_end?: number | null;
+  official_url?: string;
+  effective_status?: string;
+  effective_from?: string | null;
+  effective_to?: string | null;
+  amendment_relationship?: string[] | Record<string, unknown>;
+  active_source_document_id?: string;
+  active_source_pages?: string;
+  amendment_resolution_status?: string;
+  amendment_operations?: Array<Record<string, unknown>>;
+  current_law_support?: boolean;
+  corpus_as_of_date?: string;
+  excerpt?: string;
 }
 
 export type CaseFacts = Record<string, string | FactValue>;
@@ -67,6 +100,7 @@ export interface FactValue {
   evidence_span?: string;
   confidence?: number;
   verified?: boolean;
+  confirmation_status?: 'user_confirmed' | 'document_verified' | 'unknown';
 }
 
 export interface CaseField {
@@ -75,6 +109,7 @@ export interface CaseField {
   kind: 'text' | 'select' | 'number' | 'boolean';
   options: Array<{ value: string; label: string }>;
   required: boolean;
+  importance?: 'required' | 'conditional' | 'informational';
   missing: boolean;
   value: string;
   help_text?: string;
@@ -105,8 +140,11 @@ export interface EvidenceAssessment {
 export interface WorkflowStep {
   step: number;
   action: string;
+  label?: string;
   status: string;
   trace_id?: string;
+  pipeline_version?: string;
+  sequence?: number;
 }
 
 export interface Conversation {
