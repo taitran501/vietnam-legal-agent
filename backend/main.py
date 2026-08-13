@@ -126,6 +126,8 @@ async def lifespan(app: FastAPI):
         await init_history_store()
         logger.info("Persistent history store ready at %s", settings.history_db_path)
     except Exception as exc:  # noqa: BLE001 - persistence failure is reported without blocking shutdown
+        code = str(getattr(exc, "code", "persistence_init_failed"))
+        metrics_module.track_migration_failure("startup", code)
         logger.warning("Persistent history init failed: %s", exc)
 
     # 2.5 Warm retrieval indexes asynchronously; readiness still guards requests.

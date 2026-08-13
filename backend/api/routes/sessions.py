@@ -16,6 +16,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
+from backend.api import metrics
 from backend.api.principal import principal_from_request_state
 from backend.history import (
     archive_conversation as archive_conversation_persistent,
@@ -207,8 +208,14 @@ async def get_session(request: Request, session_id: str):
     Returns the complete message history with timestamps for reloading a conversation.
     """
     user_id = _current_user_id(request)
-    conversation = await get_conversation_persistent(user_id=user_id, conversation_id=session_id)
+    try:
+        conversation = await get_conversation_persistent(user_id=user_id, conversation_id=session_id)
+    except Exception as exc:
+        metrics.track_session_load_failure("storage_unavailable")
+        logger.exception("session_load_failure reason=storage_unavailable")
+        raise HTTPException(status_code=503, detail="Conversation storage is unavailable") from exc
     if conversation is None:
+        metrics.track_session_load_failure("not_found_or_forbidden")
         raise HTTPException(status_code=404, detail="Session not found")
     return SessionDetail(
         id=conversation["id"],

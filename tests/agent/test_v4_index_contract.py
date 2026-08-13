@@ -86,14 +86,25 @@ def test_alias_switch_deletes_only_alias_and_keeps_previous_collection(monkeypat
         aliases=[SimpleNamespace(alias_name="law_collection", collection_name="law_old")],
     )
 
-    ensure_law_index._switch_alias(client, "law_collection", "law_new")
+    previous = ensure_law_index._switch_alias(client, "law_collection", "law_new")
 
+    assert previous == "law_old"
     assert len(client.alias_operations) == 1
     operations = client.alias_operations[0]
     assert len(operations) == 2
     assert operations[0].delete_alias.alias_name == "law_collection"
     assert operations[1].create_alias.alias_name == "law_collection"
     assert operations[1].create_alias.collection_name == "law_new"
+
+
+def test_preview_can_publish_technical_corpus_but_production_requires_approval() -> None:
+    readiness = {"technical_ready": True, "ready_for_promotion": False}
+
+    assert ensure_law_index._promotion_allowed(readiness, "preview") is True
+    assert ensure_law_index._promotion_allowed(readiness, "production") is False
+
+    with pytest.raises(ValueError, match="unsupported corpus runtime mode"):
+        ensure_law_index._promotion_allowed(readiness, "typo")
 
 
 def test_index_source_contract_fails_before_embedding_on_missing_heading() -> None:

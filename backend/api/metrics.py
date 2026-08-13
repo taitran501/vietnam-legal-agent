@@ -164,6 +164,65 @@ RATE_LIMITED_REQUESTS = Counter(
     registry=REGISTRY,
 )
 
+# User-journey and release-operation metrics.  Labels are intentionally
+# low-cardinality reason codes, never conversation IDs, URLs, tokens, or raw
+# exception messages.
+MIGRATION_FAILURES = Counter(
+    "migration_failures_total",
+    "Database migration failures",
+    ["stage", "code"],
+    registry=REGISTRY,
+)
+
+CAPABILITY_READINESS = Counter(
+    "capability_readiness_observations_total",
+    "Capability readiness observations",
+    ["capability", "status", "reason"],
+    registry=REGISTRY,
+)
+
+TURN_TERMINATIONS = Counter(
+    "turn_terminations_total",
+    "Durable turn terminal states",
+    ["status", "reason"],
+    registry=REGISTRY,
+)
+
+SSE_ERRORS = Counter(
+    "sse_errors_total",
+    "Structured SSE errors emitted to clients",
+    ["code", "retryable"],
+    registry=REGISTRY,
+)
+
+SESSION_LOAD_FAILURES = Counter(
+    "session_load_failures_total",
+    "Conversation load failures",
+    ["reason"],
+    registry=REGISTRY,
+)
+
+WEB_RESULT_REJECTIONS = Counter(
+    "web_result_rejections_total",
+    "Official-web candidates rejected before evidence use",
+    ["reason"],
+    registry=REGISTRY,
+)
+
+FEEDBACK_FAILURES = Counter(
+    "feedback_failures_total",
+    "Durable feedback failures",
+    ["operation", "reason"],
+    registry=REGISTRY,
+)
+
+REPLAY_OPERATIONS = Counter(
+    "replay_operations_total",
+    "Retry and regeneration operations",
+    ["operation", "result"],
+    registry=REGISTRY,
+)
+
 
 # ---------------------------------------------------------------------------
 # Helper functions for metrics
@@ -225,6 +284,45 @@ def track_rerank_fallback(reason: str, from_engine: str, to_engine: str) -> None
         from_engine=from_engine,
         to_engine=to_engine,
     ).inc()
+
+
+def _label(value: object, default: str = "unknown") -> str:
+    text = str(value or default).strip().lower().replace("-", "_")
+    return text[:80] if text and all(char.isalnum() or char in "_:._" for char in text) else default
+
+
+def track_migration_failure(stage: str, code: str) -> None:
+    MIGRATION_FAILURES.labels(stage=_label(stage), code=_label(code)).inc()
+
+
+def track_capability_readiness(capability: str, status: str, reason: str) -> None:
+    CAPABILITY_READINESS.labels(
+        capability=_label(capability), status=_label(status), reason=_label(reason)
+    ).inc()
+
+
+def track_turn_termination(status: str, reason: str = "none") -> None:
+    TURN_TERMINATIONS.labels(status=_label(status), reason=_label(reason, "none")).inc()
+
+
+def track_sse_error(code: str, retryable: bool) -> None:
+    SSE_ERRORS.labels(code=_label(code), retryable=str(bool(retryable)).lower()).inc()
+
+
+def track_session_load_failure(reason: str) -> None:
+    SESSION_LOAD_FAILURES.labels(reason=_label(reason)).inc()
+
+
+def track_web_result_rejection(reason: str) -> None:
+    WEB_RESULT_REJECTIONS.labels(reason=_label(reason)).inc()
+
+
+def track_feedback_failure(operation: str, reason: str) -> None:
+    FEEDBACK_FAILURES.labels(operation=_label(operation), reason=_label(reason)).inc()
+
+
+def track_replay_operation(operation: str, result: str) -> None:
+    REPLAY_OPERATIONS.labels(operation=_label(operation), result=_label(result)).inc()
 
 
 # ---------------------------------------------------------------------------

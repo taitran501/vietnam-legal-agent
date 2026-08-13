@@ -24,7 +24,8 @@
       "records_file": "data/law.json",
       "precedence": 10,
       "amends": [],
-      "status": "base_source"
+      "status": "base_source",
+      "records_sha256": "F03AD59846BBBFE1435D412684964609182895FAC3D25049DD123252D0A5731C"
     },
     {
       "document_id": "nd-05-2025-nd-cp",
@@ -42,11 +43,38 @@
       "signed_source_sha256": "5EA433F7C4D94981C86478D050A28EEAB99F36F8E620F367BE90DF1A8DEAC916",
       "records_file": null,
       "precedence": 20,
-      "amends": ["nd-08-2022-nd-cp"],
-      "affected_anchors": ["Điều 77", "Điều 78", "Điều 79", "Điều 80", "Điều 81", "Điều 82", "Điều 83", "Điều 84", "Điều 85", "Điều 86", "Phụ lục XXII"],
+      "amends": [
+        "nd-08-2022-nd-cp"
+      ],
+      "affected_anchors": [
+        "Điều 77",
+        "Điều 78",
+        "Điều 79",
+        "Điều 80",
+        "Điều 81",
+        "Điều 82",
+        "Điều 83",
+        "Điều 84",
+        "Điều 85",
+        "Điều 86",
+        "Phụ lục XXII"
+      ],
       "amendment_scope": {
         "operation": "substantive_replacement_and_repeal",
-        "source_pages": [48, 49, 50, 51, 52, 53, 54, 68, 86, 87, 88, 89],
+        "source_pages": [
+          48,
+          49,
+          50,
+          51,
+          52,
+          53,
+          54,
+          68,
+          86,
+          87,
+          88,
+          89
+        ],
         "notes": "Manual page review identifies substantive EPR provisions in pages 48-54, repeals on page 68, and replacement Appendix XXII on pages 86-89."
       },
       "status": "source_verified_manual_map_pending_legal_review"
@@ -67,15 +95,42 @@
       "signed_source_sha256": "3902145D9D3FB8201B501076A5ABB3C828A97E5D877206E2220456DC9A17ABBB",
       "records_file": null,
       "precedence": 30,
-      "amends": ["nd-08-2022-nd-cp", "nd-05-2025-nd-cp"],
-      "affected_anchors": ["Điều 77", "Điều 78", "Điều 79", "Điều 80", "Điều 81", "Điều 82", "Điều 83", "Điều 84", "Điều 85", "Điều 86"],
+      "amends": [
+        "nd-08-2022-nd-cp",
+        "nd-05-2025-nd-cp"
+      ],
+      "affected_anchors": [
+        "Điều 77",
+        "Điều 78",
+        "Điều 79",
+        "Điều 80",
+        "Điều 81",
+        "Điều 82",
+        "Điều 83",
+        "Điều 84",
+        "Điều 85",
+        "Điều 86"
+      ],
       "amendment_scope": {
         "operation": "targeted_term_replacement",
-        "source_pages": [29, 30, 31],
+        "source_pages": [
+          29,
+          30,
+          31
+        ],
         "replacement": "Bộ Tài nguyên và Môi trường / Bộ Nông nghiệp và Phát triển nông thôn -> Bộ Nông nghiệp và Môi trường",
         "notes": "The EPR provisions are listed as targeted locations; 48/2026 does not replace all text of Articles 77-86 and does not replace Appendix XXII."
       },
       "status": "source_verified_manual_map_pending_legal_review"
     }
-  ]
+  ],
+  "index_contract": {
+    "alias": "law_collection",
+    "index_schema_version": "legal-structure-v2-v4-appendix1",
+    "chunking_profile": "legal-structure-v2",
+    "embedding_profile": "openai-text-embedding-3-small-v1",
+    "embedding_model": "text-embedding-3-small",
+    "embedding_dimensions": 1536,
+    "collection_identity": "law_{corpus_id}_{corpus_sha12}_{schema}_{embedding_profile}"
+  }
 }

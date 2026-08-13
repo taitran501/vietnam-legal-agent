@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import re
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
+from backend.api import metrics
 from backend.api.principal import principal_from_request_state
 from backend.history import (
     feedback_stats as feedback_stats_persistent,
@@ -17,6 +19,7 @@ from backend.history import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class FeedbackPayload(BaseModel):
@@ -72,6 +75,7 @@ async def _persist_feedback(request: Request, conversation_id: str, message_id: 
     if saved is None:
         # Do not reveal whether another owner has a matching conversation or
         # message.  The same response covers ownership and missing targets.
+        metrics.track_feedback_failure("put", "not_found_or_forbidden")
         raise HTTPException(status_code=404, detail="Assistant message not found")
     return {"status": "ok", "feedback": saved}
 
@@ -88,6 +92,8 @@ async def update_message_feedback(
     except HTTPException:
         raise
     except Exception as exc:
+        metrics.track_feedback_failure("put", "storage_unavailable")
+        logger.exception("feedback_failure operation=put reason=storage_unavailable")
         raise HTTPException(status_code=503, detail="Feedback storage is unavailable") from exc
 
 
@@ -108,6 +114,8 @@ async def submit_feedback(body: FeedbackRequest, request: Request):
     except HTTPException:
         raise
     except Exception as exc:
+        metrics.track_feedback_failure("legacy_post", "storage_unavailable")
+        logger.exception("feedback_failure operation=legacy_post reason=storage_unavailable")
         raise HTTPException(status_code=503, detail="Feedback storage is unavailable") from exc
 
 
@@ -119,4 +127,6 @@ async def get_feedback_stats(request: Request):
     try:
         return await feedback_stats_persistent()
     except Exception as exc:
+        metrics.track_feedback_failure("stats", "storage_unavailable")
+        logger.exception("feedback_failure operation=stats reason=storage_unavailable")
         raise HTTPException(status_code=503, detail="Feedback storage is unavailable") from exc

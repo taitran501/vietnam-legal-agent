@@ -18,6 +18,7 @@ EMBEDDING_PROFILE = "openai-text-embedding-3-small-v1"
 EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_DIMENSIONS = 1536
 CHUNKING_PROFILE = "legal-structure-v2"
+INDEX_SCHEMA_VERSION = "legal-structure-v2-v4-appendix1"
 _ARTICLE_RE = re.compile(r"\b(?:điều|dieu)\s+(\d+[a-zđ]?)\b", re.IGNORECASE)
 _DOCUMENT_RE = re.compile(
     r"\b(?:nghị\s*định|nghi\s*dinh|thông\s*tư|thong\s*tu|quyết\s*định|quyet\s*dinh)"

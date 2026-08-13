@@ -172,6 +172,18 @@ def corpus_readiness_audit(
         for amended_id in document.get("amends") or []:
             if str(amended_id) not in documents:
                 source_errors.append(f"{document_id}:amends_missing:{amended_id}")
+            elif int(document.get("precedence") or 0) <= int(documents[str(amended_id)].get("precedence") or 0):
+                source_errors.append(f"{document_id}:precedence_not_above:{amended_id}")
+        records_value = document.get("records_file")
+        if records_value:
+            records_path = ROOT / str(records_value)
+            expected_records = str(document.get("records_sha256") or "").lower()
+            if not records_path.is_file():
+                source_errors.append(f"{document_id}:records_missing")
+            elif not expected_records:
+                source_errors.append(f"{document_id}:records_sha256_missing")
+            elif expected_records != sha256_file(records_path).lower():
+                source_errors.append(f"{document_id}:records_hash_mismatch")
 
     amendment_map_reference = str(manifest.get("amendment_map_file") or "").strip()
     amendment_map_path = amendment_map_path or (ROOT / amendment_map_reference if amendment_map_reference else None)
@@ -181,6 +193,10 @@ def corpus_readiness_audit(
         amendment_errors.append("amendment_map_missing")
     else:
         amendment_map = json.loads(amendment_map_path.read_text(encoding="utf-8"))
+        if str(amendment_map.get("technical_validation_status") or "") != "complete":
+            amendment_errors.append("amendment_map_technical_validation_incomplete")
+        if amendment_map.get("generated_consolidated_text") is not False:
+            amendment_errors.append("amendment_map_generated_text_policy_missing")
         known_anchors = {
             _clean(entry.get("anchor"))
             for entry in amendment_map.get("entries") or []
@@ -203,6 +219,15 @@ def corpus_readiness_audit(
             if not isinstance(operations, list) or not operations:
                 amendment_errors.append(f"entry_{index}:operations_missing")
             else:
+                operation_precedence: list[int] = []
+                allowed_operations = {
+                    "repeal_provision",
+                    "replace_appendix",
+                    "replace_provision",
+                    "replace_provision_part",
+                    "replace_provision_parts",
+                    "replace_term",
+                }
                 for operation_index, operation in enumerate(operations):
                     if not isinstance(operation, dict):
                         amendment_errors.append(f"entry_{index}:operation_{operation_index}_invalid")
@@ -210,10 +235,19 @@ def corpus_readiness_audit(
                     operation_document = str(operation.get("document_id") or "")
                     if operation_document not in documents:
                         amendment_errors.append(f"entry_{index}:operation_{operation_index}_document_missing")
+                    else:
+                        operation_precedence.append(int(documents[operation_document].get("precedence") or 0))
                     if not str(operation.get("source_pages") or "").strip():
                         amendment_errors.append(f"entry_{index}:operation_{operation_index}_pages_missing")
                     if not str(operation.get("operation") or "").strip():
                         amendment_errors.append(f"entry_{index}:operation_{operation_index}_kind_missing")
+                    elif str(operation.get("operation")) not in allowed_operations:
+                        amendment_errors.append(f"entry_{index}:operation_{operation_index}_kind_unsupported")
+                    for field in ("target", "effective_from", "summary"):
+                        if not str(operation.get(field) or "").strip():
+                            amendment_errors.append(f"entry_{index}:operation_{operation_index}_{field}_missing")
+                if operation_precedence != sorted(operation_precedence):
+                    amendment_errors.append(f"entry_{index}:operation_precedence_invalid")
             if str(entry.get("resolution_status") or "").endswith("pending") or "pending" in str(entry.get("resolution_status") or ""):
                 amendment_errors.append(f"entry_{index}:resolution_pending")
             if not entry.get("verified_by"):
@@ -235,14 +269,52 @@ def corpus_readiness_audit(
         if str(rule_pack.get("legal_review_status") or "") != "approved":
             rule_pack_errors.append("rule_pack_legal_review_pending")
 
+    approval_errors: list[str] = []
+    if str(manifest.get("legal_review_status") or "") != "approved":
+        approval_errors.append("manifest_legal_review_pending")
+    else:
+        for field in ("legal_reviewed_by", "legal_reviewed_at", "corpus_as_of_date"):
+            if not str(manifest.get(field) or "").strip():
+                approval_errors.append(f"manifest_{field}_missing")
+    if str(amendment_map.get("review_status") or "") == "approved":
+        for field in ("reviewed_by", "reviewed_at"):
+            if not str(amendment_map.get(field) or "").strip():
+                approval_errors.append(f"amendment_map_{field}_missing")
+        for index, entry in enumerate(amendment_map.get("entries") or []):
+            for field in ("verified_by", "verified_at"):
+                if not str(entry.get(field) or "").strip():
+                    approval_errors.append(f"entry_{index}:{field}_missing")
+    if str(rule_pack.get("legal_review_status") or "") == "approved":
+        for field in ("legal_reviewed_by", "legal_reviewed_at"):
+            if not str(rule_pack.get(field) or "").strip():
+                approval_errors.append(f"rule_pack_{field}_missing")
+
+    legal_review_markers = ("legal_review_pending", "legal_review_missing", "resolution_pending")
+    technical_errors = [
+        error
+        for error in [*source_errors, *amendment_errors, *rule_pack_errors]
+        if not any(marker in error for marker in legal_review_markers)
+    ]
+    technical_ready = not technical_errors
+    ready_for_promotion = (
+        technical_ready
+        and not amendment_errors
+        and not rule_pack_errors
+        and not approval_errors
+        and manifest.get("legal_review_status") == "approved"
+    )
+
     return {
         "source_errors": source_errors,
         "amendment_errors": amendment_errors,
         "rule_pack_errors": rule_pack_errors,
+        "approval_errors": approval_errors,
+        "technical_errors": technical_errors,
+        "technical_ready": technical_ready,
         "manifest_legal_review_status": manifest.get("legal_review_status"),
         "promotion_status": manifest.get("promotion_status"),
         "expected_corpus_sha": expected_corpus_sha,
-        "ready_for_promotion": not source_errors and not amendment_errors and not rule_pack_errors and manifest.get("legal_review_status") == "approved",
+        "ready_for_promotion": ready_for_promotion,
         "amendment_map_sha256": sha256_file(amendment_map_path) if amendment_map_path and amendment_map_path.is_file() else "",
         "rule_pack_sha256": sha256_file(rule_pack_path) if rule_pack_path and rule_pack_path.is_file() else "",
         "document_count": len(documents),
@@ -258,25 +330,50 @@ def corpus_sha256(
     law_path = law_path or ROOT / "data" / "law.json"
     manifest_path = manifest_path or ROOT / "data" / "corpus_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    return corpus_sha256_from_manifest(
+        manifest,
+        law_path=law_path,
+        appendix_path=appendix_path,
+        root=ROOT,
+    )
+
+
+def corpus_sha256_from_manifest(
+    manifest: dict[str, Any],
+    *,
+    law_path: Path | None = None,
+    appendix_path: Path | None = None,
+    root: Path | None = None,
+) -> str:
+    """Fingerprint a manifest payload without requiring a temporary file.
+
+    The corpus synchronization command uses this function to compute the hash
+    of the *desired* manifest before writing it.  Keeping one implementation
+    avoids a check/write loop where updating source hashes changes the corpus
+    identity a second time.
+    """
+
+    root = root or ROOT
+    law_path = law_path or root / "data" / "law.json"
     payload: dict[str, Any] = {
         "law_json_sha256": sha256_file(law_path) if law_path.exists() else "missing",
         "manifest": manifest,
         "chunking_profile": CHUNKING_PROFILE,
         "embedding_profile": EMBEDDING_PROFILE,
     }
-    appendix = appendix_path or ROOT / "data" / "appendix_xxii.jsonl"
+    appendix = appendix_path or root / "data" / "appendix_xxii.jsonl"
     if appendix.exists():
         payload["appendix_xxii_sha256"] = sha256_file(appendix)
     amendment_map_reference = str(manifest.get("amendment_map_file") or "").strip()
-    amendment_map = ROOT / amendment_map_reference if amendment_map_reference else None
+    amendment_map = root / amendment_map_reference if amendment_map_reference else None
     if amendment_map and amendment_map.is_file():
         payload["amendment_map_sha256"] = sha256_file(amendment_map)
     for document in manifest.get("documents", []):
-        source = ROOT / str(document["source_file"])
+        source = root / str(document["source_file"])
         payload.setdefault("source_sha256", {})[str(document["document_id"])] = sha256_file(source) if source.is_file() else "missing"
         records_file = document.get("records_file")
         if records_file:
-            records_path = ROOT / str(records_file)
+            records_path = root / str(records_file)
             if records_path.is_file():
                 payload.setdefault("records_sha256", {})[str(document["document_id"])] = sha256_file(records_path)
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
