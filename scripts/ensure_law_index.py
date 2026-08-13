@@ -123,12 +123,13 @@ def _audit(client, collection: str, *, expected_count: int, digest: str, schema:
         raise RuntimeError("index_missing_citation_metadata")
 
 
-def _switch_alias(client, alias: str, target: str) -> None:
+def _switch_alias(client, alias: str, target: str) -> str | None:
     # Qdrant alias update is atomic.  Use the REST client model rather than a
     # delete/recreate collection so the old collection remains rollbackable.
     from qdrant_client.http.models import CreateAlias, CreateAliasOperation, DeleteAlias, DeleteAliasOperation
 
     aliases = {item.alias_name: item.collection_name for item in client.get_aliases().aliases}
+    previous = aliases.get(alias)
     operations = []
     if alias in aliases and aliases[alias] != target:
         operations.append(DeleteAliasOperation(delete_alias=DeleteAlias(alias_name=alias)))
@@ -136,6 +137,17 @@ def _switch_alias(client, alias: str, target: str) -> None:
         operations.append(CreateAliasOperation(create_alias=CreateAlias(collection_name=target, alias_name=alias)))
     if operations:
         client.update_collection_aliases(change_aliases_operations=operations)
+    return previous
+
+
+def _promotion_allowed(readiness: dict[str, Any], runtime_mode: str) -> bool:
+    """Keep preview and production publication gates explicit and testable."""
+
+    if runtime_mode == "production":
+        return bool(readiness.get("ready_for_promotion"))
+    if runtime_mode == "preview":
+        return bool(readiness.get("technical_ready"))
+    raise ValueError(f"unsupported corpus runtime mode: {runtime_mode}")
 
 
 def main() -> None:
@@ -167,14 +179,23 @@ def main() -> None:
             amendment_map_path=Path(settings.amendment_map_path),
             appendix_path=Path(settings.appendix_xxii_data_path),
         )
-        if not readiness["ready_for_promotion"]:
+        promotion_ready = _promotion_allowed(readiness, settings.corpus_runtime_mode)
+        if not promotion_ready:
             raise RuntimeError(
                 "corpus_promotion_blocked:" + ",".join(
-                    [*readiness["source_errors"], *readiness["amendment_errors"], *readiness["rule_pack_errors"]]
+                    [
+                        *readiness["source_errors"],
+                        *readiness["amendment_errors"],
+                        *readiness["rule_pack_errors"],
+                        *readiness["approval_errors"],
+                    ]
                 )
             )
-        _switch_alias(client, os.getenv("LAW_COLLECTION_ALIAS", "law_collection"), target)
-        print(f"law_index_ready collection={target} corpus_sha256={digest}")
+        previous = _switch_alias(client, os.getenv("LAW_COLLECTION_ALIAS", "law_collection"), target)
+        print(
+            f"law_index_ready collection={target} corpus_sha256={digest} "
+            f"runtime_mode={settings.corpus_runtime_mode} rollback_collection={previous or ''}"
+        )
     finally:
         client.close()
 

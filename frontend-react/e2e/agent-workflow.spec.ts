@@ -394,3 +394,81 @@ test('task type is saved before checklist continuation and drawer closes only af
   expect(continuationBody?.operation).toBe('continue_case');
   expect(continuationBody?.intent_hint).toBe('compliance_checklist');
 });
+
+test('production corpus block disables legal send but leaves owned history usable', async ({ page }) => {
+  await page.route('**/api/v1/health', (route) => route.fulfill({ status: 200, body: '{}' }));
+  await page.route('**/api/v1/ready', (route) => route.fulfill({
+    status: 503,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      status: 'not_ready',
+      runtime_mode: 'production',
+      preview: false,
+      dependencies: { database: 'ok', redis: 'error', qdrant: 'ok', openai: 'ok' },
+      capabilities: {
+        history: { status: 'ready', reason: 'ok' },
+        legal_chat: { status: 'blocked', reason: 'corpus_promotion_blocked' },
+        case_workflow: { status: 'blocked', reason: 'corpus_promotion_blocked' },
+        feedback: { status: 'ready', reason: 'ok' },
+        web_research: { status: 'blocked', reason: 'corpus_promotion_blocked' },
+      },
+      corpus: { status: 'promotion_blocked', corpus_id: 'epr' },
+    }),
+  }));
+  await page.route('**/api/v1/sessions?*', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([{ id: 'history-still-works', title: 'Lịch sử vẫn dùng được', created_at: 1, message_count: 2 }]),
+  }));
+  await page.route('**/api/v1/sessions', (route) => route.fulfill({ status: 200, body: '[]' }));
+
+  await page.goto('/');
+  await expect(page.getByText('Lịch sử vẫn dùng được')).toBeVisible();
+  await expect(page.getByText(/Corpus chưa được phê duyệt cho production/)).toBeVisible();
+  await expect(page.getByLabel('Câu hỏi pháp lý')).toBeDisabled();
+  await expect(page.getByText(/Chế độ xem trước/)).toHaveCount(0);
+});
+
+test('an accepted official-web source keeps its verified outbound link and label', async ({ page }) => {
+  await mockBaseApi(page);
+  await page.route('**/api/v1/chat', (route) => route.fulfill({
+    status: 200,
+    contentType: 'text/event-stream',
+    body: eventStream([
+      { type: 'status', stage: 'turn_started', turn_id: 'web-1', user_message_id: 71, assistant_message_id: 72, turn_status: 'streaming' },
+      { type: 'response_chunk', chunk: 'Nguồn chính thức ngoài corpus [1].' },
+      {
+        type: 'response_complete',
+        text: 'Nguồn chính thức ngoài corpus [1].',
+        source: 'web_search',
+        documents: [{
+          page_content: 'Trích đoạn chính thức đã được giới hạn độ dài.',
+          document_id: 'web:official:1',
+          source: 'web',
+          metadata: {
+            Source_Title: 'Nghị định 48/2026/NĐ-CP',
+            Document_Number: '48/2026/NĐ-CP',
+            legal_anchor: 'Điều 78',
+            source_kind: 'official_web',
+            authority: 'official',
+            official_url: 'https://vanban.chinhphu.vn/?docid=216867',
+          },
+        }],
+        citations: [{ index: 1, label: 'Điều 78' }],
+        assistant_message_id: 72,
+        outcome: 'completed',
+        result_type: 'legal_answer',
+      },
+    ]),
+  }));
+
+  await page.goto('/');
+  await page.getByLabel('Câu hỏi pháp lý').fill('Tìm nguồn chính thức về Điều 78');
+  await page.getByLabel('Câu hỏi pháp lý').press('Enter');
+  await expect(page.getByText('Nguồn chính thức ngoài corpus', { exact: true })).toBeVisible();
+  await page.getByRole('link', { name: '[1]' }).click();
+  const drawer = page.getByRole('dialog', { name: 'Nguồn tham khảo' });
+  const outbound = drawer.getByRole('link', { name: 'Mở nguồn' });
+  await expect(outbound).toHaveAttribute('href', 'https://vanban.chinhphu.vn/?docid=216867');
+  await expect(drawer.getByText(/example\.com/)).toHaveCount(0);
+});

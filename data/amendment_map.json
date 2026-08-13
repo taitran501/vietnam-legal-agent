@@ -5,6 +5,9 @@
   "review_status": "pending_legal_review",
   "manual_review_status": "completed_from_signed_source_pages",
   "manual_reviewed_at": "2026-08-12",
+  "technical_validation_status": "complete",
+  "generated_consolidated_text": false,
+  "operation_schema": "document_id + operation + target + source_pages + effective_from + summary",
   "promotion_status": "blocked_until_legal_review_and_extraction",
   "method": "Operation-level map for ingestion metadata; no generated consolidated legal text is promoted.",
   "entries": [

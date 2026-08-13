@@ -41,6 +41,49 @@ test('a user can stop an in-progress SSE response without losing rendered text',
   await expect(stop).not.toBeVisible();
   await expect(page.getByTestId('streaming-answer')).not.toBeVisible();
   await expect(page.getByText(/Theo Điều 77/)).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Tiến trình xử lý' }).getByRole('button', { name: /Đã dừng theo yêu cầu/ })).toBeVisible();
+
+  const sessionId = new URL(page.url()).pathname.split('/').pop();
+  expect(sessionId).toBeTruthy();
+  await expect.poll(async () => {
+    const response = await page.request.get(`/api/v1/sessions/${sessionId}`);
+    if (!response.ok()) return 'not-ready';
+    const detail = await response.json();
+    return detail.messages.at(-1)?.status;
+  }).toBe('stopped');
+
+  await page.reload();
+  await expect(page.getByText(/Theo Điều 77/)).toBeVisible();
+  await expect(page.getByText('Đã dừng theo yêu cầu · nội dung chưa hoàn chỉnh', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Câu trả lời hữu ích' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Tạo lại câu trả lời' })).toHaveCount(0);
+});
+
+test('durable feedback is restored after a browser reload', async ({ page }) => {
+  await page.goto('/');
+  const input = page.getByLabel('Câu hỏi pháp lý');
+  await input.fill('Điều 77 quy định gì?');
+  await input.press('Enter');
+
+  const helpful = page.getByRole('button', { name: 'Câu trả lời hữu ích' });
+  await expect(helpful).toBeVisible();
+  await helpful.click();
+  await expect(helpful).toHaveAttribute('title', 'Đã lưu');
+
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Câu trả lời hữu ích' })).toHaveAttribute('title', 'Đã lưu');
+});
+
+test('an unknown explicit article safe-stops without presenting unrelated sources', async ({ page }) => {
+  await page.goto('/');
+  const input = page.getByLabel('Câu hỏi pháp lý');
+  await input.fill('Điều 999 quy định gì về EPR?');
+  await input.press('Enter');
+
+  const result = page.getByRole('region', { name: 'Kết quả workflow' });
+  await expect(result.getByText('Chưa tìm thấy điều khoản phù hợp')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Xem \d+ nguồn tham khảo/ })).toHaveCount(0);
+  await expect(page.getByText(/Điều 77 quy định đối tượng/)).toHaveCount(0);
 });
 
 test('real multi-turn case waits for facts and resumes without using web search', async ({ page }) => {

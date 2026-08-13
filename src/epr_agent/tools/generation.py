@@ -181,7 +181,13 @@ class EvidenceGenerationGateway:
             )
             return list(result.get("results") or [])
 
-        results = await asyncio.to_thread(_search)
+        try:
+            results = await asyncio.to_thread(_search)
+        except Exception:
+            from backend.api import metrics
+
+            metrics.track_web_result_rejection("provider_error")
+            raise
         documents: list[DocumentRecord] = []
         for index, result in enumerate(results, start=1):
             title = str(result.get("title") or "").strip()
@@ -190,8 +196,14 @@ class EvidenceGenerationGateway:
                 str(result.get("content") or ""), settings.web_excerpt_max_chars
             )
             if not title or not url or not content:
+                from backend.api import metrics
+
+                metrics.track_web_result_rejection("invalid_or_untrusted_source")
                 continue
             if not _web_result_matches_query(query, title, content, url):
+                from backend.api import metrics
+
+                metrics.track_web_result_rejection("relevance_or_anchor_mismatch")
                 continue
             article_match = _WEB_ARTICLE_RE.search(query)
             instrument_match = _WEB_INSTRUMENT_RE.search(_fold_web_text(query))
@@ -216,6 +228,9 @@ class EvidenceGenerationGateway:
                 )
             )
         if not documents:
+            from backend.api import metrics
+
+            metrics.track_web_result_rejection("no_accepted_results")
             return "", []
         lines = ["### Nguồn chính thức ngoài corpus", "", "Tôi đã tìm thấy các nguồn chính thức để bạn đối chiếu:"]
         for index, document in enumerate(documents, start=1):

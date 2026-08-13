@@ -3,7 +3,7 @@
   "rule_id": "epr-article-77-current-law-v3",
   "corpus_id": "epr",
   "corpus_version": "epr-law-structure-v4-amendment-chain",
-  "corpus_sha256": "11750f9b65ca86b44940b51ecaed5873f585cd3ebd68742ec3bc1e3ccb00eb4d",
+  "corpus_sha256": "1e8635ee2f739a96d5bc079f3f607cacc0a485472048dd7af47cf15c02a6b897",
   "legal_review_status": "pending",
   "source_resolution": {
     "status": "manual_operation_map_complete_pending_legal_review",
@@ -12,7 +12,19 @@
     "rule_pack_may_not_be_promoted": true,
     "notes": "Decision rules consume explicit thresholds and facts; current-law support remains false until the map and extracted active sources receive legal approval."
   },
-  "supported_anchors": ["Điều 77", "Điều 78", "Điều 79", "Điều 80", "Điều 81", "Điều 82", "Điều 83", "Điều 84", "Điều 85", "Điều 86", "Phụ lục XXII"],
+  "supported_anchors": [
+    "Điều 77",
+    "Điều 78",
+    "Điều 79",
+    "Điều 80",
+    "Điều 81",
+    "Điều 82",
+    "Điều 83",
+    "Điều 84",
+    "Điều 85",
+    "Điều 86",
+    "Phụ lục XXII"
+  ],
   "thresholds": {
     "packaging_revenue_exemption_vnd": 30000000000,
     "max_annual_revenue_vnd": 1000000000000000,
@@ -25,28 +37,134 @@
     "amendment_48_2026": "2026-01-29"
   },
   "required_facts": {
-    "base": ["business_role", "object_kind", "product_group", "market_placement"],
-    "domestic_market": ["activity_purpose"],
-    "packaging": ["packaged_goods_category"],
-    "packaging_domestic_market": ["annual_revenue_vnd", "reused_by_producer"],
-    "packaging_reuse": ["recovery_rate"]
+    "base": [
+      "business_role",
+      "object_kind",
+      "product_group",
+      "market_placement"
+    ],
+    "domestic_market": [
+      "activity_purpose"
+    ],
+    "packaging": [
+      "packaged_goods_category"
+    ],
+    "packaging_domestic_market": [
+      "annual_revenue_vnd",
+      "reused_by_producer"
+    ],
+    "packaging_reuse": [
+      "recovery_rate"
+    ]
   },
   "exclusions": {
-    "market_placement": ["export_only", "temporary_import_reexport"],
-    "activity_purpose": ["research_study_test"],
-    "unresolved_packaged_categories": ["other"],
-    "unresolved_reuse_values": ["yes"]
+    "market_placement": [
+      "export_only",
+      "temporary_import_reexport"
+    ],
+    "activity_purpose": [
+      "research_study_test"
+    ],
+    "unresolved_packaged_categories": [
+      "other"
+    ],
+    "unresolved_reuse_values": [
+      "yes"
+    ]
   },
   "legal_issues": [
-    {"issue_id": "actor", "label": "Đối tượng chịu trách nhiệm", "query": "Điều 77 khoản 1: nhà sản xuất, nhập khẩu chịu trách nhiệm", "required_anchors": ["Điều 77"], "required_facts": ["business_role"]},
-    {"issue_id": "covered_object", "label": "Sản phẩm hoặc bao bì thuộc phạm vi", "query": "Điều 77 khoản 1, khoản 2 và Phụ lục XXII: đối tượng sản phẩm, bao bì", "required_anchors": ["Điều 77", "Phụ lục XXII"], "required_facts": ["object_kind", "product_group"]},
-    {"issue_id": "market_scope", "label": "Đưa ra thị trường Việt Nam", "query": "Điều 77 khoản 1: đưa ra thị trường Việt Nam", "required_anchors": ["Điều 77"], "required_facts": ["market_placement"]},
-    {"issue_id": "exemption", "label": "Trường hợp không phải thực hiện", "query": "Điều 77 khoản 3: xuất khẩu, nghiên cứu, doanh thu và thu hồi bao bì", "required_anchors": ["Điều 77"], "required_facts": ["activity_purpose"]},
-    {"issue_id": "effective_date", "label": "Lộ trình áp dụng", "query": "Điều 77 khoản 4: lộ trình trách nhiệm tái chế", "required_anchors": ["Điều 77"], "required_facts": []},
-    {"issue_id": "recycling_rate", "label": "Tỷ lệ và quy cách tái chế", "query": "Điều 78 và Phụ lục XXII: tỷ lệ, quy cách tái chế", "required_anchors": ["Điều 78", "Phụ lục XXII"], "required_facts": []},
-    {"issue_id": "implementation", "label": "Hình thức thực hiện", "query": "Điều 79: hình thức thực hiện trách nhiệm tái chế", "required_anchors": ["Điều 79"], "required_facts": []},
-    {"issue_id": "reporting", "label": "Đăng ký và báo cáo", "query": "Điều 80: đăng ký kế hoạch và báo cáo kết quả", "required_anchors": ["Điều 80"], "required_facts": []},
-    {"issue_id": "financial", "label": "Đóng góp tài chính", "query": "Điều 81: đóng góp tài chính hỗ trợ tái chế", "required_anchors": ["Điều 81"], "required_facts": []}
+    {
+      "issue_id": "actor",
+      "label": "Đối tượng chịu trách nhiệm",
+      "query": "Điều 77 khoản 1: nhà sản xuất, nhập khẩu chịu trách nhiệm",
+      "required_anchors": [
+        "Điều 77"
+      ],
+      "required_facts": [
+        "business_role"
+      ]
+    },
+    {
+      "issue_id": "covered_object",
+      "label": "Sản phẩm hoặc bao bì thuộc phạm vi",
+      "query": "Điều 77 khoản 1, khoản 2 và Phụ lục XXII: đối tượng sản phẩm, bao bì",
+      "required_anchors": [
+        "Điều 77",
+        "Phụ lục XXII"
+      ],
+      "required_facts": [
+        "object_kind",
+        "product_group"
+      ]
+    },
+    {
+      "issue_id": "market_scope",
+      "label": "Đưa ra thị trường Việt Nam",
+      "query": "Điều 77 khoản 1: đưa ra thị trường Việt Nam",
+      "required_anchors": [
+        "Điều 77"
+      ],
+      "required_facts": [
+        "market_placement"
+      ]
+    },
+    {
+      "issue_id": "exemption",
+      "label": "Trường hợp không phải thực hiện",
+      "query": "Điều 77 khoản 3: xuất khẩu, nghiên cứu, doanh thu và thu hồi bao bì",
+      "required_anchors": [
+        "Điều 77"
+      ],
+      "required_facts": [
+        "activity_purpose"
+      ]
+    },
+    {
+      "issue_id": "effective_date",
+      "label": "Lộ trình áp dụng",
+      "query": "Điều 77 khoản 4: lộ trình trách nhiệm tái chế",
+      "required_anchors": [
+        "Điều 77"
+      ],
+      "required_facts": []
+    },
+    {
+      "issue_id": "recycling_rate",
+      "label": "Tỷ lệ và quy cách tái chế",
+      "query": "Điều 78 và Phụ lục XXII: tỷ lệ, quy cách tái chế",
+      "required_anchors": [
+        "Điều 78",
+        "Phụ lục XXII"
+      ],
+      "required_facts": []
+    },
+    {
+      "issue_id": "implementation",
+      "label": "Hình thức thực hiện",
+      "query": "Điều 79: hình thức thực hiện trách nhiệm tái chế",
+      "required_anchors": [
+        "Điều 79"
+      ],
+      "required_facts": []
+    },
+    {
+      "issue_id": "reporting",
+      "label": "Đăng ký và báo cáo",
+      "query": "Điều 80: đăng ký kế hoạch và báo cáo kết quả",
+      "required_anchors": [
+        "Điều 80"
+      ],
+      "required_facts": []
+    },
+    {
+      "issue_id": "financial",
+      "label": "Đóng góp tài chính",
+      "query": "Điều 81: đóng góp tài chính hỗ trợ tái chế",
+      "required_anchors": [
+        "Điều 81"
+      ],
+      "required_facts": []
+    }
   ],
   "source_pages": {
     "Điều 77": "48-49",

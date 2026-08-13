@@ -64,17 +64,14 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
         corpus["promotion_status"] = "ready" if audit["ready_for_promotion"] else "blocked"
         corpus["legal_review_status"] = str(audit.get("manifest_legal_review_status") or "pending")
 
-        legal_review_markers = (
-            "legal_review_pending",
-            "legal_review_missing",
-            "resolution_pending",
-        )
-        technical_errors = [
-            error
-            for error in [*audit["source_errors"], *audit["amendment_errors"], *audit["rule_pack_errors"]]
-            if not any(marker in error for marker in legal_review_markers)
-        ]
-        technical_corpus_ready = not technical_errors
+        if "technical_ready" in audit:
+            technical_corpus_ready = bool(audit["technical_ready"])
+        else:  # Compatibility for injected readiness doubles.
+            legal_review_markers = ("legal_review_pending", "legal_review_missing", "resolution_pending")
+            technical_corpus_ready = not any(
+                not any(marker in error for marker in legal_review_markers)
+                for error in [*audit["source_errors"], *audit["amendment_errors"], *audit["rule_pack_errors"]]
+            )
 
         expected_sha = corpus_sha256(
             law_path=settings.law_data_path,
@@ -161,6 +158,18 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
             "status": "blocked",
             "reason": "provider_not_configured" if not settings.tavily_api_key else capabilities["legal_chat"]["reason"],
         }
+
+    from backend.api import metrics
+
+    for capability, state in capabilities.items():
+        metrics.track_capability_readiness(capability, state["status"], state["reason"])
+        if state["status"] != "ready":
+            logger.info(
+                "capability_readiness capability=%s status=%s reason=%s",
+                capability,
+                state["status"],
+                state["reason"],
+            )
 
     ready = capabilities["history"]["status"] == "ready" and capabilities["legal_chat"]["status"] == "ready"
     return {

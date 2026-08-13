@@ -397,11 +397,20 @@ def main(argv: list[str] | None = None) -> int:
     try:
         report = migrate(args.database, apply=args.apply, backup=args.backup)
     except Exception as exc:  # noqa: BLE001 - CLI returns a stable non-zero failure
-        print(json.dumps({"status": "error", "error": type(exc).__name__, "message": str(exc)}, ensure_ascii=False))
+        print(json.dumps({
+            "event": "migration_failure",
+            "status": "error",
+            "stage": "command",
+            "error": type(exc).__name__,
+            "message": str(exc),
+        }, ensure_ascii=False))
         return 1
     payload = asdict(report)
     payload["safe_to_apply"] = report.safe_to_apply
     payload["status"] = "ok" if report.safe_to_apply else "blocked"
+    if not report.safe_to_apply:
+        payload["event"] = "migration_failure"
+        payload["stage"] = "audit"
     print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
     return 0 if report.safe_to_apply else 2
 

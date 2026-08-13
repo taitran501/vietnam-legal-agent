@@ -117,7 +117,9 @@ optional V4 controls:
 }
 ```
 
-`operation` can be `message` or `continue_case`. The case workspace is
+`operation` can be `message`, `continue_case`, `retry`, or `regenerate`.
+Retries and regenerations carry the original replay descriptor and may target
+an existing assistant message without duplicating the user message. The case workspace is
 hydrated and updated through:
 
 ```text
@@ -125,8 +127,14 @@ GET   /api/v1/sessions/{conversation_id}/case
 PATCH /api/v1/sessions/{conversation_id}/case
 ```
 
-PATCH saves facts only. The user must explicitly press **Tiếp tục đánh giá**
-to run the case workflow again.
+PATCH saves facts only. The user must explicitly press **Lưu và tiếp tục đánh giá**
+or **Lưu và tiếp tục lập checklist** to run the case workflow again. Each turn
+has a durable status (`pending`, `streaming`, `complete`, `stopped`, `failed`,
+or `superseded`) and can be cancelled idempotently:
+
+```text
+PUT /api/v1/conversations/{conversation_id}/turns/{turn_id}/cancel
+```
 
 The response is streamed as SSE. Existing `status`, `response_chunk`,
 `response_complete`, and `error` events remain supported. V4 also emits
@@ -143,9 +151,15 @@ GET /api/v1/health   # process liveness
 GET /api/v1/ready    # dependencies and legal index readiness
 ```
 
-`/ready` returns `503` until PostgreSQL, Redis, Qdrant, the configured OpenAI
-embedding contract, the `law_collection` alias, corpus metadata, and point
-count are valid.
+`/ready` returns a capability matrix rather than treating every dependency as
+one global switch. `history` and `feedback` depend on the database schema;
+`legal_chat` and `case_workflow` additionally require the Qdrant collection,
+embedding contract, OpenAI configuration, and corpus gate; `web_research`
+also requires its official-source provider. Redis failure is reported as
+degraded for cache/rate-limit use and does not by itself disable history.
+Production returns `503` while the corpus is technically incomplete or lacks
+legal approval. Preview can expose the technically valid pipeline, but every
+answer and source drawer carries an explicit preview warning.
 
 Trace inspection is opt-in:
 
@@ -165,8 +179,11 @@ raw conversation history.
 PostgreSQL is the production source of truth for users, conversations,
 messages, summaries, case states, agent runs, and trace events. SQLite uses the
 same SQLAlchemy/Alembic schema for local development. Redis is limited to
-answer cache, rate limiting, hot context, and short-lived feedback. The
-API-key hash scopes stored conversations and traces to their owner.
+answer cache, rate limiting, hot context, and short-lived feedback. Browser
+ownership uses the stable `oidc:<sha256(issuer + sub)>` principal ID; service
+automation uses isolated `service:<name>` principals and `X-Service-Token`.
+Only credential hashes are persisted. Legacy databases require the dry-run
+migration commands in [`docs/runbooks/database-migration.md`](docs/runbooks/database-migration.md).
 
 The one-shot `indexer` service builds an immutable, versioned law collection.
 It audits the collection and promotes the `law_collection` alias only after
@@ -214,10 +231,27 @@ Use the Docker stack when testing the real API, SSE, Qdrant index, or
 PostgreSQL persistence. The Vite server is intended for isolated frontend
 development.
 
+### Preview mode
+
+Preview is for local and staging user-journey validation only. It does not
+claim that the legal corpus has been reviewed or approved for production:
+
+```powershell
+$env:CORPUS_RUNTIME_MODE = "preview"
+python -m scripts.sync_corpus_metadata --check
+python -m scripts.audit_corpus
+```
+
+See [`docs/runbooks/local-preview.md`](docs/runbooks/local-preview.md) for the
+deterministic browser backend and the warning conditions. Leave
+`CORPUS_RUNTIME_MODE` unset (the default is `production`) for a production-like
+approval gate.
+
 ## Local verification
 
-There is deliberately no CI/CD workflow. The default checks are deterministic
-and do not call OpenAI:
+The repository CI workflow runs metadata synchronization, Python tests,
+Ruff, Mypy, Vitest, and the production build. The same deterministic checks
+can be run locally and do not call OpenAI:
 
 ```powershell
 .venv_acceptance\Scripts\python.exe -m pytest -q
@@ -258,6 +292,9 @@ $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 The V4 test matrix and acceptance evidence are documented in
 [`docs/v4_test_matrix.md`](docs/v4_test_matrix.md) and
 [`docs/pipeline_v4_acceptance_report.md`](docs/pipeline_v4_acceptance_report.md).
+Release/browser evidence and operational procedures are documented in
+[`docs/browser_acceptance_report.md`](docs/browser_acceptance_report.md) and
+[`docs/runbooks/`](docs/runbooks/).
 The evaluated UI export and design states are preserved in
 [`docs/design/`](docs/design/).
 
@@ -275,10 +312,11 @@ tests/                unit, contract, integration, and evaluation tests
 
 ## Scope and next steps
 
-The current release does not include login UI, file upload, long-term user
-profile memory, autonomous tool discovery, or automatic web fallback. Adding a
-new legal area should provide a corpus descriptor and rule pack, then pass the
-same provenance, retrieval, evidence, API, SSE, and end-to-end quality gates.
+The current release includes OIDC login/session ownership, but does not
+include file upload, long-term user profile memory, autonomous tool discovery,
+historical-law selection, export, or broad-web fallback. Adding a new legal
+area should provide a corpus descriptor and rule pack, then pass the same
+provenance, retrieval, evidence, API, SSE, and end-to-end quality gates.
 
 ## License
 

@@ -1,0 +1,54 @@
+{
+  "schema_version": "epr-corpus-runtime-v1",
+  "generated_by": "python -m scripts.sync_corpus_metadata --write",
+  "corpus_id": "epr",
+  "corpus_version": "epr-law-structure-v4-amendment-chain",
+  "corpus_sha256": "1e8635ee2f739a96d5bc079f3f607cacc0a485472048dd7af47cf15c02a6b897",
+  "corpus_as_of_date": null,
+  "legal_review_status": "pending",
+  "manifest_file": "data/corpus_manifest.json",
+  "manifest_sha256": "609f64e22d2d6d4d03788d2d64068b5bbf7358fd7902b6c2ee36f809ec057dbc",
+  "amendment_map_file": "data/amendment_map.json",
+  "amendment_map_sha256": "938a7c8e0dcf015f6b259fb0a208d57caf58757157cf0906dcd30ae5b516bf0a",
+  "rule_pack_file": "data/epr_rule_pack.json",
+  "rule_pack_sha256": "8c1b2f2acc6f6825b89ec21c23e9b876882fbed2eb95e401194807c298b07520",
+  "sources": [
+    {
+      "document_id": "nd-08-2022-nd-cp",
+      "source_file": "data/08_2022_ND-CP_479457.doc",
+      "source_sha256": "2B7D7C57AA9FAC226BC56D480622A5FBE6BDC6C3FF6EBFD566C6987250113854",
+      "signed_source_file": "data/08_2022_ND-CP.signed.pdf",
+      "signed_source_sha256": "28F893CCBBA3A8E3B13F15816840140A2BCB6838D2FD6A1C053AFC05AC82D35F",
+      "records_file": "data/law.json",
+      "records_sha256": "49E4A4E659A559D63C2FB84B576C235D87D7757D15E58C16627A7CFD5993C293"
+    },
+    {
+      "document_id": "nd-05-2025-nd-cp",
+      "source_file": "data/05_2025_ND-CP.signed.pdf",
+      "source_sha256": "5EA433F7C4D94981C86478D050A28EEAB99F36F8E620F367BE90DF1A8DEAC916",
+      "signed_source_file": "data/05_2025_ND-CP.signed.pdf",
+      "signed_source_sha256": "5EA433F7C4D94981C86478D050A28EEAB99F36F8E620F367BE90DF1A8DEAC916",
+      "records_file": null,
+      "records_sha256": null
+    },
+    {
+      "document_id": "nd-48-2026-nd-cp",
+      "source_file": "data/48_2026_ND-CP.signed.pdf",
+      "source_sha256": "3902145D9D3FB8201B501076A5ABB3C828A97E5D877206E2220456DC9A17ABBB",
+      "signed_source_file": "data/48_2026_ND-CP.signed.pdf",
+      "signed_source_sha256": "3902145D9D3FB8201B501076A5ABB3C828A97E5D877206E2220456DC9A17ABBB",
+      "records_file": null,
+      "records_sha256": null
+    }
+  ],
+  "index": {
+    "alias": "law_collection",
+    "index_schema_version": "legal-structure-v2-v4-appendix1",
+    "chunking_profile": "legal-structure-v2",
+    "embedding_profile": "openai-text-embedding-3-small-v1",
+    "embedding_model": "text-embedding-3-small",
+    "embedding_dimensions": 1536,
+    "collection_identity": "law_{corpus_id}_{corpus_sha12}_{schema}_{embedding_profile}",
+    "immutable_collection": "law_epr_1e8635ee2f73_legal_structure_v2_v4_appendix1_openai_text_embedding_3_small_v1"
+  }
+}

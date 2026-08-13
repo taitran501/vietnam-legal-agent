@@ -34,6 +34,7 @@ except ImportError:  # pragma: no cover - production installs sse-starlette
 
             super().__init__(frames(), status_code=status_code, headers=headers, media_type="text/event-stream")
 
+from backend.api import metrics
 from backend.api.principal import principal_from_request_state
 from backend.api.routes.health import readiness_payload
 from backend.api.schemas import ChatRequest
@@ -85,6 +86,8 @@ async def chat(request: Request, body: ChatRequest):
         async def _not_ready():
             reason = str(legal_capability.get("reason") or "corpus_not_ready")
             retryable = reason not in {"database_schema_mismatch", "corpus_promotion_blocked"}
+            metrics.track_sse_error(reason, retryable)
+            logger.info("sse_error code=%s retryable=%s trace_id=%s", reason, retryable, trace_id)
             yield {
                 "data": json.dumps(
                     {
@@ -125,6 +128,7 @@ async def chat(request: Request, body: ChatRequest):
     })
 
     async def _event_generator():
+        replay_result_recorded = False
         try:
             async for event in agentic_stream_chat(
                 query=body.query,
@@ -144,6 +148,28 @@ async def chat(request: Request, body: ChatRequest):
             ):
                 # Readiness is the authoritative runtime gate for this request.
                 event["preview"] = bool(readiness.get("preview"))
+                event_type = str(event.get("type") or "")
+                if event_type == "error":
+                    code = str(event.get("code") or "pipeline_error")
+                    retryable = bool(event.get("retryable"))
+                    metrics.track_sse_error(code, retryable)
+                    logger.info("sse_error code=%s retryable=%s trace_id=%s", code, retryable, trace_id)
+                    if body.operation in {"retry", "regenerate"} and not replay_result_recorded:
+                        metrics.track_replay_operation(body.operation, "failed")
+                        replay_result_recorded = True
+                elif event_type == "response_stopped":
+                    metrics.track_turn_termination("stopped", "user_cancelled")
+                    if body.operation in {"retry", "regenerate"} and not replay_result_recorded:
+                        metrics.track_replay_operation(body.operation, "stopped")
+                        replay_result_recorded = True
+                elif event_type == "response_complete":
+                    metrics.track_turn_termination(
+                        str(event.get("turn_status") or "complete"),
+                        str(event.get("safe_stop_reason") or event.get("outcome") or "none"),
+                    )
+                    if body.operation in {"retry", "regenerate"} and not replay_result_recorded:
+                        metrics.track_replay_operation(body.operation, "complete")
+                        replay_result_recorded = True
                 # CRITICAL: Check if client disconnected
                 if await request.is_disconnected():
                     logger.info(
@@ -158,6 +184,9 @@ async def chat(request: Request, body: ChatRequest):
             return
         except Exception:
             logger.exception("Pipeline error")
+            metrics.track_sse_error("pipeline_error", True)
+            if body.operation in {"retry", "regenerate"} and not replay_result_recorded:
+                metrics.track_replay_operation(body.operation, "failed")
             yield {
                 "data": json.dumps({
                     "type": "error",
