@@ -23,7 +23,7 @@ export class ChatStreamError extends Error implements StreamError {
 export interface StreamTurnOptions {
   operation?: TurnOperation;
   intentHint?: 'auto' | 'legal_lookup' | 'legal_explain_compare' | 'case_assessment' | 'compliance_checklist';
-  interactionSource?: 'composer' | 'quick_action' | 'case_panel';
+  interactionSource?: 'composer' | 'quick_action' | 'case_panel' | 'guided_form';
   casePatch?: Record<string, string>;
   factUpdates?: Record<string, { value: string; confirmation_status?: 'user_confirmed' | 'document_verified' | 'unknown' }>;
   replayMetadata?: Record<string, unknown>;

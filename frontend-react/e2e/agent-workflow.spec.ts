@@ -34,64 +34,189 @@ async function captureReview(page: Page, name: string) {
   await page.screenshot({ path: `../output/playwright/${name}.png`, fullPage: false });
 }
 
-test('missing-facts trajectory stops safely and opens contextual case data', async ({ page }) => {
+test('guided assessment resolves dependent fields and submits one chat turn', async ({ page }) => {
   await mockBaseApi(page);
   let chatCalls = 0;
-  await page.route('**/api/v1/chat', (route) =>
-    (chatCalls += 1, route.fulfill({
+  let resolveCalls = 0;
+  await page.route('**/api/v1/case-form/resolve', async (route) => {
+    resolveCalls += 1;
+    const body = route.request().postDataJSON() as { fact_updates?: Record<string, { value?: string }> };
+    const updates = body.fact_updates || {};
+    const facts: Record<string, string> = {};
+    const validation_errors: Record<string, string> = {};
+    for (const [key, update] of Object.entries(updates)) {
+      const value = String(update?.value || '').trim();
+      if (!value) continue;
+      if (key === 'annual_revenue_vnd' && (!/^\d+$/.test(value) || Number(value) > 1_000_000_000_000_000)) {
+        validation_errors[key] = 'Doanh thu phải là số nguyên không âm, tính bằng VNĐ.';
+        continue;
+      }
+      if (key === 'recovery_rate' && (!/^\d+(\.\d+)?$/.test(value) || Number(value) < 0 || Number(value) > 100)) {
+        validation_errors[key] = 'Tỷ lệ thu hồi phải nằm trong khoảng 0–100.';
+        continue;
+      }
+      facts[key] = value;
+    }
+    const fieldDefinitions = [
+      ['business_role', 'Vai trò doanh nghiệp', 'select', true],
+      ['object_kind', 'Loại đối tượng', 'select', true],
+      ['product_group', 'Nhóm sản phẩm EPR', 'select', true],
+      ['market_placement', 'Phạm vi đưa ra thị trường', 'select', true],
+      ['activity_purpose', 'Mục đích sản xuất hoặc nhập khẩu', 'select', true],
+      ...(facts.product_group === 'bao_bi' ? [['packaged_goods_category', 'Nhóm hàng hóa được đóng gói', 'select', true]] : []),
+      ...(facts.product_group === 'bao_bi' && facts.market_placement === 'vietnam_market'
+        ? [['annual_revenue_vnd', 'Doanh thu bán sản phẩm liên quan mỗi năm', 'number', true], ['reused_by_producer', 'Bao bì có được doanh nghiệp thu hồi để tái sử dụng không', 'select', true]]
+        : []),
+      ...(facts.reused_by_producer === 'yes' ? [['recovery_rate', 'Tỷ lệ thu hồi và tái sử dụng', 'number', true]] : []),
+    ];
+    const options: Record<string, Array<{ value: string; label: string }>> = {
+      business_role: [{ value: 'manufacturer', label: 'Nhà sản xuất' }],
+      object_kind: [{ value: 'commercial_packaging', label: 'Bao bì thương phẩm' }],
+      product_group: [{ value: 'bao_bi', label: 'Bao bì' }],
+      market_placement: [{ value: 'vietnam_market', label: 'Đưa ra thị trường Việt Nam' }],
+      activity_purpose: [{ value: 'commercial', label: 'Kinh doanh thương mại' }],
+      packaged_goods_category: [{ value: 'thuc_pham', label: 'Thực phẩm' }],
+      reused_by_producer: [{ value: 'yes', label: 'Có' }, { value: 'no', label: 'Không' }],
+    };
+    const fields = fieldDefinitions.map(([key, label, kind, required], display_order) => ({
+      key, label, kind, required, display_order, group: 'Thông tin cần cung cấp', importance: required ? 'required' : 'informational',
+      missing: !facts[key as string] || Boolean(validation_errors[key as string]), value: facts[key as string] || '', options: options[key as string] || [], help_text: 'Thông tin này giúp chọn đúng quy định cần đối chiếu.',
+    }));
+    const missing_facts = fields.filter((field) => field.required && field.missing).map((field) => field.key);
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        form_version: 'case-form-v1', task_type: body.task_type || 'assess_epr_obligation', status: missing_facts.length || Object.keys(validation_errors).length ? 'collecting' : 'ready',
+        facts, fields, missing_facts, validation_errors, completed_count: fields.filter((field) => field.required && !field.missing).length, required_count: fields.filter((field) => field.required).length,
+      }),
+    });
+  });
+  await page.route('**/api/v1/chat', (route) => {
+    chatCalls += 1;
+    return route.fulfill({
       status: 200,
       contentType: 'text/event-stream',
       body: eventStream([
         { type: 'status', stage: 'turn_started', turn_id: 'turn-1', user_message_id: 1, assistant_message_id: 2, turn_status: 'streaming' },
-        { type: 'workflow_step', step: 1, action: 'understand_task', status: 'completed' },
-        { type: 'workflow_step', step: 2, action: 'ask_user', status: 'completed' },
-        { type: 'response_chunk', chunk: 'Bạn cho biết thêm vật liệu chính.' },
+        { type: 'response_chunk', chunk: 'Đã kiểm tra thông tin doanh nghiệp.' },
         {
           type: 'response_complete',
-          text: 'Bạn cho biết thêm vật liệu chính.',
-          documents: [],
-          source: 'follow_up',
-          task_type: 'assess_epr_obligation',
-          case_state: {
-            task_type: 'assess_epr_obligation',
-            status: 'collecting',
-            facts: { business_role: 'nhà sản xuất' },
-            missing_facts: ['product_or_packaging', 'material', 'activity_scope'],
-            fields: [
-              { key: 'business_role', label: 'Vai trò doanh nghiệp', kind: 'text', options: [], required: true, missing: false, value: 'nhà sản xuất' },
-              { key: 'material', label: 'Vật liệu hoặc quy cách', kind: 'text', options: [], required: true, missing: true, value: '' },
-            ],
-          },
-          missing_facts: ['product_or_packaging', 'material', 'activity_scope'],
-          citations: [],
-          outcome: 'needs_information',
-          result_type: 'none',
-          termination_reason: 'awaiting_user_input',
+          text: 'Đã kiểm tra thông tin doanh nghiệp.',
+          documents: [], source: 'legal', task_type: 'assess_epr_obligation', citations: [], outcome: 'completed', result_type: 'assessment',
+          assessment: { status: 'likely_in_scope', conclusion: 'Trường hợp có khả năng thuộc phạm vi cần thực hiện EPR.', reasons: [], next_steps: ['Đối chiếu hồ sơ liên quan.'] },
           assistant_message_id: 2,
         },
       ]),
-    }))
-  );
+    });
+  });
 
   await page.goto('/');
-  await page.getByRole('button', { name: 'Kiểm tra nghĩa vụ' }).click();
-  await expect(page.getByLabel('Câu hỏi pháp lý')).toHaveValue('Tôi là nhà sản xuất bao bì nhựa tại Việt Nam, có phải thực hiện EPR không?');
+  await page.getByRole('button', { name: 'Kiểm tra trường hợp của doanh nghiệp' }).click();
+  const form = page.getByRole('region', { name: 'Kiểm tra trường hợp của doanh nghiệp' });
+  await expect(form).toBeVisible();
   expect(chatCalls).toBe(0);
-  await page.getByRole('button', { name: 'Gửi câu hỏi' }).click();
+  await form.getByLabel('Vai trò doanh nghiệp').selectOption('manufacturer');
+  await form.getByLabel('Loại đối tượng').selectOption('commercial_packaging');
+  await form.getByLabel('Nhóm sản phẩm EPR').selectOption('bao_bi');
+  await form.getByLabel('Phạm vi đưa ra thị trường').selectOption('vietnam_market');
+  await form.getByLabel('Mục đích sản xuất hoặc nhập khẩu').selectOption('commercial');
+  await expect(form.getByText('Còn thiếu 3 thông tin')).toBeVisible();
+  await expect(form.getByLabel('Nhóm hàng hóa được đóng gói')).toBeVisible();
+  await form.getByLabel('Nhóm hàng hóa được đóng gói').selectOption('thuc_pham');
+  await form.getByLabel('Doanh thu bán sản phẩm liên quan mỗi năm').fill('29999999999.5');
+  await expect(form.getByText('Doanh thu phải là số nguyên không âm, tính bằng VNĐ.')).toBeVisible();
+  await expect(form.getByRole('button', { name: 'Kiểm tra trường hợp' })).toBeDisabled();
+  await form.getByLabel('Doanh thu bán sản phẩm liên quan mỗi năm').fill('40000000000');
+  await form.getByLabel('Bao bì có được doanh nghiệp thu hồi để tái sử dụng không').selectOption('yes');
+  await expect(form.getByLabel('Tỷ lệ thu hồi và tái sử dụng')).toBeVisible();
+  await form.getByLabel('Tỷ lệ thu hồi và tái sử dụng').fill('95');
+  await expect(form.getByRole('button', { name: 'Kiểm tra trường hợp' })).toBeEnabled();
+  await form.getByRole('button', { name: 'Kiểm tra trường hợp' }).click();
 
-  const result = page.getByRole('region', { name: 'Kết quả workflow' });
-  await expect(result.getByText('Cần thêm thông tin để tiếp tục')).toBeVisible();
-  await result.getByRole('button', { name: 'Bổ sung trong bảng thông tin' }).click();
+  await expect(page).toHaveURL(/\/conversations\//);
+  await expect(page.getByText('Đánh giá sơ bộ', { exact: true })).toBeVisible();
+  await expect(page.getByText('Đã kiểm tra thông tin doanh nghiệp.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Hãy kiểm tra trường hợp của doanh nghiệp dựa trên thông tin tôi đã cung cấp.', { exact: true })).toHaveCount(1);
+  expect(chatCalls).toBe(1);
+  expect(resolveCalls).toBeGreaterThan(1);
+  await captureReview(page, 'guided-assessment-completed');
+});
 
-  const drawer = page.getByRole('dialog', { name: 'Thông tin tình huống' });
-  await expect(drawer.getByText('Thông tin đã xác nhận')).toBeVisible();
-  await expect(drawer.getByText('Vật liệu hoặc quy cách')).toBeVisible();
-  expect((await drawer.boundingBox())?.width).toBeGreaterThanOrEqual(390);
-  await captureReview(page, 'integrated-missing-facts-drawer');
-  await drawer.getByRole('button', { name: 'Đóng' }).click();
+test('guided submit failure keeps the draft available for another attempt', async ({ page }) => {
+  await mockBaseApi(page);
+  let chatCalls = 0;
+  await page.route('**/api/v1/case-form/resolve', async (route) => {
+    const body = route.request().postDataJSON() as { task_type?: string; fact_updates?: Record<string, { value?: string }> };
+    const updates = body.fact_updates || {};
+    const definitions = [
+      ['business_role', 'Vai trò doanh nghiệp'],
+      ['object_kind', 'Loại đối tượng'],
+      ['product_group', 'Nhóm sản phẩm EPR'],
+      ['market_placement', 'Phạm vi đưa ra thị trường'],
+      ['activity_purpose', 'Mục đích sản xuất hoặc nhập khẩu'],
+    ];
+    const options: Record<string, Array<{ value: string; label: string }>> = {
+      business_role: [{ value: 'manufacturer', label: 'Nhà sản xuất' }],
+      object_kind: [{ value: 'product', label: 'Sản phẩm' }],
+      product_group: [{ value: 'pin', label: 'Pin' }],
+      market_placement: [{ value: 'vietnam_market', label: 'Đưa ra thị trường Việt Nam' }],
+      activity_purpose: [{ value: 'commercial', label: 'Kinh doanh thương mại' }],
+    };
+    const fields = definitions.map(([key, label], display_order) => ({
+      key, label, kind: 'select', options: options[key] || [], required: true, importance: 'required', display_order,
+      missing: !updates[key]?.value, value: updates[key]?.value || '', help_text: 'Thông tin này giúp chọn đúng quy định cần đối chiếu.',
+    }));
+    const missing_facts = fields.filter((field) => field.missing).map((field) => field.key);
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        form_version: 'case-form-v1', task_type: body.task_type || 'assess_epr_obligation',
+        status: missing_facts.length ? 'collecting' : 'ready',
+        facts: Object.fromEntries(Object.entries(updates).filter(([, update]) => update.value).map(([key, update]) => [key, { value: update.value, source: 'case_panel', confirmation_status: 'user_confirmed' }])),
+        fields, missing_facts, validation_errors: {}, completed_count: fields.length - missing_facts.length, required_count: fields.length,
+      }),
+    });
+  });
+  await page.route('**/api/v1/chat', async (route) => {
+    chatCalls += 1;
+    if (chatCalls === 1) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: eventStream([
+          { type: 'status', stage: 'turn_started', turn_id: 'failed-turn', user_message_id: 11, assistant_message_id: 12, turn_status: 'streaming' },
+          { type: 'error', code: 'pipeline_unavailable', message: 'Dịch vụ tạm thời không khả dụng.', retryable: true, retry_after_seconds: 0 },
+        ]),
+      });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      body: eventStream([
+        { type: 'status', stage: 'turn_started', turn_id: 'recovered-turn', user_message_id: 13, assistant_message_id: 14, turn_status: 'streaming' },
+        { type: 'response_complete', text: 'Đã xử lý lại thông tin.', source: 'legal', documents: [], citations: [], assistant_message_id: 14, outcome: 'completed', result_type: 'assessment', assessment: { status: 'likely_in_scope', conclusion: 'Có khả năng thuộc phạm vi EPR.' } },
+      ]),
+    });
+  });
 
-  await page.getByRole('button', { name: /Đã hoàn tất 2 bước/ }).click();
-  await expect(page.getByText('Hiểu yêu cầu')).toBeVisible();
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Kiểm tra trường hợp của doanh nghiệp' }).click();
+  const form = page.getByRole('region', { name: 'Kiểm tra trường hợp của doanh nghiệp' });
+  await form.getByLabel('Vai trò doanh nghiệp').selectOption('manufacturer');
+  await form.getByLabel('Loại đối tượng').selectOption('product');
+  await form.getByLabel('Nhóm sản phẩm EPR').selectOption('pin');
+  await form.getByLabel('Phạm vi đưa ra thị trường').selectOption('vietnam_market');
+  await form.getByLabel('Mục đích sản xuất hoặc nhập khẩu').selectOption('commercial');
+  await form.getByRole('button', { name: 'Kiểm tra trường hợp' }).click();
+
+  await expect(page.getByText('Dịch vụ trả lời đang bận')).toBeVisible();
+  const recoveryForm = page.getByRole('region', { name: 'Kiểm tra trường hợp của doanh nghiệp' });
+  await expect(recoveryForm.getByLabel('Vai trò doanh nghiệp')).toHaveValue('manufacturer');
+  await recoveryForm.getByRole('button', { name: 'Kiểm tra trường hợp' }).click();
+  await expect(page.getByText('Đã xử lý lại thông tin.', { exact: true })).toBeVisible();
+  expect(chatCalls).toBe(2);
 });
 
 test('safe-stop trajectory never renders a legal conclusion', async ({ page }) => {
@@ -121,7 +246,7 @@ test('safe-stop trajectory never renders a legal conclusion', async ({ page }) =
   await page.getByRole('button', { name: 'Tra cứu quy định' }).click();
   await page.getByRole('button', { name: 'Gửi câu hỏi' }).click();
 
-  const result = page.getByRole('region', { name: 'Kết quả workflow' });
+  const result = page.getByRole('region', { name: 'Kết quả xử lý' });
   await expect(result.getByText('Chưa đủ căn cứ để trả lời chắc chắn')).toBeVisible();
   await expect(result.getByText('Đánh giá sơ bộ', { exact: true })).not.toBeVisible();
 });
@@ -335,7 +460,7 @@ test('regeneration failure preserves the accepted answer and retry reuses the re
   await expect(page.getByText('Câu trả lời đã chấp nhận.')).toBeVisible();
   await page.getByRole('button', { name: 'Tạo lại câu trả lời' }).click();
   await expect(page.getByText('Câu trả lời đã chấp nhận.')).toBeVisible();
-  await expect(page.getByText('Đã xảy ra lỗi khi xử lý')).toHaveCount(1);
+  await expect(page.getByText('Dịch vụ trả lời đang bận')).toHaveCount(1);
   await expect(page.getByText(/HTTP 500/)).toHaveCount(0);
   await page.getByRole('button', { name: 'Thử lại' }).click();
   await expect(page.getByText('Câu trả lời thay thế.')).toBeVisible();
@@ -386,10 +511,10 @@ test('task type is saved before checklist continuation and drawer closes only af
   await page.getByRole('button', { name: 'Mở thông tin tình huống' }).click();
   const drawer = page.getByRole('dialog', { name: 'Thông tin tình huống' });
   await drawer.getByLabel('Mục tiêu').selectOption('build_compliance_checklist');
-  await drawer.getByRole('button', { name: 'Lưu và tiếp tục lập checklist' }).click();
+  await drawer.getByRole('button', { name: 'Lưu và tiếp tục tạo danh sách việc cần làm' }).click();
 
   await expect(drawer).not.toBeVisible();
-  await expect(page.getByText('Checklist đề xuất')).toBeVisible();
+  await expect(page.getByText('Danh sách việc cần làm')).toBeVisible();
   expect(patchBody?.task_type).toBe('build_compliance_checklist');
   expect(continuationBody?.operation).toBe('continue_case');
   expect(continuationBody?.intent_hint).toBe('compliance_checklist');
@@ -415,16 +540,14 @@ test('production corpus block disables legal send but leaves owned history usabl
       corpus: { status: 'promotion_blocked', corpus_id: 'epr' },
     }),
   }));
-  await page.route('**/api/v1/sessions?*', (route) => route.fulfill({
+  await page.route('**/api/v1/sessions*', (route) => route.fulfill({
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify([{ id: 'history-still-works', title: 'Lịch sử vẫn dùng được', created_at: 1, message_count: 2 }]),
   }));
-  await page.route('**/api/v1/sessions', (route) => route.fulfill({ status: 200, body: '[]' }));
-
   await page.goto('/');
   await expect(page.getByText('Lịch sử vẫn dùng được')).toBeVisible();
-  await expect(page.getByText(/Corpus chưa được phê duyệt cho production/)).toBeVisible();
+  await expect(page.getByText(/Kho văn bản chưa được phê duyệt nên kết luận pháp lý đang tạm khóa/)).toBeVisible();
   await expect(page.getByLabel('Câu hỏi pháp lý')).toBeDisabled();
   await expect(page.getByText(/Chế độ xem trước/)).toHaveCount(0);
 });
@@ -465,7 +588,7 @@ test('an accepted official-web source keeps its verified outbound link and label
   await page.goto('/');
   await page.getByLabel('Câu hỏi pháp lý').fill('Tìm nguồn chính thức về Điều 78');
   await page.getByLabel('Câu hỏi pháp lý').press('Enter');
-  await expect(page.getByText('Nguồn chính thức ngoài corpus', { exact: true })).toBeVisible();
+  await expect(page.getByText('Nguồn chính thức bên ngoài kho văn bản', { exact: true })).toBeVisible();
   await page.getByRole('link', { name: '[1]' }).click();
   const drawer = page.getByRole('dialog', { name: 'Nguồn tham khảo' });
   const outbound = drawer.getByRole('link', { name: 'Mở nguồn' });

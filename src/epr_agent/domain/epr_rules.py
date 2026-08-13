@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, ClassVar, Literal, cast
 
 from epr_agent.domain.v4 import (
     CASE_FIELD_LABELS,
@@ -18,6 +18,8 @@ from epr_agent.domain.v4 import (
     AssessmentResult,
     AssessmentStatus,
     CaseField,
+    CaseFormState,
+    FactConfirmationStatus,
     FactSource,
     FactValue,
     LegalIssue,
@@ -168,14 +170,12 @@ def extract_explicit_epr_facts(query: str, *, source: FactSource = FactSource.US
         found["market_placement"] = _fact("export_only", source, "xuất khẩu", turn_id=turn_id)
     elif "tạm nhập" in text and "tái xuất" in text:
         found["market_placement"] = _fact("temporary_import_reexport", source, "tạm nhập tái xuất", turn_id=turn_id)
-    elif "đưa ra thị trường việt nam" in text or "bán tại việt nam" in text or "thị trường việt nam" in text:
+    elif any(marker in text for marker in ("đưa ra thị trường việt nam", "bán tại việt nam", "thị trường việt nam", "thị trường vn")):
         found["market_placement"] = _fact("vietnam_market", source, "thị trường Việt Nam", turn_id=turn_id)
 
     if any(marker in text for marker in ("nghiên cứu", "học tập", "thử nghiệm")):
         found["activity_purpose"] = _fact("research_study_test", source, "nghiên cứu/học tập/thử nghiệm", turn_id=turn_id)
     elif any(marker in text for marker in ("kinh doanh", "thương mại", "bán ra", "bán tại")):
-        # Only accept an explicitly stated commercial purpose.  A business
-        # role or the phrase "tại Việt Nam" is not enough to infer this fact.
         found["activity_purpose"] = _fact("commercial", source, "hoạt động thương mại", turn_id=turn_id)
 
     revenue = re.search(r"(?:doanh thu[^\d+\-]{0,40})?([-+]?\d+(?:[.,]\d+)?)\s*(tỷ|triệu)?\s*(?:đồng|vnđ|vnd)?", text)
@@ -186,9 +186,6 @@ def extract_explicit_epr_facts(query: str, *, source: FactSource = FactSource.US
             amount *= 1_000_000_000
         elif unit == "triệu":
             amount *= 1_000_000
-        # Preserve fractional input instead of truncating it.  The validator
-        # will reject it as an invalid VND amount rather than treating it as
-        # a smaller revenue and accidentally granting an exemption.
         found["annual_revenue_vnd"] = _fact(
             str(int(amount)) if amount.is_integer() else str(amount),
             source,
@@ -208,29 +205,36 @@ def _value(facts: dict[str, FactValue], key: str) -> str:
 
 
 def validate_fact_value(key: str, value: str) -> str:
-    """Validate values that can change a deterministic legal decision.
+    """Normalize a decision-changing value or raise a field-level error.
 
-    Validation deliberately rejects rather than coercing malformed numeric
-    input.  A rejected value cannot silently become zero and create a false
-    exemption.
+    Returning an empty string for malformed input made an invalid number look
+    identical to an intentionally cleared field. Empty is therefore reserved
+    for an explicit delete; malformed values raise ``ValueError`` so callers
+    can return a structured validation error.
     """
 
     cleaned = " ".join(str(value or "").split())
     if key == "annual_revenue_vnd" and cleaned:
         if not re.fullmatch(r"\d+", cleaned):
-            raise ValueError("annual_revenue_vnd must be a whole number of VND")
-        amount = int(cleaned)
-        if amount < 0 or amount > MAX_ANNUAL_REVENUE_VND:
-            raise ValueError("annual_revenue_vnd is outside the supported range")
-    if key == "recovery_rate" and cleaned:
+            raise ValueError("Doanh thu phải là số nguyên không âm, tính bằng VNĐ.")
         try:
-            rate = float(cleaned)
-        except ValueError as exc:
-            raise ValueError("recovery_rate must be a number from 0 to 100") from exc
-        if rate < RECOVERY_RATE_MIN_PERCENT or rate > RECOVERY_RATE_MAX_PERCENT:
-            raise ValueError("recovery_rate must be a number from 0 to 100")
-    if key in _ALLOWED_FACT_VALUES and cleaned and cleaned not in _ALLOWED_FACT_VALUES[key]:
-        raise ValueError(f"{key} is not a supported value; choose a listed option")
+            amount = int(cleaned)
+        except ValueError:
+            raise ValueError("Doanh thu không hợp lệ.") from None
+        if amount < 0 or amount > MAX_ANNUAL_REVENUE_VND:
+            raise ValueError("Doanh thu phải nằm trong khoảng 0 đến 1.000.000.000.000.000 VNĐ.")
+        return cleaned
+    if key == "recovery_rate" and cleaned:
+        if not re.fullmatch(r"\d+(?:\.\d+)?", cleaned):
+            raise ValueError("Tỷ lệ thu hồi phải là một số từ 0 đến 100.")
+        rate = float(cleaned)
+        if RECOVERY_RATE_MIN_PERCENT <= rate <= RECOVERY_RATE_MAX_PERCENT:
+            return str(int(rate) if rate.is_integer() else rate)
+        raise ValueError("Tỷ lệ thu hồi phải nằm trong khoảng 0–100%.")
+    if key in _ALLOWED_FACT_VALUES and cleaned:
+        if cleaned.casefold() not in {item.casefold() for item in _ALLOWED_FACT_VALUES[key]}:
+            raise ValueError(f"Giá trị '{cleaned}' không nằm trong lựa chọn hợp lệ.")
+        return cleaned
     return cleaned
 
 
@@ -239,6 +243,8 @@ def validate_case_facts(facts: dict[str, FactValue]) -> dict[str, str]:
 
     errors: dict[str, str] = {}
     for key, fact in facts.items():
+        if not fact.value:
+            continue
         try:
             validate_fact_value(key, fact.value)
         except ValueError as exc:
@@ -279,6 +285,18 @@ def case_fields(facts: dict[str, FactValue], missing: list[str]) -> list[CaseFie
         "activity_purpose": [("commercial", "Kinh doanh thương mại"), ("research_study_test", "Nghiên cứu/học tập/thử nghiệm")],
         "reused_by_producer": [("yes", "Có"), ("no", "Không")],
     }
+    groups = {
+        "business_role": "Doanh nghiệp",
+        "object_kind": "Đối tượng",
+        "product_group": "Đối tượng",
+        "packaged_goods_category": "Đối tượng",
+        "material": "Đối tượng",
+        "market_placement": "Phạm vi hoạt động",
+        "activity_purpose": "Phạm vi hoạt động",
+        "annual_revenue_vnd": "Thông tin bổ sung",
+        "reused_by_producer": "Thông tin bổ sung",
+        "recovery_rate": "Thông tin bổ sung",
+    }
     result: list[CaseField] = []
     for key, label in CASE_FIELD_LABELS.items():
         if key not in required and key not in facts:
@@ -290,6 +308,8 @@ def case_fields(facts: dict[str, FactValue], missing: list[str]) -> list[CaseFie
         result.append(CaseField(
             key=key,
             label=label,
+            group=groups.get(key, "Thông tin cần cung cấp"),
+            display_order=len(result),
             kind=kind,
             options=[{"value": value, "label": option_label} for value, option_label in options.get(key, [])],
             required=key in required,
@@ -299,6 +319,132 @@ def case_fields(facts: dict[str, FactValue], missing: list[str]) -> list[CaseFie
             help_text=_CASE_FIELD_HELP_TEXT.get(key, ""),
         ))
     return result
+
+
+class CaseFormResolver:
+    """Resolve one case draft consistently for API, session and V4 runtime."""
+
+    FORM_VERSION = "case-form-v1"
+    _TASK_TYPES: ClassVar[set[str]] = {"assess_epr_obligation", "build_compliance_checklist"}
+
+    @staticmethod
+    def _copy_facts(facts: dict[str, FactValue] | None) -> dict[str, FactValue]:
+        return {
+            str(key): value.model_copy(deep=True)
+            for key, value in (facts or {}).items()
+            if isinstance(value, FactValue)
+        }
+
+    @staticmethod
+    def _update_value(
+        key: str,
+        raw: object,
+    ) -> tuple[FactValue | None, bool]:
+        """Return (fact, deleted) for a raw typed update."""
+
+        if isinstance(raw, FactValue):
+            value = raw.value
+            confirmation = raw.confirmation_status
+            source = raw.source
+        elif isinstance(raw, dict):
+            value = " ".join(str(raw.get("value") or "").split())
+            try:
+                confirmation = FactConfirmationStatus(
+                    str(raw.get("confirmation_status") or FactConfirmationStatus.UNKNOWN.value)
+                )
+            except ValueError as exc:
+                raise ValueError("Trạng thái xác nhận không hợp lệ.") from exc
+            source = FactSource.CASE_PANEL
+        else:
+            value = " ".join(str(raw or "").split())
+            confirmation = FactConfirmationStatus.USER_CONFIRMED
+            source = FactSource.CASE_PANEL
+
+        if not value:
+            return None, True
+        normalized = validate_fact_value(key, value)
+        return FactValue(
+            value=normalized,
+            source=source,
+            confidence=1.0,
+            verified=False,
+            confirmation_status=confirmation,
+        ), False
+
+    def resolve(
+        self,
+        task_type: str,
+        facts: dict[str, FactValue] | None = None,
+        fact_updates: dict[str, object] | None = None,
+    ) -> CaseFormState:
+        """Return a new form state without mutating input or persisting data."""
+
+        if task_type not in self._TASK_TYPES:
+            raise ValueError("Case form only supports assessment or checklist.")
+        merged = self._copy_facts(facts)
+        errors: dict[str, str] = {}
+        for key, raw in (fact_updates or {}).items():
+            field_key = str(key)
+            if field_key not in CASE_FIELD_LABELS:
+                errors[field_key] = "Thông tin này không thuộc biểu mẫu EPR hiện tại."
+                continue
+            try:
+                value, deleted = self._update_value(field_key, raw)
+            except ValueError as exc:
+                errors[field_key] = str(exc)
+                continue
+            if deleted:
+                merged.pop(field_key, None)
+            elif value is not None:
+                merged[field_key] = value
+
+        # A parent selection invalidates facts that no longer belong to the
+        # visible branch. This prevents a stale revenue/reuse value from
+        # silently affecting a later assessment after the user changes the
+        # product or market.
+        if _value(merged, "product_group") != "bao_bi":
+            for key in ("packaged_goods_category", "annual_revenue_vnd", "reused_by_producer", "recovery_rate"):
+                merged.pop(key, None)
+        elif _value(merged, "market_placement") != "vietnam_market":
+            for key in ("annual_revenue_vnd", "reused_by_producer", "recovery_rate"):
+                merged.pop(key, None)
+        elif _value(merged, "reused_by_producer") != "yes":
+            merged.pop("recovery_rate", None)
+
+        errors.update({key: value for key, value in validate_case_facts(merged).items() if key not in errors})
+        missing = missing_fact_keys(merged)
+        fields = case_fields(merged, missing)
+        for field in fields:
+            if field.key in errors:
+                field.missing = True
+        required_fields = [field for field in fields if field.required]
+        completed_count = sum(
+            bool(merged.get(field.key) and merged[field.key].value and field.key not in errors)
+            for field in required_fields
+        )
+        return CaseFormState(
+            form_version=self.FORM_VERSION,
+            task_type=cast(Any, task_type),
+            status="ready" if not missing and not errors else "collecting",
+            facts=merged,
+            fields=fields,
+            missing_facts=missing,
+            validation_errors=errors,
+            completed_count=completed_count,
+            required_count=len(required_fields),
+        )
+
+    def from_strings(
+        self,
+        task_type: str,
+        facts: dict[str, FactValue] | None = None,
+        updates: dict[str, str] | None = None,
+    ) -> CaseFormState:
+        typed_updates: dict[str, object] = {
+            key: {"value": value, "confirmation_status": FactConfirmationStatus.USER_CONFIRMED.value}
+            for key, value in (updates or {}).items()
+        }
+        return self.resolve(task_type, facts, typed_updates)
 
 
 def legal_issues(facts: dict[str, FactValue], *, checklist: bool = False) -> list[LegalIssue]:
@@ -352,36 +498,29 @@ def evaluate_assessment(facts: dict[str, FactValue], *, evidence_ids: dict[str, 
     if exclusion:
         return AssessmentResult(
             status=AssessmentStatus.LIKELY_OUT_OF_SCOPE,
-            conclusion="Dựa trên facts đã xác nhận, trường hợp này có khả năng thuộc nhóm không phải thực hiện trách nhiệm tái chế.",
-            reasons=[AssessmentReason(claim="Kết luận phụ thuộc vào trường hợp loại trừ tại Điều 77.", evidence_ids=evidence_ids.get("exemption", []))],
-            assumptions=["Chỉ áp dụng cho facts do người dùng xác nhận."],
+            conclusion="Dựa trên các thông tin đã xác nhận, trường hợp này có khả năng thuộc diện miễn trừ thực hiện trách nhiệm tái chế.",
+            reasons=[AssessmentReason(claim="Kết luận phụ thuộc vào quy định thuộc trường hợp loại trừ tại Điều 77.", evidence_ids=evidence_ids.get("exemption", []))],
+            assumptions=[],
             next_steps=["Đối chiếu lại hồ sơ và bằng chứng cho trường hợp loại trừ."],
         )
     return AssessmentResult(
         status=AssessmentStatus.LIKELY_IN_SCOPE,
-        conclusion="Dựa trên facts đã xác nhận, trường hợp này có khả năng thuộc phạm vi thực hiện trách nhiệm tái chế EPR.",
+        conclusion="Dựa trên các thông tin đã xác nhận, trường hợp này thuộc phạm vi cần thực hiện trách nhiệm tái chế (EPR).",
         reasons=[
-            AssessmentReason(claim="Đối tượng, sản phẩm/bao bì và việc đưa ra thị trường cần được đối chiếu theo Điều 77 và Phụ lục XXII.", evidence_ids=evidence_ids.get("covered_object", []) + evidence_ids.get("market_scope", [])),
-            AssessmentReason(claim="Lộ trình áp dụng cần được xác nhận theo nhóm sản phẩm/bao bì.", evidence_ids=evidence_ids.get("effective_date", [])),
+            AssessmentReason(claim="Đối tượng sản phẩm/bao bì đưa ra thị trường thuộc danh mục quy định tại Điều 77 và Phụ lục XXII.", evidence_ids=evidence_ids.get("covered_object", []) + evidence_ids.get("market_scope", [])),
+            AssessmentReason(claim="Lộ trình áp dụng cần được xác nhận cụ thể theo nhóm sản phẩm/bao bì.", evidence_ids=evidence_ids.get("effective_date", [])),
         ],
-        assumptions=["Kết quả là đánh giá sơ bộ theo facts người dùng xác nhận."],
-        next_steps=["Đối chiếu tỷ lệ, quy cách tái chế và hình thức thực hiện theo tài liệu nguồn."],
+        assumptions=[],
+        next_steps=["Đối chiếu tỷ lệ, quy cách tái chế và hình thức thực hiện theo văn bản hướng dẫn."],
     )
 
 
 def follow_up_question(missing: list[str]) -> str:
     if not missing:
         return "Bạn có thể xác nhận thêm thông tin trường hợp này không?"
-    key = missing[0]
-    prompts = {
-        "business_role": "Doanh nghiệp của bạn là nhà sản xuất hay nhà nhập khẩu chịu trách nhiệm về chất lượng và ghi nhãn?",
-        "object_kind": "Đối tượng cần đánh giá là sản phẩm, bao bì thương phẩm, nguyên liệu hay chất thải phát sinh trong sản xuất?",
-        "product_group": "Sản phẩm hoặc bao bì của bạn thuộc nhóm EPR nào?",
-        "packaged_goods_category": "Bao bì này dùng để đóng gói nhóm hàng hóa nào, ví dụ thực phẩm, mỹ phẩm, thuốc, phân bón/thức ăn chăn nuôi/thuốc thú y, chất tẩy rửa hay xi măng?",
-        "market_placement": "Sản phẩm hoặc bao bì này có được đưa ra thị trường Việt Nam, chỉ xuất khẩu hay tạm nhập–tái xuất?",
-        "activity_purpose": "Hoạt động này nhằm kinh doanh thương mại hay chỉ phục vụ nghiên cứu, học tập hoặc thử nghiệm?",
-        "annual_revenue_vnd": "Doanh thu bán các sản phẩm liên quan trong một năm là bao nhiêu?",
-        "reused_by_producer": "Bao bì có được chính doanh nghiệp thu hồi, đóng gói lại và tiếp tục đưa ra thị trường không?",
-        "recovery_rate": "Tỷ lệ thu hồi, đóng gói lại và tiếp tục đưa ra thị trường là bao nhiêu?",
-    }
-    return prompts.get(key, f"Bạn có thể bổ sung {CASE_FIELD_LABELS.get(key, key)} không?")
+    labels = [CASE_FIELD_LABELS.get(key, key) for key in missing]
+    if len(missing) == 1:
+        return f"Bạn còn thiếu 1 thông tin để tiếp tục. Hãy điền mục “{labels[0]}” trong biểu mẫu bên dưới."
+    preview = ", ".join(labels[:3])
+    suffix = " và các mục liên quan khác" if len(labels) > 3 else ""
+    return f"Bạn còn thiếu {len(missing)} thông tin để tiếp tục, gồm {preview}{suffix}. Hãy hoàn thiện biểu mẫu bên dưới."

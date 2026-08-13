@@ -13,7 +13,7 @@ export interface ChatRequest {
   operation?: 'message' | 'continue_case' | 'retry' | 'regenerate';
   target_assistant_message_id?: number;
   intent_hint?: 'auto' | 'legal_lookup' | 'legal_explain_compare' | 'case_assessment' | 'compliance_checklist';
-  interaction_source?: 'composer' | 'quick_action' | 'case_panel';
+  interaction_source?: 'composer' | 'quick_action' | 'case_panel' | 'guided_form';
   case_patch?: Record<string, string>;
   fact_updates?: Record<string, { value: string; confirmation_status?: 'user_confirmed' | 'document_verified' | 'unknown' }>;
   replay_metadata?: Record<string, unknown>;
@@ -72,6 +72,9 @@ export interface SSEEvent {
   sources?: import('./chat').SourceSnapshot[];
   replay_metadata?: Record<string, unknown>;
   validation_errors?: Record<string, string>;
+  form_version?: string;
+  completed_count?: number;
+  required_count?: number;
   citation_error?: string;
   safe_stop_reason?: string;
   preview?: boolean;

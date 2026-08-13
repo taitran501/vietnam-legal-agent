@@ -9,22 +9,30 @@ select a runtime. Operators can temporarily roll back with
 
 `POST /api/v1/chat` keeps the legacy `query`, `conversation_id`, `session_id`,
 and `mode` fields.  V4 adds optional `operation`, `intent_hint`,
-`interaction_source`, and `case_patch` fields.  A quick action sends none of
-them by itself: it writes an editable draft and intent chip into the composer.
+`interaction_source`, and `case_patch` fields. `interaction_source=guided_form`
+identifies the inline assessment/checklist form. The legal-lookup quick action
+still writes an editable draft; assessment and checklist actions open the form
+without inventing a company profile or creating a turn.
 
 For an assessment or checklist, the workflow is:
 
+While editing, `POST /api/v1/case-form/resolve` computes visible fields,
+validation errors and dynamic counts without persistence. A guided submit then
+uses one durable chat turn:
+
 ```text
-validate -> load conversation/case -> understand intent -> merge explicit facts
--> ask for one missing decision fact OR retrieve evidence per legal issue
+validate -> load conversation/case -> understand intent -> resolve and merge typed facts
+-> return the full form state OR retrieve evidence per legal issue
 -> coverage gate -> deterministic decision -> citation verification -> persist
 ```
 
 An assessment cannot show a result card before all required facts and issues
-are covered.  Missing facts yield `needs_information`; incomplete legal
-coverage yields `insufficient_evidence`.  Neither state is an answer-complete
-assessment.  Web research is a user-selected action and never infers a company
-fact.
+are covered. Missing facts yield `needs_information` and a guided card that
+names the number of missing items; the runtime does not ask only for the first
+missing key. Incomplete legal coverage yields `insufficient_evidence`. Neither
+state is an answer-complete assessment. Web research is a user-selected action
+and never infers a company fact. PATCH case remains the compatibility/full
+editor path, not a required step before a guided submit.
 
 ## Appendix XXII evidence
 

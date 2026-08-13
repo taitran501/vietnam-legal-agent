@@ -28,13 +28,12 @@ from epr_agent.domain.epr_rules import (
     EPR_EFFECTIVE_DATES,
     EPR_RULE_ID,
     EPR_RULE_PACK_VERSION,
+    CaseFormResolver,
     case_fields,
     evaluate_assessment,
     extract_explicit_epr_facts,
     follow_up_question,
     legal_issues,
-    missing_fact_keys,
-    validate_fact_value,
 )
 from epr_agent.domain.models import (
     Action,
@@ -63,6 +62,7 @@ from epr_agent.domain.v4 import (
 from epr_agent.tools.evidence import build_citations, is_unresolved_current_law_source
 
 logger = logging.getLogger(__name__)
+_case_form_resolver = CaseFormResolver()
 
 _PHASES = {
     Action.VALIDATE_INPUT.value: ("understand", "Hiểu yêu cầu"),
@@ -134,7 +134,10 @@ def _fact_values(raw: dict[str, Any] | None) -> dict[str, FactValue]:
 
 def _case_payload(case: CaseStateV4) -> dict[str, Any]:
     payload = case.model_dump(mode="json")
-    payload["fields"] = [field.model_dump() for field in case_fields(case.facts, case.missing_facts)]
+    payload["fields"] = [
+        field.model_dump()
+        for field in (case.fields or case_fields(case.facts, case.missing_facts))
+    ]
     return payload
 
 
@@ -150,10 +153,14 @@ def _hydrate_persisted_case(raw: dict[str, Any] | None) -> dict[str, Any] | None
         return raw
     payload = dict(raw)
     facts = _fact_values(cast(dict[str, Any] | None, raw.get("facts")))
-    payload["fields"] = [
-        field.model_dump()
-        for field in case_fields(facts, list(raw.get("missing_facts") or []))
-    ]
+    resolved = _case_form_resolver.resolve(
+        str(raw.get("task_type") or TaskType.ASSESS_EPR_OBLIGATION.value), facts
+    )
+    payload["fields"] = [field.model_dump() for field in resolved.fields]
+    payload["form_version"] = resolved.form_version
+    payload["completed_count"] = resolved.completed_count
+    payload["required_count"] = resolved.required_count
+    payload["validation_errors"] = resolved.validation_errors
     return payload
 
 
@@ -169,6 +176,10 @@ def _metadata_v4(state: AgentState) -> dict[str, Any]:
             "rule_id": state.get("rule_id", EPR_RULE_ID),
             "effective_dates": EPR_EFFECTIVE_DATES,
             "case_fields": state.get("case_fields", []),
+            "form_version": (state.get("case_state") or {}).get("form_version", "case-form-v1"),
+            "completed_count": (state.get("case_state") or {}).get("completed_count", 0),
+            "required_count": (state.get("case_state") or {}).get("required_count", 0),
+            "validation_errors": state.get("validation_errors") or (state.get("case_state") or {}).get("validation_errors", {}),
         }
     )
     return data
@@ -404,70 +415,32 @@ class V4WorkflowRuntime(WorkflowRuntime):
         facts = _fact_values(cast(dict[str, Any] | None, active.get("facts")))
         turn_id = state.get("trace_id", "")
         facts.update(extract_explicit_epr_facts(state.get("query", ""), turn_id=turn_id))
-        invalid_facts: dict[str, str] = {}
-        for key, raw in dict(cast(dict[str, str] | None, state.get("case_patch")) or {}).items():
-            try:
-                text = validate_fact_value(key, " ".join(str(raw or "").split()))
-            except ValueError as exc:
-                invalid_facts[key] = str(exc)
-                continue
-            if text:
-                facts[key] = FactValue(
-                    value=text,
-                    source=FactSource.CASE_PANEL,
-                    source_turn=turn_id,
-                    confidence=1.0,
-                    verified=False,
-                    confirmation_status=FactConfirmationStatus.USER_CONFIRMED,
-                )
-        for key, update_payload in dict(state.get("fact_updates") or {}).items():
-            update = update_payload if isinstance(update_payload, dict) else {"value": update_payload}
-            raw_value = " ".join(str(update.get("value") or "").split())
-            if not raw_value:
-                facts.pop(key, None)
-                continue
-            try:
-                text = validate_fact_value(key, raw_value)
-                confirmation_status = FactConfirmationStatus(
-                    str(update.get("confirmation_status") or FactConfirmationStatus.UNKNOWN.value)
-                )
-            except (ValueError, TypeError) as exc:
-                invalid_facts[key] = str(exc)
-                continue
-            facts[key] = FactValue(
-                value=text,
-                source=FactSource.CASE_PANEL,
-                source_turn=turn_id,
-                confidence=1.0,
-                verified=False,
-                confirmation_status=confirmation_status,
-            )
-        if invalid_facts:
-            state["route"] = route.value
-            state["source_scope"] = "legal_corpus"
-            state["answer"] = "Một hoặc nhiều thông tin chưa hợp lệ: " + "; ".join(
-                f"{key}: {message}" for key, message in invalid_facts.items()
-            )
-            state["source"] = "error"
-            state["outcome"] = WorkflowOutcome.NEEDS_INFORMATION.value
-            state["result_type"] = ResultType.NONE.value
-            state["termination_reason"] = TerminationReason.AWAITING_USER_INPUT.value
-            state["missing_facts"] = list(invalid_facts)
-            state["validation_errors"] = invalid_facts
-            return state
-        missing = missing_fact_keys(facts)
+        updates: dict[str, object] = {
+            key: {"value": value, "confirmation_status": FactConfirmationStatus.USER_CONFIRMED.value}
+            for key, value in dict(cast(dict[str, str] | None, state.get("case_patch")) or {}).items()
+        }
+        updates.update(dict(state.get("fact_updates") or {}))
+        resolved = _case_form_resolver.resolve(task.value, facts, updates)
+        facts = resolved.facts
+        missing = resolved.missing_facts
         case = CaseStateV4(
             task_type=task.value,
-            status="collecting" if missing else "ready",
+            status=resolved.status,
             facts=facts,
             missing_facts=missing,
             as_of_date=datetime.now(UTC).date().isoformat(),
             last_query=state.get("query", "") or str(active.get("last_query") or ""),
+            fields=resolved.fields,
+            form_version=resolved.form_version,
+            validation_errors=resolved.validation_errors,
+            completed_count=resolved.completed_count,
+            required_count=resolved.required_count,
         )
         state["active_case"] = _case_payload(case)
         state["case_state"] = _case_payload(case)
         state["facts"] = {key: value.value for key, value in facts.items()}
         state["missing_facts"] = missing
+        state["validation_errors"] = resolved.validation_errors
         state["case_fields"] = list((state["case_state"] or {}).get("fields") or [])
         state["understanding_confidence"] = 1.0 if hint != "auto" else 0.7
         state["trace_events"][-1]["reason_code"] = "route_selected"
@@ -475,11 +448,23 @@ class V4WorkflowRuntime(WorkflowRuntime):
             "route": route.value,
             "confidence": state["understanding_confidence"],
             "missing_facts": missing,
+            "validation_errors": resolved.validation_errors,
             "fact_provenance": {
                 key: {"source": value.source.value, "verified": value.verified}
                 for key, value in facts.items()
             },
         }
+
+        if resolved.validation_errors:
+            cast(dict[str, Any], state).update(
+                answer="Một hoặc nhiều thông tin chưa hợp lệ. Hãy sửa các mục được đánh dấu trong biểu mẫu bên dưới.",
+                source="error",
+                awaiting_user_input=True,
+                outcome=WorkflowOutcome.NEEDS_INFORMATION.value,
+                result_type=ResultType.NONE.value,
+                termination_reason=TerminationReason.AWAITING_USER_INPUT.value,
+            )
+            return state
 
         if missing:
             append_action(state, Action.ASK_USER)
@@ -640,6 +625,12 @@ class V4WorkflowRuntime(WorkflowRuntime):
             )
             return state
         if result.status == AssessmentStatus.CANNOT_DETERMINE:
+            # These documents were candidates for the broader issue plan, not
+            # support for an unresolved fact. Do not present them as sources
+            # for a conclusion that the rule pack intentionally refused to make.
+            state["evidence"] = []
+            state["citations"] = []
+            state["source"] = "error"
             cast(dict[str, Any], state).update(
                 answer=result.conclusion,
                 source="error",
@@ -1033,6 +1024,8 @@ class V4WorkflowRuntime(WorkflowRuntime):
                 "stage": "complete",
                 "turn_id": state.get("turn_id", ""),
                 "turn_status": "complete",
+                "assistant_message_id": state.get("assistant_message_id", ""),
+                "user_message_id": state.get("user_message_id", ""),
                 **_metadata_v4(state),
             })
         except asyncio.CancelledError:

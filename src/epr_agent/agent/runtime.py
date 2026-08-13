@@ -150,7 +150,7 @@ def _metadata(state: AgentState) -> dict[str, Any]:
             item for item in (state.get("assessment") or {}).get("assumptions", []) if item
         )
         if not assumptions:
-            assumptions.append("Kết quả đánh giá là sơ bộ và phụ thuộc vào các facts đã cung cấp.")
+            assumptions.append("Kết quả đánh giá là sơ bộ và phụ thuộc vào thông tin doanh nghiệp đã cung cấp.")
     return {
         "task_type": state.get("task_type", TaskType.LEGAL_LOOKUP.value),
         "route": state.get("route", "legal_lookup"),

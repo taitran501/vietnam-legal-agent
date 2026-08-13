@@ -22,6 +22,7 @@ class InteractionSource(StrEnum):
     COMPOSER = "composer"
     QUICK_ACTION = "quick_action"
     CASE_PANEL = "case_panel"
+    GUIDED_FORM = "guided_form"
 
 
 class WorkflowOutcome(StrEnum):
@@ -78,6 +79,8 @@ class FactValue(BaseModel):
 class CaseField(BaseModel):
     key: str
     label: str
+    group: str = "Thông tin cần cung cấp"
+    display_order: int = 0
     kind: Literal["text", "select", "number", "boolean"] = "text"
     options: list[dict[str, str]] = Field(default_factory=list)
     required: bool = False
@@ -85,6 +88,25 @@ class CaseField(BaseModel):
     missing: bool = False
     value: str = ""
     help_text: str = ""
+
+
+class CaseFormState(BaseModel):
+    """Pure, presentation-ready result of resolving a case draft.
+
+    This is deliberately separate from ``CaseStateV4``. The resolver can be
+    called while the user is typing and therefore must not persist anything or
+    make a legal decision.
+    """
+
+    form_version: str = "case-form-v1"
+    task_type: Literal["assess_epr_obligation", "build_compliance_checklist"] = "assess_epr_obligation"
+    status: Literal["collecting", "ready"] = "collecting"
+    facts: dict[str, FactValue] = Field(default_factory=dict)
+    fields: list[CaseField] = Field(default_factory=list)
+    missing_facts: list[str] = Field(default_factory=list)
+    validation_errors: dict[str, str] = Field(default_factory=dict)
+    completed_count: int = Field(default=0, ge=0)
+    required_count: int = Field(default=0, ge=0)
 
 
 class LegalIssue(BaseModel):
@@ -138,6 +160,11 @@ class CaseStateV4(BaseModel):
     decision_status: AssessmentStatus | None = None
     as_of_date: str = ""
     last_query: str = ""
+    form_version: str = "case-form-v1"
+    fields: list[CaseField] = Field(default_factory=list)
+    validation_errors: dict[str, str] = Field(default_factory=dict)
+    completed_count: int = Field(default=0, ge=0)
+    required_count: int = Field(default=0, ge=0)
 
 
 class QueryPlanV4(BaseModel):
@@ -168,6 +195,6 @@ CASE_FIELD_LABELS: dict[str, str] = {
     "market_placement": "Phạm vi đưa ra thị trường",
     "activity_purpose": "Mục đích sản xuất hoặc nhập khẩu",
     "annual_revenue_vnd": "Doanh thu bán sản phẩm liên quan mỗi năm",
-    "reused_by_producer": "Bao bì có được chính doanh nghiệp thu hồi để tái sử dụng không",
+    "reused_by_producer": "Bao bì có được doanh nghiệp thu hồi để tái sử dụng không",
     "recovery_rate": "Tỷ lệ thu hồi và tái sử dụng",
 }

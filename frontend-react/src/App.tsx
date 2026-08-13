@@ -11,6 +11,7 @@ import { Drawer } from '@/components/UI/Drawer';
 import { Icon } from '@/components/UI/Icon';
 import { WorkflowTimeline } from '@/components/Agent/WorkflowTimeline';
 import { CaseFactsPanel } from '@/components/Case/CaseFactsPanel';
+import { GuidedCaseCard } from '@/components/Case/GuidedCaseCard';
 import { useChatStream } from '@/hooks/useChatStream';
 import { useSessions } from '@/hooks/useSessions';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -18,7 +19,7 @@ import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useChatStore } from '@/state/chatStore';
 import { useAuthStore } from '@/state/authStore';
 import { toast } from '@/state/toastStore';
-import type { CaseState, ReadinessResponse, SourceDocument } from '@/types';
+import type { CaseFormState, CaseState, ReadinessResponse, SourceDocument } from '@/types';
 import {
   AUTH_EXPIRED_EVENT,
   beginLogin,
@@ -43,6 +44,13 @@ interface WorkspaceProps {
 
 let pendingLocalSessionId: string | null = null;
 
+type GuidedDraftSnapshot = {
+  taskType: CaseState['task_type'];
+  facts: Record<string, string>;
+  statuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>;
+  formState: CaseFormState | null;
+};
+
 function capabilityStatus(readiness: ReadinessResponse | null, name: keyof ReadinessResponse['capabilities']) {
   return readiness?.capabilities?.[name]?.status
     || (readiness?.status === 'ready' ? 'ready' : 'blocked');
@@ -53,8 +61,8 @@ function readinessMessage(readiness: ReadinessResponse | null, offline: boolean)
   const reason = readiness?.capabilities?.legal_chat?.reason || '';
   const messages: Record<string, string> = {
     database_schema_mismatch: 'Cơ sở dữ liệu lịch sử chưa tương thích. Quản trị viên cần chạy lệnh migration được hướng dẫn trên backend.',
-    corpus_promotion_blocked: 'Corpus chưa được phê duyệt cho production nên kết luận pháp lý đang bị khóa.',
-    corpus_not_ready: 'Dữ liệu pháp luật chưa sẵn sàng. Lịch sử và tài khoản vẫn có thể sử dụng.',
+    corpus_promotion_blocked: 'Kho văn bản chưa được phê duyệt nên kết luận pháp lý đang tạm khóa.',
+    corpus_not_ready: 'Kho văn bản pháp luật chưa sẵn sàng. Lịch sử và tài khoản vẫn có thể sử dụng.',
     qdrant_unavailable: 'Kho tìm kiếm pháp luật đang tạm thời không khả dụng.',
   };
   return messages[reason] || 'Khả năng tra cứu pháp luật đang chuẩn bị. Lịch sử và tài khoản vẫn có thể sử dụng.';
@@ -64,6 +72,8 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('legal-sidebar') === 'collapsed');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [caseDrawerOpen, setCaseDrawerOpen] = useState(false);
+  const [guidedTask, setGuidedTask] = useState<CaseState['task_type'] | null>(null);
+  const [guidedDraft, setGuidedDraft] = useState<GuidedDraftSnapshot | null>(null);
   const [caseDirty, setCaseDirty] = useState(false);
   const [openSources, setOpenSources] = useState<OpenSources | null>(null);
   const [readiness, setReadiness] = useState<ReadinessResponse | null>(null);
@@ -108,8 +118,8 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
   const intentLabels: Record<string, string> = {
     legal_lookup: 'Tra cứu quy định',
     legal_explain_compare: 'Giải thích hoặc so sánh',
-    case_assessment: 'Kiểm tra nghĩa vụ',
-    compliance_checklist: 'Lập checklist',
+    case_assessment: 'Kiểm tra trường hợp',
+    compliance_checklist: 'Danh sách việc cần làm',
   };
 
   useEffect(() => {
@@ -152,6 +162,8 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
     setCaseDirty(false);
     const current = useChatStore.getState();
     if (!conversationId) {
+      setGuidedTask(null);
+      setGuidedDraft(null);
       cancelSessionLoad();
       if (current.activeTurn) stopGeneration();
       current.clearChat();
@@ -163,6 +175,8 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
       pendingLocalSessionId = null;
       return;
     }
+    setGuidedTask(null);
+    setGuidedDraft(null);
     void loadConversationFromRoute(conversationId);
     return cancelSessionLoad;
   }, [cancelSessionLoad, conversationId, loadConversationFromRoute, stopGeneration]);
@@ -182,13 +196,68 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
     void sendMessage(query, sessionId, 'auto', {
       operation: 'message',
       intentHint: composerDraft.intent as 'auto' | 'legal_lookup' | 'legal_explain_compare' | 'case_assessment' | 'compliance_checklist',
-      interactionSource: composerDraft.interactionSource as 'composer' | 'quick_action' | 'case_panel',
+      interactionSource: composerDraft.interactionSource as 'composer' | 'quick_action' | 'case_panel' | 'guided_form',
     });
     setComposerDraft({ text: '', intent: 'auto', interactionSource: 'composer' });
   };
 
   const handlePrefill = (text: string, intent: string) => {
     setComposerDraft({ text, intent, interactionSource: 'quick_action' });
+  };
+
+  const handleGuidedDraftChange = useCallback((facts: Record<string, string>, statuses: GuidedDraftSnapshot['statuses'], formState: CaseFormState | null) => {
+    if (!guidedTask) return;
+    setGuidedDraft({ taskType: guidedTask, facts, statuses, formState });
+  }, [guidedTask]);
+
+  const handleRecoveryDraftChange = useCallback((facts: Record<string, string>, statuses: GuidedDraftSnapshot['statuses'], formState: CaseFormState | null) => {
+    setGuidedDraft((current) => current ? { ...current, facts, statuses, formState } : current);
+  }, []);
+
+  const handleStartGuidedCase = (taskType: CaseState['task_type']) => {
+    if (!caseReady) {
+      toast.info('Chức năng này chưa sẵn sàng. Bạn vẫn có thể dùng tra cứu quy định.');
+      return;
+    }
+    setGuidedTask(taskType);
+    setGuidedDraft(null);
+    setComposerDraft({ text: '', intent: taskType === 'build_compliance_checklist' ? 'compliance_checklist' : 'case_assessment', interactionSource: 'guided_form' });
+  };
+
+  const submitGuidedCase = async (
+    facts: Record<string, string>,
+    confirmationStatuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>,
+    taskType: CaseState['task_type'],
+  ) => {
+    if (!caseReady) throw new Error('Chức năng xử lý trường hợp hiện chưa sẵn sàng.');
+    let sessionId = activeSessionId;
+    if (!sessionId) {
+      sessionId = crypto.randomUUID();
+      pendingLocalSessionId = sessionId;
+      useChatStore.getState().setActiveSession(sessionId);
+      navigate(`/conversations/${sessionId}`);
+    }
+    const completed = await sendMessage(
+      'Hãy kiểm tra trường hợp của doanh nghiệp dựa trên thông tin tôi đã cung cấp.',
+      sessionId,
+      'auto',
+      {
+        operation: activeCase ? 'continue_case' : 'message',
+        intentHint: taskType === 'build_compliance_checklist' ? 'compliance_checklist' : 'case_assessment',
+        interactionSource: 'guided_form',
+        factUpdates: Object.fromEntries(Object.entries(facts).map(([key, value]) => [key, {
+          value,
+          confirmation_status: confirmationStatuses[key] || 'user_confirmed',
+        }])),
+      },
+    );
+    if (!completed) {
+      throw new Error('Câu trả lời bị gián đoạn. Bạn có thể giữ nguyên thông tin và thử lại.');
+    }
+    setGuidedTask(null);
+    setGuidedDraft(null);
+    setCaseDrawerOpen(false);
+    setCaseDirty(false);
   };
 
   const handleContinueCase = (
@@ -234,7 +303,7 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
   const handleResearch = (query: string) => {
     if (!activeSessionId || !query.trim()) return;
     if (!webReady) {
-      toast.info('Tìm nguồn chính thức ngoài corpus hiện chưa khả dụng.');
+      toast.info('Tìm nguồn chính thức bên ngoài kho văn bản hiện chưa khả dụng.');
       return;
     }
     void sendMessage(query, activeSessionId, 'research_web', { operation: 'message' });
@@ -282,11 +351,22 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
     </div>
   ) : messages.length === 0 && !isStreaming ? (
     <WelcomeScreen
+      caseDisabled={!caseReady}
+      caseDisabledReason="Chức năng xử lý trường hợp hiện chưa sẵn sàng."
       disabled={!legalReady}
+      guidedTask={guidedTask}
       isStreaming={isStreaming}
       onSendPrompt={handleSend}
       onPrefillPrompt={handlePrefill}
       onStop={stopGeneration}
+      onStartCase={handleStartGuidedCase}
+      onGuidedSubmit={submitGuidedCase}
+      onCancelGuided={() => {
+        setGuidedTask(null);
+        setGuidedDraft(null);
+        setComposerDraft({ text: '', intent: 'auto', interactionSource: 'composer' });
+      }}
+      onGuidedDraftChange={handleGuidedDraftChange}
       draftText={composerDraft.text}
       onDraftChange={(text) => setComposerDraft({ text, interactionSource: 'composer' })}
       intentLabel={intentLabels[composerDraft.intent]}
@@ -299,6 +379,7 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
         error={error}
         isStreaming={isStreaming}
         messages={messages}
+        onContinueCase={caseReady ? submitGuidedCase : undefined}
         onOpenCase={activeCase ? () => setCaseDrawerOpen(true) : undefined}
         onResearch={handleResearch}
         onOpenSources={handleOpenSources}
@@ -307,6 +388,19 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
         statusMessage={statusMessage}
         streamingContent={streamingContent}
       />
+      {guidedTask && guidedDraft?.formState && error && !isStreaming && (
+        <div className="shrink-0 border-t border-[#d9e1df] bg-[#fcfcfa] px-3 py-3 sm:px-6">
+          <div className="mx-auto max-w-[820px]">
+            <p className="mb-2 text-xs font-semibold text-[#53615e]">Bạn có thể sửa thông tin rồi thử lại:</p>
+            <GuidedCaseCard
+              initialCaseState={guidedDraft.formState}
+              onDraftChange={handleRecoveryDraftChange}
+              onSubmit={submitGuidedCase}
+              taskType={guidedDraft.taskType}
+            />
+          </div>
+        </div>
+      )}
       <div className="shrink-0 border-t border-[#d9e1df] bg-[#fcfcfa]/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:px-6">
         <div className="mx-auto flex max-w-[820px] justify-center">
           <ChatInput
@@ -358,7 +452,7 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
         {preview && (
           <div className="flex shrink-0 items-center justify-center gap-2 border-b border-[#d7a65a] bg-[#fff1d7] px-4 py-2 text-center text-xs font-semibold text-[#714b18]" role="status">
             <Icon name="alert" size={15} />
-            Chế độ xem trước — corpus chưa được phê duyệt để dùng trong production.
+            Chế độ xem trước — câu trả lời có thể thay đổi khi kho văn bản được phê duyệt.
           </div>
         )}
         {!legalReady && !preview && (
@@ -382,7 +476,7 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
       />
 
       <Drawer
-        description="Bảng này chỉ xuất hiện với tác vụ đánh giá hoặc checklist EPR cần dữ liệu doanh nghiệp."
+        description="Bảng này chỉ xuất hiện khi bạn muốn đánh giá trường hợp hoặc tạo danh sách việc cần làm EPR."
         isOpen={caseDrawerOpen && Boolean(activeCase)}
         onClose={closeCaseDrawer}
         title="Thông tin tình huống"

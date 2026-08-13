@@ -48,13 +48,14 @@ from backend.history import (
 from backend.history import (
     save_case_state as save_case_state_persistent,
 )
-from epr_agent.domain.epr_rules import case_fields, missing_fact_keys, validate_fact_value
+from epr_agent.domain.epr_rules import CaseFormResolver
 from epr_agent.domain.models import TaskType
 from epr_agent.domain.tasks import missing_facts
-from epr_agent.domain.v4 import CaseStateV4, FactConfirmationStatus, FactSource, FactValue
+from epr_agent.domain.v4 import CaseStateV4, FactConfirmationStatus, FactValue
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+_case_form_resolver = CaseFormResolver()
 
 
 class SessionInfo(BaseModel):
@@ -119,6 +120,10 @@ class CaseStateResponse(BaseModel):
     issue_states: dict[str, Any] = Field(default_factory=dict)
     as_of_date: str = ""
     fields: list[dict[str, Any]] = Field(default_factory=list)
+    form_version: str = "case-form-v1"
+    completed_count: int = 0
+    required_count: int = 0
+    validation_errors: dict[str, str] = Field(default_factory=dict)
     updated_at: float | None = None
 
 
@@ -337,7 +342,12 @@ async def get_session_case(request: Request, session_id: str):
         return None
     if case_state.get("schema_version") == "v4":
         parsed = {key: FactValue.model_validate(value) for key, value in dict(case_state.get("facts") or {}).items()}
-        case_state["fields"] = [field.model_dump() for field in case_fields(parsed, list(case_state.get("missing_facts") or []))]
+        resolved = _case_form_resolver.resolve(str(case_state.get("task_type") or TaskType.ASSESS_EPR_OBLIGATION.value), parsed)
+        case_state["fields"] = [field.model_dump() for field in resolved.fields]
+        case_state["form_version"] = resolved.form_version
+        case_state["completed_count"] = resolved.completed_count
+        case_state["required_count"] = resolved.required_count
+        case_state["validation_errors"] = resolved.validation_errors
     return CaseStateResponse(**case_state)
 
 
@@ -367,49 +377,54 @@ async def update_session_case(request: Request, session_id: str, body: UpdateCas
             for key, value in body.facts.items()
         }
         updates.update(body.fact_updates)
-        for key, update in updates.items():
-            try:
-                value = validate_fact_value(key, update.value)
-            except ValueError as exc:
-                raise HTTPException(status_code=422, detail={"field": key, "message": str(exc)}) from exc
-            if value:
-                facts[key] = FactValue(
-                    value=value,
-                    source=FactSource.CASE_PANEL,
-                    confidence=1.0,
-                    # A panel edit records what the user confirmed; it is not
-                    # an independent legal or document verification.
-                    verified=False,
-                    confirmation_status=update.confirmation_status,
-                )
-            else:
-                facts.pop(key, None)
-        missing = missing_fact_keys(facts)
+        resolved = _case_form_resolver.resolve(
+            task.value,
+            facts,
+            {key: update.model_dump(mode="json") for key, update in updates.items()},
+        )
+        if resolved.validation_errors:
+            raise HTTPException(
+                status_code=422,
+                detail={"validation_errors": resolved.validation_errors},
+            )
         state = CaseStateV4(
             task_type=task.value,
-            status="collecting" if missing else "ready",
-            facts=facts,
-            missing_facts=missing,
+            status=resolved.status,
+            facts=resolved.facts,
+            missing_facts=resolved.missing_facts,
             issue_states=dict((current or {}).get("issue_states") or {}),
             as_of_date=str((current or {}).get("as_of_date") or ""),
             last_query=(current or {}).get("last_query", ""),
+            fields=resolved.fields,
+            form_version=resolved.form_version,
+            validation_errors=resolved.validation_errors,
+            completed_count=resolved.completed_count,
+            required_count=resolved.required_count,
         ).model_dump(mode="json")
-        state["fields"] = [field.model_dump() for field in case_fields(facts, missing)]
     else:
-        facts = dict((current or {}).get("facts") or {})
-        facts.update(body.facts)
-        facts.update({key: update.value for key, update in body.fact_updates.items()})
-        facts = {key: value for key, value in facts.items() if value}
+        legacy_facts: dict[str, str] = {
+            str(key): str(value)
+            for key, value in dict((current or {}).get("facts") or {}).items()
+            if value
+        }
+        legacy_facts.update(body.facts)
+        legacy_facts.update({key: update.value for key, update in body.fact_updates.items()})
+        legacy_facts = {key: value for key, value in legacy_facts.items() if value}
         state = {
             "task_type": task.value,
-            "facts": facts,
-            "missing_facts": missing_facts(task, facts),
+            "facts": legacy_facts,
+            "missing_facts": missing_facts(task, legacy_facts),
             "last_query": (current or {}).get("last_query", ""),
         }
     saved = await save_case_state_persistent(user_id=user_id, conversation_id=session_id, state=state)
     if saved.get("schema_version") == "v4":
         parsed = {key: FactValue.model_validate(value) for key, value in dict(saved.get("facts") or {}).items()}
-        saved["fields"] = [field.model_dump() for field in case_fields(parsed, list(saved.get("missing_facts") or []))]
+        resolved = _case_form_resolver.resolve(str(saved.get("task_type") or TaskType.ASSESS_EPR_OBLIGATION.value), parsed)
+        saved["fields"] = [field.model_dump() for field in resolved.fields]
+        saved["form_version"] = resolved.form_version
+        saved["completed_count"] = resolved.completed_count
+        saved["required_count"] = resolved.required_count
+        saved["validation_errors"] = resolved.validation_errors
     return CaseStateResponse(**saved)
 
 

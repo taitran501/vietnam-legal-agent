@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ChatMessage, SourceDocument } from '@/types';
+import type { CaseState, ChatMessage, SourceDocument } from '@/types';
 import { formatTimestamp } from '@/lib/formatters';
 import { MarkdownRenderer } from '@/utils/markdown';
 import { MessageActions } from './MessageActions';
@@ -10,6 +10,7 @@ import { Icon } from '@/components/UI/Icon';
 interface ChatMessageProps {
   message: ChatMessage;
   onOpenCase?: () => void;
+  onContinueCase?: (facts: Record<string, string>, statuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>, taskType: CaseState['task_type']) => Promise<void>;
   onResearch?: () => void;
   onOpenSources: (documents: SourceDocument[], citations: Array<Record<string, unknown>>, focusIndex?: number, preview?: boolean) => void;
   onRegenerate?: () => void;
@@ -18,12 +19,12 @@ interface ChatMessageProps {
 const sourceLabels: Record<string, string> = {
   legal: 'Kho văn bản',
   chitchat: 'Hội thoại',
-  web_search: 'Nguồn chính thức ngoài corpus',
+  web_search: 'Nguồn chính thức bên ngoài kho văn bản',
   cache: 'Câu trả lời đã xác minh',
   follow_up: 'Đang làm rõ',
 };
 
-export function ChatMessageComponent({ message, onOpenCase, onOpenSources, onRegenerate, onResearch }: ChatMessageProps) {
+export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOpenSources, onRegenerate, onResearch }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
 
@@ -64,7 +65,7 @@ export function ChatMessageComponent({ message, onOpenCase, onOpenSources, onReg
           )}
           {message.workflow?.preview && (
             <div className="mb-3 rounded-md border border-[#d7a65a] bg-[#fff8ea] px-3 py-2 text-xs text-[#714b18]">
-              Câu trả lời ở chế độ xem trước; corpus chưa được phê duyệt cho production.
+              Câu trả lời ở bản thử nghiệm; thông tin có thể thay đổi khi kho văn bản được phê duyệt.
             </div>
           )}
           <div className="legal-prose max-w-none text-[15px] leading-7 text-[#262d2c] sm:text-base">
@@ -82,6 +83,7 @@ export function ChatMessageComponent({ message, onOpenCase, onOpenSources, onReg
           </div>
 
           <WorkflowResultCard
+            onContinueCase={onContinueCase}
             onOpenCase={onOpenCase}
             onOpenSources={() => onOpenSources(message.documents || [], message.workflow?.citations || [], undefined, message.workflow?.preview)}
             onResearch={onResearch}

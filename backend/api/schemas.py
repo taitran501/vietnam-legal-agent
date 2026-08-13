@@ -39,7 +39,7 @@ class ChatRequest(BaseModel):
     intent_hint: Literal[
         "auto", "legal_lookup", "legal_explain_compare", "case_assessment", "compliance_checklist"
     ] = "auto"
-    interaction_source: Literal["composer", "quick_action", "case_panel"] = "composer"
+    interaction_source: Literal["composer", "quick_action", "case_panel", "guided_form"] = "composer"
     case_patch: dict[str, str] = Field(default_factory=dict)
     fact_updates: dict[str, ChatFactUpdate] = Field(default_factory=dict)
     replay_metadata: dict[str, object] = Field(default_factory=dict)
@@ -87,6 +87,13 @@ class ChatRequest(BaseModel):
                 "identifier must contain only letters, numbers, hyphens, or underscores"
             )
         return v
+
+
+class CaseFormResolveRequest(BaseModel):
+    """Pure case-form request used while a user is editing an inline form."""
+
+    task_type: Literal["assess_epr_obligation", "build_compliance_checklist"] = "assess_epr_obligation"
+    fact_updates: dict[str, ChatFactUpdate] = Field(default_factory=dict)
 
 
 class HealthResponse(BaseModel):

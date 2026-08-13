@@ -15,6 +15,7 @@ export type {
   StreamError,
   TurnOperation,
   SourceSnapshot,
+  CaseFormState,
 } from './chat';
 export type {
   ChatRequest,

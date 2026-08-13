@@ -10,7 +10,7 @@ const labels: Record<string, string> = {
   ask_user: 'Cần thêm thông tin',
   retrieve_legal: 'Tìm văn bản liên quan',
   retrieve_web: 'Tìm nguồn bổ sung',
-  evaluate_evidence: 'Đánh giá bằng chứng',
+  evaluate_evidence: 'Đánh giá căn cứ',
   compose_answer: 'Soạn câu trả lời',
   verify_citations: 'Kiểm tra trích dẫn',
   repair_answer: 'Đối chiếu lại câu trả lời',
@@ -28,14 +28,15 @@ interface WorkflowTimelineProps {
 export function WorkflowTimeline({ isStreaming, statusMessage, steps, turnStatus }: WorkflowTimelineProps) {
   const [expanded, setExpanded] = useState(false);
   const current = steps[steps.length - 1];
+  const debugEnabled = import.meta.env.VITE_ENABLE_TRACE_DEBUG === 'true';
 
   useEffect(() => {
     if (isStreaming) setExpanded(false);
   }, [isStreaming]);
 
-  if (!isStreaming && steps.length === 0) return null;
+  if (!isStreaming && (turnStatus === 'complete' || steps.length === 0)) return null;
 
-  const currentLabel = current?.label || (current ? labels[current.action] || current.action : statusMessage || 'Đang chuẩn bị ngữ cảnh');
+  const currentLabel = isStreaming ? (current?.label || 'Đang kiểm tra thông tin và căn cứ…') : current?.label || (current ? labels[current.action] || 'Đang xử lý' : statusMessage || 'Đang chuẩn bị…');
   const completedSummary = turnStatus === 'stopped'
     ? 'Đã dừng theo yêu cầu · nội dung chưa hoàn chỉnh'
     : turnStatus === 'failed'
@@ -48,9 +49,9 @@ export function WorkflowTimeline({ isStreaming, statusMessage, steps, turnStatus
     <section className="shrink-0 border-b border-[#e5e9e7] bg-[#f7faf8]" aria-label="Tiến trình xử lý">
       <div className="mx-auto w-full max-w-[820px] px-4 py-2.5 sm:px-6">
         <button
-          aria-expanded={expanded}
+          aria-expanded={debugEnabled ? expanded : undefined}
           className="flex w-full items-center gap-2 text-left text-xs text-[#53615e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e]"
-          onClick={() => setExpanded((value) => !value)}
+          onClick={() => debugEnabled && setExpanded((value) => !value)}
           type="button"
         >
           {isStreaming ? (
@@ -63,9 +64,9 @@ export function WorkflowTimeline({ isStreaming, statusMessage, steps, turnStatus
           <span aria-live="polite" className="min-w-0 flex-1 truncate font-medium text-[#3e4947]">
             {isStreaming ? currentLabel : completedSummary}
           </span>
-          <Icon className={`transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} name="chevronDown" size={15} />
+          {debugEnabled && <Icon className={`transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} name="chevronDown" size={15} />}
         </button>
-        {expanded && (
+        {debugEnabled && expanded && (
           <ol className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
             {steps.map((step) => (
               <li

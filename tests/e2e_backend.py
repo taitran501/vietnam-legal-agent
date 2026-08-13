@@ -17,7 +17,7 @@ from fastapi import FastAPI
 from epr_agent.agent.graph import WorkflowDependencies
 from epr_agent.agent.planner import BoundedPlanner
 from epr_agent.agent.v4 import V4WorkflowRuntime
-from epr_agent.domain.epr_rules import case_fields, missing_fact_keys
+from epr_agent.domain.epr_rules import CaseFormResolver, case_fields, missing_fact_keys
 from epr_agent.domain.models import DocumentRecord
 from epr_agent.domain.v4 import CaseStateV4, FactSource, FactValue
 from epr_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
@@ -343,6 +343,7 @@ dependencies = WorkflowDependencies(
     generation=EvidenceGenerationGateway(),
     planner=BoundedPlanner(max_retrieval_actions=3, max_repairs=1, max_iterations=12),
 )
+case_form_resolver = CaseFormResolver()
 
 app = FastAPI(title="EPR deterministic browser acceptance")
 app.state.workflow_runtime = V4WorkflowRuntime(
@@ -364,6 +365,15 @@ async def ready() -> dict[str, object]:
 
     payload, _ = await _deterministic_ready()
     return payload
+
+
+@app.post("/api/v1/case-form/resolve")
+async def resolve_case_form(body: dict[str, Any]) -> dict[str, Any]:
+    state = case_form_resolver.resolve(
+        str(body.get("task_type") or "assess_epr_obligation"),
+        fact_updates=dict(body.get("fact_updates") or {}),
+    )
+    return state.model_dump(mode="json")
 
 
 @app.get("/api/v1/sessions/{session_id}/case")

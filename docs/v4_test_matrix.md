@@ -29,10 +29,11 @@ npm.cmd run build
 npm.cmd run test:e2e -- --grep-invert "real FastAPI|real multi-turn"
 ```
 
-The mocked browser suite covers prefill-only quick actions, editable intent,
-case facts, every V4 outcome, source drawer, history title, cancellation,
-sidebar collapse, and mobile layout. A quick action must create no network
-request until the user explicitly submits the composer.
+The mocked browser suite covers legal-lookup prefill, inline guided assessment
+and checklist forms, conditional fields, case facts, every V4 outcome, source
+drawer, history title, cancellation, sidebar collapse, and mobile layout. A
+guided action must create no chat turn until the user explicitly submits the
+form; field resolution is limited to the side-effect-free form endpoint.
 
 ## Real local services
 
