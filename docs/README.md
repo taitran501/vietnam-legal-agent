@@ -19,6 +19,9 @@ pháp luật hoặc ý kiến tư vấn pháp lý.
 - **Release evidence:** acceptance reports chỉ ghi nhận commit và môi trường
   thực sự đã được kiểm tra; không sửa báo cáo cũ để biến một release chưa test
   thành đã đạt.
+- **Repository hygiene:** binary design exports và raw audit output không nằm
+  trong tài liệu được review trên GitHub; chỉ giữ quyết định, contract và kết
+  quả acceptance đã được tóm tắt.
 
 ## Bản đồ tài liệu
 

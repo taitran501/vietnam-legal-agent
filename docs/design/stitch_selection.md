@@ -2,7 +2,10 @@
 
 ## Review scope
 
-The archive `stitch_legal_assistant_system.zip` contains 18 HTML screens and reference boards. Every HTML page was rendered at its exported viewport and compared with the current React application before implementation.
+The exported Stitch design set was used to review 18 HTML screens and reference
+boards. The binary export is intentionally kept outside this repository; this
+file records only the design decisions that were carried into the React
+application.
 
 The product shell is intentionally generic (`Trợ lý pháp lý`), while the interface states that the currently indexed corpus is EPR. This avoids presenting the current backend as a general Vietnamese-law system before additional corpora are available.
 
