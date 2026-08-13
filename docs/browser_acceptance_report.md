@@ -10,8 +10,8 @@ self-declared legally approved; preview labels are therefore expected.
 - Browser: Codex in-app Browser, real DOM interactions
 - Frontend: Vite at `http://127.0.0.1:4175/`
 - Deterministic API: `tests.e2e_backend:app` at `http://127.0.0.1:8010/`
-- Corpus hash: `1f9ce661c52bf5aaa2413d980578aea232c8a486d66a7c41ebed72054a92f6d6`
-- Implementation commit validated: `e7dfea289323fbdff8ace7d93e0488fabd6d11ca`
+- Corpus hash: `1e8635ee2f739a96d5bc079f3f607cacc0a485472048dd7af47cf15c02a6b897`
+- Implementation commit validated: `0fad1222ad86edfcc8f7200e4547dd2edf75b59a`
 - Runtime mode: `preview`
 
 ## Direct browser journey
@@ -46,7 +46,7 @@ The complete browser suite passed on the implementation commit above:
 ```
 
 Vitest passed `23/23`, the production build passed, and deterministic route
-evaluation passed `60/60`. The full Python gate passed `383 passed, 3 skipped`.
+evaluation passed `60/60`. The full Python gate passed `384 passed, 3 skipped`.
 The browser suite used the deterministic local backend; live service gates
 remain listed below.
 
