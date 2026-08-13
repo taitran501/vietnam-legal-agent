@@ -48,6 +48,7 @@ pháp luật hoặc ý kiến tư vấn pháp lý.
 
 - [Acceptance report](acceptance_report.md)
 - [Browser acceptance report](browser_acceptance_report.md)
+- [Guided user experience browser acceptance](browser_acceptance_report_guided_user_experience.md)
 - [V4 acceptance report](pipeline_v4_acceptance_report.md)
 
 Các sơ đồ Mermaid được đặt trực tiếp trong Markdown để GitHub render và để
