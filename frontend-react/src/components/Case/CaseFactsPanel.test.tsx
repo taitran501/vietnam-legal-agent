@@ -118,7 +118,7 @@ describe('CaseFactsPanel', () => {
       />,
     );
     await user.selectOptions(screen.getByLabelText('Mục tiêu'), 'build_compliance_checklist');
-    await user.click(screen.getByRole('button', { name: 'Lưu và tiếp tục lập checklist' }));
+    await user.click(screen.getByRole('button', { name: 'Lưu và tiếp tục tạo danh sách việc cần làm' }));
 
     expect(updateCaseStateMock).toHaveBeenCalledWith(
       'case-task',

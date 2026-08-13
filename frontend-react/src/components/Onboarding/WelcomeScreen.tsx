@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { ChatInput } from '@/components/Chat/ChatInput';
 import { Icon, type IconName } from '@/components/UI/Icon';
+import { GuidedCaseCard } from '@/components/Case/GuidedCaseCard';
+import type { CaseState } from '@/types';
+import { taskCopy } from '@/lib/userCopy';
+import type { CaseFormState } from '@/types';
 
 interface WelcomeScreenProps {
   disabled?: boolean;
@@ -12,9 +16,16 @@ interface WelcomeScreenProps {
   intentLabel?: string;
   onClearIntent: () => void;
   onStop: () => void;
+  onStartCase?: (taskType: CaseState['task_type']) => void;
+  guidedTask?: CaseState['task_type'] | null;
+  onGuidedSubmit?: (facts: Record<string, string>, statuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>, taskType: CaseState['task_type']) => Promise<void>;
+  onGuidedDraftChange?: (facts: Record<string, string>, statuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>, formState: CaseFormState | null) => void;
+  onCancelGuided?: () => void;
+  caseDisabled?: boolean;
+  caseDisabledReason?: string;
 }
 
-const actions: Array<{ icon: IconName; label: string; prompt: string; intent: string }> = [
+const actions: Array<{ icon: IconName; label: string; prompt: string; intent: string; taskType?: CaseState['task_type'] }> = [
   {
     icon: 'search',
     label: 'Tra cứu quy định',
@@ -23,30 +34,40 @@ const actions: Array<{ icon: IconName; label: string; prompt: string; intent: st
   },
   {
     icon: 'scale',
-    label: 'Kiểm tra nghĩa vụ',
-    prompt: 'Tôi là nhà sản xuất bao bì nhựa tại Việt Nam, có phải thực hiện EPR không?',
+    label: taskCopy.assess_epr_obligation.title,
+    prompt: '',
     intent: 'case_assessment',
+    taskType: 'assess_epr_obligation',
   },
   {
     icon: 'check',
-    label: 'Lập checklist',
-    prompt: 'Lập checklist tuân thủ EPR cho nhà nhập khẩu bao bì giấy tại Việt Nam.',
+    label: taskCopy.build_compliance_checklist.title,
+    prompt: '',
     intent: 'compliance_checklist',
+    taskType: 'build_compliance_checklist',
   },
 ];
 
 const suggestions = [
   'Doanh nghiệp nhập khẩu bao bì có thuộc đối tượng thực hiện EPR không?',
   'Giải thích Điều 77 về trách nhiệm tái chế sản phẩm, bao bì.',
-  'Tôi cần chuẩn bị thông tin gì để lập checklist tuân thủ?',
+  'Tôi cần chuẩn bị thông tin gì để lập danh sách việc cần làm?',
 ];
 
-export function WelcomeScreen({ disabled = false, isStreaming, onSendPrompt, onPrefillPrompt, onStop, draftText, onDraftChange, intentLabel, onClearIntent }: WelcomeScreenProps) {
+export function WelcomeScreen({ disabled = false, isStreaming, onSendPrompt, onPrefillPrompt, onStop, draftText, onDraftChange, intentLabel, onClearIntent, onStartCase, guidedTask = null, onGuidedSubmit, onGuidedDraftChange, onCancelGuided, caseDisabled = false, caseDisabledReason }: WelcomeScreenProps) {
   const [prefillRevision, setPrefillRevision] = useState(0);
 
   const handlePrefill = (prompt: string, intent: string) => {
     onPrefillPrompt(prompt, intent);
     setPrefillRevision((revision) => revision + 1);
+  };
+
+  const handleAction = (action: (typeof actions)[number]) => {
+    if (action.taskType && onStartCase) {
+      onStartCase(action.taskType);
+      return;
+    }
+    handlePrefill(action.prompt, action.intent);
   };
 
   return (
@@ -67,35 +88,45 @@ export function WelcomeScreen({ disabled = false, isStreaming, onSendPrompt, onP
         </div>
 
         <div className="mt-8 w-full max-w-[760px]">
-          <ChatInput
-            disabled={disabled}
-            isStreaming={isStreaming}
-            onSend={onSendPrompt}
-            onStop={onStop}
-            value={draftText}
-            onValueChange={onDraftChange}
-            intentLabel={intentLabel}
-            onClearIntent={onClearIntent}
-            focusRequest={prefillRevision}
-            variant="welcome"
-          />
-          <div className="mt-3 flex flex-wrap justify-center gap-2" aria-label="Tác vụ gợi ý">
-            {actions.map((action) => (
-              <button
-                className="inline-flex min-h-10 items-center gap-2 rounded-full border border-[#bdc9c6] bg-white px-3.5 py-2 text-xs font-medium text-[#3e4947] transition-colors hover:border-[#0f766e] hover:bg-[#f1f4f3] hover:text-[#005c55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] sm:text-sm"
-                disabled={disabled || isStreaming}
-                key={action.label}
-                onClick={() => handlePrefill(action.prompt, action.intent)}
-                type="button"
-              >
-                <Icon name={action.icon} size={16} />
-                {action.label}
-              </button>
-            ))}
-          </div>
-          <p className="mt-3 text-center text-xs leading-5 text-[#667085]">
-            Câu trả lời sẽ hiển thị nguồn tham khảo và những thông tin còn cần kiểm tra.
-          </p>
+          {guidedTask && onGuidedSubmit ? (
+            <>
+              <GuidedCaseCard onDraftChange={onGuidedDraftChange} onSubmit={onGuidedSubmit} taskType={guidedTask} />
+              {onCancelGuided && <button className="mx-auto mt-3 block text-sm font-medium text-[#006a63] underline" onClick={onCancelGuided} type="button">Quay lại tra cứu quy định</button>}
+            </>
+          ) : (
+            <>
+              <ChatInput
+                disabled={disabled}
+                isStreaming={isStreaming}
+                onSend={onSendPrompt}
+                onStop={onStop}
+                value={draftText}
+                onValueChange={onDraftChange}
+                intentLabel={intentLabel}
+                onClearIntent={onClearIntent}
+                focusRequest={prefillRevision}
+                variant="welcome"
+              />
+              <div className="mt-3 flex flex-wrap justify-center gap-2" aria-label="Tác vụ gợi ý">
+                {actions.map((action) => (
+                  <button
+                    className="inline-flex min-h-10 items-center gap-2 rounded-full border border-[#bdc9c6] bg-white px-3.5 py-2 text-xs font-medium text-[#3e4947] transition-colors hover:border-[#0f766e] hover:bg-[#f1f4f3] hover:text-[#005c55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] sm:text-sm"
+                    disabled={isStreaming || (!action.taskType && disabled) || Boolean(action.taskType && caseDisabled)}
+                    key={action.label}
+                    onClick={() => handleAction(action)}
+                    title={action.taskType && caseDisabled ? caseDisabledReason : undefined}
+                    type="button"
+                  >
+                    <Icon name={action.icon} size={16} />
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-3 text-center text-xs leading-5 text-[#667085]">
+                Câu trả lời sẽ hiển thị căn cứ và những thông tin còn cần kiểm tra.
+              </p>
+            </>
+          )}
         </div>
 
         <section className="mt-10 w-full max-w-[760px]" aria-labelledby="suggestion-title">

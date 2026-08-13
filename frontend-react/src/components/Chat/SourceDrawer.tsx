@@ -80,7 +80,7 @@ export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, on
       <div className="space-y-3 p-4 sm:p-5">
         {preview && (
           <div className="rounded-lg border border-[#d7a65a] bg-[#fff8ea] p-3 text-xs leading-5 text-[#714b18]" role="status">
-            Chế độ xem trước: corpus này chưa được phê duyệt để dùng trong production.
+            Bản thử nghiệm: thông tin có thể thay đổi sau khi kho văn bản được phê duyệt.
           </div>
         )}
         {documents.map((document, index) => {
@@ -95,6 +95,7 @@ export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, on
           const amendmentStatus = metadataValue(document, ['amendment_resolution_status', 'Amendment_Resolution_Status']);
           const activeSource = metadataValue(document, ['active_source_document_id', 'Active_Source_Document_Id']);
           const activePages = metadataValue(document, ['active_source_pages', 'Active_Source_Pages']);
+          const excerpt = (document.page_content || 'Nguồn này chưa có đoạn trích để hiển thị.').slice(0, 1400);
           return (
             <article
               className="rounded-lg border border-[#d9e1df] bg-white p-4 outline-none focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]/20"
@@ -126,15 +127,21 @@ export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, on
                     <span className="rounded-full bg-[#e7eceb] px-2 py-0.5">{effectiveStatus === 'active' ? 'Đang hiệu lực' : effectiveStatus === 'unknown' ? 'Chưa xác định hiệu lực' : effectiveStatus}</span>
                     {effectiveFrom && <span>Hiệu lực từ {effectiveFrom}</span>}
                   </div>
-                  <p className="mt-2 text-[11px] text-[#667085]">Corpus tính đến: {asOf}</p>
+                  <p className="mt-2 text-[11px] text-[#667085]">Kho văn bản tính đến: {asOf}</p>
                 </div>
               </div>
               <blockquote className="mt-3 whitespace-pre-wrap rounded-md bg-[#f1f4f3] px-3 py-3 text-[13px] leading-6 text-[#3e4947]">
-                {document.page_content || 'Nguồn này chưa có đoạn trích để hiển thị.'}
+                {excerpt}{(document.page_content || '').length > excerpt.length ? '…' : ''}
               </blockquote>
-              {metadataValue(document, ['amendment_relationship', 'Amendment_Relationship']) && <p className="mt-2 text-xs text-[#667085]">Quan hệ sửa đổi: {metadataValue(document, ['amendment_relationship', 'Amendment_Relationship'])}</p>}
-              {amendmentStatus && <p className="mt-1 text-xs text-[#667085]">Trạng thái đối chiếu sửa đổi: {amendmentStatus}</p>}
-              {activeSource && <p className="mt-1 text-xs text-[#667085]">Nguồn nội dung chính: {activeSource}{activePages ? ` · trang ${activePages}` : ''}</p>}
+              {(metadataValue(document, ['amendment_relationship', 'Amendment_Relationship']) || amendmentStatus || activeSource || document.document_id) && (
+                <details className="mt-3 rounded-md border border-[#e5e9e7] px-3 py-2 text-xs text-[#667085]">
+                  <summary className="cursor-pointer font-semibold text-[#53615e]">Thông tin đối chiếu</summary>
+                  {metadataValue(document, ['amendment_relationship', 'Amendment_Relationship']) && <p className="mt-2">Quan hệ sửa đổi: {metadataValue(document, ['amendment_relationship', 'Amendment_Relationship'])}</p>}
+                  {amendmentStatus && <p className="mt-1">Trạng thái đối chiếu sửa đổi: {amendmentStatus}</p>}
+                  {activeSource && <p className="mt-1">Nguồn nội dung chính: {activeSource}{activePages ? ` · trang ${activePages}` : ''}</p>}
+                  {document.document_id && <p className="mt-1">Mã nguồn: {document.document_id}</p>}
+                </details>
+              )}
               {url && (
                 <a
                   className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-[#006a63] hover:underline"

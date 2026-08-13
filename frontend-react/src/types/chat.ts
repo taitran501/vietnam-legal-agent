@@ -89,6 +89,9 @@ export interface WorkflowMetadata {
   sources?: SourceSnapshot[];
   replay_metadata?: Record<string, unknown>;
   validation_errors?: Record<string, string>;
+  form_version?: string;
+  completed_count?: number;
+  required_count?: number;
   citation_error?: string;
   safe_stop_reason?: string;
   preview?: boolean;
@@ -134,6 +137,8 @@ export interface FactValue {
 export interface CaseField {
   key: string;
   label: string;
+  group?: string;
+  display_order?: number;
   kind: 'text' | 'select' | 'number' | 'boolean';
   options: Array<{ value: string; label: string }>;
   required: boolean;
@@ -155,6 +160,22 @@ export interface CaseState {
   issue_states?: Record<string, unknown>;
   as_of_date?: string;
   fields?: CaseField[];
+  form_version?: string;
+  completed_count?: number;
+  required_count?: number;
+  validation_errors?: Record<string, string>;
+}
+
+export interface CaseFormState {
+  form_version: string;
+  task_type: CaseState['task_type'];
+  status: 'collecting' | 'ready';
+  facts: CaseFacts;
+  fields: CaseField[];
+  missing_facts: string[];
+  validation_errors: Record<string, string>;
+  completed_count: number;
+  required_count: number;
 }
 
 export interface EvidenceAssessment {

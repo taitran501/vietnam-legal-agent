@@ -1,11 +1,9 @@
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { WorkflowTimeline } from './WorkflowTimeline';
 
 describe('WorkflowTimeline', () => {
-  it('keeps the current action compact and reveals the bounded action history on demand', async () => {
-    const user = userEvent.setup();
+  it('keeps the streaming status compact for non-debug users', async () => {
     render(
       <WorkflowTimeline
         isStreaming
@@ -16,9 +14,8 @@ describe('WorkflowTimeline', () => {
       />
     );
 
-    expect(screen.getByText('Tìm văn bản liên quan')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /Tìm văn bản liên quan/i }));
-    expect(screen.getByText('Hiểu yêu cầu')).toBeInTheDocument();
+    expect(screen.getByText('Đang kiểm tra thông tin và căn cứ…')).toBeInTheDocument();
+    expect(screen.queryByText('Hiểu yêu cầu')).not.toBeInTheDocument();
   });
 
   it('shows the meaningful phase summary after a fast safe stop', () => {
@@ -35,16 +32,14 @@ describe('WorkflowTimeline', () => {
     expect(screen.getByText(/Đã hoàn tất 2 bước · Thu thập thông tin · còn thiếu 3 thông tin/)).toBeInTheDocument();
   });
 
-  it('uses the backend label and never exposes an internal action name', async () => {
-    const user = userEvent.setup();
+  it('uses the backend label and never exposes an internal action name', () => {
     render(
       <WorkflowTimeline
         isStreaming
         steps={[{ step: 1, action: 'internal_private_action', label: 'Đối chiếu nguồn chính thức', status: 'completed' }]}
       />,
     );
-    await user.click(screen.getByRole('button', { name: /Đối chiếu nguồn chính thức/i }));
-    expect(screen.getAllByText('Đối chiếu nguồn chính thức').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /Đối chiếu nguồn chính thức/i })).toBeInTheDocument();
     expect(screen.queryByText('internal_private_action')).not.toBeInTheDocument();
   });
 

@@ -8,7 +8,6 @@ import {
 import { useChatStore } from '@/state/chatStore';
 import { useSessionStore } from '@/state/sessionStore';
 import * as sessionsApi from '@/api/sessions';
-import { toast } from '@/state/toastStore';
 import type {
   ActiveTurn,
   ChatMessage,
@@ -103,6 +102,9 @@ function workflowFromEvent(event: import('@/types').SSEEvent): WorkflowMetadata 
     sources: event.sources,
     replay_metadata: event.replay_metadata,
     validation_errors: event.validation_errors,
+    form_version: event.form_version,
+    completed_count: event.completed_count,
+    required_count: event.required_count,
     citation_error: event.citation_error,
     safe_stop_reason: event.safe_stop_reason,
     preview: event.preview,
@@ -175,6 +177,7 @@ export function useChatStream() {
 
     let fullContent = '';
     let terminal = false;
+    let completed = false;
     let accepted = false;
     try {
       for await (const event of streamChat(
@@ -257,6 +260,7 @@ export function useChatStream() {
             if (replaced) store.updateMessage(replaced.id, { status: 'superseded' });
           }
           terminal = true;
+          completed = true;
           lastFailedRunRef.current = null;
           break;
         } else if (event.type === 'error') {
@@ -288,7 +292,6 @@ export function useChatStream() {
           content: fullContent,
           status: 'failed',
         });
-        toast.error(streamError.message);
       }
     } finally {
       if (activeTurnRef.current?.turnId === turnId) activeTurnRef.current = null;
@@ -297,6 +300,7 @@ export function useChatStream() {
       store.setStreaming(false);
       store.setStatusMessage('');
     }
+    return completed;
   }, []);
 
   const sendMessage = useCallback(async (
@@ -304,8 +308,8 @@ export function useChatStream() {
     sessionId: string,
     mode: 'auto' | 'research_web' = 'auto',
     options: TurnOptions = {},
-  ) => {
-    if (useChatStore.getState().isStreaming) return;
+  ): Promise<boolean> => {
+    if (useChatStore.getState().isStreaming) return false;
     const turnId = crypto.randomUUID();
     const userMessage: ChatMessage = {
       id: `user-${turnId}`,
@@ -320,7 +324,7 @@ export function useChatStream() {
     store.addMessage(userMessage);
     store.addMessage(assistantMessage);
     ensureSessionVisibleInSidebar(sessionId, query);
-    await runAssistantStream({
+    return runAssistantStream({
       query,
       sessionId,
       mode,

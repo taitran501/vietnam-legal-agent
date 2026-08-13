@@ -13,7 +13,7 @@ interface HeaderProps {
 export function Header({ hasActiveCase = false, me, readiness, onLogout, onOpenCase, onOpenMobileNav }: HeaderProps) {
   const status = {
     ready: { label: 'Sẵn sàng', color: 'bg-[#1d8b66]', title: 'Dữ liệu pháp luật đã sẵn sàng' },
-    preview: { label: 'Xem trước', color: 'bg-[#d98b22]', title: 'Corpus chưa được phê duyệt cho production' },
+  preview: { label: 'Bản thử nghiệm', color: 'bg-[#d98b22]', title: 'Kho văn bản chưa được phê duyệt' },
     blocked: { label: 'Tra cứu đang khóa', color: 'bg-[#ba1a1a]', title: 'Khả năng tra cứu pháp luật chưa sẵn sàng' },
     preparing: { label: 'Đang chuẩn bị dữ liệu', color: 'bg-[#d98b22]', title: 'Đang chuẩn bị dữ liệu pháp luật' },
     offline: { label: 'Ngoại tuyến', color: 'bg-[#ba1a1a]', title: 'Không thể kết nối tới máy chủ' },
@@ -55,7 +55,7 @@ export function Header({ hasActiveCase = false, me, readiness, onLogout, onOpenC
         {me && (
           <div className="hidden min-w-0 text-right md:block">
             <p className="max-w-36 truncate text-xs font-semibold text-[#3e4947]">{me.display_name}</p>
-            <p className="max-w-36 truncate text-[10px] text-[#667085]">{me.roles.join(', ') || me.principal_type}</p>
+            <p className="max-w-36 truncate text-[10px] text-[#667085]">{me.roles.join(', ') || 'Tài khoản'}</p>
           </div>
         )}
         {onLogout && (

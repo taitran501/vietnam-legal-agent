@@ -1,30 +1,19 @@
 import type { WorkflowMetadata } from '@/types';
 import { Icon } from '@/components/UI/Icon';
 import { TraceDrawer } from './TraceDrawer';
+import { GuidedCaseCard } from '@/components/Case/GuidedCaseCard';
+import type { CaseState } from '@/types';
+import { displayFactLabel, displayFactValue, factLabels, safeStopCopy } from '@/lib/userCopy';
 
 interface WorkflowResultCardProps {
   onOpenCase?: () => void;
+  onContinueCase?: (facts: Record<string, string>, statuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>, taskType: CaseState['task_type']) => Promise<void>;
   onOpenSources?: () => void;
   onResearch?: () => void;
   workflow?: WorkflowMetadata;
 }
 
-const missingFactLabels: Record<string, string> = {
-  business_role: 'vai trò doanh nghiệp',
-  product_or_packaging: 'sản phẩm hoặc bao bì',
-  material: 'vật liệu chính',
-  activity_scope: 'phạm vi hoạt động',
-  object_kind: 'loại đối tượng',
-  product_group: 'nhóm sản phẩm EPR',
-  packaged_goods_category: 'nhóm hàng hóa được đóng gói',
-  market_placement: 'phạm vi đưa ra thị trường',
-  activity_purpose: 'mục đích hoạt động',
-  annual_revenue_vnd: 'doanh thu liên quan',
-  reused_by_producer: 'trường hợp thu hồi và tái sử dụng bao bì',
-  recovery_rate: 'tỷ lệ thu hồi và tái sử dụng',
-};
-
-export function WorkflowResultCard({ onOpenCase, onOpenSources, onResearch, workflow }: WorkflowResultCardProps) {
+export function WorkflowResultCard({ onOpenCase, onContinueCase, onOpenSources, onResearch, workflow }: WorkflowResultCardProps) {
   if (!workflow) return null;
   const rawStopReason = workflow.safe_stop_reason || workflow.citation_error || workflow.termination_reason || '';
   const stopKey = ({
@@ -49,49 +38,39 @@ export function WorkflowResultCard({ onOpenCase, onOpenSources, onResearch, work
     || (!workflow.outcome && !workflow.result_type)
   ) && Boolean(workflow.checklist?.length);
   const hasMissingFacts = Boolean(workflow.missing_facts?.length);
-  const hasAssumptions = Boolean(workflow.assumptions?.length);
-  const stopDetails: Record<string, { title: string; message: string }> = {
-    out_of_scope: { title: 'Ngoài phạm vi hỗ trợ', message: 'Yêu cầu này không thuộc kho pháp luật EPR đã đăng ký.' },
-    insufficient_evidence: { title: 'Chưa đủ căn cứ để trả lời chắc chắn', message: 'Một hoặc nhiều vấn đề bắt buộc chưa có nguồn hoạt động phù hợp để kiểm chứng.' },
-    missing_provision: { title: 'Chưa tìm thấy điều khoản phù hợp', message: 'Kho pháp luật hiện tại chưa có nguồn hoạt động đủ cụ thể cho yêu cầu này.' },
-    incomplete_issue_coverage: { title: 'Chưa đủ căn cứ cho toàn bộ vấn đề', message: 'Một hoặc nhiều vấn đề bắt buộc chưa có nguồn hoạt động phù hợp để kiểm chứng.' },
-    failed_citation_verification: { title: 'Không xác minh được trích dẫn', message: 'Câu trả lời đã được dừng vì nguồn hoặc vị trí trích dẫn chưa vượt qua kiểm tra.' },
-    stale_corpus: { title: 'Corpus cần cập nhật', message: 'Dữ liệu pháp luật hiện tại chưa được xác nhận là mới nhất cho chuỗi sửa đổi.' },
-    unavailable_dependencies: { title: 'Một dịch vụ đang tạm thời không khả dụng', message: 'Hãy thử lại sau; hệ thống chưa đưa ra kết luận khi phụ thuộc cần thiết chưa sẵn sàng.' },
-    invalid_or_unresolved_fact: { title: 'Thông tin chưa đủ rõ để kết luận', message: 'Một giá trị chưa hợp lệ hoặc thuộc nhóm chưa được xác định trong rule pack hiện tại.' },
-  };
-  const stop = stopDetails[stopKey] || {
-    title: 'Workflow đã dừng an toàn',
+  const meaningfulAssumptions = (workflow.assumptions || []).filter((assumption) => assumption.trim());
+  const hasAssumptions = Boolean(meaningfulAssumptions.length);
+  const stop = safeStopCopy[stopKey] || {
+    title: 'Chưa thể kết luận',
     message: 'Trợ lý đã dừng để tránh đưa ra kết luận không được nguồn hiện có hỗ trợ.',
   };
 
   const hasTrace = import.meta.env.VITE_ENABLE_TRACE_DEBUG === 'true' && Boolean(workflow.trace_id);
   if (!safeStop && !hasAssessment && !hasChecklist && !hasMissingFacts && !hasAssumptions && !hasTrace) return null;
 
+  const taskType = workflow.case_state?.task_type || (workflow.task_type === 'build_compliance_checklist' ? 'build_compliance_checklist' : 'assess_epr_obligation');
+  const factsUsed = Object.entries(workflow.case_state?.facts || {}).filter(([, value]) => {
+    const raw = typeof value === 'string' ? value : (value as { value?: string })?.value;
+    return Boolean(raw);
+  });
+  const caseFields = workflow.case_state?.fields || [];
+
   return (
-    <section className="mt-5 space-y-3" aria-label="Kết quả workflow">
+    <section className="mt-5 space-y-3" aria-label="Kết quả xử lý">
       {hasMissingFacts && (
-        <div className="rounded-lg border border-[#cad5ec] bg-[#f3f6fc] p-4 text-sm text-[#29354b]">
-          <div className="flex items-start gap-3">
-            <Icon className="mt-0.5 shrink-0 text-[#555e74]" name="info" size={19} />
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold">Cần thêm thông tin để tiếp tục</p>
-              <p className="mt-1 leading-6">
-                Vui lòng bổ sung {workflow.missing_facts?.map((fact) => missingFactLabels[fact] || fact).join(', ')}.
-              </p>
-              {onOpenCase && (
-                <button
-                  className="mt-3 inline-flex items-center gap-2 rounded-md bg-[#555e74] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#3e475b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#555e74] focus-visible:ring-offset-2"
-                  onClick={onOpenCase}
-                  type="button"
-                >
-                  <Icon name="case" size={15} />
-                  Bổ sung trong bảng thông tin
-                </button>
-              )}
-            </div>
+        onContinueCase ? (
+          <GuidedCaseCard
+            initialCaseState={workflow.case_state}
+            onOpenFullEditor={onOpenCase}
+            onSubmit={onContinueCase}
+            taskType={taskType}
+          />
+        ) : (
+          <div className="rounded-lg border border-[#cad5ec] bg-[#f3f6fc] p-4 text-sm text-[#29354b]">
+            <p className="font-semibold text-[#005c55]">Cần thêm thông tin để tiếp tục</p>
+            <p className="mt-2 leading-6">Còn thiếu: {workflow.missing_facts?.map((fact) => factLabels[fact] || fact).join(', ')}.</p>
           </div>
-        </div>
+        )
       )}
 
       {safeStop && (
@@ -123,6 +102,7 @@ export function WorkflowResultCard({ onOpenCase, onOpenSources, onResearch, work
               <p className="font-semibold text-[#005c55]">Đánh giá sơ bộ</p>
               <p className="mt-1 font-semibold leading-6">{String(workflow.assessment?.conclusion || 'Đã có kết quả đánh giá.')}</p>
               {!!workflow.assessment?.reasons && <ul className="mt-2 list-disc space-y-1 pl-5">{(workflow.assessment.reasons as Array<Record<string, unknown>>).map((reason, index) => <li key={index}>{String(reason.claim || '')}</li>)}</ul>}
+              {factsUsed.length > 0 && <div className="mt-3"><p className="font-semibold">Thông tin đã sử dụng</p><ul className="mt-1 list-disc space-y-1 pl-5 text-sm">{factsUsed.map(([key, value]) => { const rawValue = typeof value === 'string' ? value : (value as { value?: string })?.value || ''; return <li key={key}>{displayFactLabel(key, caseFields)}: {displayFactValue(key, rawValue, caseFields)}</li>; })}</ul></div>}
               {!!workflow.assessment?.next_steps && <p className="mt-2 leading-6"><span className="font-semibold">Bước tiếp theo:</span> {(workflow.assessment.next_steps as string[]).join(' ')}</p>}
               <p className="mt-2 text-xs">Kết quả dựa trên thông tin đã cung cấp và nguồn hiển thị; không thay thế tư vấn pháp lý.</p>
             </div>
@@ -134,7 +114,7 @@ export function WorkflowResultCard({ onOpenCase, onOpenSources, onResearch, work
         <div className="rounded-lg border border-[#d9e1df] bg-white p-4 text-sm text-[#3e4947]">
           <div className="flex items-center gap-2 font-semibold text-[#172033]">
             <Icon className="text-[#006a63]" name="check" size={18} />
-            Checklist đề xuất
+            Danh sách việc cần làm
           </div>
           <ol className="mt-3 space-y-2.5">
             {workflow.checklist?.map((item, index) => (
@@ -153,11 +133,11 @@ export function WorkflowResultCard({ onOpenCase, onOpenSources, onResearch, work
         <details className="rounded-lg border border-[#d9e1df] bg-[#f7faf8] px-4 py-3 text-sm text-[#53615e]">
           <summary className="cursor-pointer font-semibold text-[#3e4947]">Giả định đang sử dụng</summary>
           <ul className="mt-2 list-disc space-y-1.5 pl-5 leading-6">
-            {workflow.assumptions?.map((assumption, index) => <li key={index}>{assumption}</li>)}
+            {meaningfulAssumptions.map((assumption, index) => <li key={index}>{assumption}</li>)}
           </ul>
         </details>
       )}
-      <p className="text-[11px] text-[#667085]">Corpus pháp luật tính đến: {workflow.corpus_as_of_date || 'chưa được pháp lý phê duyệt'}</p>
+      <p className="text-[11px] text-[#667085]">Kho văn bản tính đến: {workflow.corpus_as_of_date || 'chưa được pháp lý phê duyệt'}</p>
       <TraceDrawer traceId={workflow.trace_id} />
     </section>
   );
