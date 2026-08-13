@@ -22,9 +22,10 @@ interface WorkflowTimelineProps {
   isStreaming: boolean;
   statusMessage?: string;
   steps: WorkflowStep[];
+  turnStatus?: 'pending' | 'streaming' | 'complete' | 'stopped' | 'failed' | 'superseded';
 }
 
-export function WorkflowTimeline({ isStreaming, statusMessage, steps }: WorkflowTimelineProps) {
+export function WorkflowTimeline({ isStreaming, statusMessage, steps, turnStatus }: WorkflowTimelineProps) {
   const [expanded, setExpanded] = useState(false);
   const current = steps[steps.length - 1];
 
@@ -35,7 +36,11 @@ export function WorkflowTimeline({ isStreaming, statusMessage, steps }: Workflow
   if (!isStreaming && steps.length === 0) return null;
 
   const currentLabel = current?.label || (current ? labels[current.action] || current.action : statusMessage || 'Đang chuẩn bị ngữ cảnh');
-  const completedSummary = steps.length
+  const completedSummary = turnStatus === 'stopped'
+    ? 'Đã dừng theo yêu cầu · nội dung chưa hoàn chỉnh'
+    : turnStatus === 'failed'
+      ? 'Không thể hoàn tất lượt xử lý'
+      : steps.length
     ? `Đã hoàn tất ${steps.length} bước · ${currentLabel}`
     : 'Đã hoàn tất xử lý';
 
@@ -68,7 +73,7 @@ export function WorkflowTimeline({ isStreaming, statusMessage, steps }: Workflow
                 key={`${step.step}-${step.action}`}
               >
                 <span className="font-semibold text-[#006a63]">{step.step}</span>
-                <span>{labels[step.action] || step.action}</span>
+                <span>{step.label || labels[step.action] || 'Bước xử lý'}</span>
               </li>
             ))}
             {steps.length === 0 && <li className="text-[11px] text-[#667085]">Đang chuẩn bị ngữ cảnh…</li>}

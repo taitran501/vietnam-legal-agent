@@ -35,7 +35,23 @@ async def _deterministic_ready() -> tuple[dict[str, object], bool]:
     requiring the real local stack during UI tests.
     """
 
-    return ({"status": "ready", "dependencies": {}, "corpus": {"status": "ready"}}, True)
+    return (
+        {
+            "status": "ready",
+            "runtime_mode": "preview",
+            "preview": True,
+            "dependencies": {},
+            "capabilities": {
+                "history": {"status": "ready", "reason": "ok"},
+                "legal_chat": {"status": "ready", "reason": "preview_unapproved_corpus"},
+                "case_workflow": {"status": "ready", "reason": "preview_unapproved_corpus"},
+                "feedback": {"status": "ready", "reason": "ok"},
+                "web_research": {"status": "degraded", "reason": "provider_not_configured"},
+            },
+            "corpus": {"status": "preview_ready"},
+        },
+        True,
+    )
 
 
 chat_routes.readiness_payload = _deterministic_ready

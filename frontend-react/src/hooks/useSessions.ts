@@ -1,207 +1,218 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect } from 'react';
+import axios from 'axios';
 import { useSessionStore } from '@/state/sessionStore';
 import { useChatStore } from '@/state/chatStore';
 import * as sessionsApi from '@/api/sessions';
 import { toast } from '@/state/toastStore';
 import type { ChatMessage } from '@/types';
 
-/**
- * Enhanced hook for session management with full CRUD
- */
-export function useSessions() {
+const PAGE_SIZE = 30;
+let listController: AbortController | null = null;
+let detailController: AbortController | null = null;
+let listSequence = 0;
+let detailSequence = 0;
+
+function isCancelled(error: unknown): boolean {
+  return axios.isCancel(error) || (error instanceof DOMException && error.name === 'AbortError');
+}
+
+function isNotFound(error: unknown): boolean {
+  return axios.isAxiosError(error) && error.response?.status === 404;
+}
+
+function sourceDocuments(metadata: Record<string, unknown> | undefined) {
+  const sources = Array.isArray(metadata?.sources) ? metadata.sources : [];
+  return sources.map((raw) => {
+    const source = raw as Record<string, unknown>;
+    return {
+      page_content: String(source.excerpt || ''),
+      document_id: String(source.source_id || ''),
+      source: source.source_kind === 'official_web' ? 'web' : 'legal',
+      metadata: {
+        citation_index: source.citation_index,
+        Source_Title: source.title,
+        Document_Number: source.instrument_number,
+        legal_anchor: source.anchor,
+        Pages: source.page,
+        Source_Start: source.offset_start,
+        Source_End: source.offset_end,
+        official_url: source.official_url,
+        Source_URI: source.official_url,
+        source_kind: source.source_kind,
+        authority: source.authority,
+        effective_status: source.effective_status,
+        effective_from: source.effective_from,
+        effective_to: source.effective_to,
+        amendment_relationship: source.amendment_relationship,
+        active_source_document_id: source.active_source_document_id,
+        active_source_pages: source.active_source_pages,
+        amendment_resolution_status: source.amendment_resolution_status,
+        amendment_operations: source.amendment_operations,
+        current_law_support: source.current_law_support,
+        corpus_as_of_date: source.corpus_as_of_date,
+      },
+    };
+  });
+}
+
+export function useSessions({ autoLoad = true }: { autoLoad?: boolean } = {}) {
+  const sessionState = useSessionStore();
   const {
     sessions,
     isLoadingSessions,
     hasLoadedSessions,
+    sessionsError,
+    hasMoreSessions,
+    searchQuery,
     setSessions,
+    appendSessions,
     removeSession,
     updateSession,
     setLoading,
     setLoaded,
-  } = useSessionStore();
+    setError: setSessionsError,
+    setHasMore,
+    setSearchQuery,
+  } = sessionState;
+  const { beginSessionLoad, finishSessionLoad, failSessionLoad, clearChat } = useChatStore();
 
-  const { setActiveSession, setMessages, setActiveCase, clearChat } = useChatStore();
-  const [searchQuery, setSearchQuery] = useState('');
-  const loadRequestId = useRef(0);
-
-  /**
-   * Load session list
-   */
-  const loadSessions = useCallback(async () => {
+  const loadSessions = useCallback(async ({ reset = true }: { reset?: boolean } = {}) => {
     const current = useSessionStore.getState();
-    if (current.isLoadingSessions || current.hasLoadedSessions) return;
+    if (!reset && (current.isLoadingSessions || !current.hasMoreSessions)) return;
+    listController?.abort();
+    const controller = new AbortController();
+    listController = controller;
+    const sequence = ++listSequence;
+    const offset = reset ? 0 : current.sessions.length;
     setLoading(true);
+    setSessionsError(null);
     try {
-      const apiList = await sessionsApi.listSessions(50);
-      const activeId = useChatStore.getState().activeSessionId;
-      const prev = useSessionStore.getState().sessions;
-      const apiIds = new Set(apiList.map((s) => s.id));
-      // Keep a local row for the active session until Redis lists it (first message in flight).
-      const pendingLocal =
-        activeId && !apiIds.has(activeId)
-          ? prev.filter((s) => s.id === activeId)
-          : [];
-      const pendingIds = new Set(pendingLocal.map((s) => s.id));
-      const fromApi = apiList.filter((s) => !pendingIds.has(s.id));
-      setSessions([...pendingLocal, ...fromApi]);
+      const page = await sessionsApi.listSessions(
+        PAGE_SIZE,
+        offset,
+        current.searchQuery.trim(),
+        controller.signal,
+      );
+      if (sequence !== listSequence) return;
+      if (reset) setSessions(page);
+      else appendSessions(page);
+      setHasMore(page.length === PAGE_SIZE);
       setLoaded(true);
     } catch (error) {
+      if (isCancelled(error) || sequence !== listSequence) return;
       console.error('Failed to load sessions:', error);
+      setSessionsError('Không thể tải lịch sử trò chuyện.');
     } finally {
-      setLoading(false);
+      if (sequence === listSequence) setLoading(false);
     }
-  }, [setLoaded, setLoading, setSessions]);
+  }, [appendSessions, setHasMore, setLoaded, setLoading, setSessions, setSessionsError]);
 
-  /**
-   * Load session details
-   */
-  const loadSession = useCallback(
-    async (sessionId: string) => {
-      const requestId = ++loadRequestId.current;
-      try {
-        const detail = await sessionsApi.getSession(sessionId);
-        if (requestId !== loadRequestId.current) return;
+  const loadMoreSessions = useCallback(async () => {
+    await loadSessions({ reset: false });
+  }, [loadSessions]);
 
-        // Set active session
-        setActiveSession(sessionId);
+  const cancelSessionLoad = useCallback(() => {
+    detailSequence += 1;
+    detailController?.abort();
+    detailController = null;
+  }, []);
 
-        // Convert messages to ChatMessage format
-        const messages: ChatMessage[] = detail.messages.map((msg, idx) => ({
-          id: msg.id ? `${msg.role}-${msg.id}` : `${msg.role}-${msg.timestamp}-${idx}`,
-          serverMessageId: msg.id,
-          role: msg.role as 'user' | 'assistant',
-          content: msg.content,
-          timestamp: msg.timestamp,
-          feedback: (msg.metadata as { feedback?: ChatMessage['feedback'] } | undefined)?.feedback,
-          documents: (msg.metadata?.sources || []).map((source) => ({
-            page_content: source.excerpt || '',
-            document_id: source.source_id,
-            source: 'legal',
-            metadata: {
-              Source_Title: source.title,
-              Document_Number: source.instrument_number,
-              legal_anchor: source.anchor,
-              Pages: source.page,
-              Source_Start: source.offset_start,
-              Source_End: source.offset_end,
-              Source_URI: source.official_url,
-              effective_status: source.effective_status,
-              effective_from: source.effective_from,
-              effective_to: source.effective_to,
-              amendment_relationship: source.amendment_relationship,
-              active_source_document_id: source.active_source_document_id,
-              active_source_pages: source.active_source_pages,
-              amendment_resolution_status: source.amendment_resolution_status,
-              amendment_operations: source.amendment_operations,
-              current_law_support: source.current_law_support,
-              corpus_as_of_date: source.corpus_as_of_date,
-            },
-          })),
-          workflow: (msg.metadata || undefined) as ChatMessage['workflow'],
+  const loadSession = useCallback(async (sessionId: string): Promise<'loaded' | 'not_found' | 'error' | 'stale'> => {
+    cancelSessionLoad();
+    const controller = new AbortController();
+    detailController = controller;
+    const sequence = ++detailSequence;
+    beginSessionLoad(sessionId);
+    try {
+      const [detail, caseState] = await Promise.all([
+        sessionsApi.getSession(sessionId, controller.signal),
+        sessionsApi.getCaseState(sessionId, controller.signal),
+      ]);
+      if (sequence !== detailSequence || useChatStore.getState().activeSessionId !== sessionId) return 'stale';
+      const messages: ChatMessage[] = detail.messages
+        .filter((message) => message.status !== 'superseded')
+        .map((message, index) => ({
+        id: message.id ? `${message.role}-${message.id}` : `${message.role}-${message.timestamp}-${index}`,
+        serverMessageId: message.id,
+        role: message.role as 'user' | 'assistant',
+        content: message.content,
+        timestamp: message.timestamp,
+        turnId: message.turn_id || undefined,
+        status: message.status || 'complete',
+        feedback: message.metadata?.feedback,
+        feedbackState: message.metadata?.feedback ? 'saved' : 'idle',
+        documents: sourceDocuments(message.metadata as Record<string, unknown> | undefined),
+        workflow: (message.metadata || undefined) as ChatMessage['workflow'],
         }));
+      finishSessionLoad(sessionId, messages, caseState);
+      return 'loaded';
+    } catch (error) {
+      if (isCancelled(error) || sequence !== detailSequence) return 'stale';
+      if (isNotFound(error)) return 'not_found';
+      console.error('Failed to load session:', error);
+      failSessionLoad('Không thể tải cuộc trò chuyện. Kiểm tra kết nối rồi thử lại.');
+      return 'error';
+    }
+  }, [beginSessionLoad, cancelSessionLoad, failSessionLoad, finishSessionLoad]);
 
-        if (requestId !== loadRequestId.current) return;
+  const deleteSession = useCallback(async (sessionId: string) => {
+    try {
+      await sessionsApi.deleteSession(sessionId);
+      removeSession(sessionId);
+      if (useChatStore.getState().activeSessionId === sessionId) clearChat();
+      toast.success('Đã xóa cuộc trò chuyện');
+    } catch (error) {
+      console.error('Failed to delete session:', error);
+      toast.error('Không thể xóa cuộc trò chuyện');
+    }
+  }, [clearChat, removeSession]);
 
-        setMessages(messages);
-        const caseState = await sessionsApi.getCaseState(sessionId);
-        if (requestId !== loadRequestId.current) return;
-        setActiveCase(caseState);
-      } catch (error) {
-        console.error('Failed to load session:', error);
-        if (requestId === loadRequestId.current) toast.error('Không thể tải cuộc trò chuyện');
-      }
-    },
-    [setActiveCase, setActiveSession, setMessages]
-  );
-
-  /**
-   * Delete session with confirmation
-   */
-  const deleteSession = useCallback(
-    async (sessionId: string) => {
-      try {
-        await sessionsApi.deleteSession(sessionId);
-        removeSession(sessionId);
-
-        // If deleted session was active, clear chat
-        const { activeSessionId } = useChatStore.getState();
-        if (activeSessionId === sessionId) {
-          clearChat();
-        }
-
-        toast.success('Đã xóa cuộc trò chuyện');
-      } catch (error) {
-        console.error('Failed to delete session:', error);
-        toast.error('Không thể xóa cuộc trò chuyện');
-      }
-    },
-    [removeSession, clearChat]
-  );
-
-  /**
-   * Create new session (reset chat)
-   */
   const createNewSession = useCallback(() => {
+    cancelSessionLoad();
     clearChat();
-    toast.info('Cuộc trò chuyện mới đã được tạo');
-  }, [clearChat]);
+  }, [cancelSessionLoad, clearChat]);
 
-  /**
-   * Rename session
-   */
-  const renameSession = useCallback(
-    async (sessionId: string, newTitle: string) => {
-      try {
-        await sessionsApi.updateSession(sessionId, newTitle);
-        updateSession(sessionId, { title: newTitle });
-        toast.success('Đã đổi tên cuộc trò chuyện');
-      } catch (error) {
-        console.error('Failed to rename session:', error);
-        toast.error('Không thể đổi tên cuộc trò chuyện');
-      }
-    },
-    [updateSession]
-  );
+  const renameSession = useCallback(async (sessionId: string, newTitle: string) => {
+    try {
+      await sessionsApi.updateSession(sessionId, newTitle);
+      updateSession(sessionId, { title: newTitle });
+      toast.success('Đã đổi tên cuộc trò chuyện');
+    } catch (error) {
+      console.error('Failed to rename session:', error);
+      toast.error('Không thể đổi tên cuộc trò chuyện');
+    }
+  }, [updateSession]);
 
-  /**
-   * Clear all conversations
-   */
   const clearAllSessions = useCallback(async () => {
     try {
-      // Delete all sessions from backend
-      await Promise.all(sessions.map(s => sessionsApi.deleteSession(s.id)));
-      
-      // Clear local state
+      await Promise.all(useSessionStore.getState().sessions.map((session) => sessionsApi.deleteSession(session.id)));
       setSessions([]);
       clearChat();
-      
       toast.success('Đã xóa tất cả cuộc trò chuyện');
     } catch (error) {
       console.error('Failed to clear all sessions:', error);
       toast.error('Không thể xóa tất cả cuộc trò chuyện');
     }
-  }, [sessions, setSessions, clearChat]);
+  }, [clearChat, setSessions]);
 
-  /**
-   * Filtered sessions based on search query
-   */
-  const filteredSessions = sessions.filter((session) =>
-    (session.title || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  // Load sessions on mount
   useEffect(() => {
-    if (!hasLoadedSessions) void loadSessions();
-  }, [hasLoadedSessions, loadSessions]);
+    if (!autoLoad) return;
+    const timer = window.setTimeout(() => void loadSessions({ reset: true }), searchQuery ? 250 : 0);
+    return () => window.clearTimeout(timer);
+  }, [autoLoad, loadSessions, searchQuery]);
 
   return {
-    sessions: filteredSessions,
-    allSessions: sessions,
+    sessions,
     isLoadingSessions,
+    hasLoadedSessions,
+    sessionsError,
+    hasMoreSessions,
     searchQuery,
     setSearchQuery,
     loadSessions,
+    loadMoreSessions,
     loadSession,
+    cancelSessionLoad,
     deleteSession,
     createNewSession,
     renameSession,

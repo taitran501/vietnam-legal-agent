@@ -12,6 +12,30 @@ export interface ChatMessage {
   documents?: SourceDocument[];
   workflow?: WorkflowMetadata;
   feedback?: { rating: 1 | 2; comment?: string | null };
+  feedbackState?: 'idle' | 'pending' | 'saved' | 'failed';
+  turnId?: string;
+  status?: MessageStatus;
+}
+
+export type MessageStatus = 'pending' | 'streaming' | 'complete' | 'stopped' | 'failed' | 'superseded';
+
+export type TurnOperation = 'message' | 'continue_case' | 'retry' | 'regenerate';
+
+export interface StreamError {
+  code: string;
+  message: string;
+  retryable: boolean;
+  retryAfterSeconds?: number | null;
+  traceId?: string;
+  pipelineVersion?: string;
+}
+
+export interface ActiveTurn {
+  turnId: string;
+  conversationId: string;
+  localAssistantId: string;
+  assistantMessageId?: number;
+  operation: TurnOperation;
 }
 
 export type ResponseSource = 
@@ -67,9 +91,11 @@ export interface WorkflowMetadata {
   validation_errors?: Record<string, string>;
   citation_error?: string;
   safe_stop_reason?: string;
+  preview?: boolean;
 }
 
 export interface SourceSnapshot {
+  citation_index?: number;
   source_id: string;
   title?: string;
   instrument_number?: string;
@@ -89,6 +115,8 @@ export interface SourceSnapshot {
   current_law_support?: boolean;
   corpus_as_of_date?: string;
   excerpt?: string;
+  source_kind?: string;
+  authority?: string;
 }
 
 export type CaseFacts = Record<string, string | FactValue>;

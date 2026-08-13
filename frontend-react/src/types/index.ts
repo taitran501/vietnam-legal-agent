@@ -10,6 +10,11 @@ export type {
   WorkflowStep,
   CaseField,
   FactValue,
+  ActiveTurn,
+  MessageStatus,
+  StreamError,
+  TurnOperation,
+  SourceSnapshot,
 } from './chat';
 export type {
   ChatRequest,
@@ -19,4 +24,5 @@ export type {
   FeedbackRequest,
   FeedbackResponse,
   HealthResponse,
+  ReadinessResponse,
 } from './api';

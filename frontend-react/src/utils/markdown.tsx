@@ -4,11 +4,44 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { Components } from 'react-markdown';
 
-/**
- * Configure react-markdown with GFM and syntax highlighting
- */
-function citationAwareContent(content: string): string {
-  return content.replace(/\[(\d+)\]/g, '[$1](source-citation:$1)');
+type MarkdownNode = {
+  type: string;
+  value?: string;
+  url?: string;
+  children?: MarkdownNode[];
+};
+
+/** Convert plain citation markers without touching code or existing links. */
+export function remarkCitationLinks() {
+  return (tree: MarkdownNode) => {
+    const visit = (node: MarkdownNode, parent?: MarkdownNode) => {
+      if (!node.children) return;
+      if (['code', 'inlineCode', 'link', 'linkReference'].includes(node.type)) return;
+
+      node.children = node.children.flatMap((child) => {
+        if (child.type !== 'text' || !child.value || ['link', 'linkReference'].includes(parent?.type || '')) {
+          visit(child, node);
+          return [child];
+        }
+        const parts: MarkdownNode[] = [];
+        let cursor = 0;
+        for (const match of child.value.matchAll(/\[(\d+)\]/g)) {
+          const start = match.index ?? 0;
+          if (start > cursor) parts.push({ type: 'text', value: child.value.slice(cursor, start) });
+          parts.push({
+            type: 'link',
+            url: `#source-${match[1]}`,
+            children: [{ type: 'text', value: match[0] }],
+          });
+          cursor = start + match[0].length;
+        }
+        if (cursor === 0) return [child];
+        if (cursor < child.value.length) parts.push({ type: 'text', value: child.value.slice(cursor) });
+        return parts;
+      });
+    };
+    visit(tree);
+  };
 }
 
 const markdownComponents = (onCitationClick?: (index: number) => void): Components => ({
@@ -62,9 +95,21 @@ const markdownComponents = (onCitationClick?: (index: number) => void): Componen
     },
     // Link styling
     a({ children, href }) {
-      if (href?.startsWith('source-citation:')) {
-        const index = Number(href.slice('source-citation:'.length));
-        return <button className="font-semibold text-[#006a63] underline underline-offset-2" onClick={() => onCitationClick?.(index)} type="button">{children}</button>;
+      const citation = href?.match(/^#source-(\d+)$/);
+      if (citation) {
+        const index = Number(citation[1]);
+        return (
+          <a
+            className="font-semibold text-[#006a63] underline underline-offset-2"
+            href={href}
+            onClick={(event) => {
+              event.preventDefault();
+              onCitationClick?.(index);
+            }}
+          >
+            {children}
+          </a>
+        );
       }
       return (
         <a
@@ -113,8 +158,8 @@ const markdownComponents = (onCitationClick?: (index: number) => void): Componen
  */
 export function MarkdownRenderer({ content, onCitationClick }: { content: string; onCitationClick?: (index: number) => void }) {
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents(onCitationClick)}>
-      {citationAwareContent(content)}
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationLinks]} components={markdownComponents(onCitationClick)}>
+      {content}
     </ReactMarkdown>
   );
 }

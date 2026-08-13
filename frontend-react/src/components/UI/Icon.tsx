@@ -16,6 +16,7 @@ export type IconName =
   | 'help'
   | 'history'
   | 'info'
+  | 'logout'
   | 'menu'
   | 'message'
   | 'more'
@@ -116,6 +117,13 @@ const paths: Record<IconName, ReactNode> = {
       <circle cx="12" cy="12" r="10" />
       <path d="M12 16v-4" />
       <path d="M12 8h.01" />
+    </>
+  ),
+  logout: (
+    <>
+      <path d="M10 17l5-5-5-5" />
+      <path d="M15 12H3" />
+      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
     </>
   ),
   menu: (

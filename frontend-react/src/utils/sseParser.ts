@@ -1,5 +1,46 @@
 import type { SSEEvent } from '@/types';
-import { authorizationHeader } from '@/auth/oidc';
+import { authorizationHeader, handleUnauthorized } from '@/auth/oidc';
+import type { StreamError, TurnOperation } from '@/types';
+
+export class ChatStreamError extends Error implements StreamError {
+  code: string;
+  retryable: boolean;
+  retryAfterSeconds?: number | null;
+  traceId?: string;
+  pipelineVersion?: string;
+
+  constructor(payload: StreamError) {
+    super(payload.message);
+    this.name = 'ChatStreamError';
+    this.code = payload.code;
+    this.retryable = payload.retryable;
+    this.retryAfterSeconds = payload.retryAfterSeconds;
+    this.traceId = payload.traceId;
+    this.pipelineVersion = payload.pipelineVersion;
+  }
+}
+
+export interface StreamTurnOptions {
+  operation?: TurnOperation;
+  intentHint?: 'auto' | 'legal_lookup' | 'legal_explain_compare' | 'case_assessment' | 'compliance_checklist';
+  interactionSource?: 'composer' | 'quick_action' | 'case_panel';
+  casePatch?: Record<string, string>;
+  factUpdates?: Record<string, { value: string; confirmation_status?: 'user_confirmed' | 'document_verified' | 'unknown' }>;
+  replayMetadata?: Record<string, unknown>;
+  turnId?: string;
+  targetAssistantMessageId?: number;
+}
+
+export function streamErrorFromEvent(event: SSEEvent): ChatStreamError {
+  return new ChatStreamError({
+    code: event.code || 'pipeline_error',
+    message: event.message || 'Không thể hoàn tất yêu cầu.',
+    retryable: Boolean(event.retryable),
+    retryAfterSeconds: event.retry_after_seconds,
+    traceId: event.trace_id,
+    pipelineVersion: event.pipeline_version,
+  });
+}
 
 /**
  * Parse one complete SSE frame from a response stream.
@@ -38,14 +79,7 @@ export async function* streamChat(
   conversationId: string,
   signal?: AbortSignal,
   mode: 'auto' | 'research_web' = 'auto',
-  options: {
-    operation?: 'message' | 'continue_case';
-    intentHint?: 'auto' | 'legal_lookup' | 'legal_explain_compare' | 'case_assessment' | 'compliance_checklist';
-    interactionSource?: 'composer' | 'quick_action' | 'case_panel';
-    casePatch?: Record<string, string>;
-    factUpdates?: Record<string, { value: string; confirmation_status?: 'user_confirmed' | 'document_verified' | 'unknown' }>;
-    replayMetadata?: Record<string, unknown>;
-  } = {},
+  options: StreamTurnOptions = {},
 ): AsyncGenerator<SSEEvent> {
   // Use relative URL for Vite proxy, or full URL if needed
   const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
@@ -62,8 +96,10 @@ export async function* streamChat(
     body: JSON.stringify({
       query,
       conversation_id: conversationId,
+      turn_id: options.turnId,
       mode,
       operation: options.operation || 'message',
+      target_assistant_message_id: options.targetAssistantMessageId,
       intent_hint: options.intentHint || 'auto',
       interaction_source: options.interactionSource || 'composer',
       case_patch: options.casePatch || {},
@@ -82,7 +118,16 @@ export async function* streamChat(
   if (!response.ok) {
     const payload = await response.text();
     const event = parseSSEEvent(payload);
-    throw new Error(event?.message || `HTTP ${response.status}: ${response.statusText}`);
+    if (response.status === 401) handleUnauthorized();
+    if (event?.type === 'error') throw streamErrorFromEvent(event);
+    throw new ChatStreamError({
+      code: response.status === 401 ? 'authentication_required' : `http_${response.status}`,
+      message: response.status === 401
+        ? 'Phiên đăng nhập đã hết hạn.'
+        : 'Không thể kết nối tới dịch vụ trả lời.',
+      retryable: response.status >= 500 || response.status === 429,
+      retryAfterSeconds: response.status === 429 ? 30 : response.status >= 500 ? 2 : null,
+    });
   }
 
   const reader = response.body?.getReader();

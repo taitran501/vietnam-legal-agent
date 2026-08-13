@@ -1,5 +1,14 @@
 import { create } from 'zustand';
-import type { CaseState, ChatMessage, ResponseSource, SourceDocument, WorkflowMetadata, WorkflowStep } from '@/types';
+import type {
+  ActiveTurn,
+  CaseState,
+  ChatMessage,
+  ResponseSource,
+  SourceDocument,
+  StreamError,
+  WorkflowMetadata,
+  WorkflowStep,
+} from '@/types';
 
 interface ChatState {
   // Active conversation
@@ -12,16 +21,24 @@ interface ChatState {
   statusMessage: string;
   workflowSteps: WorkflowStep[];
   activeCase: CaseState | null;
+  activeTurn: ActiveTurn | null;
   composerDraft: { text: string; intent: string; interactionSource: string };
   
   // UI state
   isLoading: boolean;
-  error: string | null;
+  error: StreamError | null;
+  sessionLoadStatus: 'idle' | 'loading' | 'loaded' | 'error';
+  sessionLoadError: string | null;
 
   // Actions
-  setActiveSession: (sessionId: string) => void;
+  setActiveSession: (sessionId: string | null) => void;
+  beginSessionLoad: (sessionId: string) => void;
+  failSessionLoad: (message: string) => void;
+  finishSessionLoad: (sessionId: string, messages: ChatMessage[], caseState: CaseState | null) => void;
   setMessages: (messages: ChatMessage[]) => void;
   addMessage: (message: ChatMessage) => void;
+  updateMessage: (messageId: string, updates: Partial<ChatMessage>) => void;
+  removeMessage: (messageId: string) => void;
   updateLastAssistantMessage: (
     content: string,
     source?: ResponseSource,
@@ -36,9 +53,10 @@ interface ChatState {
   addWorkflowStep: (step: WorkflowStep) => void;
   setWorkflowSteps: (steps: WorkflowStep[]) => void;
   setActiveCase: (caseState: CaseState | null) => void;
+  setActiveTurn: (turn: ActiveTurn | null) => void;
   setComposerDraft: (draft: Partial<ChatState['composerDraft']>) => void;
   setLoading: (isLoading: boolean) => void;
-  setError: (error: string | null) => void;
+  setError: (error: StreamError | null) => void;
   clearChat: () => void;
   removeLastMessage: () => void;
 }
@@ -52,13 +70,33 @@ export const useChatStore = create<ChatState>((set) => ({
   statusMessage: '',
   workflowSteps: [],
   activeCase: null,
+  activeTurn: null,
   composerDraft: { text: '', intent: 'auto', interactionSource: 'composer' },
   isLoading: false,
   error: null,
+  sessionLoadStatus: 'idle',
+  sessionLoadError: null,
 
   // Actions
   setActiveSession: (sessionId) =>
     set({ activeSessionId: sessionId }),
+  beginSessionLoad: (sessionId) =>
+    set({
+      activeSessionId: sessionId,
+      messages: [],
+      activeCase: null,
+      workflowSteps: [],
+      streamingContent: '',
+      statusMessage: '',
+      error: null,
+      sessionLoadStatus: 'loading',
+      sessionLoadError: null,
+    }),
+  failSessionLoad: (message) => set({ sessionLoadStatus: 'error', sessionLoadError: message }),
+  finishSessionLoad: (sessionId, messages, caseState) =>
+    set((state) => state.activeSessionId === sessionId
+      ? { messages, activeCase: caseState, sessionLoadStatus: 'loaded', sessionLoadError: null }
+      : {}),
   
   setMessages: (messages) =>
     set({ messages }),
@@ -67,6 +105,14 @@ export const useChatStore = create<ChatState>((set) => ({
     set((state) => ({
       messages: [...state.messages, message],
     })),
+  updateMessage: (messageId, updates) =>
+    set((state) => ({
+      messages: state.messages.map((message) =>
+        message.id === messageId ? { ...message, ...updates } : message
+      ),
+    })),
+  removeMessage: (messageId) =>
+    set((state) => ({ messages: state.messages.filter((message) => message.id !== messageId) })),
   
   updateLastAssistantMessage: (content, source, documents, workflow, serverMessageId) =>
     set((state) => {
@@ -105,6 +151,7 @@ export const useChatStore = create<ChatState>((set) => ({
     })),
   setWorkflowSteps: (workflowSteps) => set({ workflowSteps }),
   setActiveCase: (activeCase) => set({ activeCase }),
+  setActiveTurn: (activeTurn) => set({ activeTurn }),
   setComposerDraft: (draft) => set((state) => ({ composerDraft: { ...state.composerDraft, ...draft } })),
   
   setLoading: (isLoading) =>
@@ -122,8 +169,11 @@ export const useChatStore = create<ChatState>((set) => ({
       statusMessage: '',
       workflowSteps: [],
       activeCase: null,
+      activeTurn: null,
       composerDraft: { text: '', intent: 'auto', interactionSource: 'composer' },
       error: null,
+      sessionLoadStatus: 'idle',
+      sessionLoadError: null,
     }),
 
   removeLastMessage: () =>

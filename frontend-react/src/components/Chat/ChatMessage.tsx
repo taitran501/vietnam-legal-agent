@@ -11,14 +11,14 @@ interface ChatMessageProps {
   message: ChatMessage;
   onOpenCase?: () => void;
   onResearch?: () => void;
-  onOpenSources: (documents: SourceDocument[], citations: Array<Record<string, unknown>>) => void;
+  onOpenSources: (documents: SourceDocument[], citations: Array<Record<string, unknown>>, focusIndex?: number, preview?: boolean) => void;
   onRegenerate?: () => void;
 }
 
 const sourceLabels: Record<string, string> = {
   legal: 'Kho văn bản',
   chitchat: 'Hội thoại',
-  web_search: 'Nguồn web bổ sung',
+  web_search: 'Nguồn chính thức ngoài corpus',
   cache: 'Câu trả lời đã xác minh',
   follow_up: 'Đang làm rõ',
 };
@@ -56,27 +56,41 @@ export function ChatMessageComponent({ message, onOpenCase, onOpenSources, onReg
         </div>
 
         <div className="ml-0 mt-3 sm:ml-[42px]">
+          {message.status === 'stopped' && (
+            <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-[#d7a65a] bg-[#fff8ea] px-2.5 py-1 text-xs font-semibold text-[#714b18]">
+              <Icon name="alert" size={13} />
+              Đã dừng theo yêu cầu · nội dung chưa hoàn chỉnh
+            </div>
+          )}
+          {message.workflow?.preview && (
+            <div className="mb-3 rounded-md border border-[#d7a65a] bg-[#fff8ea] px-3 py-2 text-xs text-[#714b18]">
+              Câu trả lời ở chế độ xem trước; corpus chưa được phê duyệt cho production.
+            </div>
+          )}
           <div className="legal-prose max-w-none text-[15px] leading-7 text-[#262d2c] sm:text-base">
             <MarkdownRenderer
               content={message.content}
               onCitationClick={(index) => {
-                const document = message.documents?.[index - 1];
-                if (document) onOpenSources([document], message.workflow?.citations || []);
-                else onOpenSources(message.documents || [], message.workflow?.citations || []);
+                onOpenSources(
+                  message.documents || [],
+                  message.workflow?.citations || [],
+                  index,
+                  message.workflow?.preview,
+                );
               }}
             />
           </div>
 
           <WorkflowResultCard
             onOpenCase={onOpenCase}
-            onOpenSources={() => onOpenSources(message.documents || [], message.workflow?.citations || [])}
+            onOpenSources={() => onOpenSources(message.documents || [], message.workflow?.citations || [], undefined, message.workflow?.preview)}
             onResearch={onResearch}
             workflow={message.workflow}
           />
           <SourceDocuments
             citations={message.workflow?.citations}
             documents={message.documents || []}
-            onOpen={onOpenSources}
+            onOpen={(documents, citations) => onOpenSources(documents, citations, undefined, message.workflow?.preview)}
           />
 
           <div className="mt-3 flex min-h-8 flex-wrap items-center justify-between gap-2 border-t border-[#edf0ef] pt-2">

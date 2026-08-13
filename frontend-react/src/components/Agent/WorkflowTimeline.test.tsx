@@ -34,4 +34,29 @@ describe('WorkflowTimeline', () => {
 
     expect(screen.getByText(/Đã hoàn tất 2 bước · Thu thập thông tin · còn thiếu 3 thông tin/)).toBeInTheDocument();
   });
+
+  it('uses the backend label and never exposes an internal action name', async () => {
+    const user = userEvent.setup();
+    render(
+      <WorkflowTimeline
+        isStreaming
+        steps={[{ step: 1, action: 'internal_private_action', label: 'Đối chiếu nguồn chính thức', status: 'completed' }]}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: /Đối chiếu nguồn chính thức/i }));
+    expect(screen.getAllByText('Đối chiếu nguồn chính thức').length).toBeGreaterThan(0);
+    expect(screen.queryByText('internal_private_action')).not.toBeInTheDocument();
+  });
+
+  it('labels an interrupted workflow as stopped, not completed', () => {
+    render(
+      <WorkflowTimeline
+        isStreaming={false}
+        steps={[{ step: 1, action: 'understand', label: 'Hiểu yêu cầu', status: 'completed' }]}
+        turnStatus="stopped"
+      />,
+    );
+    expect(screen.getByText(/Đã dừng theo yêu cầu/)).toBeInTheDocument();
+    expect(screen.queryByText(/Đã hoàn tất 1 bước/)).not.toBeInTheDocument();
+  });
 });

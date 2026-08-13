@@ -6,6 +6,9 @@ interface SessionState {
   sessions: SessionInfo[];
   isLoadingSessions: boolean;
   hasLoadedSessions: boolean;
+  sessionsError: string | null;
+  hasMoreSessions: boolean;
+  searchQuery: string;
   
   // Actions
   setSessions: (sessions: SessionInfo[]) => void;
@@ -14,6 +17,10 @@ interface SessionState {
   updateSession: (sessionId: string, updates: Partial<SessionInfo>) => void;
   setLoading: (isLoading: boolean) => void;
   setLoaded: (hasLoaded: boolean) => void;
+  setError: (error: string | null) => void;
+  setHasMore: (hasMore: boolean) => void;
+  setSearchQuery: (query: string) => void;
+  appendSessions: (sessions: SessionInfo[]) => void;
 }
 
 export const useSessionStore = create<SessionState>((set) => ({
@@ -21,6 +28,9 @@ export const useSessionStore = create<SessionState>((set) => ({
   sessions: [],
   isLoadingSessions: false,
   hasLoadedSessions: false,
+  sessionsError: null,
+  hasMoreSessions: false,
+  searchQuery: '',
 
   // Actions
   setSessions: (sessions) =>
@@ -47,4 +57,12 @@ export const useSessionStore = create<SessionState>((set) => ({
     set({ isLoadingSessions: isLoading }),
   setLoaded: (hasLoadedSessions) =>
     set({ hasLoadedSessions }),
+  setError: (sessionsError) => set({ sessionsError }),
+  setHasMore: (hasMoreSessions) => set({ hasMoreSessions }),
+  setSearchQuery: (searchQuery) => set({ searchQuery }),
+  appendSessions: (sessions) =>
+    set((state) => {
+      const existing = new Set(state.sessions.map((session) => session.id));
+      return { sessions: [...state.sessions, ...sessions.filter((session) => !existing.has(session.id))] };
+    }),
 }));
