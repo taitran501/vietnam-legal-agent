@@ -26,19 +26,26 @@ lawyer or an official legal opinion.
 - Save conversations, rate answers, and reload them later.
 - Explicitly search approved official websites when web research is needed.
 
-## A typical user journey
+## Usage
 
-1. Start a new conversation and choose a suggested question or type your own.
-2. Send the question and follow the streamed progress shown by the assistant.
-3. Read the answer and open a citation to inspect the supporting source.
-4. For an assessment or checklist, open **Thông tin tình huống** and complete
-   the required fields.
-5. Select **Lưu và tiếp tục đánh giá** or **Lưu và tiếp tục lập checklist**.
-6. Review the result, assumptions, next steps, checklist actions, and evidence.
+After starting the application, the web client exposes the following
+workflows:
 
-The assistant asks for missing facts instead of silently guessing them. If the
-requested article is not supported by the active corpus, the application
-returns a safe-stop message instead of substituting a nearby provision.
+- **Legal lookup**: submit a provision or question and inspect the streamed
+  answer with its source citations.
+- **Case assessment**: open **Thông tin tình huống**, complete the required
+  case facts, and select **Lưu và tiếp tục đánh giá**.
+- **Compliance checklist**: select the checklist task, complete the required
+  facts, and select **Lưu và tiếp tục lập checklist**.
+- **Follow-up**: continue in the same conversation; the active case context is
+  loaded before the next turn is routed.
+- **Recovery**: stop an in-progress turn, retry a failed turn, or regenerate a
+  persisted assistant message without duplicating the user message.
+
+Required case fields are supplied by the backend case schema and validated in
+the case panel. Missing facts result in an explicit follow-up request. If an
+article is not supported by the active corpus, the application returns a
+safe-stop result instead of substituting a nearby provision.
 
 ## Scope and trust model
 
