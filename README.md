@@ -1,322 +1,300 @@
 # EPR Compliance Copilot
 
-EPR Compliance Copilot is a Vietnamese legal-compliance assistant for
-Extended Producer Responsibility (EPR). It is implemented as a bounded agent
-workflow: the runtime can execute only declared routes, tools, and transitions.
-It does not discover tools, invent company facts, or silently turn a missing
-legal source into a confident answer.
+[![CI](https://github.com/taitran501/legal_epr/actions/workflows/ci.yml/badge.svg)](https://github.com/taitran501/legal_epr/actions/workflows/ci.yml)
 
-The product is intentionally narrow today: the indexed legal corpus is EPR.
-The domain contracts are separated from the retrieval and workflow core so
-another legal corpus can be added later through a corpus descriptor and rule
-pack.
+EPR Compliance Copilot is a Vietnamese-language application that helps
+businesses understand and prepare for Extended Producer Responsibility (EPR)
+requirements in Vietnam.
 
-> The application provides source-grounded information and preliminary
-> assessments. It is not a substitute for professional legal advice.
+Users can ask about a legal provision, explain a situation, prepare a
+compliance checklist, and inspect the official sources behind an answer. The
+application is intentionally focused on Vietnamese EPR law and returns a
+preliminary, source-grounded result rather than pretending to replace a
+lawyer or an official legal opinion.
 
-## Current behavior
+## What you can do
 
-Pipeline V4 is the default runtime:
+- Ask questions about EPR provisions, including Articles 77–86.
+- Open citations in a source drawer with the document, article, excerpt, and
+  corpus status.
+- Assess a company situation by filling in the facts the workflow actually
+  needs.
+- Prepare an evidence-linked compliance checklist.
+- Continue a case after answering a follow-up question.
+- Stop a response, retry it, or regenerate it without losing the previous
+  answer.
+- Save conversations, rate answers, and reload them later.
+- Explicitly search approved official websites when web research is needed.
 
-```text
-official source
-  -> canonical document and chunk audit
-  -> Điều/Khoản/Điểm-aware indexing
-  -> versioned Qdrant collection
-  -> query understanding and route selection
-  -> route-specific workflow
-  -> exact-anchor + dense + BM25-style retrieval
-  -> RRF merge and heuristic reranking
-  -> evidence and issue-coverage gate
-  -> structured result composition
-  -> citation verification
-  -> persistence, trace, and SSE presentation
-```
+## A typical user journey
 
-The most important user-facing rules are:
+1. Start a new conversation and choose a suggested question or type your own.
+2. Send the question and follow the streamed progress shown by the assistant.
+3. Read the answer and open a citation to inspect the supporting source.
+4. For an assessment or checklist, open **Thông tin tình huống** and complete
+   the required fields.
+5. Select **Lưu và tiếp tục đánh giá** or **Lưu và tiếp tục lập checklist**.
+6. Review the result, assumptions, next steps, checklist actions, and evidence.
 
-- Quick actions only prefill the composer and select an editable intent. They
-  never submit a request on their own.
-- An assessment or checklist collects facts before it reaches a conclusion.
-  Facts are shown with Vietnamese labels and their source is tracked as either
-  the user message or the case panel.
-- Missing information produces one clear follow-up question and a
-  `needs_information` result. The case panel shows all remaining fields.
-- A preliminary result is shown only after the required legal issues have
-  evidence. Unsupported legal claims cannot finish as `answer_complete`.
-- Web research is a separate, explicit user action. It is not an automatic
-  fallback for missing company facts or weak legal evidence.
-- FAQ data is retained for examples and evaluation only. It is not indexed,
-  retrieved, cited, or used as runtime evidence.
+The assistant asks for missing facts instead of silently guessing them. If the
+requested article is not supported by the active corpus, the application
+returns a safe-stop message instead of substituting a nearby provision.
 
-## Declared routes
+## Scope and trust model
 
-| Route | Purpose | Result | Cache |
-| --- | --- | --- | --- |
-| `legal_lookup` | Look up a provision or explicit Article | Cited legal answer | Verified standalone answers only |
-| `legal_explain_compare` | Explain or compare provisions | Evidence-backed explanation | Never |
-| `case_assessment` | Assess a company situation | Preliminary assessment or follow-up | Never |
-| `compliance_checklist` | Prepare evidence-linked next steps | Checklist or follow-up | Never |
-| `research_web` | Search public sources after user selection | Clearly separated research result | Never |
-| `chitchat` | Greeting and small talk | Short conversational response | Never |
-| `out_of_scope` | Request outside the registered corpus | Safe stop | Never |
+The current application covers Vietnamese EPR law. It is designed around a
+few important rules:
 
-The EPR case workflow currently collects facts such as business role, object
-type, EPR product group, material or specification, market placement, activity
-purpose, packaged-goods category, revenue thresholds, reuse, and effective
-date. Required fields are provided by the backend case schema; the React panel
-does not render database field names as user-facing labels.
+- Answers should be supported by an active legal source and show citations.
+- User-entered facts are labelled as user-provided; they are not treated as
+  independently verified documents.
+- A missing provision, weak evidence, incomplete case, stale corpus, or
+  unavailable dependency produces a reason-specific safe stop.
+- Web research is an explicit action, not a silent fallback. Web evidence is
+  restricted to configured official domains such as `vanban.chinhphu.vn` and
+  `vbpl.vn`.
+- The corpus contains the 2022 EPR decree and the amendment instruments
+  currently tracked by the repository. Legal approval and the corpus-as-of
+  date remain an external production release decision.
 
-## Legal corpus and retrieval
+When `CORPUS_RUNTIME_MODE=preview`, local or staging users can exercise the
+workflow with a persistent preview warning. Production defaults to
+`production` and blocks legal answers until the corpus passes the technical
+checks and the legal approval gate.
 
-The canonical corpus is declared in `data/corpus_manifest.json`. Only records
-that can be traced to an official source are eligible for legal evidence.
-Structure-aware chunks preserve the document, heading hierarchy, Article,
-Clause, Point, original text, offsets, corpus version, and provenance. Appendix
-XXII table rows carry page and table provenance and must pass audit before the
-index alias can be promoted.
+> This application provides preliminary, source-grounded information. It is
+> not legal advice and should not be the only basis for an important business
+> or compliance decision.
 
-The embedding contract is fixed and checked at readiness time:
+## Run the application locally
 
-- profile: `openai-text-embedding-3-small-v1`
-- model: `text-embedding-3-small`
-- dimensions: `1536`
-- the same normalization is applied to documents and queries
+### Prerequisites
 
-For legal retrieval, explicit Article/Clause/Point anchors are checked first.
-Dense top-20 and BM25-style top-20 candidates are merged with reciprocal-rank
-fusion (`k=60`), deduplicated by stable chunk ID, and reranked to 10. A route
-selects the final evidence set, normally at most three chunks for a direct
-lookup. An explicit Article must be found; the system does not substitute a
-nearby Article when it is absent. The cross-encoder remains shadow-only.
+- Python 3.11
+- Node.js 18 or newer
+- Docker Desktop and Docker Compose for the full stack
+- An OpenAI API key for live answer generation
 
-Each legal evidence item must have a stable ID, source, legal anchor, corpus
-version, and provenance metadata. Citation verification performs structural
-checks followed by claim-support verification. At most one repair is allowed;
-safe-stop outcomes remain safe stops.
+### Option 1: full Docker stack
 
-## API and SSE
-
-The compatibility endpoint remains:
-
-```text
-POST /api/v1/chat
-```
-
-It accepts the legacy `query`, `conversation_id`, and `session_id` fields plus
-optional V4 controls:
-
-```json
-{
-  "operation": "message",
-  "query": "Tôi là nhà sản xuất bao bì nhựa tại Việt Nam, có phải thực hiện EPR không?",
-  "conversation_id": "...",
-  "intent_hint": "case_assessment",
-  "interaction_source": "composer",
-  "mode": "auto"
-}
-```
-
-`operation` can be `message`, `continue_case`, `retry`, or `regenerate`.
-Retries and regenerations carry the original replay descriptor and may target
-an existing assistant message without duplicating the user message. The case workspace is
-hydrated and updated through:
-
-```text
-GET   /api/v1/sessions/{conversation_id}/case
-PATCH /api/v1/sessions/{conversation_id}/case
-```
-
-PATCH saves facts only. The user must explicitly press **Lưu và tiếp tục đánh giá**
-or **Lưu và tiếp tục lập checklist** to run the case workflow again. Each turn
-has a durable status (`pending`, `streaming`, `complete`, `stopped`, `failed`,
-or `superseded`) and can be cancelled idempotently:
-
-```text
-PUT /api/v1/conversations/{conversation_id}/turns/{turn_id}/cancel
-```
-
-The response is streamed as SSE. Existing `status`, `response_chunk`,
-`response_complete`, and `error` events remain supported. V4 also emits
-`workflow_step`, `case_update`, and `input_required`. Every event includes a
-stable `trace_id`, `pipeline_version`, and sequence number. The completion
-payload can include route, outcome, result type, case state, required and
-covered issues, evidence status, citations, available actions, corpus metadata,
-and termination reason.
-
-Readiness endpoints are separate:
-
-```text
-GET /api/v1/health   # process liveness
-GET /api/v1/ready    # dependencies and legal index readiness
-```
-
-`/ready` returns a capability matrix rather than treating every dependency as
-one global switch. `history` and `feedback` depend on the database schema;
-`legal_chat` and `case_workflow` additionally require the Qdrant collection,
-embedding contract, OpenAI configuration, and corpus gate; `web_research`
-also requires its official-source provider. Redis failure is reported as
-degraded for cache/rate-limit use and does not by itself disable history.
-Production returns `503` while the corpus is technically incomplete or lacks
-legal approval. Preview can expose the technically valid pipeline, but every
-answer and source drawer carries an explicit preview warning.
-
-Trace inspection is opt-in:
-
-```text
-GET /api/v1/debug/traces/{trace_id}
-GET /api/v1/debug/traces?conversation_id={id}&limit=20
-```
-
-Set `ENABLE_TRACE_DEBUG_API=true` to expose these endpoints. Set
-`VITE_ENABLE_TRACE_DEBUG=true` to build the React trace drawer. Traces contain
-workflow decisions, retrieval scores, evidence decisions, timing, and
-termination reasons, but not API keys, system prompts, chain-of-thought, or
-raw conversation history.
-
-## Persistence and local services
-
-PostgreSQL is the production source of truth for users, conversations,
-messages, summaries, case states, agent runs, and trace events. SQLite uses the
-same SQLAlchemy/Alembic schema for local development. Redis is limited to
-answer cache, rate limiting, hot context, and short-lived feedback. Browser
-ownership uses the stable `oidc:<sha256(issuer + sub)>` principal ID; service
-automation uses isolated `service:<name>` principals and `X-Service-Token`.
-Only credential hashes are persisted. Legacy databases require the dry-run
-migration commands in [`docs/runbooks/database-migration.md`](docs/runbooks/database-migration.md).
-
-The one-shot `indexer` service builds an immutable, versioned law collection.
-It audits the collection and promotes the `law_collection` alias only after
-the checks pass. Matching subsequent runs are idempotent and do not recompute
-embeddings. Older collections remain available for rollback.
-
-## Run locally
-
-Requirements: Python 3.11, Node.js 18+, Docker Desktop, and an `.env` file
-based on `.env.example`. Never commit `.env`, database files, Qdrant storage,
-logs, cache files, or generated evaluation reports.
-
-### Full stack
+This is the recommended path when you want the frontend, API, persistence,
+cache, vector search, and indexer together.
 
 ```powershell
+git clone https://github.com/taitran501/legal_epr.git
+Set-Location legal_epr
+
 Copy-Item .env.example .env
+# Edit .env and set OPENAI_API_KEY.
+# For local/staging validation, set CORPUS_RUNTIME_MODE=preview.
+
 docker compose up -d --build
 docker compose ps -a
 Invoke-RestMethod http://127.0.0.1/api/v1/ready
 ```
 
-Open the React application at [http://127.0.0.1](http://127.0.0.1). The
-Compose stack includes React, Nginx, FastAPI, PostgreSQL, Redis, Qdrant, and
-the one-shot law indexer. The backend starts only after the indexer exits
-successfully.
+Open the application at [http://127.0.0.1](http://127.0.0.1).
 
-### Python development
+The Compose stack contains:
+
+| Service | Purpose |
+| --- | --- |
+| `nginx` | Public entry point on port 80 and SSE proxy |
+| `frontend` | React application |
+| `backend` | FastAPI API and agent workflow |
+| `postgres` | Durable production-style storage |
+| `redis` | Cache, rate limiting, and short-lived context |
+| `qdrant` | Legal vector collection |
+| `indexer` | One-shot corpus audit and index build |
+
+Useful commands:
+
+```powershell
+docker compose logs -f backend indexer
+docker compose ps -a
+docker compose down
+```
+
+Keep `CORPUS_RUNTIME_MODE=preview` for local testing while the corpus approval
+field is pending. Do not use preview mode as a production bypass.
+
+### Option 2: run the API and frontend separately
+
+Create a Python environment and install the backend:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
-python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-### Frontend development
+In a second terminal, install and start the React application:
 
 ```powershell
 Set-Location frontend-react
 npm.cmd install
+$env:VITE_API_PROXY_TARGET = "http://127.0.0.1:8000"
 npm.cmd run dev
 ```
 
-Use the Docker stack when testing the real API, SSE, Qdrant index, or
-PostgreSQL persistence. The Vite server is intended for isolated frontend
-development.
+Open [http://127.0.0.1:3000](http://127.0.0.1:3000). Vite proxies `/api` to
+the backend. When `DATABASE_URL` is unset, local development uses the SQLite
+history database configured by `HISTORY_DB_PATH`; PostgreSQL is used by the
+Compose deployment.
 
-### Preview mode
+## Configuration
 
-Preview is for local and staging user-journey validation only. It does not
-claim that the legal corpus has been reviewed or approved for production:
+Copy `.env.example` to `.env` and configure only the services you use. Never
+commit `.env`, database files, Qdrant storage, logs, or generated evaluation
+reports.
 
-```powershell
-$env:CORPUS_RUNTIME_MODE = "preview"
-python -m scripts.sync_corpus_metadata --check
-python -m scripts.audit_corpus
+| Variable | Purpose |
+| --- | --- |
+| `OPENAI_API_KEY` | Required for live answer and embedding generation |
+| `CORPUS_RUNTIME_MODE` | `production` or `preview`; defaults to `production` |
+| `DATABASE_URL` | PostgreSQL URL; unset uses local SQLite |
+| `HISTORY_DB_PATH` | SQLite history path when PostgreSQL is not configured |
+| `QDRANT_URL` | Self-hosted Qdrant endpoint |
+| `USE_QDRANT_CLOUD` | Use Qdrant Cloud when set to `true` |
+| `REDIS_URL` | Redis endpoint for cache and rate limiting |
+| `TAVILY_API_KEY` | Optional provider for explicit official-web research |
+| `OIDC_ISSUER` | OIDC discovery issuer for deployed browser authentication |
+| `OIDC_AUDIENCE` | Expected JWT audience |
+| `OIDC_CLIENT_ID` | React OIDC client ID |
+| `OIDC_REQUIRED_GROUP` | Optional internal-access group or role |
+| `REQUIRE_AUTH` | Keep enabled for deployed environments |
+
+Browser users authenticate through OIDC in a deployed environment. Non-browser
+automation uses `X-Service-Token` with configured scopes. Access tokens are not
+used as conversation ownership keys and are not persisted by the application.
+
+For a local deterministic browser test only, authentication can be disabled in
+the isolated test configuration. Do not expose that mode on a shared or
+internet-facing server.
+
+## API
+
+The interactive API documentation is available at
+[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) when the backend is
+running.
+
+Common endpoints:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/health` | Process liveness |
+| `GET` | `/api/v1/ready` | Dependency and capability readiness |
+| `GET` | `/api/v1/me` | Current authenticated identity and roles |
+| `POST` | `/api/v1/chat` | Stream a question or case turn over SSE |
+| `PUT` | `/api/v1/conversations/{id}/turns/{turn_id}/cancel` | Cancel a running turn |
+| `GET` | `/api/v1/sessions` | List owned conversations |
+| `GET` | `/api/v1/sessions/{id}` | Load a conversation |
+| `GET/PATCH` | `/api/v1/sessions/{id}/case` | Read or save case facts |
+| `PUT` | `/api/v1/conversations/{id}/messages/{message_id}/feedback` | Save feedback |
+
+`POST /api/v1/chat` supports `message`, `continue_case`, `retry`, and
+`regenerate` operations. A turn has a durable status such as `streaming`,
+`complete`, `stopped`, or `failed`, so a reload does not turn an interrupted
+response into a false completed answer.
+
+## Project structure
+
+```text
+backend/              FastAPI application, authentication, routes, persistence
+src/epr_agent/        Agent domain, workflow, retrieval, evidence, and tracing
+frontend-react/       React UI, SSE client, case panels, and browser tests
+scripts/              Corpus synchronization, migrations, indexing, and audits
+data/                 Legal corpus, rule pack, manifests, and fixtures
+docs/                 Runbooks, acceptance reports, and design documentation
+tests/                Unit, contract, integration, evaluation, and API tests
 ```
 
-See [`docs/runbooks/local-preview.md`](docs/runbooks/local-preview.md) for the
-deterministic browser backend and the warning conditions. Leave
-`CORPUS_RUNTIME_MODE` unset (the default is `production`) for a production-like
-approval gate.
+At a high level, a request moves through:
 
-## Local verification
+```text
+React UI → FastAPI/SSE → bounded workflow → retrieval/evidence checks
+         → structured answer → durable persistence → source-aware UI
+```
 
-The repository CI workflow runs metadata synchronization, Python tests,
-Ruff, Mypy, Vitest, and the production build. The same deterministic checks
-can be run locally and do not call OpenAI:
+The workflow has declared routes for legal lookup, explanation/comparison,
+case assessment, checklist preparation, explicit web research, chitchat, and
+out-of-scope requests. Retrieval uses structure-aware legal chunks, explicit
+article anchors, dense search, lexical search, and evidence validation before
+generation.
+
+## Testing and development checks
+
+Backend checks:
 
 ```powershell
-.venv_acceptance\Scripts\python.exe -m pytest -q
-.venv_acceptance\Scripts\ruff.exe check src/epr_agent backend scripts tests
-.venv_acceptance\Scripts\mypy.exe src/epr_agent
+python -m scripts.sync_corpus_metadata --check
+python -m pytest -q
+ruff check src/epr_agent backend scripts tests
+mypy src/epr_agent
 python -m tests.eval.run_eval --suite all --output data/eval/v4-deterministic.json
+```
 
+Frontend checks:
+
+```powershell
 Set-Location frontend-react
 npm.cmd run test
 npm.cmd run build
-npm.cmd run test:e2e -- --grep-invert "real FastAPI|real multi-turn"
+npm.cmd run test:e2e
 ```
 
-Opt-in service-backed checks require the Docker stack:
+The browser suite covers desktop, tablet, and mobile layouts; direct URLs and
+browser history; streaming and cancellation; source citations; case save and
+continuation; feedback reload; retries; safe stops; preview/production
+readiness; and official-web filtering.
 
-```powershell
-$env:EPR_RUN_INTEGRATION = "1"
-$env:EPR_API_BASE_URL = "http://127.0.0.1"
-Set-Location ..
-.venv_acceptance\Scripts\python.exe -m pytest -q tests/integration
+## Operations and troubleshooting
 
-Set-Location frontend-react
-$env:PLAYWRIGHT_BASE_URL = "http://127.0.0.1"
-npm.cmd run test:e2e -- --grep "real FastAPI|real multi-turn"
-```
+### `/api/v1/ready` returns `503`
 
-The OpenAI live evaluation is intentionally separate and writes a timestamped
-local report:
+Inspect the `capabilities` and `corpus` fields in the response. Common reasons
+are:
 
-```powershell
-Set-Location ..
-$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-.venv_acceptance\Scripts\python.exe -m tests.eval.run_eval `
-  --live --live-url http://127.0.0.1 --suite e2e `
-  --output "data/eval/v4-live-$stamp.json"
-```
+- `database_schema_mismatch`: run the migration procedure in
+  [`docs/runbooks/database-migration.md`](docs/runbooks/database-migration.md).
+- `corpus_promotion_blocked`: production approval or corpus metadata is still
+  missing.
+- `corpus_index_mismatch`: the active Qdrant collection does not match the
+  manifest hash or index contract.
+- `provider_not_configured`: the optional web provider is not configured.
 
-The V4 test matrix and acceptance evidence are documented in
-[`docs/v4_test_matrix.md`](docs/v4_test_matrix.md) and
-[`docs/pipeline_v4_acceptance_report.md`](docs/pipeline_v4_acceptance_report.md).
-Release/browser evidence and operational procedures are documented in
-[`docs/browser_acceptance_report.md`](docs/browser_acceptance_report.md) and
-[`docs/runbooks/`](docs/runbooks/).
-The evaluated UI export and design states are preserved in
-[`docs/design/`](docs/design/).
+### History works but legal chat is unavailable
 
-## Repository layout
+This is expected when history is ready but the legal corpus or one of its
+dependencies is not. In preview mode the UI shows a persistent warning; in
+production legal chat remains disabled until the promotion gate passes.
 
-```text
-backend/              FastAPI routes, persistence adapters, migrations
-src/epr_agent/        domain contracts, workflow, retrieval, evidence, trace
-frontend-react/       React workspace, SSE client, panels, tests
-scripts/              corpus/indexing and local operational utilities
-data/                 source corpus and evaluation fixtures
-docs/                 architecture, design handoff, test matrix, reports
-tests/                unit, contract, integration, and evaluation tests
-```
+### Web research is unavailable
 
-## Scope and next steps
+Set `TAVILY_API_KEY` only when explicit web research is part of the deployment.
+Results are accepted only when they pass the official-domain and relevance
+checks. Web research is never used silently to fill missing company facts.
 
-The current release includes OIDC login/session ownership, but does not
-include file upload, long-term user profile memory, autonomous tool discovery,
-historical-law selection, export, or broad-web fallback. Adding a new legal
-area should provide a corpus descriptor and rule pack, then pass the same
-provenance, retrieval, evidence, API, SSE, and end-to-end quality gates.
+### Operational runbooks
+
+- [Local preview](docs/runbooks/local-preview.md)
+- [Database and owner migration](docs/runbooks/database-migration.md)
+- [Production corpus promotion](docs/runbooks/production-promotion.md)
+- [Rollback](docs/runbooks/rollback.md)
+- [Browser acceptance report](docs/browser_acceptance_report.md)
+
+## Current limitations
+
+The application currently focuses on Vietnamese EPR law. The following are
+outside the current product scope:
+
+- document upload and OCR;
+- export to a formal legal or compliance report;
+- historical-law date selection;
+- long-term user profile memory;
+- broad web search outside the configured official domains;
+- additional legal domains beyond EPR.
 
 ## License
 
