@@ -203,6 +203,7 @@ class AgentState(TypedDict, total=False):
     source: str
     assistant_message_id: str
     corpus_as_of_date: str
+    preview: bool
     rule_id: str
     sources: list[dict[str, Any]]
     replay_metadata: dict[str, Any]

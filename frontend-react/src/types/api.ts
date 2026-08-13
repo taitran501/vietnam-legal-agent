@@ -8,8 +8,10 @@ export interface ChatRequest {
   query: string;
   conversation_id?: string;
   session_id?: string;
+  turn_id?: string;
   mode?: 'auto' | 'research_web';
-  operation?: 'message' | 'continue_case';
+  operation?: 'message' | 'continue_case' | 'retry' | 'regenerate';
+  target_assistant_message_id?: number;
   intent_hint?: 'auto' | 'legal_lookup' | 'legal_explain_compare' | 'case_assessment' | 'compliance_checklist';
   interaction_source?: 'composer' | 'quick_action' | 'case_panel';
   case_patch?: Record<string, string>;
@@ -18,7 +20,7 @@ export interface ChatRequest {
 }
 
 export interface SSEEvent {
-  type: 'status' | 'workflow_step' | 'response_chunk' | 'response_complete' | 'case_update' | 'input_required' | 'error';
+  type: 'status' | 'workflow_step' | 'response_chunk' | 'response_complete' | 'response_stopped' | 'case_update' | 'input_required' | 'error';
   message?: string;
   chunk?: string;
   chunk_index?: number;
@@ -62,6 +64,9 @@ export interface SSEEvent {
   code?: string;
   retryable?: boolean;
   retry_after_seconds?: number;
+  turn_id?: string;
+  user_message_id?: number | string;
+  turn_status?: import('./chat').MessageStatus;
   assistant_message_id?: string;
   corpus_as_of_date?: string;
   sources?: import('./chat').SourceSnapshot[];
@@ -69,6 +74,7 @@ export interface SSEEvent {
   validation_errors?: Record<string, string>;
   citation_error?: string;
   safe_stop_reason?: string;
+  preview?: boolean;
 }
 
 export interface SessionInfo {
@@ -89,7 +95,13 @@ export interface SessionDetail {
     role: string;
     content: string;
     timestamp: string;
-    metadata?: WorkflowMetadata & { sources?: import('./chat').SourceSnapshot[] };
+    updated_at?: string;
+    turn_id?: string | null;
+    status?: import('./chat').MessageStatus;
+    metadata?: WorkflowMetadata & {
+      sources?: import('./chat').SourceSnapshot[];
+      feedback?: { rating: 1 | 2; comment?: string | null };
+    };
   }>;
   created_at: number;
   updated_at?: number;
@@ -120,8 +132,14 @@ export interface HealthResponse {
 export interface ReadinessResponse {
   status: 'ready' | 'not_ready';
   dependencies: Record<string, 'ok' | 'error'>;
+  runtime_mode: 'production' | 'preview';
+  preview: boolean;
+  capabilities: Record<
+    'history' | 'legal_chat' | 'case_workflow' | 'feedback' | 'web_research',
+    { status: 'ready' | 'blocked' | 'degraded'; reason: string }
+  >;
   corpus: {
-    status: 'ready' | 'missing' | 'version_mismatch' | 'promotion_blocked' | 'incomplete';
+    status: 'ready' | 'preview_ready' | 'missing' | 'version_mismatch' | 'promotion_blocked' | 'incomplete';
     points_count: number;
     corpus_id: string;
     corpus_version: string;

@@ -60,13 +60,13 @@ test('real multi-turn case waits for facts and resumes without using web search'
   await caseDrawer.getByLabel(/^Nhóm hàng hóa được đóng gói/).selectOption('thuc_pham');
   await caseDrawer.getByLabel(/^Phạm vi đưa ra thị trường/).selectOption('vietnam_market');
   await caseDrawer.getByLabel(/^Mục đích sản xuất hoặc nhập khẩu/).selectOption('commercial');
-  await caseDrawer.getByRole('button', { name: 'Lưu thông tin trường hợp' }).click();
+  await caseDrawer.getByRole('button', { name: 'Lưu để hoàn thiện sau' }).click();
   await expect(caseDrawer.getByText('Cần bổ sung', { exact: true })).toBeVisible();
   await caseDrawer.getByLabel(/^Doanh thu bán sản phẩm liên quan mỗi năm/).fill('40000000000');
   await caseDrawer.getByLabel(/^Bao bì có được chính doanh nghiệp thu hồi để tái sử dụng không/).selectOption('no');
-  await caseDrawer.getByRole('button', { name: 'Lưu thông tin trường hợp' }).click();
+  await caseDrawer.getByRole('button', { name: 'Lưu để hoàn thiện sau' }).click();
   await expect(caseDrawer.getByText('Sẵn sàng')).toBeVisible();
-  await caseDrawer.getByRole('button', { name: 'Tiếp tục đánh giá' }).click();
+  await caseDrawer.getByRole('button', { name: 'Lưu và tiếp tục đánh giá' }).click();
 
   await expect(page.getByText('Đánh giá sơ bộ', { exact: true })).toBeVisible();
   await expect(

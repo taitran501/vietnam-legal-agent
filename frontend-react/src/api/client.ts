@@ -1,5 +1,5 @@
 import axios, { type AxiosInstance, type AxiosError } from 'axios';
-import { authorizationHeader } from '@/auth/oidc';
+import { authorizationHeader, handleUnauthorized } from '@/auth/oidc';
 
 // Default to same-origin so Vite dev proxy handles /api consistently.
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
@@ -39,7 +39,7 @@ apiClient.interceptors.response.use(
       
       switch (status) {
         case 401:
-          console.error('Authentication failed');
+          handleUnauthorized();
           break;
         case 429:
           console.error('Rate limit exceeded');

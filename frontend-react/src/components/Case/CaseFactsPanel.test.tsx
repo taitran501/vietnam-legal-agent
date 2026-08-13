@@ -57,7 +57,7 @@ describe('CaseFactsPanel', () => {
 
     expect(screen.getByText('cần bổ sung')).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText(/Phạm vi đưa ra thị trường/), 'vietnam_market');
-    await user.click(screen.getByRole('button', { name: 'Lưu thông tin trường hợp' }));
+    await user.click(screen.getByRole('button', { name: 'Lưu để hoàn thiện sau' }));
 
     expect(updateCaseStateMock).toHaveBeenCalledWith(
       'case-1',
@@ -86,10 +86,50 @@ describe('CaseFactsPanel', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Tiếp tục đánh giá' }));
+    await user.click(screen.getByRole('button', { name: 'Lưu và tiếp tục đánh giá' }));
     expect(onContinue).toHaveBeenCalledWith(
       { business_role: 'manufacturer', market_placement: 'vietnam_market' },
       { business_role: 'unknown', market_placement: 'unknown' },
+      'assess_epr_obligation',
+    );
+  });
+
+  it('treats task type as dirty and persists it before continuing', async () => {
+    const user = userEvent.setup();
+    const onContinue = vi.fn();
+    const ready = caseState({
+      status: 'ready',
+      facts: { business_role: 'manufacturer', market_placement: 'vietnam_market' },
+      missing_facts: [],
+      fields: caseState().fields?.map((field) => ({
+        ...field,
+        missing: false,
+        value: field.key === 'market_placement' ? 'vietnam_market' : field.value,
+      })),
+    });
+    updateCaseStateMock.mockResolvedValue({ ...ready, task_type: 'build_compliance_checklist' });
+
+    render(
+      <CaseFactsPanel
+        conversationId="case-task"
+        caseState={ready}
+        onCaseChange={vi.fn()}
+        onContinue={onContinue}
+      />,
+    );
+    await user.selectOptions(screen.getByLabelText('Mục tiêu'), 'build_compliance_checklist');
+    await user.click(screen.getByRole('button', { name: 'Lưu và tiếp tục lập checklist' }));
+
+    expect(updateCaseStateMock).toHaveBeenCalledWith(
+      'case-task',
+      { business_role: 'manufacturer', market_placement: 'vietnam_market' },
+      'build_compliance_checklist',
+      { business_role: 'unknown', market_placement: 'unknown' },
+    );
+    expect(onContinue).toHaveBeenCalledWith(
+      { business_role: 'manufacturer', market_placement: 'vietnam_market' },
+      { business_role: 'unknown', market_placement: 'unknown' },
+      'build_compliance_checklist',
     );
   });
 

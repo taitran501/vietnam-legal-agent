@@ -142,7 +142,8 @@ async def chat(request: Request, body: ChatRequest):
                 target_assistant_message_id=body.target_assistant_message_id,
                 runtime=runtime,
             ):
-                event.setdefault("preview", bool(readiness.get("preview")))
+                # Readiness is the authoritative runtime gate for this request.
+                event["preview"] = bool(readiness.get("preview"))
                 # CRITICAL: Check if client disconnected
                 if await request.is_disconnected():
                     logger.info(

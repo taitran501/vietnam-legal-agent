@@ -29,4 +29,25 @@ describe('SourceDrawer', () => {
     await user.click(screen.getByRole('button', { name: 'Đóng' }));
     expect(onClose).toHaveBeenCalledOnce();
   });
+
+  it('focuses the cited source while keeping the complete source list visible', async () => {
+    const scrollIntoView = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    render(
+      <SourceDrawer
+        documents={[
+          { page_content: 'Nguồn một', document_id: 'one', metadata: { citation_index: 1, source: 'Nguồn 1' } },
+          { page_content: 'Nguồn hai', document_id: 'two', metadata: { citation_index: 2, source: 'Nguồn 2' } },
+        ]}
+        focusIndex={2}
+        isOpen
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Nguồn 1')).toBeInTheDocument();
+    expect(screen.getByText('Nguồn 2')).toBeInTheDocument();
+    await vi.waitFor(() => expect(document.activeElement).toHaveAttribute('id', 'source-2'));
+    expect(scrollIntoView).toHaveBeenCalled();
+  });
 });

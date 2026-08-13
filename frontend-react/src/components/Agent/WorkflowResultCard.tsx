@@ -30,10 +30,14 @@ export function WorkflowResultCard({ onOpenCase, onOpenSources, onResearch, work
   const stopKey = ({
     insufficient_evidence: 'insufficient_evidence',
     explicit_no_evidence_signal: 'missing_provision',
+    explicit_article_not_found: 'missing_provision',
     outside_registered_corpus: 'out_of_scope',
     citation_verification_failed: 'failed_citation_verification',
     unavailable_dependency: 'unavailable_dependencies',
+    dependency_unavailable: 'unavailable_dependencies',
     stale_corpus: 'stale_corpus',
+    invalid_fact: 'invalid_or_unresolved_fact',
+    unresolved_fact: 'invalid_or_unresolved_fact',
   } as Record<string, string>)[rawStopReason] || rawStopReason;
   const safeStop = ['insufficient_evidence', 'missing_provision', 'incomplete_issue_coverage', 'failed_citation_verification', 'out_of_scope', 'stale_corpus', 'unavailable_dependencies', 'invalid_or_unresolved_fact'].includes(stopKey);
   const completedDecision = workflow.outcome === 'completed'

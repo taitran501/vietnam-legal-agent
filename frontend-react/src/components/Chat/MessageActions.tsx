@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import type { ChatMessage } from '@/types';
 import { copyToClipboard } from '@/utils/clipboard';
 import { toast } from '@/state/toastStore';
@@ -15,10 +14,12 @@ interface MessageActionsProps {
 }
 
 export function MessageActions({ copied, message, onCopy, onRegenerate }: MessageActionsProps) {
-  const [feedback, setFeedback] = useState<'up' | 'down' | null>(message.feedback?.rating === 2 ? 'up' : message.feedback?.rating === 1 ? 'down' : null);
-  const [feedbackState, setFeedbackState] = useState<'idle' | 'pending' | 'saved' | 'failed'>(message.feedback ? 'saved' : 'idle');
   const sessionId = useChatStore((state) => state.activeSessionId);
+  const updateMessage = useChatStore((state) => state.updateMessage);
   const isAssistant = message.role === 'assistant';
+  const feedback = message.feedback?.rating === 2 ? 'up' : message.feedback?.rating === 1 ? 'down' : null;
+  const feedbackState = message.feedbackState || (message.feedback ? 'saved' : 'idle');
+  const canRate = isAssistant && message.status === 'complete' && Boolean(message.serverMessageId);
 
   const handleCopy = async () => {
     if (await copyToClipboard(message.content)) {
@@ -35,14 +36,17 @@ export function MessageActions({ copied, message, onCopy, onRegenerate }: Messag
       toast.error('Chưa có mã tin nhắn đã lưu để ghi nhận phản hồi');
       return;
     }
-    setFeedback(type);
-    setFeedbackState('pending');
+    const previousFeedback = message.feedback;
+    updateMessage(message.id, {
+      feedback: { rating: type === 'up' ? 2 : 1 },
+      feedbackState: 'pending',
+    });
     try {
       await submitFeedback({ session_id: sessionId, message_id: message.serverMessageId, rating: type === 'up' ? 2 : 1 });
-      setFeedbackState('saved');
+      updateMessage(message.id, { feedbackState: 'saved' });
       toast.info(type === 'up' ? 'Đã lưu đánh giá hữu ích.' : 'Đã lưu phản hồi chưa hữu ích.');
     } catch {
-      setFeedbackState('failed');
+      updateMessage(message.id, { feedback: previousFeedback, feedbackState: 'failed' });
       toast.error('Không thể lưu phản hồi. Hãy thử lại.');
     }
   };
@@ -62,7 +66,7 @@ export function MessageActions({ copied, message, onCopy, onRegenerate }: Messag
         <Icon name={copied ? 'check' : 'copy'} size={15} />
       </button>
 
-      {isAssistant && onRegenerate && (
+      {isAssistant && message.status === 'complete' && message.serverMessageId && onRegenerate && (
         <button
           aria-label="Tạo lại câu trả lời"
           className={baseClass}
@@ -74,7 +78,7 @@ export function MessageActions({ copied, message, onCopy, onRegenerate }: Messag
         </button>
       )}
 
-      {isAssistant && (
+      {canRate && (
         <>
           <button
             aria-label="Câu trả lời hữu ích"

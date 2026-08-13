@@ -1,17 +1,21 @@
 import { Icon } from '@/components/UI/Icon';
+import type { MeResponse } from '@/api/me';
 
 interface HeaderProps {
   hasActiveCase?: boolean;
-  readiness: 'ready' | 'preparing' | 'missing' | 'offline';
+  me?: MeResponse | null;
+  readiness: 'ready' | 'preview' | 'blocked' | 'preparing' | 'offline';
+  onLogout?: () => void;
   onOpenCase?: () => void;
   onOpenMobileNav: () => void;
 }
 
-export function Header({ hasActiveCase = false, readiness, onOpenCase, onOpenMobileNav }: HeaderProps) {
+export function Header({ hasActiveCase = false, me, readiness, onLogout, onOpenCase, onOpenMobileNav }: HeaderProps) {
   const status = {
     ready: { label: 'Sẵn sàng', color: 'bg-[#1d8b66]', title: 'Dữ liệu pháp luật đã sẵn sàng' },
+    preview: { label: 'Xem trước', color: 'bg-[#d98b22]', title: 'Corpus chưa được phê duyệt cho production' },
+    blocked: { label: 'Tra cứu đang khóa', color: 'bg-[#ba1a1a]', title: 'Khả năng tra cứu pháp luật chưa sẵn sàng' },
     preparing: { label: 'Đang chuẩn bị dữ liệu', color: 'bg-[#d98b22]', title: 'Đang chuẩn bị dữ liệu pháp luật' },
-    missing: { label: 'Thiếu dữ liệu pháp luật', color: 'bg-[#ba1a1a]', title: 'Chưa có law index' },
     offline: { label: 'Ngoại tuyến', color: 'bg-[#ba1a1a]', title: 'Không thể kết nối tới máy chủ' },
   }[readiness];
   return (
@@ -46,6 +50,23 @@ export function Header({ hasActiveCase = false, readiness, onOpenCase, onOpenMob
           >
             <Icon name="case" size={17} />
             <span className="hidden sm:inline">Thông tin tình huống</span>
+          </button>
+        )}
+        {me && (
+          <div className="hidden min-w-0 text-right md:block">
+            <p className="max-w-36 truncate text-xs font-semibold text-[#3e4947]">{me.display_name}</p>
+            <p className="max-w-36 truncate text-[10px] text-[#667085]">{me.roles.join(', ') || me.principal_type}</p>
+          </div>
+        )}
+        {onLogout && (
+          <button
+            aria-label="Đăng xuất"
+            className="rounded-md p-2 text-[#53615e] transition-colors hover:bg-[#e7eceb] hover:text-[#172033] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e]"
+            onClick={onLogout}
+            title={`${me?.display_name || 'Tài khoản'}${me?.roles.length ? ` · ${me.roles.join(', ')}` : ''} · Đăng xuất`}
+            type="button"
+          >
+            <Icon name="logout" size={17} />
           </button>
         )}
         <div

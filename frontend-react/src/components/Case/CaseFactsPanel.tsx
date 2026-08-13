@@ -100,18 +100,21 @@ interface CaseFactsPanelProps {
   onContinue: (
     facts: Record<string, string>,
     confirmationStatuses?: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>,
+    taskType?: CaseState['task_type'],
   ) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 function plainFactValue(value: string | FactValue | undefined): string {
   return typeof value === 'string' ? value : value?.value || '';
 }
 
-export function CaseFactsPanel({ conversationId, caseState, onCaseChange, onContinue }: CaseFactsPanelProps) {
+export function CaseFactsPanel({ conversationId, caseState, onCaseChange, onContinue, onDirtyChange }: CaseFactsPanelProps) {
   const [facts, setFacts] = useState<Record<string, string>>({});
   const [taskType, setTaskType] = useState<CaseState['task_type']>('assess_epr_obligation');
   const [saving, setSaving] = useState(false);
   const [baseline, setBaseline] = useState<Record<string, string>>({});
+  const [baselineTaskType, setBaselineTaskType] = useState<CaseState['task_type']>('assess_epr_obligation');
   const [confirmationStatuses, setConfirmationStatuses] = useState<Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>>({});
   const [baselineConfirmationStatuses, setBaselineConfirmationStatuses] = useState<Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>>({});
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
@@ -130,7 +133,9 @@ export function CaseFactsPanel({ conversationId, caseState, onCaseChange, onCont
     setConfirmationStatuses(nextStatuses);
     setBaselineConfirmationStatuses(nextStatuses);
     setValidationErrors({});
-    setTaskType(caseState?.task_type || 'assess_epr_obligation');
+    const nextTaskType = caseState?.task_type || 'assess_epr_obligation';
+    setTaskType(nextTaskType);
+    setBaselineTaskType(nextTaskType);
   }, [caseState]);
 
   const missing = useMemo(() => new Set(caseState?.missing_facts || []), [caseState]);
@@ -147,8 +152,14 @@ export function CaseFactsPanel({ conversationId, caseState, onCaseChange, onCont
   }));
   const requiredFields = dynamicFields.filter((field) => field.required);
   const filledRequired = requiredFields.filter((field) => Boolean(facts[field.key])).length;
-  const isDirty = JSON.stringify(facts) !== JSON.stringify(baseline);
+  const isDirty = JSON.stringify(facts) !== JSON.stringify(baseline)
+    || JSON.stringify(confirmationStatuses) !== JSON.stringify(baselineConfirmationStatuses)
+    || taskType !== baselineTaskType;
   const hasRequiredFacts = filledRequired === requiredFields.length && Object.keys(validationErrors).length === 0;
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
 
   const validateField = (key: string, value: string): string | undefined => {
     if (!value.trim()) return undefined;
@@ -185,6 +196,7 @@ export function CaseFactsPanel({ conversationId, caseState, onCaseChange, onCont
       onCaseChange(next);
       setBaseline(facts);
       setBaselineConfirmationStatuses(confirmationStatuses);
+      setBaselineTaskType(taskType);
       toast.success('Đã cập nhật thông tin trường hợp');
       return true;
     } catch {
@@ -201,13 +213,14 @@ export function CaseFactsPanel({ conversationId, caseState, onCaseChange, onCont
       return;
     }
     const saved = isDirty ? await save() : true;
-    if (saved) onContinue(facts, confirmationStatuses);
+    if (saved) onContinue(facts, confirmationStatuses, taskType);
   };
 
   const discard = () => {
     if (isDirty && !window.confirm('Bỏ các thay đổi chưa lưu?')) return;
     setFacts(baseline);
     setConfirmationStatuses(baselineConfirmationStatuses);
+    setTaskType(baselineTaskType);
     setValidationErrors({});
   };
 
@@ -278,12 +291,12 @@ export function CaseFactsPanel({ conversationId, caseState, onCaseChange, onCont
         type="button"
         onClick={save}
         disabled={isDisabled}
-        className="mt-4 rounded-lg bg-[#0f766e] px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-[#005c55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-[#bdc9c6]"
+        className="mt-4 rounded-lg border border-[#bdc9c6] bg-white px-3 py-2.5 text-sm font-semibold text-[#3e4947] transition hover:bg-[#f1f4f3] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:text-[#7a8582]"
       >
-        {saving ? 'Đang lưu…' : 'Lưu thông tin trường hợp'}
+        {saving ? 'Đang lưu…' : 'Lưu để hoàn thiện sau'}
       </button>
-      <button type="button" onClick={() => void continueCase()} disabled={isDisabled || !hasRequiredFacts} className="mt-2 rounded-lg border border-[#0f766e] bg-white px-3 py-2.5 text-sm font-semibold text-[#006a63] transition hover:bg-[#f0faf8] disabled:cursor-not-allowed disabled:border-[#bdc9c6] disabled:text-[#7a8582]">
-        {isDirty ? 'Lưu và tiếp tục' : 'Tiếp tục đánh giá'}
+      <button type="button" onClick={() => void continueCase()} disabled={isDisabled || !hasRequiredFacts} className="mt-2 rounded-lg bg-[#0f766e] px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-[#005c55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-[#bdc9c6]">
+        {taskType === 'build_compliance_checklist' ? 'Lưu và tiếp tục lập checklist' : 'Lưu và tiếp tục đánh giá'}
       </button>
     </section>
   );

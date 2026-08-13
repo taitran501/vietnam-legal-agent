@@ -170,6 +170,7 @@ def _metadata(state: AgentState) -> dict[str, Any]:
         "trace_id": state.get("trace_id", ""),
         "corpus_id": state.get("corpus_id", "epr"),
         "corpus_as_of_date": state.get("corpus_as_of_date", ""),
+        "preview": bool(state.get("preview", False)),
         "pipeline_version": state.get("pipeline_version", "pipeline-v3"),
         "termination_reason": state.get("termination_reason", TerminationReason.ERROR.value),
         "outcome": state.get("outcome"),
@@ -276,6 +277,9 @@ class WorkflowRuntime:
         started_at = time.perf_counter()
         started_wall = datetime.now(UTC)
         state = await run_workflow(deps=self.deps, compiled_workflow=self._compiled_workflow, **kwargs)
+        from backend.config import get_settings
+
+        state["preview"] = get_settings().corpus_runtime_mode == "preview"
         state["run_started_at"] = started_wall.isoformat()
         state["run_ended_at"] = datetime.now(UTC).isoformat()
         state["run_duration_ms"] = round((time.perf_counter() - started_at) * 1000, 2)
@@ -289,6 +293,9 @@ class WorkflowRuntime:
         trace_id = str(kwargs.get("trace_id") or "")
         try:
             state = await create_initial_state(deps=self.deps, **kwargs)
+            from backend.config import get_settings
+
+            state["preview"] = get_settings().corpus_runtime_mode == "preview"
             trace_id = state.get("trace_id", "")
             compiled = self._compiled_workflow
             step = 0

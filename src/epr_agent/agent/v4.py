@@ -251,7 +251,9 @@ class V4WorkflowRuntime(WorkflowRuntime):
         state["replay_metadata"] = replay_defaults
         from backend.config import get_settings
 
-        state["corpus_as_of_date"] = str(get_settings().corpus_as_of_date or "")
+        settings = get_settings()
+        state["corpus_as_of_date"] = str(settings.corpus_as_of_date or "")
+        state["preview"] = settings.corpus_runtime_mode == "preview"
         state["rule_id"] = EPR_RULE_ID
         return state
 
@@ -759,6 +761,7 @@ class V4WorkflowRuntime(WorkflowRuntime):
         delegated["target_assistant_message_id"] = state.get("target_assistant_message_id")
         delegated["turn_status"] = state.get("turn_status", "pending")
         delegated["corpus_as_of_date"] = state.get("corpus_as_of_date", "")
+        delegated["preview"] = bool(state.get("preview", False))
         delegated["rule_id"] = state.get("rule_id", EPR_RULE_ID)
         delegated["pipeline_version"] = "pipeline-v4"
         delegated["outcome"] = WorkflowOutcome.COMPLETED.value if delegated.get("termination_reason") in {TerminationReason.ANSWER_COMPLETE.value, TerminationReason.CACHE_HIT.value, TerminationReason.RESEARCH_COMPLETE.value} else (

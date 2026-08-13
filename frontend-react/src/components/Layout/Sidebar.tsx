@@ -58,12 +58,14 @@ export function Sidebar({
     isLoadingSessions,
     searchQuery,
     setSearchQuery,
-    loadSession,
+    sessionsError,
+    hasMoreSessions,
+    loadSessions,
+    loadMoreSessions,
     deleteSession,
-    createNewSession,
     clearAllSessions,
     renameSession,
-  } = useSessions();
+  } = useSessions({ autoLoad: !collapsed || isMobile });
   const { activeSessionId } = useChatStore();
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [showClearAllModal, setShowClearAllModal] = useState(false);
@@ -72,13 +74,11 @@ export function Sidebar({
   const groupedSessions = useMemo(() => groupSessions(sessions), [sessions]);
 
   const handleNewChat = () => {
-    createNewSession();
     onNewSession?.();
     onDismiss?.();
   };
 
-  const handleSelectSession = async (sessionId: string) => {
-    await loadSession(sessionId);
+  const handleSelectSession = (sessionId: string) => {
     onSelectSession(sessionId);
     onDismiss?.();
   };
@@ -215,6 +215,19 @@ export function Sidebar({
               <div className="h-11 animate-pulse rounded-md bg-[#e0e3e1]" key={index} />
             ))}
           </div>
+        ) : sessionsError ? (
+          <div className="px-5 py-10 text-center text-[#667085]" role="alert">
+            <Icon className="mx-auto text-[#ba1a1a]" name="alert" size={25} />
+            <p className="mt-3 text-sm font-medium text-[#3e4947]">Không thể tải lịch sử</p>
+            <p className="mt-1 text-xs leading-5">{sessionsError}</p>
+            <button
+              className="mt-3 rounded-md border border-[#bdc9c6] bg-white px-3 py-2 text-xs font-semibold text-[#006a63]"
+              onClick={() => void loadSessions({ reset: true })}
+              type="button"
+            >
+              Thử lại
+            </button>
+          </div>
         ) : groupedSessions.length === 0 ? (
           <div className="px-5 py-12 text-center text-[#667085]">
             <Icon className="mx-auto" name={searchQuery ? 'search' : 'message'} size={25} />
@@ -241,9 +254,9 @@ export function Sidebar({
                         : 'border-transparent text-[#3e4947] hover:bg-[#e7eceb] hover:text-[#172033]'
                     )}
                     key={session.id}
-                    onClick={() => void handleSelectSession(session.id)}
+                    onClick={() => handleSelectSession(session.id)}
                     onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') void handleSelectSession(session.id);
+                      if (event.key === 'Enter' || event.key === ' ') handleSelectSession(session.id);
                     }}
                     role="button"
                     tabIndex={0}
@@ -298,6 +311,18 @@ export function Sidebar({
               </div>
             </section>
           ))
+        )}
+        {!sessionsError && hasMoreSessions && (
+          <div className="px-2 py-3 text-center">
+            <button
+              className="rounded-md border border-[#bdc9c6] bg-white px-3 py-2 text-xs font-semibold text-[#006a63] disabled:opacity-60"
+              disabled={isLoadingSessions}
+              onClick={() => void loadMoreSessions()}
+              type="button"
+            >
+              {isLoadingSessions ? 'Đang tải…' : 'Tải thêm'}
+            </button>
+          </div>
         )}
       </div>
 

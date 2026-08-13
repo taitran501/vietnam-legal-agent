@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import type { SourceDocument } from '@/types';
 import { Drawer } from '@/components/UI/Drawer';
 import { Icon } from '@/components/UI/Icon';
@@ -5,8 +6,10 @@ import { Icon } from '@/components/UI/Icon';
 interface SourceDrawerProps {
   citations?: Array<Record<string, unknown>>;
   documents: SourceDocument[];
+  focusIndex?: number;
   isOpen: boolean;
   onClose: () => void;
+  preview?: boolean;
 }
 
 function textValue(value: unknown): string | undefined {
@@ -26,12 +29,14 @@ function metadataValue(document: SourceDocument, keys: string[]): string | undef
 
 function documentTitle(document: SourceDocument, index: number): string {
   return (
-    metadataValue(document, ['source_title', 'title', 'document_title', 'ten_van_ban', 'source', 'file_name', 'Document_Number']) ||
+    metadataValue(document, ['source_title', 'Source_Title', 'title', 'document_title', 'ten_van_ban', 'source', 'file_name', 'Document_Number']) ||
     `Nguồn pháp lý ${index + 1}`
   );
 }
 
 function documentAnchor(document: SourceDocument): string | undefined {
+  const explicit = metadataValue(document, ['legal_anchor', 'anchor']);
+  if (explicit) return explicit;
   const values = [
     metadataValue(document, ['Chuong', 'chuong']),
     metadataValue(document, ['Dieu', 'dieu']),
@@ -52,7 +57,19 @@ function documentUrl(document: SourceDocument): string | undefined {
   }
 }
 
-export function SourceDrawer({ citations = [], documents, isOpen, onClose }: SourceDrawerProps) {
+export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, onClose, preview = false }: SourceDrawerProps) {
+  const sourceRefs = useRef(new Map<number, HTMLElement>());
+
+  useEffect(() => {
+    if (!isOpen || !focusIndex) return;
+    const timer = window.setTimeout(() => {
+      const source = sourceRefs.current.get(focusIndex);
+      source?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      source?.focus({ preventScroll: true });
+    }, 40);
+    return () => window.clearTimeout(timer);
+  }, [focusIndex, isOpen]);
+
   return (
     <Drawer
       description="Đối chiếu nội dung trả lời với các đoạn văn bản mà hệ thống đã sử dụng."
@@ -61,7 +78,13 @@ export function SourceDrawer({ citations = [], documents, isOpen, onClose }: Sou
       title="Nguồn tham khảo"
     >
       <div className="space-y-3 p-4 sm:p-5">
+        {preview && (
+          <div className="rounded-lg border border-[#d7a65a] bg-[#fff8ea] p-3 text-xs leading-5 text-[#714b18]" role="status">
+            Chế độ xem trước: corpus này chưa được phê duyệt để dùng trong production.
+          </div>
+        )}
         {documents.map((document, index) => {
+          const citationIndex = Number(metadataValue(document, ['citation_index'])) || index + 1;
           const anchor = documentAnchor(document);
           const url = documentUrl(document);
           const instrument = metadataValue(document, ['Document_Number', 'instrument_number']);
@@ -74,12 +97,18 @@ export function SourceDrawer({ citations = [], documents, isOpen, onClose }: Sou
           const activePages = metadataValue(document, ['active_source_pages', 'Active_Source_Pages']);
           return (
             <article
-              className="rounded-lg border border-[#d9e1df] bg-white p-4"
+              className="rounded-lg border border-[#d9e1df] bg-white p-4 outline-none focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]/20"
+              id={`source-${citationIndex}`}
               key={document.document_id || `${documentTitle(document, index)}-${index}`}
+              ref={(node) => {
+                if (node) sourceRefs.current.set(citationIndex, node);
+                else sourceRefs.current.delete(citationIndex);
+              }}
+              tabIndex={-1}
             >
               <div className="flex items-start gap-3">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#e7eceb] text-xs font-semibold text-[#006a63]">
-                  {index + 1}
+                  {citationIndex}
                 </span>
                 <div className="min-w-0 flex-1">
                   <h3 className="text-sm font-semibold leading-6 text-[#172033]">

@@ -1,17 +1,19 @@
-import type { ChatMessage, SourceDocument } from '@/types';
+import { useEffect, useState } from 'react';
+import type { ChatMessage, SourceDocument, StreamError } from '@/types';
 import { ChatMessageComponent } from './ChatMessage';
 import { TypingIndicator } from './TypingIndicator';
 import { useAutoScroll } from '@/hooks/useAutoScroll';
 import { Icon } from '@/components/UI/Icon';
 
 interface MessageListProps {
-  error: string | null;
+  error: StreamError | null;
   isStreaming: boolean;
   messages: ChatMessage[];
   onOpenCase?: () => void;
   onResearch?: (query: string) => void;
-  onOpenSources: (documents: SourceDocument[], citations: Array<Record<string, unknown>>) => void;
+  onOpenSources: (documents: SourceDocument[], citations: Array<Record<string, unknown>>, focusIndex?: number, preview?: boolean) => void;
   onRegenerate?: () => void;
+  onRetry?: () => void;
   statusMessage?: string;
   streamingContent: string;
 }
@@ -24,15 +26,34 @@ export function MessageList({
   onResearch,
   onOpenSources,
   onRegenerate,
+  onRetry,
   statusMessage,
   streamingContent,
 }: MessageListProps) {
+  const [retryCountdown, setRetryCountdown] = useState(0);
   const { containerRef, scrollToBottom, isAtBottom } = useAutoScroll({ enabled: true });
   const last = messages[messages.length - 1];
   const hidePendingAssistant = isStreaming && last?.role === 'assistant' && (last.content?.trim() ?? '') === '';
-  const visibleMessages = hidePendingAssistant ? messages.slice(0, -1) : messages;
+  const visibleMessages = (hidePendingAssistant ? messages.slice(0, -1) : messages).filter(
+    (message) => message.status !== 'superseded'
+      && !(message.role === 'assistant' && message.status === 'failed' && !message.content.trim()),
+  );
   const showStreamingRow =
     isStreaming && Boolean(streamingContent) && (last?.role !== 'assistant' || (last.content?.trim() ?? '') === '');
+
+  useEffect(() => {
+    if (!error?.retryable) {
+      setRetryCountdown(0);
+      return;
+    }
+    setRetryCountdown(Math.max(0, Math.ceil(error.retryAfterSeconds || 0)));
+  }, [error]);
+
+  useEffect(() => {
+    if (retryCountdown <= 0) return;
+    const timer = window.setTimeout(() => setRetryCountdown((value) => Math.max(0, value - 1)), 1000);
+    return () => window.clearTimeout(timer);
+  }, [retryCountdown]);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-[#fcfcfa]">
@@ -51,7 +72,7 @@ export function MessageList({
                 : undefined}
               onOpenSources={onOpenSources}
               onRegenerate={
-                message.role === 'assistant' && index === visibleMessages.length - 1 && !hidePendingAssistant
+                message.role === 'assistant' && message.status === 'complete' && index === visibleMessages.length - 1 && !hidePendingAssistant
                   ? onRegenerate
                   : undefined
               }
@@ -82,14 +103,16 @@ export function MessageList({
                 <Icon className="mt-0.5 shrink-0" name="alert" size={19} />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold">Đã xảy ra lỗi khi xử lý</p>
-                  <p className="mt-1 break-words text-sm leading-6">{error}</p>
-                  {onRegenerate && (
+                  <p className="mt-1 break-words text-sm leading-6">{error.message}</p>
+                  {error.traceId && <p className="mt-1 text-xs opacity-75">Mã theo dõi: {error.traceId}</p>}
+                  {error.retryable && onRetry && (
                     <button
                       className="mt-3 rounded-md bg-[#ba1a1a] px-3 py-2 text-xs font-semibold text-white hover:bg-[#93000a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ba1a1a] focus-visible:ring-offset-2"
-                      onClick={onRegenerate}
+                      disabled={retryCountdown > 0}
+                      onClick={onRetry}
                       type="button"
                     >
-                      Thử lại
+                      {retryCountdown > 0 ? `Thử lại sau ${retryCountdown}s` : 'Thử lại'}
                     </button>
                   )}
                 </div>
