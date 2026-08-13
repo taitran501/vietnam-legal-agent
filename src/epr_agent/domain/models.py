@@ -133,6 +133,10 @@ class AgentState(TypedDict, total=False):
     """State passed between nodes in the LangGraph workflow."""
 
     trace_id: str
+    turn_id: str
+    user_message_id: str
+    target_assistant_message_id: int | None
+    turn_status: str
     query: str
     standalone_query: str
     user_id: str

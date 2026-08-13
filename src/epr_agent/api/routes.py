@@ -21,6 +21,8 @@ async def stream_chat_events(
     case_patch: dict[str, str] | None = None,
     fact_updates: dict[str, dict[str, Any]] | None = None,
     replay_metadata: dict[str, Any] | None = None,
+    turn_id: str = "",
+    target_assistant_message_id: int | None = None,
     runtime: WorkflowRuntime | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Return the stable SSE event contract for FastAPI or another HTTP host."""
@@ -37,6 +39,8 @@ async def stream_chat_events(
         case_patch=case_patch or {},
         fact_updates=fact_updates or {},
         replay_metadata=replay_metadata or {},
+        turn_id=turn_id,
+        target_assistant_message_id=target_assistant_message_id,
         runtime=runtime,
     ):
         yield event

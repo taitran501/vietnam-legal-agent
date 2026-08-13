@@ -180,6 +180,23 @@ async def test_missing_corpus_evidence_stops_and_offers_explicit_web_research():
 
 
 @pytest.mark.asyncio
+async def test_missing_explicit_article_suppresses_unrelated_candidate_sources():
+    deps = make_dependencies(legal=[legal_doc()])
+
+    state = await run_workflow(
+        "Điều 999 quy định gì về EPR?",
+        user_id="u1",
+        conversation_id="missing-999",
+        deps=deps,
+    )
+
+    assert state["termination_reason"] == "insufficient_evidence"
+    assert state["safe_stop_reason"] == "missing_provision"
+    assert state["evidence"] == []
+    assert state["citations"] == []
+
+
+@pytest.mark.asyncio
 async def test_web_research_runs_only_when_user_selects_mode():
     deps = make_dependencies(legal=[])
 

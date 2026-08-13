@@ -8,11 +8,80 @@ missing or unverifiable fact cannot become an invented legal conclusion.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import re
+import unicodedata
 from typing import Any, Protocol
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import BaseModel, Field
 
 from epr_agent.domain.models import DocumentRecord, TaskType
+
+_WEB_ARTICLE_RE = re.compile(r"\bđiều\s+(\d+[a-zđ]?)\b", re.IGNORECASE)
+_WEB_INSTRUMENT_RE = re.compile(r"\b\d{1,3}/\d{4}/n[dđ]-cp\b", re.IGNORECASE)
+_WEB_EPR_SIGNALS = (
+    "epr",
+    "trach nhiem mo rong cua nha san xuat",
+    "tai che",
+    "bao bi",
+    "bao ve moi truong",
+    "nghi dinh 08/2022",
+    "dong gop tai chinh",
+)
+
+
+def _fold_web_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value or "")
+    return " ".join(
+        "".join(char for char in normalized if not unicodedata.combining(char))
+        .replace("đ", "d")
+        .replace("Đ", "D")
+        .casefold()
+        .split()
+    )
+
+
+def _official_domains(raw: str) -> list[str]:
+    return sorted({value.strip().casefold().lstrip(".") for value in raw.split(",") if value.strip()})
+
+
+def _normalize_official_url(raw_url: str, allowed_domains: list[str]) -> str:
+    try:
+        parsed = urlsplit(raw_url.strip())
+    except ValueError:
+        return ""
+    hostname = (parsed.hostname or "").casefold().rstrip(".")
+    if parsed.scheme.casefold() not in {"http", "https"} or not hostname:
+        return ""
+    if not any(hostname == domain or hostname.endswith(f".{domain}") for domain in allowed_domains):
+        return ""
+    query = urlencode(
+        sorted(
+            (key, value)
+            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+            if not key.casefold().startswith("utm_")
+        )
+    )
+    path = re.sub(r"/{2,}", "/", parsed.path or "/")
+    return urlunsplit(("https", hostname, path, query, ""))
+
+
+def _web_result_matches_query(query: str, title: str, excerpt: str, url: str) -> bool:
+    folded_query = _fold_web_text(query)
+    folded_result = _fold_web_text(f"{title} {excerpt} {url}")
+    articles = {_fold_web_text(value) for value in _WEB_ARTICLE_RE.findall(query)}
+    if articles and not all(f"dieu {article}" in folded_result for article in articles):
+        return False
+    instruments = {_fold_web_text(value) for value in _WEB_INSTRUMENT_RE.findall(folded_query)}
+    if instruments and not all(value in folded_result for value in instruments):
+        return False
+    return bool(articles or instruments or any(signal in folded_result for signal in _WEB_EPR_SIGNALS))
+
+
+def _clean_web_excerpt(value: str, limit: int) -> str:
+    without_markup = re.sub(r"<[^>]+>", " ", value or "")
+    return " ".join(without_markup.split())[:limit]
 
 
 class GenerationGateway(Protocol):
@@ -91,18 +160,24 @@ class EvidenceGenerationGateway:
 
         from backend.config import get_settings
 
-        key = (get_settings().tavily_api_key or "").strip()
+        settings = get_settings()
+        key = (settings.tavily_api_key or "").strip()
         if not key or key.startswith("your-"):
             return "", []
+        domains = _official_domains(settings.web_official_domains)
+        if not domains:
+            return "", []
+        scoped_query = f"{query} EPR Việt Nam văn bản pháp luật chính thức"
 
         def _search() -> list[dict[str, Any]]:
             from tavily import TavilyClient  # type: ignore[import-untyped]
 
             result = TavilyClient(api_key=key).search(
-                query=query,
+                query=scoped_query,
                 search_depth="advanced",
                 max_results=5,
                 include_answer=False,
+                include_domains=domains,
             )
             return list(result.get("results") or [])
 
@@ -110,24 +185,42 @@ class EvidenceGenerationGateway:
         documents: list[DocumentRecord] = []
         for index, result in enumerate(results, start=1):
             title = str(result.get("title") or "").strip()
-            url = str(result.get("url") or "").strip()
-            content = str(result.get("content") or "").strip()
+            url = _normalize_official_url(str(result.get("url") or ""), domains)
+            content = _clean_web_excerpt(
+                str(result.get("content") or ""), settings.web_excerpt_max_chars
+            )
             if not title or not url or not content:
                 continue
+            if not _web_result_matches_query(query, title, content, url):
+                continue
+            article_match = _WEB_ARTICLE_RE.search(query)
+            instrument_match = _WEB_INSTRUMENT_RE.search(_fold_web_text(query))
+            document_id = hashlib.sha256(url.encode("utf-8")).hexdigest()[:20]
             documents.append(
                 DocumentRecord(
-                    content=content[:4000],
-                    document_id=f"web:{index}:{url}",
+                    content=content,
+                    document_id=f"web:{index}:{document_id}",
                     source="web",
-                    metadata={"source": "web_research", "query": query, "title": title, "url": url},
+                    metadata={
+                        "source": "web_research",
+                        "source_kind": "official_web",
+                        "authority": "official",
+                        "title": title,
+                        "url": url,
+                        "official_url": url,
+                        "anchor": f"Điều {article_match.group(1)}" if article_match else "",
+                        "instrument_number": instrument_match.group(0).upper() if instrument_match else "",
+                        "effective_status": "unknown",
+                        "amendment_relationship": [],
+                    },
                 )
             )
         if not documents:
             return "", []
-        lines = ["Tôi đã tìm thấy các nguồn công khai để bạn đối chiếu:"]
+        lines = ["### Nguồn chính thức ngoài corpus", "", "Tôi đã tìm thấy các nguồn chính thức để bạn đối chiếu:"]
         for index, document in enumerate(documents, start=1):
             lines.append(f"- [{index}] {document.metadata['title']} — {document.metadata['url']}")
-        lines.append("Kết quả web chỉ để tham khảo; hãy ưu tiên văn bản pháp luật chính thức trước khi áp dụng.")
+        lines.append("Các nguồn này nằm ngoài corpus đã duyệt, không được dùng để hoàn tất đánh giá tình huống.")
         return "\n".join(lines), documents
 
     async def repair(self, answer: str, documents: list[DocumentRecord], task_type: str) -> str:
@@ -224,9 +317,12 @@ class StaticGenerationGateway:
                 source="web",
                 metadata={
                     "source": "web_research",
+                    "source_kind": "official_web",
+                    "authority": "official",
                     "query": query,
                     "title": "Nguồn công khai kiểm thử",
                     "url": "https://vanban.chinhphu.vn/",
+                    "official_url": "https://vanban.chinhphu.vn/",
                 },
             )
         ]

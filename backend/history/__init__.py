@@ -3,6 +3,7 @@
 from .store import (
     append_exchange,
     archive_conversation,
+    cancel_turn,
     delete_conversation,
     ensure_conversation,
     feedback_stats,
@@ -25,6 +26,7 @@ from .store import (
 __all__ = [
     "append_exchange",
     "archive_conversation",
+    "cancel_turn",
     "delete_conversation",
     "ensure_conversation",
     "feedback_stats",

@@ -35,6 +35,41 @@ class HistoryGateway(Protocol):
         metadata: dict[str, Any],
     ) -> int | None: ...
 
+    async def begin_turn(
+        self,
+        user_id: str,
+        conversation_id: str,
+        turn_id: str,
+        query: str,
+        *,
+        mode: str,
+        operation: str,
+        replay_metadata: dict[str, Any],
+        target_assistant_message_id: int | None,
+    ) -> dict[str, Any]: ...
+
+    async def update_turn_content(
+        self, user_id: str, conversation_id: str, turn_id: str, content: str
+    ) -> bool: ...
+
+    async def is_turn_cancelled(self, user_id: str, conversation_id: str, turn_id: str) -> bool: ...
+
+    async def cancel_turn(
+        self, user_id: str, conversation_id: str, turn_id: str
+    ) -> dict[str, Any] | None: ...
+
+    async def finish_turn(
+        self,
+        user_id: str,
+        conversation_id: str,
+        turn_id: str,
+        *,
+        content: str,
+        metadata: dict[str, Any] | None,
+        status: str,
+        error_code: str | None = None,
+    ) -> dict[str, Any] | None: ...
+
     async def save_case(self, user_id: str, conversation_id: str, state: dict[str, Any]) -> dict[str, Any]: ...
 
     async def clear_case(self, user_id: str, conversation_id: str) -> None: ...
@@ -84,6 +119,65 @@ class UnifiedHistoryGateway:
             user_message,
             assistant_message,
             metadata,
+        )
+
+    async def begin_turn(
+        self,
+        user_id: str,
+        conversation_id: str,
+        turn_id: str,
+        query: str,
+        *,
+        mode: str,
+        operation: str,
+        replay_metadata: dict[str, Any],
+        target_assistant_message_id: int | None,
+    ) -> dict[str, Any]:
+        return await (await self._resolve_store()).begin_turn(
+            user_id,
+            conversation_id,
+            turn_id,
+            query,
+            mode=mode,
+            operation=operation,
+            replay_metadata=replay_metadata,
+            target_assistant_message_id=target_assistant_message_id,
+        )
+
+    async def update_turn_content(
+        self, user_id: str, conversation_id: str, turn_id: str, content: str
+    ) -> bool:
+        return await (await self._resolve_store()).update_turn_content(
+            user_id, conversation_id, turn_id, content
+        )
+
+    async def is_turn_cancelled(self, user_id: str, conversation_id: str, turn_id: str) -> bool:
+        return await (await self._resolve_store()).is_turn_cancelled(user_id, conversation_id, turn_id)
+
+    async def cancel_turn(
+        self, user_id: str, conversation_id: str, turn_id: str
+    ) -> dict[str, Any] | None:
+        return await (await self._resolve_store()).cancel_turn(user_id, conversation_id, turn_id)
+
+    async def finish_turn(
+        self,
+        user_id: str,
+        conversation_id: str,
+        turn_id: str,
+        *,
+        content: str,
+        metadata: dict[str, Any] | None,
+        status: str,
+        error_code: str | None = None,
+    ) -> dict[str, Any] | None:
+        return await (await self._resolve_store()).finish_turn(
+            user_id,
+            conversation_id,
+            turn_id,
+            content=content,
+            metadata=metadata,
+            status=status,
+            error_code=error_code,
         )
 
     async def save_case(self, user_id: str, conversation_id: str, state: dict[str, Any]) -> dict[str, Any]:

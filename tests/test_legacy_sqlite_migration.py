@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -75,6 +76,41 @@ def test_legacy_sqlite_migration_is_dry_run_first_and_idempotent(tmp_path: Path)
     second = migrate(database, apply=True)
     assert second.schema == "current"
     assert second.changed is False
+
+
+def test_previous_release_schema_is_upgraded_and_stamped(tmp_path: Path) -> None:
+    database = tmp_path / "previous.sqlite3"
+    _legacy_database(database)
+    migrate(database, apply=True, backup=tmp_path / "initial.backup.sqlite3")
+    with closing(sqlite3.connect(database)) as connection:
+        connection.executescript(
+            """
+            DROP TABLE conversation_turns;
+            DROP INDEX ix_messages_turn_id;
+            ALTER TABLE messages DROP COLUMN turn_id;
+            ALTER TABLE messages DROP COLUMN status;
+            ALTER TABLE messages DROP COLUMN superseded_by_message_id;
+            ALTER TABLE messages DROP COLUMN updated_at;
+            UPDATE alembic_version SET version_num='20260812_05';
+            """
+        )
+        connection.commit()
+
+    dry_run = migrate(database)
+    assert dry_run.schema == "previous_current"
+    assert dry_run.safe_to_apply is True
+    applied = migrate(database, apply=True, backup=tmp_path / "previous.backup.sqlite3")
+    assert applied.changed is True
+
+    with closing(sqlite3.connect(database)) as connection:
+        assert "conversation_turns" in {
+            row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        assert {"turn_id", "status", "superseded_by_message_id", "updated_at"} <= {
+            row[1] for row in connection.execute("PRAGMA table_info(messages)")
+        }
+        assert connection.execute("SELECT version_num FROM alembic_version").fetchone()[0] == applied.head_revision
+        assert connection.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 1
 
 
 @pytest.mark.parametrize(

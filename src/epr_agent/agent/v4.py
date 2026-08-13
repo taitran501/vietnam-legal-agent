@@ -11,13 +11,19 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import uuid4
 
 from epr_agent.agent.graph import create_initial_state, run_workflow
-from epr_agent.agent.runtime import WorkflowRuntime, _documents_for_api, _metadata, split_verified_answer_for_stream
+from epr_agent.agent.runtime import (
+    WorkflowRuntime,
+    _documents_for_api,
+    _metadata,
+    _source_snapshots,
+    split_verified_answer_for_stream,
+)
 from epr_agent.domain.epr_rules import (
     EPR_EFFECTIVE_DATES,
     EPR_RULE_ID,
@@ -221,6 +227,11 @@ class V4WorkflowRuntime(WorkflowRuntime):
         }
         state = await create_initial_state(deps=self.deps, **initial_kwargs)
         state["pipeline_version"] = "pipeline-v4"
+        state["turn_id"] = str(kwargs.get("turn_id") or "")
+        state["user_message_id"] = str(kwargs.get("user_message_id") or "")
+        state["assistant_message_id"] = str(kwargs.get("assistant_message_id") or "")
+        state["target_assistant_message_id"] = kwargs.get("target_assistant_message_id")
+        state["turn_status"] = str(kwargs.get("turn_status") or "pending")
         state["outcome"] = WorkflowOutcome.FAILED.value
         state["result_type"] = ResultType.NONE.value
         state["operation"] = str(kwargs.get("operation") or TurnOperation.MESSAGE.value)
@@ -243,6 +254,110 @@ class V4WorkflowRuntime(WorkflowRuntime):
         state["corpus_as_of_date"] = str(get_settings().corpus_as_of_date or "")
         state["rule_id"] = EPR_RULE_ID
         return state
+
+    async def _begin_durable_turn(
+        self, request_kwargs: dict[str, Any], trace_id: str
+    ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+        """Create the durable placeholder and restore server-owned replay inputs."""
+
+        begin_turn = getattr(self.deps.history, "begin_turn", None)
+        if not callable(begin_turn):
+            return None, request_kwargs
+
+        request_operation = str(request_kwargs.get("operation") or TurnOperation.MESSAGE.value)
+        turn_id = str(request_kwargs.get("turn_id") or trace_id or uuid4())
+        replay_metadata = {
+            "query_mode": str(request_kwargs.get("mode") or "auto"),
+            "intent": str(request_kwargs.get("intent_hint") or "auto"),
+            "operation": request_operation,
+            "interaction_source": str(
+                request_kwargs.get("interaction_source") or InteractionSource.COMPOSER.value
+            ),
+            "case_patch": dict(request_kwargs.get("case_patch") or {}),
+            "fact_updates": dict(request_kwargs.get("fact_updates") or {}),
+        }
+        replay_metadata.update(dict(request_kwargs.get("replay_metadata") or {}))
+        target_message_id = request_kwargs.get("target_assistant_message_id")
+        handle = await begin_turn(
+            str(request_kwargs["user_id"]),
+            str(request_kwargs["conversation_id"]),
+            turn_id,
+            str(request_kwargs.get("query") or ""),
+            mode=str(request_kwargs.get("mode") or "auto"),
+            operation=request_operation,
+            replay_metadata=replay_metadata,
+            target_assistant_message_id=int(target_message_id) if target_message_id is not None else None,
+        )
+
+        effective = dict(request_kwargs)
+        descriptor = dict(handle.get("replay_metadata") or replay_metadata)
+        if target_message_id is not None:
+            # The persisted assistant message owns replay classification.  A
+            # client may identify the target, but cannot silently change the
+            # prior mode, intent, operation, facts, or interaction source.
+            effective.update(
+                query=str(handle.get("query") or ""),
+                mode=str(descriptor.get("query_mode") or "auto"),
+                operation=str(descriptor.get("operation") or TurnOperation.MESSAGE.value),
+                intent_hint=str(descriptor.get("intent") or "auto"),
+                interaction_source=str(
+                    descriptor.get("interaction_source") or InteractionSource.COMPOSER.value
+                ),
+                case_patch=dict(descriptor.get("case_patch") or {}),
+                fact_updates=dict(descriptor.get("fact_updates") or {}),
+            )
+            descriptor["replay_mode"] = request_operation
+            descriptor["target_assistant_message_id"] = int(target_message_id)
+        effective.update(
+            turn_id=turn_id,
+            user_message_id=handle.get("user_message_id"),
+            assistant_message_id=handle.get("assistant_message_id"),
+            target_assistant_message_id=target_message_id,
+            turn_status=str(handle.get("status") or "pending"),
+            replay_metadata=descriptor,
+        )
+        return handle, effective
+
+    async def _turn_cancelled(self, state_or_kwargs: Mapping[str, Any]) -> bool:
+        checker = getattr(self.deps.history, "is_turn_cancelled", None)
+        turn_id = str(state_or_kwargs.get("turn_id") or "")
+        if not turn_id or not callable(checker):
+            return False
+        return bool(
+            await checker(
+                str(state_or_kwargs["user_id"]),
+                str(state_or_kwargs["conversation_id"]),
+                turn_id,
+            )
+        )
+
+    async def _finish_interrupted_turn(
+        self,
+        state_or_kwargs: Mapping[str, Any],
+        *,
+        content: str,
+        status: str,
+        error_code: str | None = None,
+    ) -> dict[str, Any] | None:
+        finish_turn = getattr(self.deps.history, "finish_turn", None)
+        turn_id = str(state_or_kwargs.get("turn_id") or "")
+        if not turn_id or not callable(finish_turn):
+            return None
+        metadata = {
+            "turn_status": status,
+            "trace_id": str(state_or_kwargs.get("trace_id") or ""),
+            "pipeline_version": "pipeline-v4",
+            "replay_metadata": dict(state_or_kwargs.get("replay_metadata") or {}),
+        }
+        return await finish_turn(
+            str(state_or_kwargs["user_id"]),
+            str(state_or_kwargs["conversation_id"]),
+            turn_id,
+            content=content,
+            metadata=metadata,
+            status=status,
+            error_code=error_code,
+        )
 
     async def _execute_case(self, state: AgentState) -> AgentState:
         """Run the closed V4 assessment/checklist path with no free planner."""
@@ -638,6 +753,11 @@ class V4WorkflowRuntime(WorkflowRuntime):
         delegated["case_patch"] = dict(state.get("case_patch") or {})
         delegated["fact_updates"] = dict(state.get("fact_updates") or {})
         delegated["replay_metadata"] = dict(state.get("replay_metadata") or {})
+        delegated["turn_id"] = state.get("turn_id", "")
+        delegated["user_message_id"] = state.get("user_message_id", "")
+        delegated["assistant_message_id"] = state.get("assistant_message_id", "")
+        delegated["target_assistant_message_id"] = state.get("target_assistant_message_id")
+        delegated["turn_status"] = state.get("turn_status", "pending")
         delegated["corpus_as_of_date"] = state.get("corpus_as_of_date", "")
         delegated["rule_id"] = state.get("rule_id", EPR_RULE_ID)
         delegated["pipeline_version"] = "pipeline-v4"
@@ -649,7 +769,9 @@ class V4WorkflowRuntime(WorkflowRuntime):
 
     async def run(self, **kwargs: Any) -> AgentState:
         started = time.perf_counter()
-        state = await self._execute(**kwargs)
+        trace_id = str(kwargs.get("trace_id") or uuid4())
+        _, request_kwargs = await self._begin_durable_turn({**kwargs, "trace_id": trace_id}, trace_id)
+        state = await self._execute(**request_kwargs)
         state["run_started_at"] = state.get("run_started_at") or datetime.now(UTC).isoformat()
         state["run_ended_at"] = datetime.now(UTC).isoformat()
         state["run_duration_ms"] = round((time.perf_counter() - started) * 1000, 2)
@@ -662,6 +784,28 @@ class V4WorkflowRuntime(WorkflowRuntime):
         user_id = state["user_id"]
         conversation_id = state["conversation_id"]
         try:
+            state["sources"] = _source_snapshots(state)
+            finish_turn = getattr(self.deps.history, "finish_turn", None)
+            durable_turn = bool(state.get("turn_id")) and callable(finish_turn)
+            if durable_turn:
+                assert callable(finish_turn)
+                final = await finish_turn(
+                    user_id,
+                    conversation_id,
+                    state["turn_id"],
+                    content=state.get("answer", ""),
+                    metadata=_metadata_v4(state),
+                    status="complete",
+                    error_code=None,
+                )
+                if final is None:
+                    raise PermissionError("durable turn is not owned by current user")
+                state["turn_status"] = str(final.get("status") or "failed")
+                state["assistant_message_id"] = str(final.get("assistant_message_id") or "")
+                if state["turn_status"] != "complete":
+                    state["cache_status"] = "not_cacheable"
+                    return
+
             active_case = state.get("active_case")
             outcome = state.get("outcome")
             if active_case and outcome in {
@@ -679,23 +823,25 @@ class V4WorkflowRuntime(WorkflowRuntime):
                 await self.deps.history.clear_case(user_id, conversation_id)
                 state["case_state"] = {**dict(active_case), "status": "completed", "missing_facts": []}
 
-            assistant_message_id = await self.deps.history.save_exchange(
-                user_id, conversation_id, state.get("query", ""), state.get("answer", ""), _metadata_v4(state)
-            )
-            if assistant_message_id is not None:
-                state["assistant_message_id"] = str(assistant_message_id)
+            if not durable_turn:
+                assistant_message_id = await self.deps.history.save_exchange(
+                    user_id, conversation_id, state.get("query", ""), state.get("answer", ""), _metadata_v4(state)
+                )
+                if assistant_message_id is not None:
+                    state["assistant_message_id"] = str(assistant_message_id)
             state["cache_status"] = "not_cacheable"
         finally:
             await self.deps.history.record_run(state, started_at, time.perf_counter())
 
     async def stream(self, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
         started = time.perf_counter()
-        # SSE consumers need one stable envelope from the first event onward.
-        # The trace id is allocated before execution so status/error events can
-        # be correlated even when a later workflow node fails.
         trace_id = str(kwargs.get("trace_id") or uuid4())
         request_kwargs = {**kwargs, "trace_id": trace_id}
         sequence = 0
+        durable_handle: dict[str, Any] | None = None
+        durable_finalized = False
+        partial_answer = ""
+        state: AgentState | None = None
 
         def emit(payload: dict[str, Any]) -> dict[str, Any]:
             nonlocal sequence
@@ -707,66 +853,209 @@ class V4WorkflowRuntime(WorkflowRuntime):
                 "sequence": sequence,
             }
 
-        yield emit({"type": "status", "message": "Đang hiểu yêu cầu…", "stage": "understand"})
-        # Emit the first real phase before the bounded workflow starts.  This
-        # keeps the UI responsive while the route/fact extraction work is
-        # running, without inventing artificial delays or fake retrieval.
-        yield emit({
-            "type": "workflow_step",
-            "step": 1,
-            "action": Action.UNDERSTAND_TASK.value,
-            "label": "Hiểu yêu cầu",
-            "status": "running",
-        })
+        async def finish_stopped(payload: Mapping[str, Any], code: str) -> dict[str, Any] | None:
+            nonlocal durable_finalized
+            final = await self._finish_interrupted_turn(
+                payload, content=partial_answer, status="stopped", error_code=code
+            )
+            durable_finalized = bool(durable_handle)
+            return final
+
         try:
-            state = await self._execute(**request_kwargs)
+            try:
+                durable_handle, request_kwargs = await self._begin_durable_turn(request_kwargs, trace_id)
+            except (PermissionError, ValueError) as exc:
+                logger.info("Turn request rejected: %s", exc, extra={"trace_id": trace_id})
+                yield emit({
+                    "type": "error",
+                    "code": "invalid_replay_target"
+                    if request_kwargs.get("target_assistant_message_id")
+                    else "turn_conflict",
+                    "message": "Không thể dùng lại lượt trả lời này. Hãy tải lại cuộc trò chuyện rồi thử lại.",
+                    "retryable": False,
+                    "retry_after_seconds": None,
+                })
+                return
+
+            yield emit({
+                "type": "status",
+                "message": "Đã tiếp nhận yêu cầu. Đang hiểu nội dung…",
+                "stage": "turn_started",
+                "turn_id": request_kwargs.get("turn_id", ""),
+                "user_message_id": request_kwargs.get("user_message_id"),
+                "assistant_message_id": request_kwargs.get("assistant_message_id"),
+                "turn_status": request_kwargs.get("turn_status", "pending"),
+            })
+            yield emit({
+                "type": "workflow_step",
+                "step": 1,
+                "action": Action.UNDERSTAND_TASK.value,
+                "label": "Hiểu yêu cầu",
+                "status": "running",
+            })
+
+            try:
+                state = await self._execute(**request_kwargs)
+            except Exception:
+                logger.exception("V4 workflow execution failed", extra={"trace_id": trace_id})
+                await self._finish_interrupted_turn(
+                    request_kwargs,
+                    content=partial_answer,
+                    status="failed",
+                    error_code="v4_execution_failed",
+                )
+                durable_finalized = bool(durable_handle)
+                yield emit({
+                    "type": "error",
+                    "code": "v4_execution_failed",
+                    "message": "Không thể hoàn tất workflow. Bạn có thể thử lại.",
+                    "retryable": True,
+                    "retry_after_seconds": 2,
+                })
+                return
+
+            state["run_ended_at"] = datetime.now(UTC).isoformat()
+            state["run_duration_ms"] = round((time.perf_counter() - started) * 1000, 2)
+            trace_id = str(state.get("trace_id") or trace_id)
+            seen: set[str] = set()
+            step = 0
+            for action in state.get("action_sequence", []):
+                phase, label = _PHASES.get(action, ("check_evidence", "Kiểm tra căn cứ"))
+                if phase in seen:
+                    continue
+                seen.add(phase)
+                step += 1
+                if phase == "collect_information" and state.get("missing_facts"):
+                    label = f"{label} · còn thiếu {len(state['missing_facts'])} thông tin"
+                yield emit({
+                    "type": "workflow_step",
+                    "step": step,
+                    "action": phase,
+                    "label": label,
+                    "status": "completed",
+                })
+            if state.get("outcome") == WorkflowOutcome.NEEDS_INFORMATION.value:
+                yield emit({
+                    "type": "input_required",
+                    "question": state.get("answer", ""),
+                    "missing_facts": state.get("missing_facts", []),
+                    "case_state": state.get("case_state"),
+                })
+            if state.get("case_state"):
+                yield emit({"type": "case_update", "case_state": state["case_state"]})
+
+            answer = state.get("answer", "")
+            chunks = split_verified_answer_for_stream(answer, max_chunk_chars=self.answer_chunk_size)
+            last_flushed_length = 0
+            for index, chunk in enumerate(chunks, start=1):
+                if await self._turn_cancelled(state):
+                    final = await finish_stopped(state, "user_cancelled")
+                    yield emit({
+                        "type": "response_stopped",
+                        "text": partial_answer,
+                        "stage": "stopped",
+                        "turn_id": state.get("turn_id", ""),
+                        "assistant_message_id": (final or {}).get("assistant_message_id")
+                        or state.get("assistant_message_id", ""),
+                        "turn_status": "stopped",
+                    })
+                    return
+                partial_answer += chunk
+                yield emit({
+                    "type": "response_chunk",
+                    "chunk": chunk,
+                    "chunk_index": index,
+                    "chunk_count": len(chunks),
+                    "stage": "streaming",
+                })
+                update_turn = getattr(self.deps.history, "update_turn_content", None)
+                if callable(update_turn) and state.get("turn_id") and (
+                    len(partial_answer) - last_flushed_length >= 480 or index == len(chunks)
+                ):
+                    await update_turn(
+                        state["user_id"], state["conversation_id"], state["turn_id"], partial_answer
+                    )
+                    last_flushed_length = len(partial_answer)
+                if self.answer_chunk_delay_s:
+                    await asyncio.sleep(self.answer_chunk_delay_s)
+
+            if await self._turn_cancelled(state):
+                final = await finish_stopped(state, "user_cancelled")
+                yield emit({
+                    "type": "response_stopped",
+                    "text": partial_answer,
+                    "stage": "stopped",
+                    "turn_id": state.get("turn_id", ""),
+                    "assistant_message_id": (final or {}).get("assistant_message_id")
+                    or state.get("assistant_message_id", ""),
+                    "turn_status": "stopped",
+                })
+                return
+
+            try:
+                await self._persist(state, started_at=started)
+            except Exception:
+                logger.exception("V4 workflow persistence failed", extra={"trace_id": trace_id})
+                await self._finish_interrupted_turn(
+                    state,
+                    content=partial_answer,
+                    status="failed",
+                    error_code="v4_persistence_failed",
+                )
+                durable_finalized = bool(durable_handle)
+                yield emit({
+                    "type": "error",
+                    "code": "v4_persistence_failed",
+                    "message": "Câu trả lời đã được tạo nhưng chưa lưu được vào lịch sử. Bạn có thể thử lại.",
+                    "retryable": True,
+                    "retry_after_seconds": 2,
+                })
+                return
+            durable_finalized = bool(durable_handle)
+            if state.get("turn_status") == "stopped":
+                yield emit({
+                    "type": "response_stopped",
+                    "text": partial_answer,
+                    "stage": "stopped",
+                    "turn_id": state.get("turn_id", ""),
+                    "assistant_message_id": state.get("assistant_message_id", ""),
+                    "turn_status": "stopped",
+                })
+                return
+            yield emit({
+                "type": "response_complete",
+                "text": answer,
+                "documents": _documents_for_api(state),
+                "source": state.get("source", "error"),
+                "stage": "complete",
+                "turn_id": state.get("turn_id", ""),
+                "turn_status": "complete",
+                **_metadata_v4(state),
+            })
         except asyncio.CancelledError:
+            if durable_handle and not durable_finalized:
+                await finish_stopped(state or request_kwargs, "client_disconnected")
             raise
         except Exception:
-            logger.exception("V4 workflow execution failed", extra={"trace_id": trace_id})
+            logger.exception("V4 stream failed", extra={"trace_id": trace_id})
+            if durable_handle and not durable_finalized:
+                await self._finish_interrupted_turn(
+                    state or request_kwargs,
+                    content=partial_answer,
+                    status="failed",
+                    error_code="stream_incomplete",
+                )
+                durable_finalized = True
             yield emit({
                 "type": "error",
-                "code": "v4_execution_failed",
-                "message": "Không thể hoàn tất workflow. Bạn có thể thử lại.",
+                "code": "stream_incomplete",
+                "message": "Luồng trả lời bị gián đoạn. Phần đã hiển thị được giữ lại trong lịch sử.",
                 "retryable": True,
                 "retry_after_seconds": 2,
             })
-            return
-        state["run_ended_at"] = datetime.now(UTC).isoformat()
-        state["run_duration_ms"] = round((time.perf_counter() - started) * 1000, 2)
-        try:
-            await self._persist(state, started_at=started)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("V4 workflow persistence failed", extra={"trace_id": trace_id})
-            yield emit({
-                "type": "error",
-                "code": "v4_persistence_failed",
-                "message": "Câu trả lời đã được tạo nhưng chưa lưu được vào lịch sử. Bạn có thể thử lại.",
-                "retryable": True,
-                "retry_after_seconds": 2,
-            })
-            return
-        trace_id = str(state.get("trace_id") or trace_id)
-        seen: set[str] = set()
-        step = 0
-        for action in state.get("action_sequence", []):
-            phase, label = _PHASES.get(action, ("check_evidence", "Kiểm tra căn cứ"))
-            if phase in seen:
-                continue
-            seen.add(phase)
-            step += 1
-            if phase == "collect_information" and state.get("missing_facts"):
-                label = f"{label} · còn thiếu {len(state['missing_facts'])} thông tin"
-            yield emit({"type": "workflow_step", "step": step, "action": phase, "label": label, "status": "completed"})
-        if state.get("outcome") == WorkflowOutcome.NEEDS_INFORMATION.value:
-            yield emit({"type": "input_required", "question": state.get("answer", ""), "missing_facts": state.get("missing_facts", []), "case_state": state.get("case_state")})
-        if state.get("case_state"):
-            yield emit({"type": "case_update", "case_state": state["case_state"]})
-        answer = state.get("answer", "")
-        for index, chunk in enumerate(split_verified_answer_for_stream(answer, max_chunk_chars=self.answer_chunk_size), start=1):
-            yield emit({"type": "response_chunk", "chunk": chunk, "chunk_index": index, "stage": "streaming"})
-            if self.answer_chunk_delay_s:
-                await asyncio.sleep(self.answer_chunk_delay_s)
-        yield emit({"type": "response_complete", "text": answer, "documents": _documents_for_api(state), "source": state.get("source", "error"), "stage": "complete", **_metadata_v4(state)})
+        finally:
+            if durable_handle and not durable_finalized:
+                try:
+                    await finish_stopped(state or request_kwargs, "client_disconnected")
+                except Exception:
+                    logger.exception("Failed to finalize interrupted turn", extra={"trace_id": trace_id})
