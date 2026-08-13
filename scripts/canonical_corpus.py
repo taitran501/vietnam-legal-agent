@@ -67,8 +67,21 @@ class CorpusAudit:
         }
 
 
+_TEXT_HASH_SUFFIXES = frozenset({".json", ".jsonl", ".txt", ".md", ".csv"})
+
+
 def sha256_file(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    """Hash a source deterministically across Windows and POSIX checkouts.
+
+    Git may materialize checked-in text as CRLF on Windows and LF on Linux.
+    Corpus identity must represent the logical source, not the checkout's
+    newline convention, while signed PDFs/DOC files must remain byte-exact.
+    """
+
+    payload = path.read_bytes()
+    if path.suffix.lower() in _TEXT_HASH_SUFFIXES:
+        payload = payload.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def load_amendment_map(path: Path | None = None) -> dict[str, Any]:

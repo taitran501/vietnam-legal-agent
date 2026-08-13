@@ -3,7 +3,7 @@
   "rule_id": "epr-article-77-current-law-v3",
   "corpus_id": "epr",
   "corpus_version": "epr-law-structure-v4-amendment-chain",
-  "corpus_sha256": "1f9ce661c52bf5aaa2413d980578aea232c8a486d66a7c41ebed72054a92f6d6",
+  "corpus_sha256": "1e8635ee2f739a96d5bc079f3f607cacc0a485472048dd7af47cf15c02a6b897",
   "legal_review_status": "pending",
   "source_resolution": {
     "status": "manual_operation_map_complete_pending_legal_review",

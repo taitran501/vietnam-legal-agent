@@ -7,6 +7,7 @@ from scripts.canonical_corpus import (
     canonical_chunks,
     corpus_sha256,
     explicit_anchors,
+    sha256_file,
 )
 
 
@@ -39,6 +40,15 @@ def test_corpus_hash_and_multi_article_parser_are_stable():
     assert [item.article for item in anchors] == ["Điều 77", "Điều 78"]
     assert anchors[0].clause == "Khoản 2"
     assert anchors[0].point == "Điểm a"
+
+
+def test_text_source_hash_is_stable_across_checkout_line_endings(tmp_path):
+    lf = tmp_path / "law.json"
+    crlf = tmp_path / "law-copy.json"
+    lf.write_text('{"article": "Điều 77"}\n{"article": "Điều 78"}\n', encoding="utf-8", newline="")
+    crlf.write_bytes('{"article": "Điều 77"}\r\n{"article": "Điều 78"}\r\n'.encode())
+
+    assert sha256_file(lf) == sha256_file(crlf)
 
 
 def test_operation_level_amendment_map_keeps_substantive_and_targeted_sources_separate():
