@@ -11,6 +11,7 @@ self-declared legally approved; preview labels are therefore expected.
 - Frontend: Vite at `http://127.0.0.1:4175/`
 - Deterministic API: `tests.e2e_backend:app` at `http://127.0.0.1:8010/`
 - Corpus hash: `1f9ce661c52bf5aaa2413d980578aea232c8a486d66a7c41ebed72054a92f6d6`
+- Implementation commit validated: `e7dfea289323fbdff8ace7d93e0488fabd6d11ca`
 - Runtime mode: `preview`
 
 ## Direct browser journey
@@ -32,20 +33,22 @@ The in-app Browser completed the following actions against the running app:
 
 ## Automated evidence
 
-The targeted browser suite passed after the durable turn and source changes:
+The complete browser suite passed on the implementation commit above:
 
 ```text
-5 passed
-  production corpus block leaves history usable
-  stop an in-progress turn and reload durable partial state
-  accepted official-web source is labelled and linkable
-  durable feedback is restored after reload
-  unknown explicit article produces a missing-provision safe stop
+19 passed
+  desktop, tablet, and mobile layouts
+  direct URL, root reset, browser back, and session retry
+  stop/reload durability, feedback reload, and regeneration rollback
+  case task-type save and checklist continuation
+  production corpus block and owned history
+  accepted official-web source and unknown explicit article safe-stop
 ```
 
-The full PR3 frontend suite also passed before this release branch: 15
-Playwright tests, 23 Vitest tests, and the production build. The release gate
-must rerun the complete Playwright suite on the exact merged commit.
+Vitest passed `23/23`, the production build passed, and deterministic route
+evaluation passed `60/60`. The full Python gate passed `383 passed, 3 skipped`.
+The browser suite used the deterministic local backend; live service gates
+remain listed below.
 
 ## Required external gates
 
