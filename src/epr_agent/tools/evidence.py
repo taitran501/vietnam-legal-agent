@@ -65,7 +65,12 @@ class EvidenceEvaluator:
     def _has_source_metadata(document: DocumentRecord) -> bool:
         metadata = document.metadata or {}
         if document.source == "web":
-            return bool(document.content.strip() and metadata.get("title") and metadata.get("url"))
+            return bool(
+                document.content.strip()
+                and metadata.get("title")
+                and (metadata.get("official_url") or metadata.get("url"))
+                and metadata.get("authority") == "official"
+            )
         has_anchor = bool(metadata.get("legal_anchor") or metadata.get("Dieu") or metadata.get("Điều") or metadata.get("Parent_Dieu"))
         has_primary_source = bool(metadata.get("source_file") or metadata.get("source_uri"))
         has_provenance = bool(
@@ -306,4 +311,9 @@ def verify_web_citations(answer: str, documents: list[DocumentRecord]) -> tuple[
 
 def _has_web_source(document: DocumentRecord) -> bool:
     metadata = document.metadata or {}
-    return bool(document.content.strip() and metadata.get("title") and metadata.get("url"))
+    return bool(
+        document.content.strip()
+        and metadata.get("title")
+        and (metadata.get("official_url") or metadata.get("url"))
+        and metadata.get("authority") == "official"
+    )

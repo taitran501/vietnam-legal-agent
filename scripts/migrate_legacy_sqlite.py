@@ -14,6 +14,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+import time
 from contextlib import closing
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -43,7 +44,13 @@ class MigrationReport:
 
     @property
     def safe_to_apply(self) -> bool:
-        return self.schema in {"legacy", "hybrid", "current_unversioned", "current"} and not self.issues
+        return self.schema in {
+            "legacy",
+            "hybrid",
+            "previous_current",
+            "current_unversioned",
+            "current",
+        } and not self.issues
 
 
 def _head_revision() -> str:
@@ -77,12 +84,27 @@ def _schema_kind(connection: sqlite3.Connection) -> str:
         or messages.get("created_at") in {"REAL", "FLOAT", "NUMERIC"}
     )
     current = all(table in tables and expected <= set(_columns(connection, table)) for table, expected in _EXPECTED_SCHEMA_COLUMNS.items())
+    previous_expected = {
+        table: (
+            expected - {"turn_id", "status", "superseded_by_message_id", "updated_at"}
+            if table == "messages"
+            else expected
+        )
+        for table, expected in _EXPECTED_SCHEMA_COLUMNS.items()
+        if table != "conversation_turns"
+    }
+    previous_current = all(
+        table in tables and expected <= set(_columns(connection, table))
+        for table, expected in previous_expected.items()
+    )
     if legacy and current:
         return "hybrid"
     if legacy:
         return "legacy"
     if current:
         return "current" if "alembic_version" in tables else "current_unversioned"
+    if previous_current:
+        return "previous_current"
     return "unknown"
 
 
@@ -135,6 +157,7 @@ def _audit(connection: sqlite3.Connection, report: MigrationReport) -> None:
 
     orphan_checks = {
         "messages": "SELECT COUNT(*) FROM messages m LEFT JOIN conversations c ON c.id=m.conversation_id WHERE c.id IS NULL",
+        "conversation_turns": "SELECT COUNT(*) FROM conversation_turns t LEFT JOIN conversations c ON c.id=t.conversation_id WHERE c.id IS NULL",
         "conversation_summaries": "SELECT COUNT(*) FROM conversation_summaries s LEFT JOIN conversations c ON c.id=s.conversation_id WHERE c.id IS NULL",
         "case_states": "SELECT COUNT(*) FROM case_states s LEFT JOIN conversations c ON c.id=s.conversation_id WHERE c.id IS NULL",
         "agent_runs": "SELECT COUNT(*) FROM agent_runs r LEFT JOIN conversations c ON c.id=r.conversation_id WHERE c.id IS NULL",
@@ -187,8 +210,23 @@ def _mapped_rows(source: sqlite3.Connection) -> dict[str, list[dict[str, Any]]]:
         mapped["messages"].append({
             "id": row["id"], "conversation_id": row["conversation_id"], "role": row["role"],
             "content": _pick(row, "content", ""), "metadata": _json_text(metadata, {}),
+            "turn_id": row.get("turn_id"), "status": _pick(row, "status", "complete"),
+            "superseded_by_message_id": row.get("superseded_by_message_id"),
             "created_at": _datetime_text(_pick(row, "created_at", now)),
+            "updated_at": _datetime_text(_pick(row, "updated_at", _pick(row, "created_at", now))),
         })
+    mapped["conversation_turns"] = [
+        {
+            "id": row["id"], "conversation_id": row["conversation_id"], "user_id": row["user_id"],
+            "query": _pick(row, "query", ""), "mode": _pick(row, "mode", "auto"),
+            "operation": _pick(row, "operation", "message"), "status": _pick(row, "status", "complete"),
+            "replay_metadata": _json_text(_pick(row, "replay_metadata", {}), {}),
+            "user_message_id": row.get("user_message_id"), "assistant_message_id": row["assistant_message_id"],
+            "target_assistant_message_id": row.get("target_assistant_message_id"), "error_code": row.get("error_code"),
+            "created_at": _datetime_text(_pick(row, "created_at", now)), "updated_at": _datetime_text(_pick(row, "updated_at", now)),
+        }
+        for row in _rows(source, "conversation_turns")
+    ]
     mapped["conversation_summaries"] = [
         {
             "conversation_id": row["conversation_id"],
@@ -281,6 +319,16 @@ def migrate(database: Path, *, apply: bool = False, backup: Path | None = None) 
     report.backup = str(backup_path)
 
     if schema == "current":
+        with closing(sqlite3.connect(database)) as connection:
+            current_revision_row = connection.execute(
+                "SELECT version_num FROM alembic_version LIMIT 1"
+            ).fetchone()
+            current_revision = str(current_revision_row[0]) if current_revision_row else ""
+            if current_revision != head:
+                connection.execute("DELETE FROM alembic_version")
+                connection.execute("INSERT INTO alembic_version(version_num) VALUES (?)", (head,))
+                connection.commit()
+                report.changed = True
         return report
     if schema == "current_unversioned":
         with closing(sqlite3.connect(database)) as connection:
@@ -307,7 +355,7 @@ def migrate(database: Path, *, apply: bool = False, backup: Path | None = None) 
             target.execute("PRAGMA foreign_keys=OFF")
             mapped = _mapped_rows(source)
             for table in (
-                "users", "conversations", "messages", "conversation_summaries", "case_states",
+                "users", "conversations", "messages", "conversation_turns", "conversation_summaries", "case_states",
                 "agent_runs", "agent_run_events", "message_feedback",
             ):
                 _insert_rows(target, table, mapped[table])
@@ -323,7 +371,15 @@ def migrate(database: Path, *, apply: bool = False, backup: Path | None = None) 
                 if report.target_counts[table] != count:
                     raise RuntimeError(f"row_count_mismatch:{table}:{count}:{report.target_counts[table]}")
         gc.collect()
-        os.replace(temp_path, database)
+        for attempt in range(5):
+            try:
+                os.replace(temp_path, database)
+                break
+            except PermissionError:
+                if attempt == 4:
+                    raise
+                gc.collect()
+                time.sleep(0.05 * (attempt + 1))
         for suffix in ("-wal", "-shm", "-journal"):
             database.with_name(database.name + suffix).unlink(missing_ok=True)
         report.changed = True

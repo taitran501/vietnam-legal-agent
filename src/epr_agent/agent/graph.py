@@ -590,10 +590,17 @@ def build_workflow(deps: WorkflowDependencies):
 
     async def safe_stop(state: AgentState) -> AgentState:
         append_action(state, Action.SAFE_STOP)
-        reason = state.get("citation_error")
+        citation_reason = str(state.get("citation_error") or "")
+        evidence_reason = str((state.get("evidence_assessment") or {}).get("reason") or "")
+        reason = citation_reason if citation_reason and citation_reason != "ok" else evidence_reason
+        if state.get("route") == RouteType.RESEARCH_WEB.value and not state.get("evidence"):
+            reason = "official_web_source_not_found"
         if state.get("termination_reason") == TerminationReason.INVALID_INPUT.value:
             state["answer"] = "Câu hỏi cần có nội dung và không vượt quá 3.000 ký tự. Bạn hãy gửi lại câu hỏi ngắn gọn hơn."
-        elif reason:
+        elif reason == "official_web_source_not_found":
+            state["answer"] = "Tôi chưa tìm thấy nguồn chính thức ngoài corpus khớp với điều hoặc văn bản bạn yêu cầu."
+            state["termination_reason"] = TerminationReason.INSUFFICIENT_EVIDENCE.value
+        elif citation_reason and citation_reason != "ok":
             state["answer"] = "Tôi chưa thể xác minh đầy đủ câu trả lời từ tài liệu đã truy xuất."
             state["termination_reason"] = TerminationReason.CITATION_VERIFICATION_FAILED.value
         elif not state.get("is_epr_scope"):
@@ -604,7 +611,11 @@ def build_workflow(deps: WorkflowDependencies):
             state["termination_reason"] = TerminationReason.INSUFFICIENT_EVIDENCE.value
         state["source"] = "error"
         state["evidence_status"] = "insufficient"
-        if state.get("is_epr_scope") and not reason:
+        if (
+            state.get("is_epr_scope")
+            and not citation_reason
+            and state.get("route") != RouteType.RESEARCH_WEB.value
+        ):
             state["available_actions"] = [RouteType.RESEARCH_WEB.value]
         state["safe_stop_reason"] = {
             "no_evidence": "missing_provision",
@@ -614,12 +625,17 @@ def build_workflow(deps: WorkflowDependencies):
             "explicit_article_not_found": "missing_provision",
             "explicit_anchor_not_found": "missing_provision",
             "relevance_check_failed": "missing_provision",
+            "official_web_source_not_found": "missing_provision",
             "claim_support_verifier_unavailable": "unavailable_dependencies",
             "answer_has_no_citation": "failed_citation_verification",
             "citation_out_of_range": "failed_citation_verification",
             "legal_claim_without_citation": "failed_citation_verification",
             "article_reference_not_in_evidence": "failed_citation_verification",
         }.get(str(reason or ""), state.get("termination_reason", ""))
+        # Retrieval candidates remain in trace_events for audit, but rejected
+        # candidates are not user-facing sources and cannot support a safe stop.
+        state["evidence"] = []
+        state["citations"] = []
         _trace(state, reason_code=state["termination_reason"], payload={"citation_error": reason or ""})
         return state
 
@@ -649,7 +665,13 @@ def build_workflow(deps: WorkflowDependencies):
         return "safe_stop"
 
     def route_after_web(state: AgentState) -> str:
-        return "compose" if state.get("evidence") and state.get("web_answer") else "safe_stop"
+        return (
+            "compose"
+            if state.get("evidence")
+            and state.get("web_answer")
+            and bool((state.get("evidence_assessment") or {}).get("sufficient"))
+            else "safe_stop"
+        )
 
     def route_after_verify(state: AgentState) -> str:
         if not planner.within_iteration_budget(state):

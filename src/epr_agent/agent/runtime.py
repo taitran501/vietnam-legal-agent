@@ -80,22 +80,27 @@ def _documents_for_api(state: AgentState) -> list[dict[str, Any]]:
         "document_id", "Document_Id", "Document_Number", "source_title", "Source_Title", "title",
         "instrument_number", "anchor", "legal_anchor", "Dieu", "Chuong", "Khoan", "Diem",
         "Pages", "page", "page_start", "page_end", "Source_Start", "Source_End", "offset_start", "offset_end",
-        "source_uri", "Source_URI", "official_url", "effective_status", "Effective_Status", "amendment_relationship", "Amendment_Relationship",
+        "source_uri", "Source_URI", "official_url", "url", "authority", "source_kind", "effective_status", "Effective_Status", "amendment_relationship", "Amendment_Relationship",
         "Effective_From", "Effective_To", "effective_from", "effective_to", "Source_SHA256", "chunk_id",
         "Corpus_Version", "Corpus_SHA256", "corpus_as_of_date", "rule_id", "source_file", "Source_File",
         "Active_Source_Document_Id", "Active_Source_Pages", "Amendment_Resolution_Status", "Amendment_Operations", "Current_Law_Support",
     }
     documents: list[dict[str, Any]] = []
-    for item in state.get("evidence", []):
+    used_indices = {int(value) for value in re.findall(r"\[(\d+)\]", state.get("answer", ""))}
+    for citation_index, item in enumerate(state.get("evidence", []), start=1):
+        if used_indices and citation_index not in used_indices:
+            continue
         metadata = dict(item.get("metadata") or {})
         safe_metadata = {key: metadata[key] for key in allowed_metadata if key in metadata}
         safe_metadata.setdefault("document_id", item.get("document_id", ""))
+        safe_metadata["citation_index"] = citation_index
         if state.get("corpus_as_of_date"):
             safe_metadata.setdefault("corpus_as_of_date", state.get("corpus_as_of_date"))
-        safe_metadata["excerpt"] = str(item.get("content", ""))[:2000]
+        excerpt_limit = 1200 if item.get("source") == "web" else 2000
+        safe_metadata["excerpt"] = str(item.get("content", ""))[:excerpt_limit]
         documents.append(
             {
-                "page_content": str(item.get("content", "")),
+                "page_content": str(item.get("content", ""))[:excerpt_limit],
                 "metadata": safe_metadata,
                 "document_id": item.get("document_id", ""),
                 "score": item.get("score"),
@@ -106,16 +111,20 @@ def _documents_for_api(state: AgentState) -> list[dict[str, Any]]:
 
 
 def _source_snapshots(state: AgentState) -> list[dict[str, Any]]:
+    used_indices = {int(value) for value in re.findall(r"\[(\d+)\]", state.get("answer", ""))}
     return [
         {
+            "citation_index": citation_index,
             "source_id": str((item.get("metadata") or {}).get("chunk_id") or item.get("document_id") or ""),
-            "title": str((item.get("metadata") or {}).get("Source_Title") or (item.get("metadata") or {}).get("source_title") or item.get("source") or ""),
+            "title": str((item.get("metadata") or {}).get("Source_Title") or (item.get("metadata") or {}).get("source_title") or (item.get("metadata") or {}).get("title") or item.get("source") or ""),
             "instrument_number": str((item.get("metadata") or {}).get("Document_Number") or (item.get("metadata") or {}).get("instrument_number") or ""),
-            "anchor": str((item.get("metadata") or {}).get("legal_anchor") or (item.get("metadata") or {}).get("Dieu") or ""),
+            "anchor": str((item.get("metadata") or {}).get("legal_anchor") or (item.get("metadata") or {}).get("anchor") or (item.get("metadata") or {}).get("Dieu") or ""),
             "page": (item.get("metadata") or {}).get("Pages") or (item.get("metadata") or {}).get("page"),
             "offset_start": (item.get("metadata") or {}).get("Source_Start") or (item.get("metadata") or {}).get("offset_start"),
             "offset_end": (item.get("metadata") or {}).get("Source_End") or (item.get("metadata") or {}).get("offset_end"),
-            "official_url": str((item.get("metadata") or {}).get("official_url") or (item.get("metadata") or {}).get("Source_URI") or (item.get("metadata") or {}).get("source_uri") or ""),
+            "official_url": str((item.get("metadata") or {}).get("official_url") or (item.get("metadata") or {}).get("url") or (item.get("metadata") or {}).get("Source_URI") or (item.get("metadata") or {}).get("source_uri") or ""),
+            "source_kind": str((item.get("metadata") or {}).get("source_kind") or item.get("source") or "legal_corpus"),
+            "authority": str((item.get("metadata") or {}).get("authority") or ("official" if item.get("source") == "legal" else "unknown")),
             "effective_status": str((item.get("metadata") or {}).get("Effective_Status") or (item.get("metadata") or {}).get("effective_status") or "unknown"),
             "effective_from": (item.get("metadata") or {}).get("Effective_From") or (item.get("metadata") or {}).get("effective_from"),
             "effective_to": (item.get("metadata") or {}).get("Effective_To") or (item.get("metadata") or {}).get("effective_to"),
@@ -126,9 +135,10 @@ def _source_snapshots(state: AgentState) -> list[dict[str, Any]]:
             "amendment_operations": (item.get("metadata") or {}).get("Amendment_Operations") or [],
             "current_law_support": bool((item.get("metadata") or {}).get("Current_Law_Support", False)),
             "corpus_as_of_date": str(state.get("corpus_as_of_date") or ""),
-            "excerpt": str(item.get("content") or "")[:2000],
+            "excerpt": str(item.get("content") or "")[:1200 if item.get("source") == "web" else 2000],
         }
-        for item in state.get("evidence", [])
+        for citation_index, item in enumerate(state.get("evidence", []), start=1)
+        if not used_indices or citation_index in used_indices
     ]
 
 
@@ -380,6 +390,8 @@ async def stream_chat(
     case_patch: dict[str, Any] | None = None,
     fact_updates: dict[str, dict[str, Any]] | None = None,
     replay_metadata: dict[str, Any] | None = None,
+    turn_id: str = "",
+    target_assistant_message_id: int | None = None,
     runtime: WorkflowRuntime | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Public SSE event generator used by the compatibility API route."""
@@ -400,6 +412,8 @@ async def stream_chat(
             case_patch=case_patch or {},
             fact_updates=fact_updates or {},
             replay_metadata=replay_metadata or {},
+            turn_id=turn_id,
+            target_assistant_message_id=target_assistant_message_id,
         )
     async for event in selected.stream(**request_kwargs):
         yield event

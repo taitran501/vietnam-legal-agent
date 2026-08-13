@@ -18,6 +18,12 @@ def test_turn_request_keeps_legacy_message_contract_and_allows_continue_case():
     assert continued.case_patch["market_placement"] == "vietnam_market"
     with pytest.raises(ValidationError):
         ChatRequest(query="", operation="message")
+    replay = ChatRequest(operation="regenerate", target_assistant_message_id=42)
+    assert replay.query == ""
+    with pytest.raises(ValidationError):
+        ChatRequest(operation="retry")
+    with pytest.raises(ValidationError):
+        ChatRequest(query="Điều 77", target_assistant_message_id=42)
 
 
 def test_v4_dependency_scope_includes_the_audited_appendix_in_corpus_identity(monkeypatch):

@@ -102,6 +102,11 @@ class Settings(BaseSettings):
 
     # ── Tavily (optional web search) ─────────────────────────────────────────
     tavily_api_key: str | None = Field(default=None)
+    web_official_domains: str = Field(
+        default="vanban.chinhphu.vn,vbpl.vn",
+        description="Comma-separated official domains permitted as web evidence",
+    )
+    web_excerpt_max_chars: int = Field(default=1200, ge=200, le=4000)
 
     # ── Authentication ───────────────────────────────────────────────────────
     api_keys: str = Field(

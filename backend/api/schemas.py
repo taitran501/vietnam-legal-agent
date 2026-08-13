@@ -8,6 +8,18 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+class ChatFactUpdate(BaseModel):
+    """Typed case patch carried through chat and replay metadata."""
+
+    value: str = Field(default="", max_length=240)
+    confirmation_status: Literal["user_confirmed", "document_verified", "unknown"] = "unknown"
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def clean_value(cls, value: object) -> str:
+        return " ".join(str(value or "").split())[:240]
+
+
 class ChatRequest(BaseModel):
     query: str = Field(default="", max_length=3000, description="User's question")
     conversation_id: str = Field(
@@ -17,11 +29,13 @@ class ChatRequest(BaseModel):
         description="Persistent conversation identifier (preferred)",
     )
     session_id: str = Field(default="", min_length=0, max_length=128, description="Session identifier (empty = auto-generated UUID)")
+    turn_id: str = Field(default="", min_length=0, max_length=128)
     mode: Literal["auto", "research_web"] = Field(
         default="auto",
         description="Explicit workflow mode. Web research is never selected automatically.",
     )
-    operation: Literal["message", "continue_case"] = "message"
+    operation: Literal["message", "continue_case", "retry", "regenerate"] = "message"
+    target_assistant_message_id: int | None = Field(default=None, gt=0)
     intent_hint: Literal[
         "auto", "legal_lookup", "legal_explain_compare", "case_assessment", "compliance_checklist"
     ] = "auto"
@@ -35,6 +49,10 @@ class ChatRequest(BaseModel):
         self.query = " ".join(self.query.split())
         if self.operation == "message" and not self.query:
             raise ValueError("query is required when operation=message")
+        if self.operation in {"retry", "regenerate"} and self.target_assistant_message_id is None:
+            raise ValueError("target_assistant_message_id is required for retry/regenerate")
+        if self.operation not in {"retry", "regenerate"} and self.target_assistant_message_id is not None:
+            raise ValueError("target_assistant_message_id is only valid for retry/regenerate")
         self.case_patch = {
             str(key): " ".join(str(value).split())[:240]
             for key, value in self.case_patch.items()
@@ -42,7 +60,7 @@ class ChatRequest(BaseModel):
         }
         return self
 
-    @field_validator("conversation_id", "session_id")
+    @field_validator("conversation_id", "session_id", "turn_id")
     @classmethod
     def validate_identifier(cls, v: str) -> str:
         """
@@ -69,18 +87,6 @@ class ChatRequest(BaseModel):
                 "identifier must contain only letters, numbers, hyphens, or underscores"
             )
         return v
-
-
-class ChatFactUpdate(BaseModel):
-    """Typed case patch carried through chat and replay metadata."""
-
-    value: str = Field(default="", max_length=240)
-    confirmation_status: Literal["user_confirmed", "document_verified", "unknown"] = "unknown"
-
-    @field_validator("value", mode="before")
-    @classmethod
-    def clean_value(cls, value: object) -> str:
-        return " ".join(str(value or "").split())[:240]
 
 
 class HealthResponse(BaseModel):

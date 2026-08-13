@@ -72,7 +72,32 @@ class MessageRecord(Base):
     role: Mapped[str] = mapped_column(String(24), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     message_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict, nullable=False)
+    turn_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="complete", nullable=False)
+    superseded_by_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+
+class ConversationTurnRecord(Base):
+    __tablename__ = "conversation_turns"
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    mode: Mapped[str] = mapped_column(String(32), nullable=False, default="auto")
+    operation: Mapped[str] = mapped_column(String(32), nullable=False, default="message")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    replay_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    user_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    assistant_message_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    target_assistant_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
 
 class FeedbackRecord(Base):
@@ -172,7 +197,14 @@ class AgentRunEventRecord(Base):
 _EXPECTED_SCHEMA_COLUMNS: dict[str, set[str]] = {
     "users": {"id", "created_at"},
     "conversations": {"id", "user_id", "title", "archived", "pinned", "created_at", "updated_at"},
-    "messages": {"id", "conversation_id", "role", "content", "metadata", "created_at"},
+    "messages": {
+        "id", "conversation_id", "role", "content", "metadata", "turn_id", "status",
+        "superseded_by_message_id", "created_at", "updated_at",
+    },
+    "conversation_turns": {
+        "id", "conversation_id", "user_id", "query", "mode", "operation", "status", "replay_metadata",
+        "user_message_id", "assistant_message_id", "target_assistant_message_id", "error_code", "created_at", "updated_at",
+    },
     "conversation_summaries": {"conversation_id", "summary", "updated_at"},
     "case_states": {
         "conversation_id", "user_id", "task_type", "status", "facts", "missing_facts", "last_query",
@@ -373,12 +405,21 @@ class PersistenceStore:
             conversation.updated_at = now
             if conversation.title == "New Conversation" and user_message.strip():
                 conversation.title = self._title(user_message)
-            user_record = MessageRecord(conversation_id=conversation_id, role="user", content=user_message, message_metadata={})
+            user_record = MessageRecord(
+                conversation_id=conversation_id,
+                role="user",
+                content=user_message,
+                message_metadata={},
+                status="complete",
+                updated_at=now,
+            )
             assistant_record = MessageRecord(
                 conversation_id=conversation_id,
                 role="assistant",
                 content=assistant_message,
                 message_metadata=dict(metadata or {}),
+                status="complete",
+                updated_at=now,
             )
             session.add_all([user_record, assistant_record])
             await session.flush()
@@ -389,6 +430,276 @@ class PersistenceStore:
                 existing.summary = summary
                 existing.updated_at = now
             return int(assistant_record.id)
+
+    @staticmethod
+    def _turn_payload(turn: ConversationTurnRecord, assistant: MessageRecord | None = None) -> dict[str, Any]:
+        return {
+            "turn_id": turn.id,
+            "conversation_id": turn.conversation_id,
+            "user_message_id": turn.user_message_id,
+            "assistant_message_id": turn.assistant_message_id,
+            "target_assistant_message_id": turn.target_assistant_message_id,
+            "status": turn.status,
+            "query": turn.query,
+            "mode": turn.mode,
+            "operation": turn.operation,
+            "replay_metadata": dict(turn.replay_metadata or {}),
+            "content": assistant.content if assistant is not None else "",
+            "metadata": dict(assistant.message_metadata or {}) if assistant is not None else {},
+            "error_code": turn.error_code,
+        }
+
+    @staticmethod
+    def _message_payload(message: MessageRecord) -> dict[str, Any]:
+        return {
+            "id": int(message.id),
+            "role": message.role,
+            "content": message.content,
+            "timestamp": message.created_at.isoformat(),
+            "updated_at": message.updated_at.isoformat(),
+            "metadata": dict(message.message_metadata or {}),
+            "turn_id": message.turn_id,
+            "status": message.status,
+            "superseded_by_message_id": message.superseded_by_message_id,
+        }
+
+    async def begin_turn(
+        self,
+        user_id: str,
+        conversation_id: str,
+        turn_id: str,
+        query: str,
+        *,
+        mode: str = "auto",
+        operation: str = "message",
+        replay_metadata: dict[str, Any] | None = None,
+        target_assistant_message_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Create one owned user/assistant turn, or return its idempotent existing handle."""
+
+        await self.ensure_conversation(user_id, conversation_id, query)
+        now = _utcnow()
+        async with self.sessions() as session, session.begin():
+            conversation = await self._owned_conversation(session, user_id, conversation_id)
+            if conversation is None:
+                raise PermissionError("Conversation does not belong to current user")
+            existing = await session.get(ConversationTurnRecord, turn_id)
+            if existing is not None:
+                if existing.user_id != user_id or existing.conversation_id != conversation_id:
+                    raise PermissionError("Turn does not belong to current user")
+                if (
+                    existing.operation != operation
+                    or existing.target_assistant_message_id != target_assistant_message_id
+                    or (target_assistant_message_id is None and (existing.query != query or existing.mode != mode))
+                ):
+                    raise ValueError("turn_id was already used with a different request")
+                assistant = await session.get(MessageRecord, existing.assistant_message_id)
+                return self._turn_payload(existing, assistant)
+
+            user_message_id: int | None = None
+            if target_assistant_message_id is not None:
+                target = await session.get(MessageRecord, target_assistant_message_id)
+                if (
+                    target is None
+                    or target.conversation_id != conversation_id
+                    or target.role != "assistant"
+                    or target.status not in {"complete", "stopped", "failed"}
+                ):
+                    raise ValueError("target assistant message is not available for replay")
+                user_message_id = await session.scalar(
+                    select(MessageRecord.id)
+                    .where(
+                        MessageRecord.conversation_id == conversation_id,
+                        MessageRecord.role == "user",
+                        MessageRecord.id < target_assistant_message_id,
+                    )
+                    .order_by(MessageRecord.id.desc())
+                    .limit(1)
+                )
+                if user_message_id is None:
+                    raise ValueError("target assistant message has no preceding user message")
+                user_message = await session.get(MessageRecord, user_message_id)
+                if user_message is None:
+                    raise ValueError("target assistant message has no preceding user message")
+                query = user_message.content
+                stored_replay = dict((target.message_metadata or {}).get("replay_metadata") or {})
+                if stored_replay:
+                    replay_metadata = stored_replay
+                mode = str((replay_metadata or {}).get("query_mode") or mode)
+            else:
+                user_message = MessageRecord(
+                    conversation_id=conversation_id,
+                    role="user",
+                    content=query,
+                    message_metadata={},
+                    turn_id=turn_id,
+                    status="complete",
+                    created_at=now,
+                    updated_at=now,
+                )
+                session.add(user_message)
+                await session.flush()
+                user_message_id = int(user_message.id)
+
+            assistant_message = MessageRecord(
+                conversation_id=conversation_id,
+                role="assistant",
+                content="",
+                message_metadata={"replay_metadata": dict(replay_metadata or {})},
+                turn_id=turn_id,
+                status="pending",
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(assistant_message)
+            await session.flush()
+            turn = ConversationTurnRecord(
+                id=turn_id,
+                conversation_id=conversation_id,
+                user_id=user_id,
+                query=query,
+                mode=mode,
+                operation=operation,
+                status="pending",
+                replay_metadata=dict(replay_metadata or {}),
+                user_message_id=user_message_id,
+                assistant_message_id=int(assistant_message.id),
+                target_assistant_message_id=target_assistant_message_id,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(turn)
+            conversation.updated_at = now
+            if conversation.title == "New Conversation" and query.strip():
+                conversation.title = self._title(query)
+            await session.flush()
+            return self._turn_payload(turn, assistant_message)
+
+    async def update_turn_content(
+        self,
+        user_id: str,
+        conversation_id: str,
+        turn_id: str,
+        content: str,
+    ) -> bool:
+        """Persist a bounded partial response unless the user already stopped the turn."""
+
+        async with self.sessions() as session, session.begin():
+            turn = await session.get(ConversationTurnRecord, turn_id)
+            if turn is None or turn.user_id != user_id or turn.conversation_id != conversation_id:
+                return False
+            if turn.status not in {"pending", "streaming"}:
+                return False
+            assistant = await session.get(MessageRecord, turn.assistant_message_id)
+            if assistant is None:
+                return False
+            now = _utcnow()
+            turn.status = "streaming"
+            turn.updated_at = now
+            assistant.status = "streaming"
+            assistant.content = content
+            assistant.updated_at = now
+            return True
+
+    async def is_turn_cancelled(self, user_id: str, conversation_id: str, turn_id: str) -> bool:
+        async with self.sessions() as session:
+            turn = await session.get(ConversationTurnRecord, turn_id)
+            return bool(
+                turn is not None
+                and turn.user_id == user_id
+                and turn.conversation_id == conversation_id
+                and turn.status == "stopped"
+            )
+
+    async def cancel_turn(self, user_id: str, conversation_id: str, turn_id: str) -> dict[str, Any] | None:
+        """Idempotently mark an owned non-terminal turn as stopped."""
+
+        async with self.sessions() as session, session.begin():
+            turn = await session.get(ConversationTurnRecord, turn_id)
+            if turn is None or turn.user_id != user_id or turn.conversation_id != conversation_id:
+                return None
+            assistant = await session.get(MessageRecord, turn.assistant_message_id)
+            if turn.status in {"pending", "streaming"}:
+                now = _utcnow()
+                turn.status = "stopped"
+                turn.updated_at = now
+                if assistant is not None:
+                    assistant.status = "stopped"
+                    assistant.updated_at = now
+                    metadata = dict(assistant.message_metadata or {})
+                    metadata["turn_status"] = "stopped"
+                    assistant.message_metadata = metadata
+            return self._turn_payload(turn, assistant)
+
+    async def finish_turn(
+        self,
+        user_id: str,
+        conversation_id: str,
+        turn_id: str,
+        *,
+        content: str,
+        metadata: dict[str, Any] | None = None,
+        status: str = "complete",
+        error_code: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Commit the terminal assistant state without duplicating its user message."""
+
+        if status not in {"complete", "stopped", "failed"}:
+            raise ValueError("terminal turn status must be complete, stopped, or failed")
+        async with self.sessions() as session, session.begin():
+            turn = await session.get(ConversationTurnRecord, turn_id)
+            if turn is None or turn.user_id != user_id or turn.conversation_id != conversation_id:
+                return None
+            assistant = await session.get(MessageRecord, turn.assistant_message_id)
+            conversation = await self._owned_conversation(session, user_id, conversation_id)
+            if assistant is None or conversation is None:
+                return None
+            if turn.status in {"complete", "failed", "superseded"}:
+                return self._turn_payload(turn, assistant)
+            # Cancellation wins over a late completion from another worker.
+            was_cancelled = turn.status == "stopped"
+            final_status = "stopped" if was_cancelled else status
+            now = _utcnow()
+            # A late worker completion must not replace the bounded partial
+            # text that was visible when the user pressed Stop.
+            if not (was_cancelled and status == "complete"):
+                assistant.content = content
+            assistant.status = final_status
+            assistant.updated_at = now
+            assistant_metadata = dict(metadata or assistant.message_metadata or {})
+            assistant_metadata["turn_status"] = final_status
+            if error_code:
+                assistant_metadata["error_code"] = error_code
+            assistant.message_metadata = assistant_metadata
+            turn.status = final_status
+            turn.error_code = error_code
+            turn.updated_at = now
+            conversation.updated_at = now
+
+            if final_status == "complete":
+                if turn.target_assistant_message_id is not None:
+                    previous = await session.get(MessageRecord, turn.target_assistant_message_id)
+                    if previous is not None and previous.conversation_id == conversation_id:
+                        previous.status = "superseded"
+                        previous.superseded_by_message_id = int(assistant.id)
+                        previous.updated_at = now
+                summary_text = "\n".join(
+                    item for item in (
+                        f"user: {' '.join(turn.query.split())[:360]}" if turn.query else "",
+                        f"assistant: {' '.join(content.split())[:360]}" if content else "",
+                    ) if item
+                )
+                summary = await session.get(ConversationSummaryRecord, conversation_id)
+                if summary is None:
+                    session.add(ConversationSummaryRecord(
+                        conversation_id=conversation_id,
+                        summary=summary_text,
+                        updated_at=now,
+                    ))
+                else:
+                    summary.summary = summary_text
+                    summary.updated_at = now
+            return self._turn_payload(turn, assistant)
 
     async def resolve_assistant_message_id(self, user_id: str, conversation_id: str, message_index: int) -> int | None:
         """Resolve the legacy array index only inside the owned conversation."""
@@ -422,7 +733,13 @@ class PersistenceStore:
         async with self.sessions() as session, session.begin():
             conversation = await self._owned_conversation(session, user_id, conversation_id)
             message = await session.get(MessageRecord, message_id)
-            if conversation is None or message is None or message.conversation_id != conversation_id or message.role != "assistant":
+            if (
+                conversation is None
+                or message is None
+                or message.conversation_id != conversation_id
+                or message.role != "assistant"
+                or message.status != "complete"
+            ):
                 return None
             result = await session.execute(
                 select(FeedbackRecord).where(
@@ -480,20 +797,21 @@ class PersistenceStore:
                 return []
             result = await session.execute(
                 select(MessageRecord)
-                .where(MessageRecord.conversation_id == conversation_id)
+                .where(
+                    MessageRecord.conversation_id == conversation_id,
+                    MessageRecord.status == "complete",
+                    MessageRecord.turn_id.is_(None)
+                    | MessageRecord.turn_id.not_in(
+                        select(ConversationTurnRecord.id).where(
+                            ConversationTurnRecord.status.in_({"pending", "streaming"})
+                        )
+                    ),
+                )
                 .order_by(MessageRecord.id.desc())
                 .limit(max(1, max_messages))
             )
             messages = list(reversed(result.scalars().all()))
-        return [
-            {
-                "role": message.role,
-                "content": message.content,
-                "timestamp": message.created_at.isoformat(),
-                "metadata": dict(message.message_metadata or {}),
-            }
-            for message in messages
-        ]
+        return [self._message_payload(message) for message in messages]
 
     async def get_summary(self, user_id: str, conversation_id: str) -> str:
         async with self.sessions() as session:
@@ -516,6 +834,7 @@ class PersistenceStore:
                     MessageRecord.conversation_id.label("conversation_id"),
                     func.count(MessageRecord.id).label("message_count"),
                 )
+                .where(MessageRecord.status != "superseded")
                 .group_by(MessageRecord.conversation_id)
                 .subquery()
             )
@@ -552,7 +871,12 @@ class PersistenceStore:
             if conversation is None:
                 return None
             result = await session.execute(
-                select(MessageRecord).where(MessageRecord.conversation_id == conversation_id).order_by(MessageRecord.id)
+                select(MessageRecord)
+                .where(
+                    MessageRecord.conversation_id == conversation_id,
+                    MessageRecord.status != "superseded",
+                )
+                .order_by(MessageRecord.id)
             )
             messages = result.scalars().all()
         return {
@@ -563,16 +887,7 @@ class PersistenceStore:
             "message_count": len(messages),
             "archived": conversation.archived,
             "pinned": conversation.pinned,
-            "messages": [
-                {
-                    "id": message.id,
-                    "role": message.role,
-                    "content": message.content,
-                    "timestamp": message.created_at.isoformat(),
-                    "metadata": dict(message.message_metadata or {}),
-                }
-                for message in messages
-            ],
+            "messages": [self._message_payload(message) for message in messages],
         }
 
     async def list_messages(
@@ -581,7 +896,10 @@ class PersistenceStore:
         async with self.sessions() as session:
             if await self._owned_conversation(session, user_id, conversation_id) is None:
                 return {"conversation_id": conversation_id, "messages": [], "next_cursor": None}
-            query = select(MessageRecord).where(MessageRecord.conversation_id == conversation_id)
+            query = select(MessageRecord).where(
+                MessageRecord.conversation_id == conversation_id,
+                MessageRecord.status != "superseded",
+            )
             if cursor is not None:
                 query = query.where(MessageRecord.id > cursor)
             result = await session.execute(query.order_by(MessageRecord.id).limit(min(max(1, limit), 100) + 1))
@@ -590,16 +908,7 @@ class PersistenceStore:
         page = messages[:limit]
         return {
             "conversation_id": conversation_id,
-            "messages": [
-                {
-                    "id": message.id,
-                    "role": message.role,
-                    "content": message.content,
-                    "timestamp": message.created_at.isoformat(),
-                    "metadata": dict(message.message_metadata or {}),
-                }
-                for message in page
-            ],
+            "messages": [self._message_payload(message) for message in page],
             "next_cursor": page[-1].id if has_more and page else None,
         }
 
@@ -636,6 +945,9 @@ class PersistenceStore:
                 delete(ConversationSummaryRecord).where(ConversationSummaryRecord.conversation_id == conversation_id)
             )
             await session.execute(delete(FeedbackRecord).where(FeedbackRecord.conversation_id == conversation_id))
+            await session.execute(
+                delete(ConversationTurnRecord).where(ConversationTurnRecord.conversation_id == conversation_id)
+            )
             await session.execute(delete(MessageRecord).where(MessageRecord.conversation_id == conversation_id))
             await session.delete(conversation)
         return True

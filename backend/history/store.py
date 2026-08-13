@@ -64,6 +64,10 @@ async def save_feedback(
     return await (await _store()).save_feedback(user_id, conversation_id, message_id, rating, comment)
 
 
+async def cancel_turn(user_id: str, conversation_id: str, turn_id: str) -> dict[str, Any] | None:
+    return await (await _store()).cancel_turn(user_id, conversation_id, turn_id)
+
+
 async def feedback_stats() -> dict[str, Any]:
     return await (await _store()).feedback_stats()
 
