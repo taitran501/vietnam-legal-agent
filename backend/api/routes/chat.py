@@ -77,16 +77,22 @@ async def chat(request: Request, body: ChatRequest):
     # typed updates separately so confirmation status survives into V4 state.
     case_patch = {**body.case_patch, **typed_case_patch}
 
-    readiness, is_ready = await readiness_payload()
-    if not is_ready:
+    readiness, _ = await readiness_payload()
+    legal_capability = readiness.get("capabilities", {}).get("legal_chat", {})
+    if legal_capability.get("status") != "ready":
         async def _not_ready():
+            reason = str(legal_capability.get("reason") or "corpus_not_ready")
             yield {
                 "data": json.dumps(
                     {
                         "type": "error",
-                        "code": "corpus_not_ready",
-                        "message": "Dữ liệu pháp luật đang chưa sẵn sàng. Vui lòng thử lại sau khi index hoàn tất.",
-                        "retryable": True,
+                        "code": reason,
+                        "message": (
+                            "Cơ sở dữ liệu lịch sử cần được nâng cấp trước khi tiếp tục."
+                            if reason == "database_schema_mismatch"
+                            else "Dữ liệu pháp luật đang chưa sẵn sàng. Vui lòng thử lại sau khi index hoàn tất."
+                        ),
+                        "retryable": reason not in {"database_schema_mismatch", "corpus_promotion_blocked"},
                         "retry_after_seconds": 30,
                         "trace_id": trace_id,
                         "pipeline_version": "pipeline-v4",
@@ -128,6 +134,7 @@ async def chat(request: Request, body: ChatRequest):
                 },
                 runtime=runtime,
             ):
+                event.setdefault("preview", bool(readiness.get("preview")))
                 # CRITICAL: Check if client disconnected
                 if await request.is_disconnected():
                     logger.info(

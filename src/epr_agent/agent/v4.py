@@ -303,8 +303,8 @@ class V4WorkflowRuntime(WorkflowRuntime):
                     verified=False,
                     confirmation_status=FactConfirmationStatus.USER_CONFIRMED,
                 )
-        for key, raw in dict(state.get("fact_updates") or {}).items():
-            update = raw if isinstance(raw, dict) else {"value": raw}
+        for key, update_payload in dict(state.get("fact_updates") or {}).items():
+            update = update_payload if isinstance(update_payload, dict) else {"value": update_payload}
             raw_value = " ".join(str(update.get("value") or "").split())
             if not raw_value:
                 facts.pop(key, None)
