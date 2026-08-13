@@ -109,3 +109,19 @@ async def test_pin_and_unpin_conversation(tmp_path: Path):
         assert unpinned is True
         conv2 = await store.get_conversation("u1", "conv-pin")
         assert conv2 is not None and conv2["pinned"] is False
+
+
+@pytest.mark.asyncio
+async def test_list_conversations_supports_server_side_title_search(tmp_path: Path):
+    db_path = tmp_path / "search.sqlite3"
+
+    with patch("backend.history.store._db_path", return_value=db_path):
+        await store.init_history_store()
+        await store.ensure_conversation("u-search", "conv-epr", "Nghĩa vụ tái chế")
+        await store.ensure_conversation("u-search", "conv-other", "Chào hỏi")
+        await store.append_exchange("u-search", "conv-epr", "Điều 77?", "Câu trả lời")
+
+        results = await store.list_conversations("u-search", search="TÁI CHẾ")
+
+    assert [item["id"] for item in results] == ["conv-epr"]
+    assert results[0]["message_count"] == 2

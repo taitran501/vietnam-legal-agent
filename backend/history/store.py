@@ -87,9 +87,13 @@ async def save_case_state(user_id: str, conversation_id: str, state: dict[str, A
 
 
 async def list_conversations(
-    user_id: str, limit: int = 50, offset: int = 0, include_archived: bool = False
+    user_id: str,
+    limit: int = 50,
+    offset: int = 0,
+    include_archived: bool = False,
+    search: str = "",
 ) -> list[dict[str, Any]]:
-    return await (await _store()).list_conversations(user_id, limit, offset, include_archived)
+    return await (await _store()).list_conversations(user_id, limit, offset, include_archived, search)
 
 
 async def get_conversation(user_id: str, conversation_id: str) -> dict[str, Any] | None:

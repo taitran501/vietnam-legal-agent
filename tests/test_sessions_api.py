@@ -66,6 +66,10 @@ def test_sessions_crud_archive_pin_messages_and_delete_flow(client: TestClient):
     assert len(listed) == 1
     assert listed[0]["id"] == "conv-api-1"
 
+    search_resp = client.get("/api/v1/sessions", headers=headers, params={"q": "FIRST"})
+    assert search_resp.status_code == 200
+    assert [item["id"] for item in search_resp.json()] == ["conv-api-1"]
+
     get_resp = client.get("/api/v1/sessions/conv-api-1", headers=headers)
     assert get_resp.status_code == 200
     detail = get_resp.json()

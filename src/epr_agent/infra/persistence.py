@@ -12,7 +12,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, delete, func, select
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, delete, func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -23,6 +23,20 @@ def _utcnow() -> datetime:
 
 def _timestamp(value: datetime | None) -> float | None:
     return value.timestamp() if value else None
+
+
+class DatabaseSchemaMismatch(RuntimeError):
+    """Raised when a legacy database would be unsafe to read with the current ORM."""
+
+    code = "database_schema_mismatch"
+
+    def __init__(self, issues: list[str]) -> None:
+        self.issues = issues
+        super().__init__(
+            "Database schema is incompatible with this release. "
+            "Run `python -m scripts.migrate_legacy_sqlite --database <path>` first. "
+            f"Detected: {', '.join(issues)}"
+        )
 
 
 class Base(DeclarativeBase):
@@ -155,6 +169,66 @@ class AgentRunEventRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
 
+_EXPECTED_SCHEMA_COLUMNS: dict[str, set[str]] = {
+    "users": {"id", "created_at"},
+    "conversations": {"id", "user_id", "title", "archived", "pinned", "created_at", "updated_at"},
+    "messages": {"id", "conversation_id", "role", "content", "metadata", "created_at"},
+    "conversation_summaries": {"conversation_id", "summary", "updated_at"},
+    "case_states": {
+        "conversation_id", "user_id", "task_type", "status", "facts", "missing_facts", "last_query",
+        "schema_version", "decision_status", "issue_states", "as_of_date", "created_at", "updated_at",
+    },
+    "agent_runs": {
+        "trace_id", "user_id", "conversation_id", "task_type", "route", "corpus_id", "corpus_sha",
+        "embedding_profile", "pipeline_version", "source", "duration_ms", "evidence_count", "cache_status",
+        "error_code", "action_sequence", "tool_results", "termination_reason", "outcome", "result_type",
+        "understanding_confidence", "required_issue_count", "covered_issue_count", "started_at", "ended_at",
+    },
+    "agent_run_events": {
+        "id", "trace_id", "sequence", "node", "status", "reason_code", "tool_name", "duration_ms",
+        "error_code", "payload", "created_at",
+    },
+    "message_feedback": {
+        "id", "user_id", "conversation_id", "message_id", "rating", "comment", "created_at", "updated_at",
+    },
+}
+
+
+def _schema_snapshot(sync_connection: Any) -> tuple[set[str], dict[str, dict[str, str]]]:
+    inspector = inspect(sync_connection)
+    tables = set(inspector.get_table_names())
+    columns: dict[str, dict[str, str]] = {}
+    for table in tables & set(_EXPECTED_SCHEMA_COLUMNS):
+        columns[table] = {
+            str(item["name"]): type(item["type"]).__name__.lower()
+            for item in inspector.get_columns(table)
+        }
+    return tables, columns
+
+
+def _schema_issues(snapshot: tuple[set[str], dict[str, dict[str, str]]]) -> list[str]:
+    tables, columns = snapshot
+    app_tables = tables & set(_EXPECTED_SCHEMA_COLUMNS)
+    if not app_tables:
+        return []
+    issues: list[str] = []
+    for table, expected in _EXPECTED_SCHEMA_COLUMNS.items():
+        if table not in tables:
+            issues.append(f"{table}:missing_table")
+            continue
+        missing = expected - set(columns.get(table, {}))
+        issues.extend(f"{table}:{name}_missing" for name in sorted(missing))
+    if "metadata_json" in columns.get("messages", {}):
+        issues.append("messages:legacy_metadata_json")
+    if "short_summary" in columns.get("conversation_summaries", {}):
+        issues.append("conversation_summaries:legacy_short_summary")
+    if columns.get("conversations", {}).get("created_at") in {"float", "real", "numeric"}:
+        issues.append("conversations:legacy_real_timestamp")
+    if columns.get("messages", {}).get("created_at") in {"float", "real", "numeric"}:
+        issues.append("messages:legacy_real_timestamp")
+    return sorted(set(issues))
+
+
 def normalise_database_url(database_url: str) -> str:
     """Return an async SQLAlchemy URL without mutating caller configuration."""
 
@@ -195,10 +269,28 @@ class PersistenceStore:
         return self._sessions
 
     async def initialize(self) -> None:
-        """Create local tables. Production startup should run Alembic first."""
+        """Create a fresh test/local schema, but never paper over a legacy schema."""
 
         async with self.engine.begin() as connection:
-            await connection.run_sync(Base.metadata.create_all)
+            snapshot = await connection.run_sync(_schema_snapshot)
+            if not snapshot[0] & set(_EXPECTED_SCHEMA_COLUMNS):
+                await connection.run_sync(Base.metadata.create_all)
+                return
+            issues = _schema_issues(snapshot)
+            if issues:
+                raise DatabaseSchemaMismatch(issues)
+
+    async def schema_status(self) -> dict[str, Any]:
+        """Return a side-effect-free schema compatibility result for readiness."""
+
+        async with self.engine.connect() as connection:
+            snapshot = await connection.run_sync(_schema_snapshot)
+        issues = _schema_issues(snapshot)
+        if not snapshot[0] & set(_EXPECTED_SCHEMA_COLUMNS):
+            return {"status": "missing", "code": "database_schema_missing", "issues": ["application_tables_missing"]}
+        if issues:
+            return {"status": "incompatible", "code": DatabaseSchemaMismatch.code, "issues": issues}
+        return {"status": "ready", "code": "ok", "issues": []}
 
     async def close(self) -> None:
         if self._engine is not None:
@@ -411,35 +503,48 @@ class PersistenceStore:
             return summary.summary if summary else ""
 
     async def list_conversations(
-        self, user_id: str, limit: int = 50, offset: int = 0, include_archived: bool = False
+        self,
+        user_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        include_archived: bool = False,
+        search: str = "",
     ) -> list[dict[str, Any]]:
         async with self.sessions() as session:
-            query = select(ConversationRecord).where(ConversationRecord.user_id == user_id)
+            counts = (
+                select(
+                    MessageRecord.conversation_id.label("conversation_id"),
+                    func.count(MessageRecord.id).label("message_count"),
+                )
+                .group_by(MessageRecord.conversation_id)
+                .subquery()
+            )
+            query = (
+                select(ConversationRecord, func.coalesce(counts.c.message_count, 0))
+                .outerjoin(counts, counts.c.conversation_id == ConversationRecord.id)
+                .where(ConversationRecord.user_id == user_id)
+            )
             if not include_archived:
                 query = query.where(ConversationRecord.archived.is_(False))
+            if search.strip():
+                query = query.where(func.lower(ConversationRecord.title).contains(search.strip().casefold()))
             result = await session.execute(
                 query.order_by(ConversationRecord.pinned.desc(), ConversationRecord.updated_at.desc())
                 .offset(max(0, offset))
                 .limit(min(max(1, limit), 100))
             )
-            conversations = result.scalars().all()
-            payload: list[dict[str, Any]] = []
-            for conversation in conversations:
-                count = await session.scalar(
-                    select(func.count(MessageRecord.id)).where(MessageRecord.conversation_id == conversation.id)
-                )
-                payload.append(
+            return [
                     {
                         "id": conversation.id,
                         "title": conversation.title,
                         "created_at": _timestamp(conversation.created_at) or 0.0,
                         "updated_at": _timestamp(conversation.updated_at),
-                        "message_count": int(count or 0),
+                        "message_count": int(message_count or 0),
                         "archived": conversation.archived,
                         "pinned": conversation.pinned,
                     }
-                )
-            return payload
+                for conversation, message_count in result.all()
+            ]
 
     async def get_conversation(self, user_id: str, conversation_id: str) -> dict[str, Any] | None:
         async with self.sessions() as session:

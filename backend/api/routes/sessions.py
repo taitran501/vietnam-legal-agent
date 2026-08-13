@@ -177,14 +177,14 @@ async def create_session(request: Request, body: CreateSessionRequest):
 
 
 @router.get("/sessions", response_model=list[SessionInfo], tags=["sessions"])
-async def list_sessions(request: Request, limit: int = 50, offset: int = 0):
+async def list_sessions(request: Request, limit: int = 50, offset: int = 0, q: str = ""):
     """
     List all conversations sorted by creation time (newest first).
     
     Returns session summaries with titles, message counts, and timestamps.
     """
     user_id = _current_user_id(request)
-    sessions = await list_conversations_persistent(user_id=user_id, limit=limit, offset=offset)
+    sessions = await list_conversations_persistent(user_id=user_id, limit=limit, offset=offset, search=q[:200])
     return [
         SessionInfo(
             id=s["id"],

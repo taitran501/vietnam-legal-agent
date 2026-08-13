@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from epr_agent.domain.v4 import (
     CASE_FIELD_LABELS,
@@ -34,10 +34,17 @@ def _load_rule_pack() -> dict[str, object]:
 
 
 _RULE_PACK = _load_rule_pack()
-_THRESHOLDS = _RULE_PACK.get("thresholds") if isinstance(_RULE_PACK.get("thresholds"), dict) else {}
-_EFFECTIVE_DATES = _RULE_PACK.get("effective_dates") if isinstance(_RULE_PACK.get("effective_dates"), dict) else {}
-_REQUIRED_FACTS = _RULE_PACK.get("required_facts") if isinstance(_RULE_PACK.get("required_facts"), dict) else {}
-_EXCLUSIONS = _RULE_PACK.get("exclusions") if isinstance(_RULE_PACK.get("exclusions"), dict) else {}
+
+
+def _rule_section(name: str) -> dict[str, Any]:
+    value = _RULE_PACK.get(name)
+    return cast(dict[str, Any], value) if isinstance(value, dict) else {}
+
+
+_THRESHOLDS = _rule_section("thresholds")
+_EFFECTIVE_DATES = _rule_section("effective_dates")
+_REQUIRED_FACTS = _rule_section("required_facts")
+_EXCLUSIONS = _rule_section("exclusions")
 EPR_RULE_PACK_VERSION = str(_RULE_PACK.get("rule_pack_version") or "epr-article-77-v3-manual-amendment-map")
 EPR_RULE_ID = str(_RULE_PACK.get("rule_id") or "epr-article-77-current-law-v3")
 PACKAGING_REVENUE_THRESHOLD_VND = int(_THRESHOLDS.get("packaging_revenue_exemption_vnd") or 30_000_000_000)

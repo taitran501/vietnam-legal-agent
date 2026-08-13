@@ -59,6 +59,10 @@ data/eval/
 # Local runtime state and conversation data
 data/*.sqlite3
 data/*.db
+data/*.sqlite3-wal
+data/*.sqlite3-shm
+data/*.sqlite3-journal
+data/*.sqlite3.backup-*
 *.sqlite3
 *.db
 

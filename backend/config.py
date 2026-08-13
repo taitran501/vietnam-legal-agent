@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -66,6 +67,10 @@ class Settings(BaseSettings):
     corpus_as_of_date: str | None = Field(
         default=None,
         description="Legally approved as-of date; build time is never substituted automatically",
+    )
+    corpus_runtime_mode: Literal["production", "preview"] = Field(
+        default="production",
+        description="Production requires legal approval; preview permits technically valid unapproved corpora with warnings.",
     )
     database_url: str | None = Field(
         default=None,
