@@ -327,6 +327,9 @@ def _legal_document(anchor: str) -> DocumentRecord:
             "Corpus_Version": "browser-e2e-v4",
             "Corpus_SHA256": "browser-e2e-corpus-v4",
             "Embedding_Profile": "openai-text-embedding-3-small-v1",
+            "official_url": "https://vanban.chinhphu.vn/?docid=205092&pageid=27160",
+            "effective_status": "active",
+            "corpus_as_of_date": "2026-08-14",
         },
         document_id=f"law-{anchor.replace(' ', '-')}",
         score=0.94,
@@ -357,6 +360,20 @@ app.include_router(chat_router, prefix="/api/v1")
 @app.get("/api/v1/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/v1/me")
+async def me() -> dict[str, object]:
+    """Provide the same identity shape as the local backend auth mode."""
+
+    return {
+        "principal_type": "local",
+        "principal_id": "dev-local",
+        "display_name": "Tài khoản thử nghiệm",
+        "email": None,
+        "roles": [],
+        "scopes": ["chat", "feedback"],
+    }
 
 
 @app.get("/api/v1/ready")

@@ -15,7 +15,11 @@ describe('SourceDrawer', () => {
             document_id: 'law-77',
             score: 0.91,
             source: 'legal',
-            metadata: { Dieu: 'Điều 77', source: 'Nghị định 08/2022/NĐ-CP' },
+            metadata: {
+              Dieu: 'Điều 77',
+              source: 'Nghị định 08/2022/NĐ-CP',
+              official_url: 'https://vanban.chinhphu.vn/?docid=205092&pageid=27160',
+            },
           },
         ]}
         isOpen
@@ -26,6 +30,7 @@ describe('SourceDrawer', () => {
     expect(screen.getByRole('dialog', { name: 'Nguồn tham khảo' })).toBeInTheDocument();
     expect(screen.getByText('Nghị định 08/2022/NĐ-CP')).toBeInTheDocument();
     expect(screen.getByText(/Điều 77/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Mở nguồn' })).toHaveAttribute('href', 'https://vanban.chinhphu.vn/?docid=205092&pageid=27160');
     await user.click(screen.getByRole('button', { name: 'Đóng' }));
     expect(onClose).toHaveBeenCalledOnce();
   });

@@ -44,6 +44,13 @@ export function WorkflowResultCard({ onOpenCase, onContinueCase, onOpenSources, 
     title: 'Chưa thể kết luận',
     message: 'Trợ lý đã dừng để tránh đưa ra kết luận không được nguồn hiện có hỗ trợ.',
   };
+  const stopGuidance = stopKey === 'out_of_scope'
+    ? 'Bạn có thể thử một câu hỏi về pháp luật EPR.'
+    : stopKey === 'missing_provision'
+      ? 'Nếu bạn có tên văn bản hoặc số điều khoản khác, hãy nêu thêm để trợ lý kiểm tra chính xác hơn.'
+      : stopKey === 'unavailable_dependencies'
+        ? 'Bạn có thể thử lại sau ít phút.'
+        : 'Bạn có thể bổ sung thông tin hoặc thử lại.';
 
   const hasTrace = import.meta.env.VITE_ENABLE_TRACE_DEBUG === 'true' && Boolean(workflow.trace_id);
   if (!safeStop && !hasAssessment && !hasChecklist && !hasMissingFacts && !hasAssumptions && !hasTrace) return null;
@@ -79,7 +86,7 @@ export function WorkflowResultCard({ onOpenCase, onContinueCase, onOpenSources, 
             <Icon className="mt-0.5 shrink-0" name="alert" size={19} />
             <div>
               <p className="font-semibold">{stop.title}</p>
-              <p className="mt-1 leading-6">{stop.message} Bạn có thể thu hẹp câu hỏi hoặc thử lại sau.</p>
+              <p className="mt-1 leading-6">{stop.message} {stopGuidance}</p>
               {workflow.available_actions?.includes('research_web') && onResearch && (
                 <button
                   className="mt-3 rounded-md border border-[#ad7b36] bg-white px-3 py-2 text-xs font-semibold text-[#714b18] hover:bg-[#fff1d7] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ad7b36]"
@@ -122,7 +129,7 @@ export function WorkflowResultCard({ onOpenCase, onContinueCase, onOpenSources, 
                 <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[#80d5cb] text-[10px] font-semibold text-[#006a63]">
                   {index + 1}
                 </span>
-                <span><span className="font-medium">{String(item.item || 'Hạng mục cần thực hiện')}</span>{typeof item.action === 'string' && item.action && <span className="block text-xs text-[#667085]">{item.action}</span>}{Array.isArray(item.evidence_indices) && item.evidence_indices.length > 0 && (onOpenSources ? <button className="block text-left text-xs text-[#006a63] underline" onClick={onOpenSources} type="button">Căn cứ: {(item.evidence_indices as unknown[]).map((value) => `[${String(value)}]`).join(' ')}</button> : <span className="block text-xs text-[#006a63]">Căn cứ: {(item.evidence_indices as unknown[]).map((value) => `[${String(value)}]`).join(' ')}</span>)}</span>
+                <span><span className="font-medium">{String(item.item || 'Hạng mục cần thực hiện')}</span>{typeof item.action === 'string' && item.action && <span className="block text-xs text-[#667085]">{item.action}</span>}{Array.isArray(item.evidence_indices) && item.evidence_indices.length > 0 && (onOpenSources ? <button className="block text-left text-xs text-[#006a63] underline" onClick={onOpenSources} type="button">Xem căn cứ ({(item.evidence_indices as unknown[]).map((value) => String(value)).join(', ')})</button> : <span className="block text-xs text-[#006a63]">Căn cứ ({(item.evidence_indices as unknown[]).map((value) => String(value)).join(', ')})</span>)}</span>
               </li>
             ))}
           </ol>
@@ -137,7 +144,7 @@ export function WorkflowResultCard({ onOpenCase, onContinueCase, onOpenSources, 
           </ul>
         </details>
       )}
-      <p className="text-[11px] text-[#667085]">Kho văn bản tính đến: {workflow.corpus_as_of_date || 'chưa được pháp lý phê duyệt'}</p>
+      <p className="text-[11px] text-[#667085]">Thông tin được cập nhật đến: {workflow.corpus_as_of_date || 'chưa xác nhận ngày cập nhật'}</p>
       <TraceDrawer traceId={workflow.trace_id} />
     </section>
   );

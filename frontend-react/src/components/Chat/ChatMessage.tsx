@@ -6,6 +6,7 @@ import { MessageActions } from './MessageActions';
 import { SourceDocuments } from './SourceDocuments';
 import { WorkflowResultCard } from '@/components/Agent/WorkflowResultCard';
 import { Icon } from '@/components/UI/Icon';
+import { previewNotice } from '@/lib/userCopy';
 
 interface ChatMessageProps {
   message: ChatMessage;
@@ -17,11 +18,11 @@ interface ChatMessageProps {
 }
 
 const sourceLabels: Record<string, string> = {
-  legal: 'Kho văn bản',
+  legal: 'Căn cứ pháp luật',
   chitchat: 'Hội thoại',
   web_search: 'Nguồn chính thức bên ngoài kho văn bản',
   cache: 'Câu trả lời đã xác minh',
-  follow_up: 'Đang làm rõ',
+  follow_up: 'Đang làm rõ thông tin',
 };
 
 export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOpenSources, onRegenerate, onResearch }: ChatMessageProps) {
@@ -65,7 +66,7 @@ export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOp
           )}
           {message.workflow?.preview && (
             <div className="mb-3 rounded-md border border-[#d7a65a] bg-[#fff8ea] px-3 py-2 text-xs text-[#714b18]">
-              Câu trả lời ở bản thử nghiệm; thông tin có thể thay đổi khi kho văn bản được phê duyệt.
+              {previewNotice}
             </div>
           )}
           <div className="legal-prose max-w-none text-[15px] leading-7 text-[#262d2c] sm:text-base">

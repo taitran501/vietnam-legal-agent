@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { errorPresentation, taskCopy } from './userCopy';
+import { eprPlainName, errorPresentation, previewNotice, safeStopCopy, taskCopy } from './userCopy';
 
 describe('user-facing copy', () => {
   it('keeps default task labels understandable without internal vocabulary', () => {
-    const visible = Object.values(taskCopy).flatMap((copy) => Object.values(copy)).join(' ').toLowerCase();
-    expect(visible).not.toContain('workflow');
-    expect(visible).not.toContain('corpus');
-    expect(visible).not.toContain('evidence');
-    expect(visible).not.toContain('facts');
+    const visible = [
+      eprPlainName,
+      previewNotice,
+      ...Object.values(taskCopy).flatMap((copy) => Object.values(copy)),
+      ...Object.values(safeStopCopy).flatMap((copy) => Object.values(copy)),
+    ].join(' ').toLowerCase();
+    for (const internalWord of ['workflow', 'corpus', 'evidence', 'facts', 'pipeline', 'safe stop']) {
+      expect(visible).not.toContain(internalWord);
+    }
+    expect(eprPlainName).toContain('trách nhiệm mở rộng của nhà sản xuất và nhập khẩu');
   });
 
   it('maps technical error codes to an actionable Vietnamese message', () => {

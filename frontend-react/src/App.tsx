@@ -30,6 +30,7 @@ import {
   rememberReturnTo,
 } from '@/auth/oidc';
 import { getMe } from '@/api/me';
+import { eprPlainName, previewNotice } from '@/lib/userCopy';
 
 interface OpenSources {
   citations: Array<Record<string, unknown>>;
@@ -60,9 +61,9 @@ function readinessMessage(readiness: ReadinessResponse | null, offline: boolean)
   if (offline) return 'Không thể kết nối tới máy chủ. Lịch sử đã tải vẫn được giữ, nhưng chưa thể gửi câu hỏi mới.';
   const reason = readiness?.capabilities?.legal_chat?.reason || '';
   const messages: Record<string, string> = {
-    database_schema_mismatch: 'Cơ sở dữ liệu lịch sử chưa tương thích. Quản trị viên cần chạy lệnh migration được hướng dẫn trên backend.',
-    corpus_promotion_blocked: 'Kho văn bản chưa được phê duyệt nên kết luận pháp lý đang tạm khóa.',
-    corpus_not_ready: 'Kho văn bản pháp luật chưa sẵn sàng. Lịch sử và tài khoản vẫn có thể sử dụng.',
+    database_schema_mismatch: 'Lịch sử trò chuyện tạm thời chưa thể sử dụng. Vui lòng thử lại sau hoặc liên hệ quản trị viên.',
+    corpus_promotion_blocked: 'Văn bản pháp luật chưa được kiểm tra nên kết luận pháp lý đang tạm khóa.',
+    corpus_not_ready: 'Văn bản pháp luật chưa sẵn sàng. Lịch sử và tài khoản vẫn có thể sử dụng.',
     qdrant_unavailable: 'Kho tìm kiếm pháp luật đang tạm thời không khả dụng.',
   };
   return messages[reason] || 'Khả năng tra cứu pháp luật đang chuẩn bị. Lịch sử và tài khoản vẫn có thể sử dụng.';
@@ -452,7 +453,7 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
         {preview && (
           <div className="flex shrink-0 items-center justify-center gap-2 border-b border-[#d7a65a] bg-[#fff1d7] px-4 py-2 text-center text-xs font-semibold text-[#714b18]" role="status">
             <Icon name="alert" size={15} />
-            Chế độ xem trước — câu trả lời có thể thay đổi khi kho văn bản được phê duyệt.
+            {previewNotice}
           </div>
         )}
         {!legalReady && !preview && (
@@ -570,12 +571,12 @@ export default function App() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#fcfcfa] p-6 text-[#172033]">
         <section className="w-full max-w-md rounded-2xl border border-[#d9e1df] bg-white p-7 shadow-sm">
-          <h1 className="text-lg font-semibold">Trợ lý pháp lý EPR</h1>
+          <h1 className="text-lg font-semibold">Trợ lý pháp lý về EPR</h1>
           <p className="mt-2 text-sm text-[#667085]">
             {authState === 'loading'
               ? 'Đang kiểm tra phiên đăng nhập…'
               : authState === 'signed_out'
-                ? 'Đăng nhập bằng tài khoản nội bộ để tiếp tục.'
+                ? `Đăng nhập để tra cứu ${eprPlainName} và lưu lại các cuộc trò chuyện.`
                 : authError}
           </p>
           {authState !== 'loading' && (

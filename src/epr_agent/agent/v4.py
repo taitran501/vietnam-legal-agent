@@ -534,6 +534,13 @@ class V4WorkflowRuntime(WorkflowRuntime):
                 all_documents.setdefault(str(document.get("document_id") or ""), document)
         state["evidence_bundles"] = bundles
         state["evidence"] = list(all_documents.values())[:8]
+        if not state.get("corpus_as_of_date"):
+            for document in state["evidence"]:
+                metadata = document.get("metadata") or {}
+                as_of = metadata.get("corpus_as_of_date") or metadata.get("Corpus_As_Of_Date")
+                if as_of:
+                    state["corpus_as_of_date"] = str(as_of)
+                    break
         state["source"] = "legal" if state["evidence"] else ""
         state["retrieval_actions"] = 1
         state.setdefault("tool_results", []).append({
@@ -659,10 +666,6 @@ class V4WorkflowRuntime(WorkflowRuntime):
             )
             return state
         index_by_id = {citation.document_id: citation.index for citation in citations}
-        lines = [result.conclusion]
-        for reason in result.reasons:
-            indices = sorted({index_by_id[item] for item in reason.evidence_ids if item in index_by_id})
-            lines.append(f"- {reason.claim}" + (" " + " ".join(f"[{index}]" for index in indices) if indices else ""))
         if task == TaskType.BUILD_COMPLIANCE_CHECKLIST:
             state["checklist"] = [
                 {"item": "Xác nhận tỷ lệ và quy cách tái chế áp dụng", "action": "Đối chiếu Điều 78 và Phụ lục XXII", "evidence_indices": [index_by_id[item] for item in evidence_ids.get("recycling_rate", []) if item in index_by_id]},
@@ -674,7 +677,14 @@ class V4WorkflowRuntime(WorkflowRuntime):
         else:
             state["result_type"] = ResultType.ASSESSMENT.value
         state["assessment"] = result.model_dump(mode="json")
-        state["answer"] = "\n".join(lines)
+        # The structured result card is the canonical presentation for case
+        # tasks.  Keep the assistant prose as a short introduction so the
+        # conclusion and reasons are not rendered twice in the conversation.
+        state["answer"] = (
+            "Dưới đây là danh sách việc cần làm dựa trên thông tin bạn đã cung cấp."
+            if task == TaskType.BUILD_COMPLIANCE_CHECKLIST
+            else "Đây là đánh giá sơ bộ dựa trên thông tin bạn đã cung cấp. Mở phần kết quả và căn cứ bên dưới để xem chi tiết."
+        )
         state["citations"] = [citation.to_dict() for citation in citations]
         state["citation_valid"] = True
         state["citation_error"] = "ok"
