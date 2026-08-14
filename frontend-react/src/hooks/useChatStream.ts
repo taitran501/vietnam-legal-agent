@@ -115,10 +115,18 @@ async function refreshSessionList(): Promise<void> {
   try {
     const current = useSessionStore.getState();
     const list = await sessionsApi.listSessions(30, 0, current.searchQuery);
-    current.setSessions(list);
-    current.setHasMore(list.length === 30);
-    current.setLoaded(true);
-    current.setError(null);
+    const latestState = useSessionStore.getState();
+    const activeSessionId = useChatStore.getState().activeSessionId;
+    const optimisticActiveSession = !latestState.searchQuery.trim() && activeSessionId
+      ? latestState.sessions.find((session) => session.id === activeSessionId)
+      : undefined;
+    const nextList = optimisticActiveSession && !list.some((session) => session.id === optimisticActiveSession.id)
+      ? [optimisticActiveSession, ...list]
+      : list;
+    latestState.setSessions(nextList);
+    latestState.setHasMore(list.length === 30);
+    latestState.setLoaded(true);
+    latestState.setError(null);
   } catch (error) {
     console.error('refreshSessionList failed:', error);
   }

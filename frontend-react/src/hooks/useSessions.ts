@@ -65,6 +65,7 @@ export function useSessions({ autoLoad = true }: { autoLoad?: boolean } = {}) {
     hasMoreSessions,
     searchQuery,
     setSessions,
+    addSession,
     appendSessions,
     removeSession,
     updateSession,
@@ -94,7 +95,15 @@ export function useSessions({ autoLoad = true }: { autoLoad?: boolean } = {}) {
         controller.signal,
       );
       if (sequence !== listSequence) return;
-      if (reset) setSessions(page);
+      const latestState = useSessionStore.getState();
+      const activeSessionId = useChatStore.getState().activeSessionId;
+      const optimisticActiveSession = reset && !latestState.searchQuery.trim() && activeSessionId
+        ? latestState.sessions.find((session) => session.id === activeSessionId)
+        : undefined;
+      const nextPage = optimisticActiveSession && !page.some((session) => session.id === optimisticActiveSession.id)
+        ? [optimisticActiveSession, ...page]
+        : page;
+      if (reset) setSessions(nextPage);
       else appendSessions(page);
       setHasMore(page.length === PAGE_SIZE);
       setLoaded(true);
@@ -129,6 +138,16 @@ export function useSessions({ autoLoad = true }: { autoLoad?: boolean } = {}) {
         sessionsApi.getCaseState(sessionId, controller.signal),
       ]);
       if (sequence !== detailSequence || useChatStore.getState().activeSessionId !== sessionId) return 'stale';
+      const existingSession = useSessionStore.getState().sessions.some((session) => session.id === sessionId);
+      const sessionInfo = {
+        id: sessionId,
+        title: detail.title || 'Cuộc trò chuyện mới',
+        created_at: detail.created_at,
+        updated_at: detail.updated_at,
+        message_count: detail.message_count,
+      };
+      if (existingSession) updateSession(sessionId, sessionInfo);
+      else addSession(sessionInfo);
       const messages: ChatMessage[] = detail.messages
         .filter((message) => message.status !== 'superseded')
         .map((message, index) => ({
@@ -153,7 +172,7 @@ export function useSessions({ autoLoad = true }: { autoLoad?: boolean } = {}) {
       failSessionLoad('Không thể tải cuộc trò chuyện. Kiểm tra kết nối rồi thử lại.');
       return 'error';
     }
-  }, [beginSessionLoad, cancelSessionLoad, failSessionLoad, finishSessionLoad]);
+  }, [addSession, beginSessionLoad, cancelSessionLoad, failSessionLoad, finishSessionLoad, updateSession]);
 
   const deleteSession = useCallback(async (sessionId: string) => {
     try {

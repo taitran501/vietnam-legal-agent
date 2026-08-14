@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-async function mockBaseApi(page: Page) {
+async function mockBaseApi(page: Page, options: { caseWorkflowReady?: boolean } = {}) {
   await page.route('**/api/v1/health', (route) => route.fulfill({ status: 200, body: '{}' }));
   await page.route('**/api/v1/ready', (route) => route.fulfill({
     status: 200,
@@ -13,7 +13,9 @@ async function mockBaseApi(page: Page) {
       capabilities: {
         history: { status: 'ready', reason: 'ok' },
         legal_chat: { status: 'ready', reason: 'preview_unapproved_corpus' },
-        case_workflow: { status: 'ready', reason: 'preview_unapproved_corpus' },
+        case_workflow: options.caseWorkflowReady === false
+          ? { status: 'blocked', reason: 'corpus_not_ready' }
+          : { status: 'ready', reason: 'preview_unapproved_corpus' },
         feedback: { status: 'ready', reason: 'ok' },
         web_research: { status: 'degraded', reason: 'provider_not_configured' },
       },
@@ -143,6 +145,114 @@ test('guided assessment resolves dependent fields and submits one chat turn', as
   await captureReview(page, 'guided-assessment-completed');
 });
 
+test('guided checklist keeps the checklist prompt and history title', async ({ page }) => {
+  await mockBaseApi(page);
+  let chatQuery = '';
+  let persistedSessionId = '';
+  await page.route('**/api/v1/case-form/resolve', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      form_version: 'case-form-v1',
+      task_type: 'build_compliance_checklist',
+      status: 'ready',
+      facts: {},
+      fields: [],
+      missing_facts: [],
+      validation_errors: {},
+      completed_count: 0,
+      required_count: 0,
+    }),
+  }));
+  await page.route('**/api/v1/chat', async (route) => {
+    const body = route.request().postDataJSON() as { query?: string; conversation_id?: string };
+    chatQuery = String(body.query || '');
+    persistedSessionId = String(body.conversation_id || '');
+    return route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      body: eventStream([
+        { type: 'status', stage: 'turn_started', turn_id: 'checklist-turn', user_message_id: 21, assistant_message_id: 22, turn_status: 'streaming' },
+        {
+          type: 'response_complete',
+          text: 'Dưới đây là danh sách việc cần làm.',
+          source: 'legal',
+          task_type: 'build_compliance_checklist',
+          result_type: 'checklist',
+          outcome: 'completed',
+          checklist: [{ item: 'Đối chiếu căn cứ EPR' }],
+          documents: [],
+          citations: [],
+          assistant_message_id: 22,
+        },
+      ]),
+    });
+  });
+  const persistedSession = () => persistedSessionId ? [{
+    id: persistedSessionId,
+    title: 'Hãy tạo danh sách việc cần làm cho doanh nghiệp dựa trên thông tin tôi đã cung cấp.',
+    created_at: 0,
+    updated_at: 0,
+    message_count: 2,
+  }] : [];
+  await page.route('**/api/v1/sessions?*', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(persistedSession()),
+  }));
+  await page.route('**/api/v1/sessions', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(persistedSession()),
+  }));
+  await page.route('**/api/v1/sessions/*', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/case')) {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'checklist-session',
+        title: 'Hãy tạo danh sách việc cần làm cho doanh nghiệp dựa trên thông tin tôi đã cung cấp.',
+        created_at: 0,
+        updated_at: 0,
+        message_count: 2,
+        messages: [
+          { id: 21, role: 'user', content: 'Hãy tạo danh sách việc cần làm cho doanh nghiệp dựa trên thông tin tôi đã cung cấp.', timestamp: '2026-08-14T00:00:00Z', status: 'complete', metadata: {} },
+          { id: 22, role: 'assistant', content: 'Dưới đây là danh sách việc cần làm.', timestamp: '2026-08-14T00:00:01Z', status: 'complete', metadata: { task_type: 'build_compliance_checklist', result_type: 'checklist', outcome: 'completed', checklist: [{ item: 'Đối chiếu căn cứ EPR' }] } },
+        ],
+      }),
+    });
+  });
+
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Tạo danh sách việc cần làm' }).click();
+  const form = page.getByRole('region', { name: 'Tạo danh sách việc cần làm' });
+  await form.getByRole('button', { name: 'Tạo danh sách việc cần làm' }).click();
+
+  await expect(page.getByText('Danh sách việc cần làm', { exact: true })).toBeVisible();
+  await expect(page.getByText('Hãy tạo danh sách việc cần làm cho doanh nghiệp dựa trên thông tin tôi đã cung cấp.', { exact: true })).toHaveCount(1);
+  await expect(page.getByText(/Hãy kiểm tra trường hợp của doanh nghiệp/)).toHaveCount(0);
+  await expect.poll(() => chatQuery).toBe('Hãy tạo danh sách việc cần làm cho doanh nghiệp dựa trên thông tin tôi đã cung cấp.');
+  await expect(page.locator('aside').getByTitle('Hãy tạo danh sách việc cần làm cho doanh nghiệp dựa trên thông tin tôi đã cung cấp.')).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('Danh sách việc cần làm', { exact: true })).toBeVisible();
+  await expect(page.locator('aside').getByTitle('Hãy tạo danh sách việc cần làm cho doanh nghiệp dựa trên thông tin tôi đã cung cấp.')).toBeVisible();
+});
+
+test('case capability explains why its action is unavailable on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockBaseApi(page, { caseWorkflowReady: false });
+  await page.goto('/');
+
+  const action = page.getByRole('button', { name: 'Kiểm tra trường hợp của doanh nghiệp' });
+  await expect(action).toBeDisabled();
+  await expect(page.getByText('Chức năng này đang tạm khóa vì dữ liệu pháp luật đang được kiểm tra.')).toBeVisible();
+  await expect(action).toHaveAttribute('aria-describedby', 'case-capability-message');
+});
+
 test('guided submit failure keeps the draft available for another attempt', async ({ page }) => {
   await mockBaseApi(page);
   let chatCalls = 0;
@@ -251,6 +361,43 @@ test('safe-stop trajectory never renders a legal conclusion', async ({ page }) =
   await expect(result.getByText('Đánh giá sơ bộ', { exact: true })).not.toBeVisible();
 });
 
+test('degraded web research does not expose an action that cannot run', async ({ page }) => {
+  await mockBaseApi(page);
+  await page.route('**/api/v1/chat', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      body: eventStream([
+        { type: 'status', stage: 'turn_started', turn_id: 'missing-turn', user_message_id: 31, assistant_message_id: 32, turn_status: 'streaming' },
+        {
+          type: 'response_complete',
+          text: 'Chưa đủ tài liệu để kết luận.',
+          source: 'error',
+          task_type: 'legal_lookup',
+          result_type: 'none',
+          outcome: 'insufficient_evidence',
+          termination_reason: 'insufficient_evidence',
+          available_actions: ['research_web'],
+          preview: true,
+          documents: [],
+          citations: [],
+          assistant_message_id: 32,
+        },
+      ]),
+    }),
+  );
+
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Tra cứu quy định' }).click();
+  await page.getByRole('button', { name: 'Gửi câu hỏi' }).click();
+
+  const result = page.getByRole('region', { name: 'Kết quả xử lý' });
+  await expect(result.getByText('Chưa đủ căn cứ để trả lời chắc chắn')).toBeVisible();
+  await expect(result.getByRole('button', { name: 'Tìm nguồn công khai' })).toHaveCount(0);
+  await expect(result.getByText(/Thông tin được cập nhật đến/)).toHaveCount(0);
+  await expect(page.getByText(/Bản thử nghiệm:/)).toHaveCount(1);
+});
+
 test('completed legal lookup reveals its evidence in a temporary source drawer', async ({ page }) => {
   await mockBaseApi(page);
   await page.route('**/api/v1/chat', (route) =>
@@ -278,6 +425,7 @@ test('completed legal lookup reveals its evidence in a temporary source drawer',
           citations: [{ index: 1, label: 'Điều 77' }],
           termination_reason: 'completed',
           assistant_message_id: 6,
+          preview: true,
         },
       ]),
     })
@@ -290,6 +438,7 @@ test('completed legal lookup reveals its evidence in a temporary source drawer',
   await page.getByRole('link', { name: '[1]' }).click();
 
   const drawer = page.getByRole('dialog', { name: 'Nguồn tham khảo' });
+  await expect(drawer.getByText(/Bản thử nghiệm:/)).toBeVisible();
   await expect(drawer.getByText('Nghị định 08/2022/NĐ-CP')).toBeVisible();
   await expect(drawer.getByText(/Điều 77/)).toBeVisible();
   await expect(page.locator('#source-1')).toBeFocused();
@@ -547,7 +696,7 @@ test('production corpus block disables legal send but leaves owned history usabl
   }));
   await page.goto('/');
   await expect(page.getByText('Lịch sử vẫn dùng được')).toBeVisible();
-  await expect(page.getByText(/Kho văn bản chưa được phê duyệt nên kết luận pháp lý đang tạm khóa/)).toBeVisible();
+  await expect(page.getByText(/Văn bản pháp luật chưa được kiểm tra nên kết luận pháp lý đang tạm khóa/)).toBeVisible();
   await expect(page.getByLabel('Câu hỏi pháp lý')).toBeDisabled();
   await expect(page.getByText(/Chế độ xem trước/)).toHaveCount(0);
 });

@@ -15,7 +15,7 @@ describe('WorkflowResultCard', () => {
     );
 
     expect(screen.getByText('Cần thêm thông tin để tiếp tục')).toBeInTheDocument();
-    expect(screen.getByText(/vật liệu chính/i)).toBeInTheDocument();
+    expect(screen.getByText(/vật liệu hoặc quy cách/i)).toBeInTheDocument();
   });
 
   it('shows a structured checklist without duplicating the source drawer', () => {
@@ -67,11 +67,27 @@ describe('WorkflowResultCard', () => {
     render(
       <WorkflowResultCard
         onResearch={onResearch}
+        webResearchReady
         workflow={{ outcome: 'insufficient_evidence', result_type: 'none', termination_reason: 'insufficient_evidence', available_actions: ['research_web'] }}
       />,
     );
     expect(screen.getByRole('button', { name: 'Tìm nguồn công khai' })).toBeInTheDocument();
     screen.getByRole('button', { name: 'Tìm nguồn công khai' }).click();
     expect(onResearch).toHaveBeenCalledOnce();
+  });
+
+  it('hides web research when the capability is not ready', () => {
+    render(
+      <WorkflowResultCard
+        onResearch={vi.fn()}
+        workflow={{ outcome: 'insufficient_evidence', result_type: 'none', termination_reason: 'insufficient_evidence', available_actions: ['research_web'] }}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Tìm nguồn công khai' })).not.toBeInTheDocument();
+  });
+
+  it('does not show an unconfirmed update date when no date is provided', () => {
+    render(<WorkflowResultCard workflow={{ termination_reason: 'insufficient_evidence' }} />);
+    expect(screen.queryByText(/Thông tin được cập nhật đến/)).not.toBeInTheDocument();
   });
 });

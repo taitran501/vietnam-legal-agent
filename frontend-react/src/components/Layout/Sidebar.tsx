@@ -278,7 +278,7 @@ export function Sidebar({
                           value={editTitle}
                         />
                       ) : (
-                        <p className="truncate font-medium">{truncate(session.title || 'Cuộc trò chuyện mới', 34)}</p>
+                        <p className="truncate font-medium" title={session.title || 'Cuộc trò chuyện mới'}>{truncate(session.title || 'Cuộc trò chuyện mới', 34)}</p>
                       )}
                     </div>
                     {editingSession !== session.id && (

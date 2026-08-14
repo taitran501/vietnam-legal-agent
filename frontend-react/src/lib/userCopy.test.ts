@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { eprPlainName, errorPresentation, previewNotice, safeStopCopy, taskCopy } from './userCopy';
+import { capabilityUnavailableCopy, eprPlainName, errorPresentation, previewNotice, safeStopCopy, taskCopy } from './userCopy';
 
 describe('user-facing copy', () => {
   it('keeps default task labels understandable without internal vocabulary', () => {
@@ -20,5 +20,17 @@ describe('user-facing copy', () => {
       title: 'Bạn đang gửi yêu cầu hơi nhanh',
       message: 'Vui lòng chờ một chút rồi thử lại.',
     });
+  });
+
+  it('keeps guided turn prompts aligned with the selected task', () => {
+    expect(taskCopy.assess_epr_obligation.turnPrompt).toContain('kiểm tra trường hợp');
+    expect(taskCopy.build_compliance_checklist.turnPrompt).toContain('tạo danh sách việc cần làm');
+    expect(taskCopy.build_compliance_checklist.turnPrompt).not.toContain('kiểm tra trường hợp');
+  });
+
+  it('maps blocked capability reasons to plain Vietnamese copy', () => {
+    expect(capabilityUnavailableCopy('corpus_not_ready')).toContain('dữ liệu pháp luật');
+    expect(capabilityUnavailableCopy('provider_not_configured')).not.toContain('provider_not_configured');
+    expect(capabilityUnavailableCopy('', true)).toContain('Không thể kết nối');
   });
 });

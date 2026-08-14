@@ -30,7 +30,7 @@ export function capabilityUnavailableCopy(reason = '', offline = false): string 
   const messages: Record<string, string> = {
     database_schema_mismatch: 'Chức năng này đang tạm khóa vì lịch sử chưa sẵn sàng. Hãy thử lại sau ít phút.',
     corpus_promotion_blocked: 'Chức năng này đang tạm khóa trong lúc văn bản pháp luật được kiểm tra.',
-    corpus_not_ready: 'Chức năng này đang tạm khóa trong lúc văn bản pháp luật được chuẩn bị.',
+    corpus_not_ready: 'Chức năng này đang tạm khóa vì dữ liệu pháp luật đang được kiểm tra.',
     qdrant_unavailable: 'Chức năng này đang tạm khóa vì kho tìm kiếm pháp luật tạm thời không khả dụng.',
     provider_not_configured: 'Nguồn bổ sung hiện chưa được cấu hình. Bạn vẫn có thể dùng các chức năng khác.',
     dependency_unavailable: 'Một dịch vụ cần thiết đang tạm thời không khả dụng. Hãy thử lại sau ít phút.',
