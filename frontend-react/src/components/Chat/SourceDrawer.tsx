@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { SourceDocument } from '@/types';
 import { Drawer } from '@/components/UI/Drawer';
 import { Icon } from '@/components/UI/Icon';
+import { previewNotice } from '@/lib/userCopy';
 
 interface SourceDrawerProps {
   citations?: Array<Record<string, unknown>>;
@@ -80,7 +81,7 @@ export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, on
       <div className="space-y-3 p-4 sm:p-5">
         {preview && (
           <div className="rounded-lg border border-[#d7a65a] bg-[#fff8ea] p-3 text-xs leading-5 text-[#714b18]" role="status">
-            Bản thử nghiệm: thông tin có thể thay đổi sau khi kho văn bản được phê duyệt.
+            {previewNotice}
           </div>
         )}
         {documents.map((document, index) => {
@@ -90,8 +91,14 @@ export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, on
           const instrument = metadataValue(document, ['Document_Number', 'instrument_number']);
           const page = metadataValue(document, ['Pages', 'page']);
           const effectiveStatus = metadataValue(document, ['effective_status', 'Effective_Status']) || 'unknown';
+          const effectiveStatusLabel: Record<string, string> = {
+            active: 'Đang hiệu lực',
+            inactive: 'Không còn hiệu lực',
+            superseded: 'Đã được thay thế',
+            unknown: 'Chưa xác nhận hiệu lực',
+          };
           const effectiveFrom = metadataValue(document, ['effective_from', 'Effective_From']);
-          const asOf = metadataValue(document, ['corpus_as_of_date', 'Corpus_As_Of_Date']) || 'Chưa được pháp lý phê duyệt';
+          const asOf = metadataValue(document, ['corpus_as_of_date', 'Corpus_As_Of_Date']);
           const amendmentStatus = metadataValue(document, ['amendment_resolution_status', 'Amendment_Resolution_Status']);
           const activeSource = metadataValue(document, ['active_source_document_id', 'Active_Source_Document_Id']);
           const activePages = metadataValue(document, ['active_source_pages', 'Active_Source_Pages']);
@@ -124,10 +131,10 @@ export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, on
                     )}
                     {instrument && <span>{instrument}</span>}
                     {page && <span>Trang {page}</span>}
-                    <span className="rounded-full bg-[#e7eceb] px-2 py-0.5">{effectiveStatus === 'active' ? 'Đang hiệu lực' : effectiveStatus === 'unknown' ? 'Chưa xác định hiệu lực' : effectiveStatus}</span>
+                    <span className="rounded-full bg-[#e7eceb] px-2 py-0.5">{effectiveStatusLabel[effectiveStatus] || 'Chưa xác nhận hiệu lực'}</span>
                     {effectiveFrom && <span>Hiệu lực từ {effectiveFrom}</span>}
                   </div>
-                  <p className="mt-2 text-[11px] text-[#667085]">Kho văn bản tính đến: {asOf}</p>
+                  {asOf && <p className="mt-2 text-[11px] text-[#667085]">Thông tin được cập nhật đến: {asOf}</p>}
                 </div>
               </div>
               <blockquote className="mt-3 whitespace-pre-wrap rounded-md bg-[#f1f4f3] px-3 py-3 text-[13px] leading-6 text-[#3e4947]">

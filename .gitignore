@@ -56,6 +56,17 @@ tests/eval/results_*.json
 tests/eval/*_report.json
 data/eval/
 
+# Local scratch and exported design/experiment files
+tmp/
+*.tmp
+*.temp
+*.bak
+docs/design/*.zip
+docs/retrieval/baseline_manifest.json
+docs/retrieval/baseline_collection_audit.json
+docs/retrieval/candidate_legal_structure_v1.json
+docs/retrieval/candidate_collection_audit.json
+
 # Local runtime state and conversation data
 data/*.sqlite3
 data/*.db

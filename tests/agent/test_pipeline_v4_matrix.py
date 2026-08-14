@@ -245,6 +245,8 @@ async def test_v4_checklist_contract_has_facts_or_stops(case: dict[str, object])
         assert state["checklist"]
         assert set(state["required_issues"]) == set(state["covered_issues"])
         assert all(item["evidence_indices"] for item in state["checklist"])
+        assert state["answer"].startswith("Dưới đây là danh sách việc cần làm")
+        assert state["assessment"]["conclusion"] not in state["answer"]
     else:
         assert state["missing_facts"]
         assert not retrieval.requests

@@ -14,17 +14,18 @@ interface ChatMessageProps {
   onResearch?: () => void;
   onOpenSources: (documents: SourceDocument[], citations: Array<Record<string, unknown>>, focusIndex?: number, preview?: boolean) => void;
   onRegenerate?: () => void;
+  webResearchReady: boolean;
 }
 
 const sourceLabels: Record<string, string> = {
-  legal: 'Kho văn bản',
+  legal: 'Căn cứ pháp luật',
   chitchat: 'Hội thoại',
   web_search: 'Nguồn chính thức bên ngoài kho văn bản',
   cache: 'Câu trả lời đã xác minh',
-  follow_up: 'Đang làm rõ',
+  follow_up: 'Đang làm rõ thông tin',
 };
 
-export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOpenSources, onRegenerate, onResearch }: ChatMessageProps) {
+export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOpenSources, onRegenerate, onResearch, webResearchReady }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
 
@@ -63,11 +64,6 @@ export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOp
               Đã dừng theo yêu cầu · nội dung chưa hoàn chỉnh
             </div>
           )}
-          {message.workflow?.preview && (
-            <div className="mb-3 rounded-md border border-[#d7a65a] bg-[#fff8ea] px-3 py-2 text-xs text-[#714b18]">
-              Câu trả lời ở bản thử nghiệm; thông tin có thể thay đổi khi kho văn bản được phê duyệt.
-            </div>
-          )}
           <div className="legal-prose max-w-none text-[15px] leading-7 text-[#262d2c] sm:text-base">
             <MarkdownRenderer
               content={message.content}
@@ -87,6 +83,7 @@ export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOp
             onOpenCase={onOpenCase}
             onOpenSources={() => onOpenSources(message.documents || [], message.workflow?.citations || [], undefined, message.workflow?.preview)}
             onResearch={onResearch}
+            webResearchReady={webResearchReady}
             workflow={message.workflow}
           />
           <SourceDocuments
@@ -98,7 +95,7 @@ export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOp
           <div className="mt-3 flex min-h-8 flex-wrap items-center justify-between gap-2 border-t border-[#edf0ef] pt-2">
             <div className="text-[11px] text-[#667085]">
               {message.source && message.source !== 'error' && (
-                <span>{sourceLabels[message.source] || message.source}</span>
+                <span>{sourceLabels[message.source] || 'Nguồn tham khảo'}</span>
               )}
             </div>
             <div className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">

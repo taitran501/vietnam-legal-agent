@@ -12,7 +12,7 @@ type MarkdownNode = {
 };
 
 /** Convert plain citation markers without touching code or existing links. */
-export function remarkCitationLinks() {
+function remarkCitationLinks() {
   return (tree: MarkdownNode) => {
     const visit = (node: MarkdownNode, parent?: MarkdownNode) => {
       if (!node.children) return;

@@ -33,6 +33,12 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
+    // Aborted debounce/navigation requests are expected during rapid form
+    // edits. They are handled by the caller and should not look like a
+    // network failure in browser diagnostics.
+    if (axios.isCancel(error) || error.code === 'ERR_CANCELED') {
+      return Promise.reject(error);
+    }
     if (error.response) {
       // Server responded with error status
       const status = error.response.status;

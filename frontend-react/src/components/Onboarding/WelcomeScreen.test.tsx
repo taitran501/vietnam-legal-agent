@@ -78,4 +78,26 @@ describe('WelcomeScreen quick actions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Kiểm tra trường hợp của doanh nghiệp' }));
     expect(onStartCase).toHaveBeenCalledWith('assess_epr_obligation');
   });
+
+  it('explains why a case action is disabled without relying on a tooltip', () => {
+    render(
+      <WelcomeScreen
+        caseDisabled
+        caseDisabledReason="Chức năng này đang tạm khóa trong lúc văn bản pháp luật được kiểm tra."
+        draftText=""
+        isStreaming={false}
+        onClearIntent={vi.fn()}
+        onDraftChange={vi.fn()}
+        onPrefillPrompt={vi.fn()}
+        onSendPrompt={vi.fn()}
+        onStop={vi.fn()}
+        onStartCase={vi.fn()}
+      />,
+    );
+
+    const action = screen.getByRole('button', { name: 'Kiểm tra trường hợp của doanh nghiệp' });
+    expect(action).toBeDisabled();
+    expect(screen.getByText('Chức năng này đang tạm khóa trong lúc văn bản pháp luật được kiểm tra.')).toBeInTheDocument();
+    expect(action).toHaveAttribute('aria-describedby', 'case-capability-message');
+  });
 });

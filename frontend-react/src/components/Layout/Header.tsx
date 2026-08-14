@@ -1,5 +1,6 @@
 import { Icon } from '@/components/UI/Icon';
 import type { MeResponse } from '@/api/me';
+import { eprPlainName } from '@/lib/userCopy';
 
 interface HeaderProps {
   hasActiveCase?: boolean;
@@ -13,7 +14,7 @@ interface HeaderProps {
 export function Header({ hasActiveCase = false, me, readiness, onLogout, onOpenCase, onOpenMobileNav }: HeaderProps) {
   const status = {
     ready: { label: 'Sẵn sàng', color: 'bg-[#1d8b66]', title: 'Dữ liệu pháp luật đã sẵn sàng' },
-  preview: { label: 'Bản thử nghiệm', color: 'bg-[#d98b22]', title: 'Kho văn bản chưa được phê duyệt' },
+  preview: { label: 'Bản thử nghiệm', color: 'bg-[#d98b22]', title: 'Văn bản đang ở chế độ thử nghiệm' },
     blocked: { label: 'Tra cứu đang khóa', color: 'bg-[#ba1a1a]', title: 'Khả năng tra cứu pháp luật chưa sẵn sàng' },
     preparing: { label: 'Đang chuẩn bị dữ liệu', color: 'bg-[#d98b22]', title: 'Đang chuẩn bị dữ liệu pháp luật' },
     offline: { label: 'Ngoại tuyến', color: 'bg-[#ba1a1a]', title: 'Không thể kết nối tới máy chủ' },
@@ -31,8 +32,8 @@ export function Header({ hasActiveCase = false, me, readiness, onLogout, onOpenC
         </button>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h1 className="truncate text-sm font-semibold text-[#172033] sm:text-base">Trợ lý pháp lý</h1>
-            <span className="rounded-full bg-[#e7eceb] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#006a63]">
+            <h1 className="truncate text-sm font-semibold text-[#172033] sm:text-base">Trợ lý pháp lý về EPR</h1>
+            <span aria-label={`EPR: ${eprPlainName}`} className="rounded-full bg-[#e7eceb] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#006a63]" title={eprPlainName}>
               EPR
             </span>
           </div>

@@ -80,7 +80,7 @@ test('an unknown explicit article safe-stops without presenting unrelated source
   await input.press('Enter');
 
   const result = page.getByRole('region', { name: 'Kết quả xử lý' });
-  await expect(result.getByText('Chưa tìm thấy điều khoản phù hợp')).toBeVisible();
+  await expect(result.getByText('Chưa tìm thấy điều khoản phù hợp', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /Xem \d+ nguồn tham khảo/ })).toHaveCount(0);
   await expect(page.getByText(/Điều 77 quy định đối tượng/)).toHaveCount(0);
 });

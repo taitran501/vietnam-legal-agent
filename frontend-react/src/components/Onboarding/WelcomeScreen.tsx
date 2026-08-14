@@ -3,7 +3,7 @@ import { ChatInput } from '@/components/Chat/ChatInput';
 import { Icon, type IconName } from '@/components/UI/Icon';
 import { GuidedCaseCard } from '@/components/Case/GuidedCaseCard';
 import type { CaseState } from '@/types';
-import { taskCopy } from '@/lib/userCopy';
+import { eprPlainName, taskCopy } from '@/lib/userCopy';
 import type { CaseFormState } from '@/types';
 
 interface WelcomeScreenProps {
@@ -80,11 +80,11 @@ export function WelcomeScreen({ disabled = false, isStreaming, onSendPrompt, onP
           Hôm nay bạn muốn tìm hiểu vấn đề pháp lý nào?
         </h2>
         <p className="mt-3 max-w-[620px] text-center text-sm leading-6 text-[#667085] sm:text-base">
-          Tra cứu quy định, làm rõ nội dung và chuẩn bị bước tiếp theo với nguồn để đối chiếu.
+          Tra cứu quy định về {eprPlainName}, làm rõ nội dung và chuẩn bị bước tiếp theo với nguồn để đối chiếu.
         </p>
         <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#d9e1df] bg-[#f7faf8] px-3 py-1.5 text-xs font-medium text-[#53615e]">
           <span className="h-1.5 w-1.5 rounded-full bg-[#0f766e]" />
-          Phạm vi tài liệu hiện tại: EPR
+          Phạm vi: EPR — {eprPlainName}
         </div>
 
         <div className="mt-8 w-full max-w-[760px]">
@@ -110,6 +110,7 @@ export function WelcomeScreen({ disabled = false, isStreaming, onSendPrompt, onP
               <div className="mt-3 flex flex-wrap justify-center gap-2" aria-label="Tác vụ gợi ý">
                 {actions.map((action) => (
                   <button
+                    aria-describedby={action.taskType && caseDisabled && caseDisabledReason ? 'case-capability-message' : undefined}
                     className="inline-flex min-h-10 items-center gap-2 rounded-full border border-[#bdc9c6] bg-white px-3.5 py-2 text-xs font-medium text-[#3e4947] transition-colors hover:border-[#0f766e] hover:bg-[#f1f4f3] hover:text-[#005c55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] sm:text-sm"
                     disabled={isStreaming || (!action.taskType && disabled) || Boolean(action.taskType && caseDisabled)}
                     key={action.label}
@@ -122,6 +123,11 @@ export function WelcomeScreen({ disabled = false, isStreaming, onSendPrompt, onP
                   </button>
                 ))}
               </div>
+              {caseDisabled && caseDisabledReason && (
+                <p className="mt-3 text-center text-xs leading-5 text-[#9a5b18]" id="case-capability-message" role="status">
+                  {caseDisabledReason}
+                </p>
+              )}
               <p className="mt-3 text-center text-xs leading-5 text-[#667085]">
                 Câu trả lời sẽ hiển thị căn cứ và những thông tin còn cần kiểm tra.
               </p>
@@ -129,26 +135,31 @@ export function WelcomeScreen({ disabled = false, isStreaming, onSendPrompt, onP
           )}
         </div>
 
-        <section className="mt-10 w-full max-w-[760px]" aria-labelledby="suggestion-title">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#667085]" id="suggestion-title">
-            Gợi ý cho bạn
-          </h3>
-          <div className="divide-y divide-[#e1e6e4] overflow-hidden rounded-lg border border-[#d9e1df] bg-white">
-            {suggestions.map((suggestion) => (
-              <button
-                className="group flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left text-sm leading-5 text-[#3e4947] transition-colors hover:bg-[#f1f4f3] hover:text-[#172033] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#0f766e] sm:text-[15px]"
-                disabled={disabled || isStreaming}
-                key={suggestion}
-                onClick={() => handlePrefill(suggestion, 'auto')}
-                type="button"
-              >
-                <Icon className="shrink-0 text-[#6e7977] group-hover:text-[#006a63]" name="message" size={17} />
-                <span className="flex-1">{suggestion}</span>
-                <Icon className="shrink-0 text-[#98a29f]" name="chevronRight" size={16} />
-              </button>
-            ))}
-          </div>
-        </section>
+        {!guidedTask && (
+          <section className="mt-10 w-full max-w-[760px]" aria-labelledby="suggestion-title">
+            <div className="mb-2 flex items-baseline justify-between gap-3">
+              <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-[#667085]" id="suggestion-title">
+                Gợi ý cho bạn
+              </h3>
+              <p className="text-right text-[11px] text-[#84908d]">Chọn một câu, chỉnh sửa nếu cần rồi bấm “Gửi câu hỏi”.</p>
+            </div>
+            <div className="divide-y divide-[#e1e6e4] overflow-hidden rounded-lg border border-[#d9e1df] bg-white">
+              {suggestions.map((suggestion) => (
+                <button
+                  className="group flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left text-sm leading-5 text-[#3e4947] transition-colors hover:bg-[#f1f4f3] hover:text-[#172033] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#0f766e] sm:text-[15px]"
+                  disabled={disabled || isStreaming}
+                  key={suggestion}
+                  onClick={() => handlePrefill(suggestion, 'auto')}
+                  type="button"
+                >
+                  <Icon className="shrink-0 text-[#6e7977] group-hover:text-[#006a63]" name="message" size={17} />
+                  <span className="flex-1">{suggestion}</span>
+                  <Icon className="shrink-0 text-[#98a29f]" name="chevronRight" size={16} />
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );

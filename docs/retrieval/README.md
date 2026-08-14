@@ -35,12 +35,13 @@ to a verified older collection.
 | Citation support | every legal claim structurally and semantically verified |
 | Readiness | missing/mismatched corpus returns HTTP 503 |
 
-## Historical artifacts
+## Historical experiments
 
-`baseline_manifest.json`, `candidate_legal_structure_v1.json`, and their audit
-files document the earlier 16-query experiment. They remain useful as a
-historical regression reference but must not be compared directly with V4 until
-the same V4 corpus contract and test manifest are used.
+The earlier 16-query baseline/candidate experiment is retained as historical
+context only. Its generated manifests and audit JSON are intentionally not
+versioned in this documentation folder: raw experiment output belongs under
+the ignored `artifacts/` or `data/eval/` directories. It must not be compared
+directly with V4 until the same V4 corpus contract and test manifest are used.
 
 The deterministic V4 manifest and runner live in
 `tests/eval/pipeline_v4_manifest.py` and `tests/eval/run_eval.py`. Generated

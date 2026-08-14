@@ -47,8 +47,11 @@ class ErrorBoundary extends Component<Props, State> {
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
               Đã xảy ra lỗi
             </h2>
+            <p className="text-gray-600 dark:text-gray-400 mb-2 text-sm">
+              Ứng dụng vừa gặp lỗi ngoài dự kiến.
+            </p>
             <p className="text-gray-600 dark:text-gray-400 mb-6 text-sm">
-              {this.state.error?.message || 'Có lỗi xảy ra trong ứng dụng'}
+              Hãy thử tải lại trang. Nếu lỗi tiếp tục, hãy báo quản trị viên.
             </p>
             <button
               onClick={this.handleRetry}

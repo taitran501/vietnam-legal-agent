@@ -1,9 +1,13 @@
 import type { CaseField, CaseState, StreamError } from '@/types';
 
+export const eprPlainName = 'trách nhiệm mở rộng của nhà sản xuất và nhập khẩu';
+export const previewNotice = 'Bản thử nghiệm: nội dung có thể thay đổi khi văn bản được cập nhật và kiểm tra lại.';
+
 export type UserTaskCopy = {
   title: string;
   action: string;
   description: string;
+  turnPrompt: string;
 };
 
 export const taskCopy: Record<CaseState['task_type'], UserTaskCopy> = {
@@ -11,13 +15,29 @@ export const taskCopy: Record<CaseState['task_type'], UserTaskCopy> = {
     title: 'Kiểm tra trường hợp của doanh nghiệp',
     action: 'Kiểm tra trường hợp',
     description: 'Điền các thông tin liên quan. Trợ lý sẽ đối chiếu căn cứ và nêu kết luận sơ bộ.',
+    turnPrompt: 'Hãy kiểm tra trường hợp của doanh nghiệp dựa trên thông tin tôi đã cung cấp.',
   },
   build_compliance_checklist: {
     title: 'Tạo danh sách việc cần làm',
     action: 'Tạo danh sách việc cần làm',
     description: 'Cho biết phạm vi hoạt động để nhận danh sách việc cần chuẩn bị và căn cứ đối chiếu.',
+    turnPrompt: 'Hãy tạo danh sách việc cần làm cho doanh nghiệp dựa trên thông tin tôi đã cung cấp.',
   },
 };
+
+export function capabilityUnavailableCopy(reason = '', offline = false): string {
+  if (offline) return 'Không thể kết nối tới máy chủ. Bạn có thể thử lại sau ít phút.';
+  const messages: Record<string, string> = {
+    database_schema_mismatch: 'Chức năng này đang tạm khóa vì lịch sử chưa sẵn sàng. Hãy thử lại sau ít phút.',
+    corpus_promotion_blocked: 'Chức năng này đang tạm khóa trong lúc văn bản pháp luật được kiểm tra.',
+    corpus_not_ready: 'Chức năng này đang tạm khóa vì dữ liệu pháp luật đang được kiểm tra.',
+    qdrant_unavailable: 'Chức năng này đang tạm khóa vì kho tìm kiếm pháp luật tạm thời không khả dụng.',
+    provider_not_configured: 'Nguồn bổ sung hiện chưa được cấu hình. Bạn vẫn có thể dùng các chức năng khác.',
+    dependency_unavailable: 'Một dịch vụ cần thiết đang tạm thời không khả dụng. Hãy thử lại sau ít phút.',
+    service_unavailable: 'Dịch vụ này đang tạm thời không khả dụng. Hãy thử lại sau ít phút.',
+  };
+  return messages[reason] || 'Chức năng này hiện chưa sẵn sàng. Hãy thử lại sau ít phút.';
+}
 
 export const factLabels: Record<string, string> = {
   business_role: 'vai trò doanh nghiệp',
@@ -88,13 +108,13 @@ export function displayFactValue(key: string, value: string, fields: CaseField[]
 
 export const safeStopCopy: Record<string, { title: string; message: string }> = {
   out_of_scope: { title: 'Ngoài phạm vi hỗ trợ', message: 'Yêu cầu này không thuộc phạm vi pháp luật EPR mà trợ lý đang hỗ trợ.' },
-  insufficient_evidence: { title: 'Chưa đủ căn cứ để trả lời chắc chắn', message: 'Một hoặc nhiều vấn đề bắt buộc chưa có nguồn hoạt động phù hợp để kiểm chứng.' },
-  missing_provision: { title: 'Chưa tìm thấy điều khoản phù hợp', message: 'Kho pháp luật hiện tại chưa có nguồn hoạt động đủ cụ thể cho yêu cầu này.' },
-  incomplete_issue_coverage: { title: 'Chưa đủ căn cứ cho toàn bộ vấn đề', message: 'Một hoặc nhiều vấn đề bắt buộc chưa có nguồn hoạt động phù hợp để kiểm chứng.' },
-  failed_citation_verification: { title: 'Không xác minh được trích dẫn', message: 'Câu trả lời đã được dừng vì nguồn hoặc vị trí trích dẫn chưa vượt qua kiểm tra.' },
-  stale_corpus: { title: 'Kho văn bản cần cập nhật', message: 'Dữ liệu pháp luật hiện tại chưa được xác nhận là mới nhất cho chuỗi sửa đổi.' },
-  unavailable_dependencies: { title: 'Một dịch vụ đang tạm thời không khả dụng', message: 'Hãy thử lại sau; hệ thống chưa đưa ra kết luận khi phụ thuộc cần thiết chưa sẵn sàng.' },
-  invalid_or_unresolved_fact: { title: 'Thông tin chưa đủ rõ để kết luận', message: 'Một giá trị chưa hợp lệ hoặc thuộc nhóm chưa được xác định trong phạm vi hỗ trợ hiện tại.' },
+  insufficient_evidence: { title: 'Chưa đủ căn cứ để trả lời chắc chắn', message: 'Chưa tìm thấy căn cứ phù hợp đang có hiệu lực cho một hoặc nhiều vấn đề cần kiểm tra.' },
+  missing_provision: { title: 'Chưa tìm thấy điều khoản phù hợp', message: 'Chưa tìm thấy điều khoản phù hợp đang có hiệu lực trong các văn bản hiện có.' },
+  incomplete_issue_coverage: { title: 'Chưa đủ căn cứ cho toàn bộ vấn đề', message: 'Chưa tìm thấy căn cứ phù hợp đang có hiệu lực cho một hoặc nhiều vấn đề cần kiểm tra.' },
+  failed_citation_verification: { title: 'Chưa kiểm tra được căn cứ', message: 'Trợ lý đã dừng để không trả lời khi chưa kiểm tra được nguồn phù hợp.' },
+  stale_corpus: { title: 'Văn bản cần được cập nhật', message: 'Thông tin hiện tại chưa được xác nhận là mới nhất cho các quy định liên quan.' },
+  unavailable_dependencies: { title: 'Một dịch vụ đang tạm thời không khả dụng', message: 'Hệ thống chưa thể kiểm tra đầy đủ. Bạn có thể thử lại sau ít phút.' },
+  invalid_or_unresolved_fact: { title: 'Thông tin chưa đủ rõ để kết luận', message: 'Một thông tin chưa hợp lệ hoặc chưa được xác định rõ trong phạm vi hỗ trợ hiện tại.' },
 };
 
 const errorCopy: Record<string, { title: string; fallback: string }> = {
@@ -102,8 +122,8 @@ const errorCopy: Record<string, { title: string; fallback: string }> = {
   unauthorized: { title: 'Bạn chưa được phép thực hiện thao tác này', fallback: 'Hãy kiểm tra tài khoản hoặc quyền truy cập của bạn.' },
   rate_limited: { title: 'Bạn đang gửi yêu cầu hơi nhanh', fallback: 'Vui lòng chờ một chút rồi thử lại.' },
   rate_limit_exceeded: { title: 'Bạn đang gửi yêu cầu hơi nhanh', fallback: 'Vui lòng chờ một chút rồi thử lại.' },
-  corpus_not_ready: { title: 'Kho văn bản chưa sẵn sàng', fallback: 'Tra cứu pháp luật đang tạm khóa. Lịch sử trò chuyện vẫn được giữ nguyên.' },
-  corpus_promotion_blocked: { title: 'Kho văn bản chưa được phê duyệt', fallback: 'Kết luận pháp lý đang tạm khóa cho đến khi dữ liệu được kiểm tra.' },
+  corpus_not_ready: { title: 'Văn bản pháp luật chưa sẵn sàng', fallback: 'Tra cứu pháp luật tạm thời chưa thể sử dụng. Lịch sử trò chuyện vẫn được giữ nguyên.' },
+  corpus_promotion_blocked: { title: 'Văn bản pháp luật chưa được kiểm tra', fallback: 'Kết luận pháp lý tạm thời chưa thể sử dụng cho đến khi dữ liệu được kiểm tra.' },
   database_unavailable: { title: 'Lịch sử tạm thời không khả dụng', fallback: 'Hãy thử lại sau ít phút.' },
   persistence_failed: { title: 'Không thể lưu lượt trao đổi', fallback: 'Nội dung chưa được ghi nhận đầy đủ. Hãy thử lại.' },
   web_provider_unavailable: { title: 'Nguồn bổ sung đang tạm thời không khả dụng', fallback: 'Bạn có thể thử lại sau hoặc tiếp tục với kho văn bản hiện có.' },

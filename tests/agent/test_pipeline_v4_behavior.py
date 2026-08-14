@@ -116,6 +116,8 @@ async def test_completed_assessment_requires_all_mandatory_issue_evidence():
     assert set(state["required_issues"]) == set(state["covered_issues"])
     assert len(retrieval.requests) == 5
     assert all(request.issue_id for request in retrieval.requests)
+    assert state["answer"].startswith("Đây là đánh giá sơ bộ")
+    assert state["assessment"]["conclusion"] not in state["answer"]
 
 
 @pytest.mark.asyncio

@@ -337,7 +337,7 @@ async def run_live_metrics(cases: list[dict[str, Any]]) -> dict[str, float | int
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", type=Path, default=ROOT / "docs" / "retrieval" / "baseline_manifest.json")
+    parser.add_argument("--output", type=Path, default=ROOT / "artifacts" / "retrieval" / "baseline_manifest.json")
     parser.add_argument("--run-retrieval", action="store_true")
     parser.add_argument(
         "--query-budget",
