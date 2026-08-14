@@ -106,6 +106,36 @@ export function displayFactValue(key: string, value: string, fields: CaseField[]
   return option?.label || value.split('_').join(' ');
 }
 
+const SAFE_CASE_ERROR_PREFIXES = [
+  'Câu trả lời bị gián đoạn.',
+  'Dịch vụ tạm thời không khả dụng.',
+];
+
+/** Convert transport/library failures into copy that is safe to show beside the form. */
+export function caseFormErrorMessage(error: unknown): string {
+  const candidate = error instanceof Error ? error.message.trim() : '';
+  const responseStatus = typeof error === 'object' && error !== null
+    ? Number((error as { response?: { status?: unknown } }).response?.status || 0)
+    : 0;
+  const errorCode = typeof error === 'object' && error !== null
+    ? String((error as { code?: unknown }).code || '')
+    : '';
+
+  if (responseStatus === 422) {
+    return 'Một số thông tin chưa hợp lệ. Hãy kiểm tra các mục được đánh dấu.';
+  }
+  if (responseStatus === 401 || responseStatus === 403) {
+    return 'Phiên làm việc đã hết hạn. Hãy đăng nhập lại rồi thử lại.';
+  }
+  if (responseStatus >= 500 || errorCode === 'ERR_NETWORK' || errorCode === 'ECONNABORTED') {
+    return 'Không thể cập nhật biểu mẫu lúc này. Thông tin bạn đã nhập vẫn được giữ lại. Hãy thử lại.';
+  }
+  if (SAFE_CASE_ERROR_PREFIXES.some((prefix) => candidate.startsWith(prefix))) {
+    return candidate;
+  }
+  return 'Không thể cập nhật biểu mẫu. Thông tin bạn đã nhập vẫn được giữ lại. Hãy thử lại.';
+}
+
 export const safeStopCopy: Record<string, { title: string; message: string }> = {
   out_of_scope: { title: 'Ngoài phạm vi hỗ trợ', message: 'Yêu cầu này không thuộc phạm vi pháp luật EPR mà trợ lý đang hỗ trợ.' },
   insufficient_evidence: { title: 'Chưa đủ căn cứ để trả lời chắc chắn', message: 'Chưa tìm thấy căn cứ phù hợp đang có hiệu lực cho một hoặc nhiều vấn đề cần kiểm tra.' },
@@ -134,6 +164,5 @@ const errorCopy: Record<string, { title: string; fallback: string }> = {
 
 export function errorPresentation(error: StreamError): { title: string; message: string } {
   const copy = errorCopy[error.code] || errorCopy.pipeline_error;
-  const message = error.message && !/^HTTP \d{3}$/i.test(error.message) ? error.message : copy.fallback;
-  return { title: copy.title, message };
+  return { title: copy.title, message: copy.fallback };
 }

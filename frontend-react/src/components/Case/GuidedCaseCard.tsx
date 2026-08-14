@@ -13,7 +13,7 @@ interface GuidedCaseCardProps {
   active?: boolean;
   onSubmit: (facts: Record<string, string>, statuses: Record<string, ConfirmationStatus>, taskType: CaseState['task_type']) => Promise<void>;
   onOpenFullEditor?: () => void;
-  onDraftChange?: (facts: Record<string, string>, statuses: Record<string, ConfirmationStatus>, formState: CaseFormState | null) => void;
+  onDraftChange?: (facts: Record<string, string>, statuses: Record<string, ConfirmationStatus>, formState: CaseFormState | null, dirty: boolean) => void;
 }
 
 export function GuidedCaseCard({ taskType, initialCaseState, active = true, onSubmit, onOpenFullEditor, onDraftChange }: GuidedCaseCardProps) {
@@ -24,8 +24,8 @@ export function GuidedCaseCard({ taskType, initialCaseState, active = true, onSu
   const missing = formState?.missing_facts || initialCaseState?.missing_facts || [];
 
   useEffect(() => {
-    onDraftChange?.(draft.facts, draft.statuses, formState);
-  }, [draft.facts, draft.statuses, formState, onDraftChange]);
+    onDraftChange?.(draft.facts, draft.statuses, formState, draft.dirty);
+  }, [draft.dirty, draft.facts, draft.statuses, formState, onDraftChange]);
 
   if (!active) {
     return (
@@ -40,6 +40,7 @@ export function GuidedCaseCard({ taskType, initialCaseState, active = true, onSu
   const validationErrors = formState?.validation_errors || initialCaseState?.validation_errors || {};
   const requiredCount = formState?.required_count ?? initialCaseState?.required_count ?? fields.filter((field) => field.required).length;
   const completedCount = formState?.completed_count ?? initialCaseState?.completed_count ?? 0;
+  const submissionBlockedReason = formState?.submission_blocked_reason || initialCaseState?.submission_blocked_reason || '';
   const isBusy = draft.status === 'resolving' || draft.status === 'submitting';
 
   return (
@@ -49,7 +50,7 @@ export function GuidedCaseCard({ taskType, initialCaseState, active = true, onSu
         <div className="min-w-0 flex-1">
           <h3 className="text-base font-semibold text-[#172033]">{copy.title}</h3>
           <p className="mt-1 text-sm leading-6 text-[#53615e]">{copy.description}</p>
-          <p className="mt-2 text-xs font-semibold text-[#006a63]">{missing.length ? `Còn thiếu ${missing.length} thông tin` : `${completedCount}/${requiredCount} thông tin đã có`}</p>
+          <p className="mt-2 text-xs font-semibold text-[#006a63]">{missing.length ? `Còn thiếu ${missing.length} thông tin` : submissionBlockedReason ? 'Chưa thể xử lý tự động' : `${completedCount}/${requiredCount} thông tin đã có`}</p>
         </div>
       </div>
       {fields.length > 0 ? (
@@ -59,7 +60,15 @@ export function GuidedCaseCard({ taskType, initialCaseState, active = true, onSu
       ) : (
         <p className="mt-4 rounded-lg border border-[#ead6b8] bg-[#fff8ea] p-3 text-sm text-[#714b18]">Đang chuẩn bị các thông tin cần cung cấp…</p>
       )}
-      {draft.error && <p className="mt-3 rounded-lg border border-[#f0b7b2] bg-[#fff0ef] p-3 text-sm leading-6 text-[#7f1d1d]" role="alert">{draft.error}</p>}
+      {submissionBlockedReason && <p className="mt-3 rounded-lg border border-[#ead6b8] bg-[#fff8ea] p-3 text-sm leading-6 text-[#714b18]" role="status">{submissionBlockedReason}</p>}
+      {draft.error && (
+        <div className="mt-3 rounded-lg border border-[#f0b7b2] bg-[#fff0ef] p-3 text-sm leading-6 text-[#7f1d1d]" role="alert">
+          <p>{draft.error}</p>
+          <button className="mt-2 rounded-md border border-[#ba1a1a] bg-white px-3 py-2 text-xs font-semibold text-[#7f1d1d] hover:bg-[#ffe3e1]" disabled={isBusy} onClick={() => void draft.retry()} type="button">
+            {draft.errorPhase === 'submit' ? 'Thử xử lý lại' : 'Thử cập nhật biểu mẫu'}
+          </button>
+        </div>
+      )}
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button className="rounded-lg bg-[#0f766e] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#005c55] disabled:cursor-not-allowed disabled:bg-[#bdc9c6]" disabled={isBusy || !draft.isReady} onClick={() => void draft.submit()} type="button">
           {draft.status === 'submitting' ? 'Đang xử lý…' : copy.action}

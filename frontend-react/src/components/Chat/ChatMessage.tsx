@@ -81,7 +81,7 @@ export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOp
           <WorkflowResultCard
             onContinueCase={onContinueCase}
             onOpenCase={onOpenCase}
-            onOpenSources={() => onOpenSources(message.documents || [], message.workflow?.citations || [], undefined, message.workflow?.preview)}
+            onOpenSources={(focusIndex) => onOpenSources(message.documents || [], message.workflow?.citations || [], focusIndex, message.workflow?.preview)}
             onResearch={onResearch}
             webResearchReady={webResearchReady}
             workflow={message.workflow}

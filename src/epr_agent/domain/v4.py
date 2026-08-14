@@ -105,6 +105,7 @@ class CaseFormState(BaseModel):
     fields: list[CaseField] = Field(default_factory=list)
     missing_facts: list[str] = Field(default_factory=list)
     validation_errors: dict[str, str] = Field(default_factory=dict)
+    submission_blocked_reason: str = ""
     completed_count: int = Field(default=0, ge=0)
     required_count: int = Field(default=0, ge=0)
 
@@ -163,6 +164,7 @@ class CaseStateV4(BaseModel):
     form_version: str = "case-form-v1"
     fields: list[CaseField] = Field(default_factory=list)
     validation_errors: dict[str, str] = Field(default_factory=dict)
+    submission_blocked_reason: str = ""
     completed_count: int = Field(default=0, ge=0)
     required_count: int = Field(default=0, ge=0)
 

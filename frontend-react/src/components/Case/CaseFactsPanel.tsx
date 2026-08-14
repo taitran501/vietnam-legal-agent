@@ -68,10 +68,13 @@ export function CaseFactsPanel({ conversationId, caseState, onCaseChange, onCont
   }));
   const requiredFields = dynamicFields.filter((field) => field.required);
   const filledRequired = requiredFields.filter((field) => Boolean(facts[field.key])).length;
+  const submissionBlockedReason = caseState?.submission_blocked_reason || '';
   const isDirty = JSON.stringify(facts) !== JSON.stringify(baseline)
     || JSON.stringify(confirmationStatuses) !== JSON.stringify(baselineConfirmationStatuses)
     || taskType !== baselineTaskType;
-  const hasRequiredFacts = filledRequired === requiredFields.length && Object.keys(validationErrors).length === 0;
+  const hasRequiredFacts = filledRequired === requiredFields.length
+    && Object.keys(validationErrors).length === 0
+    && (!submissionBlockedReason || isDirty);
 
   useEffect(() => {
     onDirtyChange?.(isDirty);
@@ -113,6 +116,10 @@ export function CaseFactsPanel({ conversationId, caseState, onCaseChange, onCont
       setBaseline(facts);
       setBaselineConfirmationStatuses(confirmationStatuses);
       setBaselineTaskType(taskType);
+      if (next.submission_blocked_reason) {
+        toast.info(next.submission_blocked_reason);
+        return false;
+      }
       toast.success('Đã cập nhật thông tin trường hợp');
       return true;
     } catch {
@@ -179,6 +186,11 @@ export function CaseFactsPanel({ conversationId, caseState, onCaseChange, onCont
         validationErrors={validationErrors}
         values={facts}
       />
+      {submissionBlockedReason && (
+        <p className="mt-3 rounded-lg border border-[#ead6b8] bg-[#fff8ea] p-3 text-xs leading-5 text-[#714b18]" role="status">
+          {submissionBlockedReason}
+        </p>
+      )}
 
       <div className="mt-5 rounded-lg border border-[#ead6b8] bg-[#fff8ea] p-3 text-xs leading-5 text-[#714b18]">
         Bạn đang xác nhận thông tin do mình nhập; điều này không có nghĩa là tài liệu hoặc cơ quan độc lập đã xác minh. Trợ lý không tự suy đoán dữ liệu doanh nghiệp còn thiếu.

@@ -8,7 +8,7 @@ import { displayFactLabel, displayFactValue, safeStopCopy } from '@/lib/userCopy
 interface WorkflowResultCardProps {
   onOpenCase?: () => void;
   onContinueCase?: (facts: Record<string, string>, statuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>, taskType: CaseState['task_type']) => Promise<void>;
-  onOpenSources?: () => void;
+  onOpenSources?: (focusIndex?: number) => void;
   onResearch?: () => void;
   webResearchReady?: boolean;
   workflow?: WorkflowMetadata;
@@ -130,7 +130,7 @@ export function WorkflowResultCard({ onOpenCase, onContinueCase, onOpenSources, 
                 <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[#80d5cb] text-[10px] font-semibold text-[#006a63]">
                   {index + 1}
                 </span>
-                <span><span className="font-medium">{String(item.item || 'Hạng mục cần thực hiện')}</span>{typeof item.action === 'string' && item.action && <span className="block text-xs text-[#667085]">{item.action}</span>}{Array.isArray(item.evidence_indices) && item.evidence_indices.length > 0 && (onOpenSources ? <button className="block text-left text-xs text-[#006a63] underline" onClick={onOpenSources} type="button">Xem căn cứ ({(item.evidence_indices as unknown[]).map((value) => String(value)).join(', ')})</button> : <span className="block text-xs text-[#006a63]">Căn cứ ({(item.evidence_indices as unknown[]).map((value) => String(value)).join(', ')})</span>)}</span>
+                <span><span className="font-medium">{String(item.item || 'Hạng mục cần thực hiện')}</span>{typeof item.action === 'string' && item.action && <span className="block text-xs text-[#667085]">{item.action}</span>}{Array.isArray(item.evidence_indices) && item.evidence_indices.length > 0 && (onOpenSources ? <button className="block text-left text-xs text-[#006a63] underline" onClick={() => { const firstIndex = Number((item.evidence_indices as unknown[])[0]); onOpenSources(Number.isFinite(firstIndex) ? firstIndex : undefined); }} type="button">Xem căn cứ ({(item.evidence_indices as unknown[]).map((value) => String(value)).join(', ')})</button> : <span className="block text-xs text-[#006a63]">Căn cứ ({(item.evidence_indices as unknown[]).map((value) => String(value)).join(', ')})</span>)}</span>
               </li>
             ))}
           </ol>

@@ -19,7 +19,7 @@ interface WelcomeScreenProps {
   onStartCase?: (taskType: CaseState['task_type']) => void;
   guidedTask?: CaseState['task_type'] | null;
   onGuidedSubmit?: (facts: Record<string, string>, statuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>, taskType: CaseState['task_type']) => Promise<void>;
-  onGuidedDraftChange?: (facts: Record<string, string>, statuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>, formState: CaseFormState | null) => void;
+  onGuidedDraftChange?: (facts: Record<string, string>, statuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>, formState: CaseFormState | null, dirty: boolean) => void;
   onCancelGuided?: () => void;
   caseDisabled?: boolean;
   caseDisabledReason?: string;

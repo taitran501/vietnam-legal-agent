@@ -50,6 +50,7 @@ type GuidedDraftSnapshot = {
   facts: Record<string, string>;
   statuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>;
   formState: CaseFormState | null;
+  dirty: boolean;
 };
 
 function capabilityStatus(readiness: ReadinessResponse | null, name: keyof ReadinessResponse['capabilities']) {
@@ -206,13 +207,13 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
     setComposerDraft({ text, intent, interactionSource: 'quick_action' });
   };
 
-  const handleGuidedDraftChange = useCallback((facts: Record<string, string>, statuses: GuidedDraftSnapshot['statuses'], formState: CaseFormState | null) => {
+  const handleGuidedDraftChange = useCallback((facts: Record<string, string>, statuses: GuidedDraftSnapshot['statuses'], formState: CaseFormState | null, dirty: boolean) => {
     if (!guidedTask) return;
-    setGuidedDraft({ taskType: guidedTask, facts, statuses, formState });
+    setGuidedDraft({ taskType: guidedTask, facts, statuses, formState, dirty });
   }, [guidedTask]);
 
-  const handleRecoveryDraftChange = useCallback((facts: Record<string, string>, statuses: GuidedDraftSnapshot['statuses'], formState: CaseFormState | null) => {
-    setGuidedDraft((current) => current ? { ...current, facts, statuses, formState } : current);
+  const handleRecoveryDraftChange = useCallback((facts: Record<string, string>, statuses: GuidedDraftSnapshot['statuses'], formState: CaseFormState | null, dirty: boolean) => {
+    setGuidedDraft((current) => current ? { ...current, facts, statuses, formState, dirty } : current);
   }, []);
 
   const handleStartGuidedCase = (taskType: CaseState['task_type']) => {
@@ -267,7 +268,7 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
     taskType: CaseState['task_type'] = 'assess_epr_obligation',
   ) => {
     if (!activeSessionId || !caseReady) return;
-    const prompt = activeCase?.last_query || 'Tiếp tục đánh giá tình huống này.';
+    const prompt = taskCopy[taskType].turnPrompt;
     void sendMessage(prompt, activeSessionId, 'auto', {
       operation: 'continue_case',
       intentHint: taskType === 'build_compliance_checklist' ? 'compliance_checklist' : 'case_assessment',
@@ -291,9 +292,19 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
     return true;
   }, [caseDirty]);
 
+  const closeGuidedCase = useCallback((): boolean => {
+    if (guidedDraft?.dirty && !window.confirm('Bỏ các thông tin chưa gửi?')) return false;
+    setGuidedTask(null);
+    setGuidedDraft(null);
+    setComposerDraft({ text: '', intent: 'auto', interactionSource: 'composer' });
+    return true;
+  }, [guidedDraft?.dirty, setComposerDraft]);
+
   const handleNewSession = () => {
     setOpenSources(null);
-    if (!closeCaseDrawer()) return;
+    if (!closeCaseDrawer() || !closeGuidedCase()) return;
+    if (isStreaming) stopGeneration();
+    useChatStore.getState().clearChat();
     navigate('/');
   };
 
@@ -362,11 +373,7 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
       onStop={stopGeneration}
       onStartCase={handleStartGuidedCase}
       onGuidedSubmit={submitGuidedCase}
-      onCancelGuided={() => {
-        setGuidedTask(null);
-        setGuidedDraft(null);
-        setComposerDraft({ text: '', intent: 'auto', interactionSource: 'composer' });
-      }}
+      onCancelGuided={closeGuidedCase}
       onGuidedDraftChange={handleGuidedDraftChange}
       draftText={composerDraft.text}
       onDraftChange={(text) => setComposerDraft({ text, interactionSource: 'composer' })}
