@@ -103,3 +103,40 @@ test('real guided assessment collects dependent facts before one submit', async 
   await expect(page.getByText('Đánh giá sơ bộ', { exact: true })).toBeVisible();
   await expect(page.getByText(/Kết quả dựa trên thông tin đã cung cấp và nguồn hiển thị/)).toBeVisible();
 });
+
+test('guided form explains unresolved reuse branch before submit', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Kiểm tra trường hợp của doanh nghiệp' }).click();
+  const form = page.getByRole('region', { name: 'Kiểm tra trường hợp của doanh nghiệp' });
+  await form.getByLabel('Vai trò doanh nghiệp').selectOption('manufacturer');
+  await form.getByLabel('Loại đối tượng').selectOption('commercial_packaging');
+  await form.getByLabel('Nhóm sản phẩm EPR').selectOption('bao_bi');
+  await form.getByLabel('Phạm vi đưa ra thị trường').selectOption('vietnam_market');
+  await form.getByLabel('Mục đích sản xuất hoặc nhập khẩu').selectOption('commercial');
+  await form.getByLabel('Nhóm hàng hóa được đóng gói').selectOption('thuc_pham');
+  await form.getByLabel('Doanh thu bán sản phẩm liên quan mỗi năm').fill('40000000000');
+  await form.getByLabel('Bao bì có được doanh nghiệp thu hồi để tái sử dụng không').selectOption('yes');
+  await form.getByLabel('Tỷ lệ thu hồi và tái sử dụng').fill('80');
+
+  await expect(form.getByText('Trường hợp có thu hồi và tái sử dụng cần được đối chiếu thêm căn cứ riêng.', { exact: false })).toBeVisible();
+  await expect(form.getByRole('button', { name: 'Kiểm tra trường hợp' })).toBeDisabled();
+  await expect(page).toHaveURL(/\/$/);
+});
+
+test('generic other category is explained instead of opening a doomed turn', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Kiểm tra trường hợp của doanh nghiệp' }).click();
+  const form = page.getByRole('region', { name: 'Kiểm tra trường hợp của doanh nghiệp' });
+  await form.getByLabel('Vai trò doanh nghiệp').selectOption('manufacturer');
+  await form.getByLabel('Loại đối tượng').selectOption('commercial_packaging');
+  await form.getByLabel('Nhóm sản phẩm EPR').selectOption('bao_bi');
+  await form.getByLabel('Phạm vi đưa ra thị trường').selectOption('vietnam_market');
+  await form.getByLabel('Mục đích sản xuất hoặc nhập khẩu').selectOption('commercial');
+  await form.getByLabel('Nhóm hàng hóa được đóng gói').selectOption('other');
+  await form.getByLabel('Doanh thu bán sản phẩm liên quan mỗi năm').fill('40000000000');
+  await form.getByLabel('Bao bì có được doanh nghiệp thu hồi để tái sử dụng không').selectOption('no');
+
+  await expect(form.getByText('Nhóm hàng hóa “Khác” cần được đối chiếu với điều khoản cụ thể.', { exact: false })).toBeVisible();
+  await expect(form.getByRole('button', { name: 'Kiểm tra trường hợp' })).toBeDisabled();
+  await expect(page).toHaveURL(/\/$/);
+});

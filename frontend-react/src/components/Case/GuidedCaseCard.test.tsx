@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { resolveCaseForm } from '@/api/caseForm';
 import { GuidedCaseCard } from './GuidedCaseCard';
 
 vi.mock('@/api/caseForm', () => ({
@@ -52,5 +53,29 @@ describe('GuidedCaseCard', () => {
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Dịch vụ tạm thời không khả dụng.'));
     expect(screen.getByRole('combobox', { name: 'Vai trò doanh nghiệp' })).toHaveValue('manufacturer');
+  });
+
+  it('hides transport details and offers a retry when resolving the form fails', async () => {
+    vi.mocked(resolveCaseForm).mockRejectedValueOnce(new Error('Request failed with status code 500'));
+    const initialState = {
+      form_version: 'case-form-v1',
+      task_type: 'assess_epr_obligation' as const,
+      status: 'collecting' as const,
+      facts: {},
+      fields: [
+        { key: 'business_role', label: 'Vai trò doanh nghiệp', kind: 'select' as const, options: [{ value: 'manufacturer', label: 'Nhà sản xuất' }], required: true, importance: 'required' as const, missing: true, value: '', help_text: 'Chọn vai trò.' },
+      ],
+      missing_facts: ['business_role'],
+      validation_errors: {},
+      completed_count: 0,
+      required_count: 1,
+    };
+    render(<GuidedCaseCard initialCaseState={initialState} onSubmit={vi.fn(async () => undefined)} taskType="assess_epr_obligation" />);
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Vai trò doanh nghiệp' }), { target: { value: 'manufacturer' } });
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Thông tin bạn đã nhập vẫn được giữ lại'));
+    expect(screen.getByRole('alert')).not.toHaveTextContent('Request failed with status code 500');
+    fireEvent.click(screen.getByRole('button', { name: 'Thử cập nhật biểu mẫu' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
   });
 });

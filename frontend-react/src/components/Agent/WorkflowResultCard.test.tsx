@@ -33,6 +33,21 @@ describe('WorkflowResultCard', () => {
     expect(screen.queryByText('[1] Điều 77')).not.toBeInTheDocument();
   });
 
+  it('focuses the first cited source from a checklist action', () => {
+    const onOpenSources = vi.fn();
+    render(
+      <WorkflowResultCard
+        onOpenSources={onOpenSources}
+        workflow={{
+          checklist: [{ item: 'Đối chiếu Điều 77', evidence_indices: [2, 4] }],
+        }}
+      />,
+    );
+
+    screen.getByRole('button', { name: 'Xem căn cứ (2, 4)' }).click();
+    expect(onOpenSources).toHaveBeenCalledWith(2);
+  });
+
   it('uses a safe-stop state when evidence is insufficient', () => {
     render(<WorkflowResultCard workflow={{ termination_reason: 'insufficient_evidence' }} />);
     expect(screen.getByText('Chưa đủ căn cứ để trả lời chắc chắn')).toBeInTheDocument();

@@ -130,9 +130,7 @@ test('guided assessment resolves dependent fields and submits one chat turn', as
   await expect(form.getByText('Doanh thu phải là số nguyên không âm, tính bằng VNĐ.')).toBeVisible();
   await expect(form.getByRole('button', { name: 'Kiểm tra trường hợp' })).toBeDisabled();
   await form.getByLabel('Doanh thu bán sản phẩm liên quan mỗi năm').fill('40000000000');
-  await form.getByLabel('Bao bì có được doanh nghiệp thu hồi để tái sử dụng không').selectOption('yes');
-  await expect(form.getByLabel('Tỷ lệ thu hồi và tái sử dụng')).toBeVisible();
-  await form.getByLabel('Tỷ lệ thu hồi và tái sử dụng').fill('95');
+  await form.getByLabel('Bao bì có được doanh nghiệp thu hồi để tái sử dụng không').selectOption('no');
   await expect(form.getByRole('button', { name: 'Kiểm tra trường hợp' })).toBeEnabled();
   await form.getByRole('button', { name: 'Kiểm tra trường hợp' }).click();
 
@@ -205,7 +203,7 @@ test('guided checklist keeps the checklist prompt and history title', async ({ p
     contentType: 'application/json',
     body: JSON.stringify(persistedSession()),
   }));
-  await page.route('**/api/v1/sessions/*', async (route) => {
+  await page.route('**/api/v1/sessions/**', async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith('/case')) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
@@ -242,6 +240,45 @@ test('guided checklist keeps the checklist prompt and history title', async ({ p
   await expect(page.locator('aside').getByTitle('Hãy tạo danh sách việc cần làm cho doanh nghiệp dựa trên thông tin tôi đã cung cấp.')).toBeVisible();
 });
 
+test('guided drafts ask before discard and new conversation clears the form', async ({ page }) => {
+  await mockBaseApi(page);
+  await page.route('**/api/v1/case-form/resolve', async (route) => {
+    const body = route.request().postDataJSON() as { fact_updates?: Record<string, { value?: string }> };
+    const value = String(body.fact_updates?.business_role?.value || '');
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        form_version: 'case-form-v1',
+        task_type: 'assess_epr_obligation',
+        status: value ? 'ready' : 'collecting',
+        facts: value ? { business_role: { value, source: 'case_panel', confirmation_status: 'user_confirmed' } } : {},
+        fields: [{ key: 'business_role', label: 'Vai trò doanh nghiệp', kind: 'select', options: [{ value: 'manufacturer', label: 'Nhà sản xuất' }], required: true, importance: 'required', missing: !value, value, help_text: 'Chọn vai trò.' }],
+        missing_facts: value ? [] : ['business_role'],
+        validation_errors: {},
+        completed_count: value ? 1 : 0,
+        required_count: 1,
+      }),
+    });
+  });
+
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Kiểm tra trường hợp của doanh nghiệp' }).click();
+  const form = page.getByRole('region', { name: 'Kiểm tra trường hợp của doanh nghiệp' });
+  await form.getByLabel('Vai trò doanh nghiệp').selectOption('manufacturer');
+  page.once('dialog', async (dialog) => {
+    expect(dialog.message()).toContain('Bỏ các thông tin chưa gửi');
+    await dialog.dismiss();
+  });
+  await page.getByRole('button', { name: 'Quay lại tra cứu quy định' }).click();
+  await expect(form).toBeVisible();
+
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Cuộc trò chuyện mới' }).click();
+  await expect(form).not.toBeVisible();
+  await expect(page.getByLabel('Câu hỏi pháp lý')).toBeVisible();
+});
+
 test('case capability explains why its action is unavailable on mobile', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockBaseApi(page, { caseWorkflowReady: false });
@@ -251,6 +288,15 @@ test('case capability explains why its action is unavailable on mobile', async (
   await expect(action).toBeDisabled();
   await expect(page.getByText('Chức năng này đang tạm khóa vì dữ liệu pháp luật đang được kiểm tra.')).toBeVisible();
   await expect(action).toHaveAttribute('aria-describedby', 'case-capability-message');
+});
+
+test('invalid conversation URL is treated as a real not-found route', async ({ page }) => {
+  await mockBaseApi(page);
+  await page.goto('/conversations/not-a-real-conversation');
+
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByText('Cuộc trò chuyện không tồn tại hoặc bạn không có quyền truy cập.')).toBeVisible();
+  await expect(page.locator('aside').getByTitle('Cuộc trò chuyện')).toHaveCount(0);
 });
 
 test('guided submit failure keeps the draft available for another attempt', async ({ page }) => {
@@ -663,10 +709,11 @@ test('task type is saved before checklist continuation and drawer closes only af
   await drawer.getByRole('button', { name: 'Lưu và tiếp tục tạo danh sách việc cần làm' }).click();
 
   await expect(drawer).not.toBeVisible();
-  await expect(page.getByText('Danh sách việc cần làm')).toBeVisible();
+  await expect(page.getByText('Danh sách việc cần làm', { exact: true })).toBeVisible();
   expect(patchBody?.task_type).toBe('build_compliance_checklist');
   expect(continuationBody?.operation).toBe('continue_case');
   expect(continuationBody?.intent_hint).toBe('compliance_checklist');
+  expect(continuationBody?.query).toBe('Hãy tạo danh sách việc cần làm cho doanh nghiệp dựa trên thông tin tôi đã cung cấp.');
 });
 
 test('production corpus block disables legal send but leaves owned history usable', async ({ page }) => {

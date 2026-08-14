@@ -89,3 +89,40 @@ def test_unknown_fact_update_is_rejected_without_polluting_form_state():
     assert state.validation_errors == {
         "internal_debug_flag": "Thông tin này không thuộc biểu mẫu EPR hiện tại."
     }
+
+
+def test_complete_but_unresolved_branches_are_blocked_before_submission():
+    resolver = CaseFormResolver()
+    common = {
+        "business_role": "manufacturer",
+        "object_kind": "commercial_packaging",
+        "product_group": "bao_bi",
+        "market_placement": "vietnam_market",
+        "activity_purpose": "commercial",
+        "annual_revenue_vnd": "40000000000",
+    }
+
+    other = resolver.resolve(
+        "assess_epr_obligation",
+        fact_updates={
+            **{key: {"value": value, "confirmation_status": "user_confirmed"} for key, value in common.items()},
+            "packaged_goods_category": {"value": "other", "confirmation_status": "user_confirmed"},
+            "reused_by_producer": {"value": "no", "confirmation_status": "user_confirmed"},
+        },
+    )
+    assert other.status == "collecting"
+    assert other.missing_facts == []
+    assert "Khác" in other.submission_blocked_reason
+
+    reused = resolver.resolve(
+        "assess_epr_obligation",
+        fact_updates={
+            **{key: {"value": value, "confirmation_status": "user_confirmed"} for key, value in common.items()},
+            "packaged_goods_category": {"value": "thuc_pham", "confirmation_status": "user_confirmed"},
+            "reused_by_producer": {"value": "yes", "confirmation_status": "user_confirmed"},
+            "recovery_rate": {"value": "80", "confirmation_status": "user_confirmed"},
+        },
+    )
+    assert reused.status == "collecting"
+    assert reused.missing_facts == []
+    assert "thu hồi và tái sử dụng" in reused.submission_blocked_reason
