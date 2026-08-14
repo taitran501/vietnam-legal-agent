@@ -3,7 +3,7 @@ import { Icon } from '@/components/UI/Icon';
 import { TraceDrawer } from './TraceDrawer';
 import { GuidedCaseCard } from '@/components/Case/GuidedCaseCard';
 import type { CaseState } from '@/types';
-import { displayFactLabel, displayFactValue, factLabels, safeStopCopy } from '@/lib/userCopy';
+import { displayFactLabel, displayFactValue, safeStopCopy } from '@/lib/userCopy';
 
 interface WorkflowResultCardProps {
   onOpenCase?: () => void;
@@ -76,7 +76,7 @@ export function WorkflowResultCard({ onOpenCase, onContinueCase, onOpenSources, 
         ) : (
           <div className="rounded-lg border border-[#cad5ec] bg-[#f3f6fc] p-4 text-sm text-[#29354b]">
             <p className="font-semibold text-[#005c55]">Cần thêm thông tin để tiếp tục</p>
-            <p className="mt-2 leading-6">Còn thiếu: {workflow.missing_facts?.map((fact) => factLabels[fact] || fact).join(', ')}.</p>
+            <p className="mt-2 leading-6">Còn thiếu: {workflow.missing_facts?.map((fact) => displayFactLabel(fact)).join(', ')}.</p>
           </div>
         )
       )}
@@ -145,7 +145,7 @@ export function WorkflowResultCard({ onOpenCase, onContinueCase, onOpenSources, 
           </ul>
         </details>
       )}
-      <p className="text-[11px] text-[#667085]">Thông tin được cập nhật đến: {workflow.corpus_as_of_date || 'chưa xác nhận ngày cập nhật'}</p>
+      {workflow.corpus_as_of_date && <p className="text-[11px] text-[#667085]">Thông tin được cập nhật đến: {workflow.corpus_as_of_date}</p>}
       <TraceDrawer traceId={workflow.trace_id} />
     </section>
   );

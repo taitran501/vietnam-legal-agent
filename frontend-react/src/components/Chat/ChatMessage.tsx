@@ -95,7 +95,7 @@ export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOp
           <div className="mt-3 flex min-h-8 flex-wrap items-center justify-between gap-2 border-t border-[#edf0ef] pt-2">
             <div className="text-[11px] text-[#667085]">
               {message.source && message.source !== 'error' && (
-                <span>{sourceLabels[message.source] || message.source}</span>
+                <span>{sourceLabels[message.source] || 'Nguồn tham khảo'}</span>
               )}
             </div>
             <div className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
