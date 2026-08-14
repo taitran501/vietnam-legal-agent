@@ -18,6 +18,7 @@ interface MessageListProps {
   onRetry?: () => void;
   statusMessage?: string;
   streamingContent: string;
+  webResearchReady: boolean;
 }
 
 export function MessageList({
@@ -32,6 +33,7 @@ export function MessageList({
   onRetry,
   statusMessage,
   streamingContent,
+  webResearchReady,
 }: MessageListProps) {
   const [retryCountdown, setRetryCountdown] = useState(0);
   const { containerRef, scrollToBottom, isAtBottom } = useAutoScroll({ enabled: true });
@@ -72,9 +74,10 @@ export function MessageList({
               message={message}
               onOpenCase={onOpenCase}
               onContinueCase={message.role === 'assistant' && index === visibleMessages.length - 1 ? onContinueCase : undefined}
-              onResearch={message.role === 'assistant' && message.workflow?.available_actions?.includes('research_web')
+              onResearch={message.role === 'assistant' && webResearchReady && message.workflow?.available_actions?.includes('research_web')
                 ? () => onResearch?.(messages[index - 1]?.content || '')
                 : undefined}
+              webResearchReady={webResearchReady}
               onOpenSources={onOpenSources}
               onRegenerate={
                 message.role === 'assistant' && message.status === 'complete' && index === visibleMessages.length - 1 && !hidePendingAssistant

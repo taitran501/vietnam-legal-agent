@@ -10,10 +10,11 @@ interface WorkflowResultCardProps {
   onContinueCase?: (facts: Record<string, string>, statuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>, taskType: CaseState['task_type']) => Promise<void>;
   onOpenSources?: () => void;
   onResearch?: () => void;
+  webResearchReady?: boolean;
   workflow?: WorkflowMetadata;
 }
 
-export function WorkflowResultCard({ onOpenCase, onContinueCase, onOpenSources, onResearch, workflow }: WorkflowResultCardProps) {
+export function WorkflowResultCard({ onOpenCase, onContinueCase, onOpenSources, onResearch, webResearchReady = false, workflow }: WorkflowResultCardProps) {
   if (!workflow) return null;
   const rawStopReason = workflow.safe_stop_reason || workflow.citation_error || workflow.termination_reason || '';
   const stopKey = ({
@@ -87,7 +88,7 @@ export function WorkflowResultCard({ onOpenCase, onContinueCase, onOpenSources, 
             <div>
               <p className="font-semibold">{stop.title}</p>
               <p className="mt-1 leading-6">{stop.message} {stopGuidance}</p>
-              {workflow.available_actions?.includes('research_web') && onResearch && (
+              {workflow.available_actions?.includes('research_web') && webResearchReady && onResearch && (
                 <button
                   className="mt-3 rounded-md border border-[#ad7b36] bg-white px-3 py-2 text-xs font-semibold text-[#714b18] hover:bg-[#fff1d7] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ad7b36]"
                   onClick={onResearch}

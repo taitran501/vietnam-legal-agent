@@ -110,6 +110,7 @@ export function WelcomeScreen({ disabled = false, isStreaming, onSendPrompt, onP
               <div className="mt-3 flex flex-wrap justify-center gap-2" aria-label="Tác vụ gợi ý">
                 {actions.map((action) => (
                   <button
+                    aria-describedby={action.taskType && caseDisabled && caseDisabledReason ? 'case-capability-message' : undefined}
                     className="inline-flex min-h-10 items-center gap-2 rounded-full border border-[#bdc9c6] bg-white px-3.5 py-2 text-xs font-medium text-[#3e4947] transition-colors hover:border-[#0f766e] hover:bg-[#f1f4f3] hover:text-[#005c55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] sm:text-sm"
                     disabled={isStreaming || (!action.taskType && disabled) || Boolean(action.taskType && caseDisabled)}
                     key={action.label}
@@ -122,6 +123,11 @@ export function WelcomeScreen({ disabled = false, isStreaming, onSendPrompt, onP
                   </button>
                 ))}
               </div>
+              {caseDisabled && caseDisabledReason && (
+                <p className="mt-3 text-center text-xs leading-5 text-[#9a5b18]" id="case-capability-message" role="status">
+                  {caseDisabledReason}
+                </p>
+              )}
               <p className="mt-3 text-center text-xs leading-5 text-[#667085]">
                 Câu trả lời sẽ hiển thị căn cứ và những thông tin còn cần kiểm tra.
               </p>

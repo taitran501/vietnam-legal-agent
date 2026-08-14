@@ -7,6 +7,7 @@ export type UserTaskCopy = {
   title: string;
   action: string;
   description: string;
+  turnPrompt: string;
 };
 
 export const taskCopy: Record<CaseState['task_type'], UserTaskCopy> = {
@@ -14,13 +15,29 @@ export const taskCopy: Record<CaseState['task_type'], UserTaskCopy> = {
     title: 'Kiểm tra trường hợp của doanh nghiệp',
     action: 'Kiểm tra trường hợp',
     description: 'Điền các thông tin liên quan. Trợ lý sẽ đối chiếu căn cứ và nêu kết luận sơ bộ.',
+    turnPrompt: 'Hãy kiểm tra trường hợp của doanh nghiệp dựa trên thông tin tôi đã cung cấp.',
   },
   build_compliance_checklist: {
     title: 'Tạo danh sách việc cần làm',
     action: 'Tạo danh sách việc cần làm',
     description: 'Cho biết phạm vi hoạt động để nhận danh sách việc cần chuẩn bị và căn cứ đối chiếu.',
+    turnPrompt: 'Hãy tạo danh sách việc cần làm cho doanh nghiệp dựa trên thông tin tôi đã cung cấp.',
   },
 };
+
+export function capabilityUnavailableCopy(reason = '', offline = false): string {
+  if (offline) return 'Không thể kết nối tới máy chủ. Bạn có thể thử lại sau ít phút.';
+  const messages: Record<string, string> = {
+    database_schema_mismatch: 'Chức năng này đang tạm khóa vì lịch sử chưa sẵn sàng. Hãy thử lại sau ít phút.',
+    corpus_promotion_blocked: 'Chức năng này đang tạm khóa trong lúc văn bản pháp luật được kiểm tra.',
+    corpus_not_ready: 'Chức năng này đang tạm khóa trong lúc văn bản pháp luật được chuẩn bị.',
+    qdrant_unavailable: 'Chức năng này đang tạm khóa vì kho tìm kiếm pháp luật tạm thời không khả dụng.',
+    provider_not_configured: 'Nguồn bổ sung hiện chưa được cấu hình. Bạn vẫn có thể dùng các chức năng khác.',
+    dependency_unavailable: 'Một dịch vụ cần thiết đang tạm thời không khả dụng. Hãy thử lại sau ít phút.',
+    service_unavailable: 'Dịch vụ này đang tạm thời không khả dụng. Hãy thử lại sau ít phút.',
+  };
+  return messages[reason] || 'Chức năng này hiện chưa sẵn sàng. Hãy thử lại sau ít phút.';
+}
 
 export const factLabels: Record<string, string> = {
   business_role: 'vai trò doanh nghiệp',

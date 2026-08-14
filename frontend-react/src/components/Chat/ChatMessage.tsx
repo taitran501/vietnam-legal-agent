@@ -6,7 +6,6 @@ import { MessageActions } from './MessageActions';
 import { SourceDocuments } from './SourceDocuments';
 import { WorkflowResultCard } from '@/components/Agent/WorkflowResultCard';
 import { Icon } from '@/components/UI/Icon';
-import { previewNotice } from '@/lib/userCopy';
 
 interface ChatMessageProps {
   message: ChatMessage;
@@ -15,6 +14,7 @@ interface ChatMessageProps {
   onResearch?: () => void;
   onOpenSources: (documents: SourceDocument[], citations: Array<Record<string, unknown>>, focusIndex?: number, preview?: boolean) => void;
   onRegenerate?: () => void;
+  webResearchReady: boolean;
 }
 
 const sourceLabels: Record<string, string> = {
@@ -25,7 +25,7 @@ const sourceLabels: Record<string, string> = {
   follow_up: 'Đang làm rõ thông tin',
 };
 
-export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOpenSources, onRegenerate, onResearch }: ChatMessageProps) {
+export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOpenSources, onRegenerate, onResearch, webResearchReady }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
 
@@ -64,11 +64,6 @@ export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOp
               Đã dừng theo yêu cầu · nội dung chưa hoàn chỉnh
             </div>
           )}
-          {message.workflow?.preview && (
-            <div className="mb-3 rounded-md border border-[#d7a65a] bg-[#fff8ea] px-3 py-2 text-xs text-[#714b18]">
-              {previewNotice}
-            </div>
-          )}
           <div className="legal-prose max-w-none text-[15px] leading-7 text-[#262d2c] sm:text-base">
             <MarkdownRenderer
               content={message.content}
@@ -88,6 +83,7 @@ export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOp
             onOpenCase={onOpenCase}
             onOpenSources={() => onOpenSources(message.documents || [], message.workflow?.citations || [], undefined, message.workflow?.preview)}
             onResearch={onResearch}
+            webResearchReady={webResearchReady}
             workflow={message.workflow}
           />
           <SourceDocuments

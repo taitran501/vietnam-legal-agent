@@ -30,7 +30,7 @@ import {
   rememberReturnTo,
 } from '@/auth/oidc';
 import { getMe } from '@/api/me';
-import { eprPlainName, previewNotice } from '@/lib/userCopy';
+import { capabilityUnavailableCopy, eprPlainName, previewNotice, taskCopy } from '@/lib/userCopy';
 
 interface OpenSources {
   citations: Array<Record<string, unknown>>;
@@ -239,7 +239,7 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
       navigate(`/conversations/${sessionId}`);
     }
     const completed = await sendMessage(
-      'Hãy kiểm tra trường hợp của doanh nghiệp dựa trên thông tin tôi đã cung cấp.',
+      taskCopy[taskType].turnPrompt,
       sessionId,
       'auto',
       {
@@ -353,7 +353,7 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
   ) : messages.length === 0 && !isStreaming ? (
     <WelcomeScreen
       caseDisabled={!caseReady}
-      caseDisabledReason="Chức năng xử lý trường hợp hiện chưa sẵn sàng."
+      caseDisabledReason={capabilityUnavailableCopy(readiness?.capabilities?.case_workflow?.reason, readinessOffline)}
       disabled={!legalReady}
       guidedTask={guidedTask}
       isStreaming={isStreaming}
@@ -384,6 +384,7 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
         onOpenCase={activeCase ? () => setCaseDrawerOpen(true) : undefined}
         onResearch={handleResearch}
         onOpenSources={handleOpenSources}
+        webResearchReady={webReady}
         onRegenerate={handleRegenerate}
         onRetry={() => void retryLastTurn()}
         statusMessage={statusMessage}
