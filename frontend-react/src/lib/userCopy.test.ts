@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { capabilityUnavailableCopy, eprPlainName, errorPresentation, previewNotice, safeStopCopy, taskCopy } from './userCopy';
+import {
+  authFailureCopy,
+  authSessionExpiredCopy,
+  authSignedOutCopy,
+  capabilityUnavailableCopy,
+  eprPlainName,
+  errorPresentation,
+  previewNotice,
+  safeStopCopy,
+  taskCopy,
+} from './userCopy';
 
 describe('user-facing copy', () => {
   it('keeps default task labels understandable without internal vocabulary', () => {
@@ -32,5 +42,14 @@ describe('user-facing copy', () => {
     expect(capabilityUnavailableCopy('corpus_not_ready')).toContain('dữ liệu pháp luật');
     expect(capabilityUnavailableCopy('provider_not_configured')).not.toContain('provider_not_configured');
     expect(capabilityUnavailableCopy('', true)).toContain('Không thể kết nối');
+  });
+
+  it('keeps authentication failures out of the user-facing copy', () => {
+    const rawException = 'invalid_client: oidc token endpoint returned HTTP 401';
+
+    expect(authFailureCopy).toBe('Đăng nhập chưa hoàn tất. Vui lòng thử lại để tiếp tục.');
+    expect(authFailureCopy).not.toContain(rawException);
+    expect(authSessionExpiredCopy).toContain('Đăng nhập lại');
+    expect(authSignedOutCopy).toContain('Đăng nhập');
   });
 });

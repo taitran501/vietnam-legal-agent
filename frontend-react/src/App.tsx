@@ -30,7 +30,14 @@ import {
   rememberReturnTo,
 } from '@/auth/oidc';
 import { getMe } from '@/api/me';
-import { capabilityUnavailableCopy, eprPlainName, previewNotice, taskCopy } from '@/lib/userCopy';
+import {
+  authFailureCopy,
+  authSessionExpiredCopy,
+  authSignedOutCopy,
+  capabilityUnavailableCopy,
+  previewNotice,
+  taskCopy,
+} from '@/lib/userCopy';
 
 interface OpenSources {
   citations: Array<Record<string, unknown>>;
@@ -507,6 +514,7 @@ function UnknownRouteRedirect() {
 export default function App() {
   const [authState, setAuthState] = useState<'ready' | 'loading' | 'signed_out' | 'error'>('loading');
   const [authError, setAuthError] = useState('');
+  const [authExpired, setAuthExpired] = useState(false);
   const initialised = useRef(false);
   const setMe = useAuthStore((state) => state.setMe);
 
@@ -518,6 +526,7 @@ export default function App() {
         await completeLogin();
         if (!getAuthSession()) {
           setMe(null);
+          setAuthExpired(false);
           setAuthState('signed_out');
           return;
         }
@@ -530,7 +539,8 @@ export default function App() {
       }
       setAuthState('ready');
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Không thể xác thực với SSO');
+      console.error('Authentication initialisation failed:', error);
+      setAuthError(authFailureCopy);
       setAuthState('error');
     }
   }, [setMe]);
@@ -544,6 +554,7 @@ export default function App() {
   useEffect(() => {
     const expired = () => {
       setMe(null);
+      setAuthExpired(true);
       setAuthState('signed_out');
       toast.info('Phiên đăng nhập đã hết hạn. Đăng nhập lại để tiếp tục tại cuộc trò chuyện này.');
     };
@@ -556,7 +567,8 @@ export default function App() {
     try {
       await beginLogin();
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Không thể bắt đầu đăng nhập');
+      console.error('Authentication login failed:', error);
+      setAuthError(authFailureCopy);
       setAuthState('error');
     }
   }, []);
@@ -565,6 +577,7 @@ export default function App() {
     rememberReturnTo();
     clearAuthSession();
     setMe(null);
+    setAuthExpired(false);
     setAuthState('signed_out');
   }, [setMe]);
 
@@ -577,12 +590,12 @@ export default function App() {
             {authState === 'loading'
               ? 'Đang kiểm tra phiên đăng nhập…'
               : authState === 'signed_out'
-                ? `Đăng nhập để tra cứu ${eprPlainName} và lưu lại các cuộc trò chuyện.`
-                : authError}
+                ? authExpired ? authSessionExpiredCopy : authSignedOutCopy
+                : authError || authFailureCopy}
           </p>
           {authState !== 'loading' && (
             <button className="mt-5 rounded-lg bg-[#0f766e] px-4 py-2 text-sm font-semibold text-white" onClick={() => void login()} type="button">
-              Đăng nhập
+              {authState === 'signed_out' ? 'Đăng nhập lại' : 'Thử lại đăng nhập'}
             </button>
           )}
         </section>

@@ -2,6 +2,9 @@ import type { CaseField, CaseState, StreamError } from '@/types';
 
 export const eprPlainName = 'trách nhiệm mở rộng của nhà sản xuất và nhập khẩu';
 export const previewNotice = 'Bản thử nghiệm: nội dung có thể thay đổi khi văn bản được cập nhật và kiểm tra lại.';
+export const authSignedOutCopy = `Đăng nhập để tra cứu ${eprPlainName} và lưu lại các cuộc trò chuyện.`;
+export const authSessionExpiredCopy = 'Phiên đăng nhập đã hết hạn. Đăng nhập lại để tiếp tục tại cuộc trò chuyện này. Vị trí cuộc trò chuyện sẽ được giữ nguyên.';
+export const authFailureCopy = 'Đăng nhập chưa hoàn tất. Vui lòng thử lại để tiếp tục.';
 
 export type UserTaskCopy = {
   title: string;
