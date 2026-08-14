@@ -116,8 +116,10 @@ git clone https://github.com/taitran501/legal_epr.git
 Set-Location legal_epr
 
 Copy-Item .env.example .env
-# Edit .env and set OPENAI_API_KEY.
+# Edit .env and set OPENAI_API_KEY and a long random POSTGRES_PASSWORD.
+# Compose intentionally refuses to start with a default database password.
 # For local/staging validation, set CORPUS_RUNTIME_MODE=preview.
+# Keep ALLOWED_ORIGINS empty for this same-origin Compose stack.
 
 docker compose up -d --build
 docker compose ps -a
@@ -185,6 +187,7 @@ reports.
 | `OPENAI_API_KEY` | Required for live answer and embedding generation |
 | `CORPUS_RUNTIME_MODE` | `production` or `preview`; defaults to `production` |
 | `DATABASE_URL` | PostgreSQL URL; unset uses local SQLite |
+| `POSTGRES_PASSWORD` | Required by Compose; use a long random value and never commit it |
 | `HISTORY_DB_PATH` | SQLite history path when PostgreSQL is not configured |
 | `QDRANT_URL` | Self-hosted Qdrant endpoint |
 | `USE_QDRANT_CLOUD` | Use Qdrant Cloud when set to `true` |
@@ -196,6 +199,7 @@ reports.
 | `OIDC_CLIENT_ID` | React OIDC client ID |
 | `OIDC_REQUIRED_GROUP` | Optional internal-access group or role |
 | `REQUIRE_AUTH` | Keep enabled for deployed environments |
+| `ALLOWED_ORIGINS` | HTTPS browser origins for cross-origin deployments; empty is same-origin |
 
 Browser users authenticate through OIDC in a deployed environment. Non-browser
 automation uses `X-Service-Token` with configured scopes. Access tokens are not
@@ -204,6 +208,11 @@ used as conversation ownership keys and are not persisted by the application.
 For a local deterministic browser test only, authentication can be disabled in
 the isolated test configuration. Do not expose that mode on a shared or
 internet-facing server.
+
+When `CORPUS_RUNTIME_MODE=production`, backend startup also fails fast if
+authentication, PostgreSQL, Qdrant, OpenAI, rate-limit safety, debug flags, or
+browser-origin configuration is incomplete. This prevents a deployment from
+silently falling back to local development defaults.
 
 ## API
 

@@ -3,6 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential curl libreoffice-writer && rm -rf /var/lib/apt/lists/*
+RUN groupadd --system app && useradd --system --gid app --home-dir /app --no-create-home app
 
 # pyproject.toml is the dependency source of truth. This step installs the
 # bounded workflow package so imports from src/epr_agent work in containers.
@@ -10,12 +11,15 @@ COPY pyproject.toml ./
 COPY src/ ./src/
 RUN pip install --no-cache-dir .
 
-COPY backend/ ./backend/
-COPY data/ ./data/
-COPY scripts/ ./scripts/
-COPY alembic.ini ./
-COPY alembic/ ./alembic/
+COPY --chown=app:app backend/ ./backend/
+COPY --chown=app:app data/ ./data/
+COPY --chown=app:app scripts/ ./scripts/
+COPY --chown=app:app alembic.ini ./
+COPY --chown=app:app alembic/ ./alembic/
+RUN mkdir -p /app/artifacts && chown app:app /app/artifacts
 
 EXPOSE 8000
+
+USER app
 
 CMD ["sh", "-c", "alembic upgrade head && uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 2"]

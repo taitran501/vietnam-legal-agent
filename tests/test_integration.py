@@ -315,8 +315,9 @@ def test_security_headers():
             else:
                 results.fail_test(header, f"Expected '{expected_value}', got '{actual}'")
 
-        # Check HSTS
-        hsts = response.headers.get("Strict-Transport-Security")
+        # Check HSTS as seen after TLS termination at the reverse proxy.
+        https_response = client.get("/test", headers={"X-Forwarded-Proto": "https"})
+        hsts = https_response.headers.get("Strict-Transport-Security")
         if hsts and "max-age=31536000" in hsts:
             results.pass_test("Strict-Transport-Security present with correct max-age")
         else:

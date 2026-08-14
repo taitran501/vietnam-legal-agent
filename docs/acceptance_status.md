@@ -1,8 +1,8 @@
 # Current acceptance status
 
 **Checked:** 2026-08-15
-**Workspace:** `fix/priority-user-journeys` at `14bf2da`, plus the uncommitted
-changes in the current working tree
+**Workspace:** `fix/priority-user-journeys` after `48fd5b6`, with the
+production-hardening changes recorded in this snapshot
 
 This file is the status of the working tree after the review remediation. It is
 not a replacement for the commit-scoped historical reports. Once this work is
@@ -16,12 +16,12 @@ The following checks were run in the repository acceptance environment
 
 | Check | Result |
 | --- | --- |
-| `pytest -q` | **396 passed, 3 skipped** (399 collected) |
+| `pytest -q` | **410 passed, 3 skipped** (413 collected) |
 | `python -m tests.eval.run_eval --suite all` | **exit 0**; deterministic route matrix 60/60 |
 | `ruff check src/epr_agent backend scripts tests` | **pass** |
 | `mypy src/epr_agent backend` | **pass**, 62 source files |
 | `python -m scripts.sync_corpus_metadata --check` | **pass**, no issues; corpus SHA `1e8635ee…` |
-| `docker compose config --quiet` | **pass** |
+| `docker compose config --quiet` | **pass** with an explicit `POSTGRES_PASSWORD` validation value |
 | `git diff --check` | **pass**; only Git line-ending warnings |
 | Frontend Vitest | **42 passed** in 14 test files |
 | Frontend lint | **pass** |
@@ -46,6 +46,12 @@ interpreting a test result.
 - A completed assessment/checklist can export a **preliminary text report**;
   the export repeats the unverified-facts disclaimer and is not a formal legal
   opinion or compliance filing.
+- Production startup now fails fast on disabled auth, fail-open rate limiting,
+  trace-debug exposure, local persistence, missing providers, or unsafe CORS.
+- Backend/frontend/gateway images run unprivileged; Compose requires a database
+  password and no longer pins services to non-scalable container names.
+- Nginx restricts `/metrics`, forwards the HTTPS signal, and targets the
+  authenticated backend metrics route.
 
 ## Still not proven by local checks
 
@@ -56,8 +62,9 @@ These are deliberate release gates, not claims that local tests can satisfy:
 - a production deployment has healthy PostgreSQL/Qdrant/Redis/OpenAI/OIDC
   integrations, real authentication, monitoring, backups, and measured p95
   latency;
-- a live Compose stack is currently unverified in this session because the
-  Docker Desktop Linux engine was not running;
+- Docker image builds and a live Compose stack are currently unverified in this
+  session because the Docker Desktop Linux engine was not running; static
+  Compose interpolation/configuration did pass;
 - GitHub repository description, homepage, topics, and visibility have been
   configured by an authenticated repository administrator;
 - upload/OCR, historical-law snapshots, and multi-domain legal support exist.

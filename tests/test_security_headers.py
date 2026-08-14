@@ -4,7 +4,7 @@ Tests for security headers middleware.
 Tests cover:
 - X-Content-Type-Options header present
 - X-Frame-Options header present
-- Strict-Transport-Security header present
+- Strict-Transport-Security header present only for HTTPS requests
 - Content-Security-Policy header present
 - X-XSS-Protection header present
 - Referrer-Policy header present
@@ -54,13 +54,14 @@ class TestSecurityHeadersMiddleware:
         response = client.get("/test")
         assert response.headers.get("X-XSS-Protection") == "1; mode=block"
 
-    def test_strict_transport_security_header(self, client):
-        """Strict-Transport-Security should be present."""
+    def test_strict_transport_security_header_only_for_https(self, client):
+        """HSTS should not be advertised on plain HTTP responses."""
         response = client.get("/test")
-        hsts = response.headers.get("Strict-Transport-Security")
-        assert hsts is not None
-        assert "max-age=31536000" in hsts
-        assert "includeSubDomains" in hsts
+        assert "Strict-Transport-Security" not in response.headers
+
+        https_response = client.get("/test", headers={"X-Forwarded-Proto": "https"})
+        hsts = https_response.headers.get("Strict-Transport-Security")
+        assert hsts == "max-age=31536000; includeSubDomains"
 
     def test_content_security_policy_header(self, client):
         """Content-Security-Policy should be restrictive."""
@@ -94,7 +95,6 @@ class TestSecurityHeadersMiddleware:
             "X-Content-Type-Options",
             "X-Frame-Options",
             "X-XSS-Protection",
-            "Strict-Transport-Security",
             "Content-Security-Policy",
             "Referrer-Policy",
             "Permissions-Policy",

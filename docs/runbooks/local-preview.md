@@ -10,6 +10,8 @@ From the repository root:
 
 ```powershell
 $env:CORPUS_RUNTIME_MODE = "preview"
+# Only for an isolated local preview without OIDC/API-key setup:
+$env:REQUIRE_AUTH = "false"
 python -m scripts.sync_corpus_metadata --check
 python -m scripts.audit_corpus
 docker compose up -d --build
@@ -20,6 +22,12 @@ The readiness response should report `runtime_mode: preview`,
 `corpus.status: preview_ready`, and `legal_chat.reason:
 preview_unapproved_corpus`. A technically invalid corpus, an index mismatch,
 or a database schema mismatch still blocks the relevant capability.
+
+Before starting Compose, copy `.env.example` to `.env`, set
+`POSTGRES_PASSWORD` to a long random value, and set `OPENAI_API_KEY` when live
+generation or indexing is required. Compose has no database-password fallback.
+The `REQUIRE_AUTH=false` override above is local-only and must not be reused in
+staging or production.
 
 For deterministic browser work without paid providers, use the local test
 backend and Vite app:

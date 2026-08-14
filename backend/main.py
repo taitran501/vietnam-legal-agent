@@ -19,7 +19,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from backend.api import metrics as metrics_module
 from backend.api.auth import APIKeyMiddleware, get_valid_api_keys
 from backend.api.middleware import RateLimiter, RateLimitMiddleware
-from backend.config import get_settings
+from backend.config import get_settings, validate_production_settings
 from backend.history import init_history_store
 from backend.memory.session_store import close_redis, get_redis
 
@@ -92,7 +92,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        forwarded_proto = request.headers.get("X-Forwarded-Proto", "").split(",", 1)[0].strip().lower()
+        if request.url.scheme == "https" or forwarded_proto == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        elif "Strict-Transport-Security" in response.headers:
+            del response.headers["Strict-Transport-Security"]
         response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
@@ -111,6 +115,7 @@ async def lifespan(app: FastAPI):
     setup_logging()
     
     settings = get_settings()
+    validate_production_settings(settings)
     logger.info("Starting EPR Chatbot backend…")
 
     # 1. Verify Redis is reachable
@@ -175,9 +180,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+_app_settings = get_settings()
+_configured_origins = _app_settings.allowed_origins.strip()
+if not _configured_origins and _app_settings.corpus_runtime_mode == "preview":
+    _configured_origins = "http://localhost,http://localhost:3000,http://localhost:8501"
 _ALLOWED_ORIGINS = [
     o.strip()
-    for o in os.getenv("ALLOWED_ORIGINS", "http://localhost,http://localhost:3000,http://localhost:8501").split(",")
+    for o in _configured_origins.split(",")
     if o.strip()
 ]
 
@@ -202,7 +211,7 @@ app.add_middleware(
         rpm=60,    # 60 requests per minute
         rph=1000,  # 1000 requests per hour
         burst=10,  # Allow burst of 10 extra requests
-        fail_open=get_settings().rate_limit_fail_open,
+        fail_open=_app_settings.rate_limit_fail_open,
     ),
 )
 

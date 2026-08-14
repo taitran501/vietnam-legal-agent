@@ -40,6 +40,7 @@ form; field resolution is limited to the side-effect-free form endpoint.
 Start the real stack and let the one-shot indexer finish before testing:
 
 ```powershell
+# Copy .env.example to .env and set POSTGRES_PASSWORD first.
 docker compose up -d --build
 docker compose ps -a
 Invoke-RestMethod http://127.0.0.1/api/v1/ready
