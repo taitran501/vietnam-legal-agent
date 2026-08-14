@@ -15,12 +15,31 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import warnings
 
 import redis.asyncio as aioredis
 
 from backend.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+# Redis remains a supported dependency for cache, rate limiting, and short-
+# lived UI context.  These history helpers are retained for one release so
+# older imports do not fail, but durable conversations must go through
+# ``backend.history.store`` / ``UnifiedHistoryGateway`` instead.
+LEGACY_HISTORY_COMPATIBILITY = True
+_LEGACY_HISTORY_WARNING = (
+    "backend.memory.session_store history APIs are deprecated compatibility "
+    "only; use backend.history.store or UnifiedHistoryGateway for durable history"
+)
+
+
+def _warn_legacy_history_api(operation: str) -> None:
+    warnings.warn(
+        f"{_LEGACY_HISTORY_WARNING} ({operation})",
+        DeprecationWarning,
+        stacklevel=3,
+    )
 
 # ---------------------------------------------------------------------------
 # Redis client singleton with thread-safe initialization
@@ -104,11 +123,12 @@ def _registry_key() -> str:
 
 
 async def get_history(session_id: str) -> list[dict]:
-    """Return the stored message list, newest-last. Empty list if missing.
+    """Return legacy Redis context, newest-last, for one-release compatibility.
     
     Supports both old format (JSON string) and new format (Redis list).
     Migrates from old to new format on read for backward compatibility.
     """
+    _warn_legacy_history_api("get_history")
     try:
         r = await get_redis()
         settings = get_settings()
@@ -139,11 +159,13 @@ async def get_history(session_id: str) -> list[dict]:
 
 
 async def append_exchange(session_id: str, user_msg: str, assistant_msg: str) -> None:
-    """Append one user+assistant exchange with timestamps and auto-title.
+    """Append one legacy Redis exchange for one-release compatibility.
     
     Uses atomic Redis RPUSH/LTRIM operations to prevent read-modify-write
     race conditions under concurrent requests to the same session.
+    Durable conversation writes belong to ``backend.history.store``.
     """
+    _warn_legacy_history_api("append_exchange")
     from datetime import UTC, datetime
 
     settings = get_settings()
@@ -194,7 +216,8 @@ async def append_exchange(session_id: str, user_msg: str, assistant_msg: str) ->
 
 
 async def get_session_meta(session_id: str) -> dict:
-    """Get session metadata (title, created_at, updated_at, message_count)."""
+    """Get metadata for a legacy Redis session."""
+    _warn_legacy_history_api("get_session_meta")
     try:
         r = await get_redis()
         raw = await r.get(_meta_key(session_id))
@@ -205,7 +228,8 @@ async def get_session_meta(session_id: str) -> dict:
 
 
 async def set_session_meta(session_id: str, meta: dict) -> None:
-    """Update session metadata."""
+    """Update metadata for a legacy Redis session."""
+    _warn_legacy_history_api("set_session_meta")
     import time
     try:
         r = await get_redis()
@@ -282,10 +306,8 @@ async def _register_session(session_id: str) -> None:
 
 
 async def list_sessions(limit: int = 50, offset: int = 0) -> list[dict]:
-    """
-    List all sessions sorted by creation time (newest first).
-    Returns list of {id, title, created_at, updated_at, message_count}.
-    """
+    """List legacy Redis sessions for one-release compatibility."""
+    _warn_legacy_history_api("list_sessions")
     try:
         r = await get_redis()
         
@@ -312,7 +334,8 @@ async def list_sessions(limit: int = 50, offset: int = 0) -> list[dict]:
 
 
 async def clear_session(session_id: str) -> None:
-    """Delete session and remove from registry."""
+    """Delete a legacy Redis session and remove it from the registry."""
+    _warn_legacy_history_api("clear_session")
     try:
         r = await get_redis()
         pipe = r.pipeline()

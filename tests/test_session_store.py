@@ -164,6 +164,19 @@ class TestSessionPersistence:
     """Regression tests for Redis-backed history persistence."""
 
     @pytest.mark.asyncio
+    async def test_legacy_history_api_warns_but_keeps_one_release_compatibility(self):
+        """Legacy Redis history remains callable but cannot be mistaken for durable history."""
+        mock_redis = MagicMock()
+        mock_redis.lrange = AsyncMock(return_value=[])
+        mock_redis.get = AsyncMock(return_value=None)
+
+        with patch("backend.memory.session_store.get_redis", AsyncMock(return_value=mock_redis)):
+            with pytest.warns(DeprecationWarning, match=r"backend\.memory\.session_store"):
+                result = await get_history("legacy-session")
+
+        assert result == []
+
+    @pytest.mark.asyncio
     async def test_get_history_migrates_old_json_format(self):
         """Old JSON-string storage should migrate to list format without crashing."""
         old_messages = [
