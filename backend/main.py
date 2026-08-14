@@ -37,7 +37,7 @@ def setup_logging():
     
     if log_format == "json":
         try:
-            from pythonjsonlogger import jsonlogger
+            from pythonjsonlogger import jsonlogger  # type: ignore[import-not-found]
             
             handler = logging.StreamHandler()
             formatter = jsonlogger.JsonFormatter(
@@ -202,6 +202,7 @@ app.add_middleware(
         rpm=60,    # 60 requests per minute
         rph=1000,  # 1000 requests per hour
         burst=10,  # Allow burst of 10 extra requests
+        fail_open=get_settings().rate_limit_fail_open,
     ),
 )
 

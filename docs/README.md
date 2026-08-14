@@ -49,10 +49,18 @@ pháp luật hoặc ý kiến tư vấn pháp lý.
 
 ### Acceptance
 
-- [Acceptance report](acceptance_report.md)
-- [Browser acceptance report](browser_acceptance_report.md)
-- [Guided user experience browser acceptance](browser_acceptance_report_guided_user_experience.md)
-- [V4 acceptance report](pipeline_v4_acceptance_report.md)
+The working-tree status is [Current acceptance status](acceptance_status.md).
+The current guided-UX acceptance report is [Guided user experience browser acceptance](browser_acceptance_report_guided_user_experience.md).
+Each report is scoped to the commit and environment it names; later commits
+are not covered automatically. The other reports below are historical
+snapshots and remain useful only for the release, pipeline, and environment
+they name.
+
+- [Current acceptance status](acceptance_status.md) — working-tree remediation status
+- [Guided user experience browser acceptance](browser_acceptance_report_guided_user_experience.md) — latest committed guided-UX snapshot
+- [Browser acceptance report](browser_acceptance_report.md) — historical browser/API snapshot
+- [V4 acceptance report](pipeline_v4_acceptance_report.md) — historical V4 pipeline snapshot
+- [Acceptance report](acceptance_report.md) — historical baseline snapshot
 
 Các sơ đồ Mermaid được đặt trực tiếp trong Markdown để GitHub render và để
 reviewer có thể review thay đổi kiến trúc cùng thay đổi code.

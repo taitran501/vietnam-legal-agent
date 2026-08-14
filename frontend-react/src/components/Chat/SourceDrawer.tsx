@@ -102,6 +102,8 @@ export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, on
           const amendmentStatus = metadataValue(document, ['amendment_resolution_status', 'Amendment_Resolution_Status']);
           const activeSource = metadataValue(document, ['active_source_document_id', 'Active_Source_Document_Id']);
           const activePages = metadataValue(document, ['active_source_pages', 'Active_Source_Pages']);
+          const amendmentRelationship = metadataValue(document, ['amendment_relationship', 'Amendment_Relationship']);
+          const missingMetadata = 'Chưa có trong metadata';
           const excerpt = (document.page_content || 'Nguồn này chưa có đoạn trích để hiển thị.').slice(0, 1400);
           return (
             <article
@@ -122,33 +124,32 @@ export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, on
                   <h3 className="text-sm font-semibold leading-6 text-[#172033]">
                     {documentTitle(document, index)}
                   </h3>
-                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#667085]">
+                  <div className="mt-2 grid gap-1 text-xs text-[#667085] sm:grid-cols-2">
                     {anchor && (
-                      <span className="inline-flex items-center gap-1">
+                      <span className="inline-flex items-center gap-1 sm:col-span-2">
                         <Icon name="fileText" size={13} />
                         {anchor}
                       </span>
                     )}
-                    {instrument && <span>{instrument}</span>}
-                    {page && <span>Trang {page}</span>}
-                    <span className="rounded-full bg-[#e7eceb] px-2 py-0.5">{effectiveStatusLabel[effectiveStatus] || 'Chưa xác nhận hiệu lực'}</span>
-                    {effectiveFrom && <span>Hiệu lực từ {effectiveFrom}</span>}
+                    <span>Số văn bản: {instrument || missingMetadata}</span>
+                    <span>Trang: {page || missingMetadata}</span>
+                    <span>Hiệu lực: {effectiveStatusLabel[effectiveStatus] || 'Chưa xác nhận hiệu lực'}</span>
+                    <span>Ngày hiệu lực: {effectiveFrom || missingMetadata}</span>
+                    <span className="sm:col-span-2">Ngày cập nhật corpus: {asOf || missingMetadata}</span>
+                    <span className="sm:col-span-2">Liên kết chính thức: {url ? 'Có' : missingMetadata}</span>
                   </div>
-                  {asOf && <p className="mt-2 text-[11px] text-[#667085]">Thông tin được cập nhật đến: {asOf}</p>}
                 </div>
               </div>
               <blockquote className="mt-3 whitespace-pre-wrap rounded-md bg-[#f1f4f3] px-3 py-3 text-[13px] leading-6 text-[#3e4947]">
                 {excerpt}{(document.page_content || '').length > excerpt.length ? '…' : ''}
               </blockquote>
-              {(metadataValue(document, ['amendment_relationship', 'Amendment_Relationship']) || amendmentStatus || activeSource || document.document_id) && (
-                <details className="mt-3 rounded-md border border-[#e5e9e7] px-3 py-2 text-xs text-[#667085]">
-                  <summary className="cursor-pointer font-semibold text-[#53615e]">Thông tin đối chiếu</summary>
-                  {metadataValue(document, ['amendment_relationship', 'Amendment_Relationship']) && <p className="mt-2">Quan hệ sửa đổi: {metadataValue(document, ['amendment_relationship', 'Amendment_Relationship'])}</p>}
-                  {amendmentStatus && <p className="mt-1">Trạng thái đối chiếu sửa đổi: {amendmentStatus}</p>}
-                  {activeSource && <p className="mt-1">Nguồn nội dung chính: {activeSource}{activePages ? ` · trang ${activePages}` : ''}</p>}
-                  {document.document_id && <p className="mt-1">Mã nguồn: {document.document_id}</p>}
-                </details>
-              )}
+              <details className="mt-3 rounded-md border border-[#e5e9e7] px-3 py-2 text-xs text-[#667085]">
+                <summary className="cursor-pointer font-semibold text-[#53615e]">Thông tin đối chiếu</summary>
+                <p className="mt-2">Quan hệ sửa đổi: {amendmentRelationship || missingMetadata}</p>
+                <p className="mt-1">Trạng thái đối chiếu sửa đổi: {amendmentStatus || missingMetadata}</p>
+                <p className="mt-1">Nguồn nội dung chính: {activeSource || missingMetadata}{activePages ? ` · trang ${activePages}` : ''}</p>
+                <p className="mt-1">Mã nguồn: {document.document_id || missingMetadata}</p>
+              </details>
               {url && (
                 <a
                   className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-[#006a63] hover:underline"

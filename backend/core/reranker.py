@@ -286,7 +286,7 @@ def rerank_by_keyword_boost(
     Returns:
         Re-sorted documents by combined score
     """
-    from backend.core.retrieval import _tokenize_vietnamese
+    from backend.core.ensemble_retrieval import _tokenize_vietnamese
 
     if not docs:
         return []

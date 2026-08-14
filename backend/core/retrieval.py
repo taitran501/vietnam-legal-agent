@@ -98,14 +98,18 @@ def _get_law_vectorstore() -> QdrantVectorStore:
         collection_name=settings.law_collection,
         embedding=get_embeddings(),
         content_payload_key="Text",
-        metadata_payload_key=None,
+        metadata_payload_key="metadata",
     )
 
 
 def _enrich_docs_from_qdrant(docs: list[Document], collection_name: str) -> list[Document]:
     """Attach root payload metadata required by V3 evidence and trace gates."""
 
-    point_ids = [document.metadata.get("_id") for document in docs if document.metadata.get("_id")]
+    point_ids: list[str] = [
+        str(document.metadata["_id"])
+        for document in docs
+        if document.metadata.get("_id") is not None
+    ]
     if not point_ids:
         return docs
     points = _get_qdrant_client().retrieve(

@@ -30,6 +30,8 @@ describe('SourceDrawer', () => {
     expect(screen.getByRole('dialog', { name: 'Nguồn tham khảo' })).toBeInTheDocument();
     expect(screen.getByText('Nghị định 08/2022/NĐ-CP')).toBeInTheDocument();
     expect(screen.getByText(/Điều 77/)).toBeInTheDocument();
+    expect(screen.getByText(/Số văn bản: Chưa có trong metadata/)).toBeInTheDocument();
+    expect(screen.getByText(/Ngày cập nhật corpus: Chưa có trong metadata/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Mở nguồn' })).toHaveAttribute('href', 'https://vanban.chinhphu.vn/?docid=205092&pageid=27160');
     expect(screen.queryByText(/Thông tin được cập nhật đến/)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Đóng' }));

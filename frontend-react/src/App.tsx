@@ -19,7 +19,7 @@ import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useChatStore } from '@/state/chatStore';
 import { useAuthStore } from '@/state/authStore';
 import { toast } from '@/state/toastStore';
-import type { CaseFormState, CaseState, ReadinessResponse, SourceDocument } from '@/types';
+import type { CaseFormState, CaseState, ChatMessage, ReadinessResponse, SourceDocument } from '@/types';
 import {
   AUTH_EXPIRED_EVENT,
   beginLogin,
@@ -31,6 +31,7 @@ import {
 } from '@/auth/oidc';
 import { getMe } from '@/api/me';
 import { capabilityUnavailableCopy, eprPlainName, previewNotice, taskCopy } from '@/lib/userCopy';
+import { downloadPreliminaryReport } from '@/lib/reportExport';
 
 interface OpenSources {
   citations: Array<Record<string, unknown>>;
@@ -332,6 +333,17 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
     }
   };
 
+  const handleExportReport = useCallback((message: ChatMessage) => {
+    if (!message.workflow) return;
+    downloadPreliminaryReport({
+      answer: message.content,
+      timestamp: message.timestamp,
+      workflow: message.workflow,
+      documents: message.documents || [],
+    });
+    toast.success('Đã tải báo cáo sơ bộ để đối chiếu');
+  }, []);
+
   useKeyboardShortcuts({ onStop: stopGeneration, isStreaming });
 
   const sharedSidebarProps = {
@@ -391,6 +403,7 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
         onOpenCase={activeCase ? () => setCaseDrawerOpen(true) : undefined}
         onResearch={handleResearch}
         onOpenSources={handleOpenSources}
+        onExport={handleExportReport}
         webResearchReady={webReady}
         onRegenerate={handleRegenerate}
         onRetry={() => void retryLastTurn()}

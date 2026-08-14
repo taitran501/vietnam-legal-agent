@@ -34,6 +34,21 @@ logger = logging.getLogger(__name__)
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _chunk_text(content: object) -> str:
+    """Normalize LangChain text chunks without leaking structured block reprs."""
+
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict) and isinstance(item.get("text"), str):
+                parts.append(item["text"])
+        return "".join(parts)
+    return ""
+
 def _truncate(text: str, max_tokens: int = 800) -> str:
     """Rough character-based truncation (≈4 chars per token)."""
     max_chars = max_tokens * 4
@@ -177,10 +192,11 @@ def is_retrieval_relevant(question: str, docs: list[Document]) -> bool:
 
         chain = _RELEVANCE_GATE_PROMPT | get_llm_router().with_structured_output(_RelevanceVerdict)
         result = chain.invoke({"question": question, "doc_snippet": snippet})
-        relevant = result.get("relevant") if isinstance(result, dict) else getattr(result, "relevant", True)
+        relevant = result.get("relevant") if isinstance(result, dict) else getattr(result, "relevant", False)
         return bool(relevant)
-    except Exception:  # noqa: BLE001 - relevance gate failure is explicitly fail-open
-        return True  # fail-open: if gate errors, proceed normally
+    except Exception:
+        logger.warning("Legal relevance gate failed; stopping before generation", exc_info=True)
+        return False
 
 
 def check_legal_evidence(
@@ -435,8 +451,9 @@ async def stream_chitchat_response(question: str, chat_history: str) -> AsyncIte
         "question": question,
         "chat_history": chat_history or "(không có hội thoại trước)",
     }):
-        if hasattr(chunk, "content") and chunk.content:
-            yield chunk.content
+        content = _chunk_text(getattr(chunk, "content", ""))
+        if content:
+            yield content
 
 
 # ---------------------------------------------------------------------------
@@ -508,7 +525,7 @@ def _clean_tavily_snippet(content: str, max_chars: int = 500) -> str:
     return cleaned
 
 
-def _synthesize_web_results(question: str, results: list) -> str:
+def _synthesize_web_results(question: str, results: list) -> str | None:
     """
     Use LLM to synthesize a clean, concise answer from Tavily search results.
 
@@ -551,7 +568,8 @@ Trả lời:"""
     try:
         chain = synthesis_prompt | get_llm_smart() | StrOutputParser()
         return chain.invoke({"context": context, "question": question})
-    except Exception:  # noqa: BLE001 - legacy non-streaming generation returns no answer on provider failure
+    except Exception:
+        logger.warning("Web result synthesis failed", exc_info=True)
         return None
 
 
@@ -611,7 +629,7 @@ def web_fallback(question: str) -> str:
                         "ignore",
                         message=r".*TavilySearchResults.*deprecated.*",
                     )
-                    tool = TavilySearchResults(
+                    tool = TavilySearchResults(  # type: ignore[call-arg]
                         k=3,
                         include_answer=True,
                         search_depth="advanced",
@@ -652,8 +670,9 @@ def web_fallback(question: str) -> str:
         lines.append("\n---")
         lines.append("\n⚠️ Các nguồn trên từ Internet — vui lòng đối chiếu với văn bản pháp luật chính thức.")
         return "\n".join(lines)
-    except Exception as exc:  # noqa: BLE001 - legacy web helper returns a safe user-facing failure
-        return f"Không thể thực hiện tìm kiếm: {exc}"
+    except Exception:
+        logger.warning("Explicit web research failed", exc_info=True)
+        return "Không thể thực hiện tìm kiếm lúc này. Vui lòng thử lại sau hoặc đối chiếu trực tiếp với nguồn pháp luật chính thức."
 
 
 # ---------------------------------------------------------------------------
@@ -683,8 +702,9 @@ async def stream_faq_answer(user_query: str, faq_doc: Document) -> AsyncIterator
         "faq_answer": faq_doc.page_content,
         "user_question": user_query,
     }):
-        if hasattr(chunk, "content") and chunk.content:
-            yield chunk.content
+        content = _chunk_text(getattr(chunk, "content", ""))
+        if content:
+            yield content
 
 
 _LEGAL_STREAM_SYSTEM = """Bạn là trợ lý AI chuyên về pháp luật EPR tại Việt Nam.
@@ -721,5 +741,6 @@ async def stream_legal_answer(question: str, docs: list[Document]) -> AsyncItera
     context = format_docs(docs)
     chain = _legal_stream_prompt | get_llm_stream()
     async for chunk in chain.astream({"context": context, "question": question}):
-        if hasattr(chunk, "content") and chunk.content:
-            yield chunk.content
+        content = _chunk_text(getattr(chunk, "content", ""))
+        if content:
+            yield content

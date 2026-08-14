@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from qdrant_client.models import FieldCondition, Filter, MatchText, MatchValue, MinShould
+from qdrant_client.models import Condition, FieldCondition, Filter, MatchText, MatchValue, MinShould
 
 # ---------------------------------------------------------------------------
 # Roman numeral conversion
@@ -194,12 +194,17 @@ def parse_legal_query(query: str) -> LegalFilter:
         if product in query_lower:
             result.related_articles.extend(articles)
 
-    # Remove duplicates while preserving order
-    seen = set()
-    result.related_articles = [
-        x for x in result.related_articles
-        if not (x in seen or seen.add(x))
-    ]
+    # Remove duplicates while preserving order. Keep this explicit instead of
+    # relying on ``set.add``'s always-None return value; the latter is concise
+    # but obscures the invariant and is not type-safe.
+    seen: set[str] = set()
+    unique_articles: list[str] = []
+    for article in result.related_articles:
+        if article in seen:
+            continue
+        seen.add(article)
+        unique_articles.append(article)
+    result.related_articles = unique_articles
 
     return result
 
@@ -217,7 +222,7 @@ def build_qdrant_filter(legal_filter: LegalFilter) -> Filter | None:
 
     Returns None if no structured filters were extracted (pure semantic search).
     """
-    conditions = []
+    conditions: list[Condition] = []
 
     # Match Dieu number exactly (explicit mention)
     if legal_filter.dieu_number is not None:
@@ -251,7 +256,7 @@ def build_qdrant_filter(legal_filter: LegalFilter) -> Filter | None:
     # This is the critical fix that enables keyword-based retrieval
     if not conditions and legal_filter.related_articles:
         # Build OR filter for all related articles
-        should_conditions = []
+        should_conditions: list[Condition] = []
         for article_name in legal_filter.related_articles[:5]:  # Limit to 5 articles
             # IMPORTANT: Use MatchText (substring) instead of MatchValue (exact)
             # because Dieu field is "Điều 80. <description>" not just "Điều 80"

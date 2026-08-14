@@ -25,7 +25,9 @@ class Settings(BaseSettings):
     )
 
     # ── OpenAI ──────────────────────────────────────────────────────────────
-    openai_api_key: str = Field(..., description="OpenAI API key")
+    # Empty is a valid local/preview configuration.  Readiness remains the
+    # authoritative gate and blocks legal capabilities when the key is absent.
+    openai_api_key: str = Field(default="", description="OpenAI API key")
 
     # ── Qdrant ──────────────────────────────────────────────────────────────
     use_qdrant_cloud: bool = Field(default=False)
@@ -43,6 +45,10 @@ class Settings(BaseSettings):
 
     # ── Redis ────────────────────────────────────────────────────────────────
     redis_url: str = Field(default="redis://localhost:6379/0")
+    rate_limit_fail_open: bool = Field(
+        default=False,
+        description="Allow requests when Redis rate limiting is unavailable; keep false for production safety",
+    )
     cache_ttl_seconds: int = Field(default=3600)       # exact-match cache TTL
     corpus_version: str = Field(
         default="epr-law-structure-v4-amendment-chain",

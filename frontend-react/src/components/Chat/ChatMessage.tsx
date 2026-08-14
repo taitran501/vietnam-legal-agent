@@ -12,6 +12,7 @@ interface ChatMessageProps {
   onOpenCase?: () => void;
   onContinueCase?: (facts: Record<string, string>, statuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>, taskType: CaseState['task_type']) => Promise<void>;
   onResearch?: () => void;
+  onExport?: (message: ChatMessage) => void;
   onOpenSources: (documents: SourceDocument[], citations: Array<Record<string, unknown>>, focusIndex?: number, preview?: boolean) => void;
   onRegenerate?: () => void;
   webResearchReady: boolean;
@@ -25,7 +26,7 @@ const sourceLabels: Record<string, string> = {
   follow_up: 'Đang làm rõ thông tin',
 };
 
-export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOpenSources, onRegenerate, onResearch, webResearchReady }: ChatMessageProps) {
+export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOpenSources, onRegenerate, onResearch, onExport, webResearchReady }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
 
@@ -83,6 +84,7 @@ export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOp
             onOpenCase={onOpenCase}
             onOpenSources={(focusIndex) => onOpenSources(message.documents || [], message.workflow?.citations || [], focusIndex, message.workflow?.preview)}
             onResearch={onResearch}
+            onExport={() => onExport?.(message)}
             webResearchReady={webResearchReady}
             workflow={message.workflow}
           />

@@ -40,7 +40,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, valid_keys: set[str] | None = None):
         super().__init__(app)
         self.valid_keys = valid_keys or set()
-        self._failed_attempts = {}
+        self._failed_attempts: dict[str, tuple[int, float]] = {}
         self._max_failed_attempts = 10
         self._ban_window = 300
 

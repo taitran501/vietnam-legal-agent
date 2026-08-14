@@ -11,7 +11,7 @@ Run from the repository root with the acceptance environment:
 ```powershell
 .venv_acceptance\Scripts\python.exe -m pytest -q
 .venv_acceptance\Scripts\ruff.exe check src/epr_agent backend scripts tests
-.venv_acceptance\Scripts\mypy.exe src/epr_agent
+.venv_acceptance\Scripts\mypy.exe src/epr_agent backend
 python -m tests.eval.run_eval --suite all --output data/eval/v4-deterministic.json
 ```
 

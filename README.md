@@ -12,6 +12,30 @@ application is intentionally focused on Vietnamese EPR law and returns a
 preliminary, source-grounded result rather than pretending to replace a
 lawyer or an official legal opinion.
 
+## Thử nhanh
+
+Nếu bạn chỉ muốn trải nghiệm sản phẩm, hãy chạy local preview theo
+[runbook local preview](docs/runbooks/local-preview.md). Không cần biết route
+hay pipeline: mở màn hình chào mừng, chọn một trong ba việc **Tra cứu quy
+định**, **Kiểm tra trường hợp của doanh nghiệp**, hoặc **Tạo danh sách việc cần
+làm**, rồi làm theo các câu hỏi được hiển thị.
+
+Repository hiện chưa có hosted demo công khai. Các acceptance report và số liệu
+kiểm thử local không phải là URL production hay bằng chứng rằng corpus đã được
+phê duyệt pháp lý.
+
+### Sản phẩm hiện hỗ trợ
+
+| Bạn muốn làm gì? | Kết quả |
+| --- | --- |
+| Tra cứu một điều khoản EPR | Câu trả lời có căn cứ và source drawer để đối chiếu |
+| Kiểm tra trường hợp doanh nghiệp | Thu thập đúng các dữ kiện còn thiếu và trả về đánh giá sơ bộ |
+| Lập checklist tuân thủ | Danh sách việc cần làm gắn với căn cứ |
+| Không đủ căn cứ hoặc corpus chưa sẵn sàng | Dừng an toàn, nêu lý do và không tự thay bằng điều khoản gần giống |
+
+Kết quả luôn là thông tin sơ bộ. Người dùng cần đối chiếu văn bản chính thức
+và quy trình phê duyệt nội bộ trước khi ra quyết định quan trọng.
+
 ## What you can do
 
 - Ask questions about EPR provisions, including Articles 77–86.
@@ -165,6 +189,7 @@ reports.
 | `QDRANT_URL` | Self-hosted Qdrant endpoint |
 | `USE_QDRANT_CLOUD` | Use Qdrant Cloud when set to `true` |
 | `REDIS_URL` | Redis endpoint for cache and rate limiting |
+| `RATE_LIMIT_FAIL_OPEN` | Explicit local-preview override; keep `false` in production |
 | `TAVILY_API_KEY` | Optional provider for explicit official-web research |
 | `OIDC_ISSUER` | OIDC discovery issuer for deployed browser authentication |
 | `OIDC_AUDIENCE` | Expected JWT audience |
@@ -238,7 +263,7 @@ Backend checks:
 python -m scripts.sync_corpus_metadata --check
 python -m pytest -q
 ruff check src/epr_agent backend scripts tests
-mypy src/epr_agent
+mypy src/epr_agent backend
 python -m tests.eval.run_eval --suite all --output data/eval/v4-deterministic.json
 ```
 
@@ -286,6 +311,8 @@ checks. Web research is never used silently to fill missing company facts.
 ### Operational runbooks
 
 - [Local preview](docs/runbooks/local-preview.md)
+- [Current acceptance status](docs/acceptance_status.md)
+- [External release gates](docs/runbooks/external-release-gates.md)
 - [Database and owner migration](docs/runbooks/database-migration.md)
 - [Production corpus promotion](docs/runbooks/production-promotion.md)
 - [Rollback](docs/runbooks/rollback.md)
@@ -297,7 +324,7 @@ The application currently focuses on Vietnamese EPR law. The following are
 outside the current product scope:
 
 - document upload and OCR;
-- export to a formal legal or compliance report;
+- export to a formal legal or compliance report (only a preliminary text export is supported);
 - historical-law date selection;
 - long-term user profile memory;
 - broad web search outside the configured official domains;

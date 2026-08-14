@@ -105,4 +105,21 @@ describe('WorkflowResultCard', () => {
     render(<WorkflowResultCard workflow={{ termination_reason: 'insufficient_evidence' }} />);
     expect(screen.queryByText(/Thông tin được cập nhật đến/)).not.toBeInTheDocument();
   });
+
+  it('offers a preliminary report only for completed structured results', () => {
+    const onExport = vi.fn();
+    render(
+      <WorkflowResultCard
+        onExport={onExport}
+        workflow={{
+          outcome: 'completed',
+          result_type: 'assessment',
+          assessment: { status: 'likely_in_scope', conclusion: 'Có khả năng thuộc phạm vi EPR' },
+        }}
+      />,
+    );
+
+    screen.getByRole('button', { name: 'Tải báo cáo sơ bộ' }).click();
+    expect(onExport).toHaveBeenCalledOnce();
+  });
 });

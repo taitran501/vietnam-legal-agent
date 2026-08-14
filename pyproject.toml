@@ -29,6 +29,7 @@ dependencies = [
     "lark==1.2.2",
     "tqdm>=4.66.0",
     "prometheus-client>=0.19.0",
+    "python-json-logger>=2.0,<3.0",
     "sqlalchemy[asyncio]>=2.0,<3.0",
     "alembic>=1.13,<2.0",
     "aiosqlite>=0.20,<1.0",
@@ -51,6 +52,9 @@ cross-encoder = ["sentence-transformers>=3.0.0"]
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+epr_agent = ["py.typed"]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 120
@@ -59,6 +63,7 @@ src = ["src", "tests"]
 [tool.mypy]
 python_version = "3.11"
 packages = ["epr_agent"]
+mypy_path = "src"
 check_untyped_defs = true
 warn_unused_ignores = true
 

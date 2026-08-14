@@ -15,6 +15,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Awaitable
+from typing import cast
 
 import redis.asyncio as aioredis
 
@@ -114,7 +116,7 @@ async def get_history(session_id: str) -> list[dict]:
         settings = get_settings()
         
         # Try new format first (Redis list)
-        msg_list = await r.lrange(_key(session_id), 0, -1)
+        msg_list = cast(list[str], await cast(Awaitable[list[str]], r.lrange(_key(session_id), 0, -1)))
         if msg_list:
             return [json.loads(msg) for msg in msg_list]
         
