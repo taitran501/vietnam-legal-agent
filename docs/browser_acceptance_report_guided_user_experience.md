@@ -1,7 +1,7 @@
 # Browser acceptance report — Guided User Experience Refactor
 
-**Validation date:** 2026-08-14  
-**Application validation commit:** `9bb8ab7` (`refactor: make case workflows inline and guided`)  
+**Validation date:** 2026-08-14
+**Application validation commit:** `74e7339` (`test: cover final guided browser journeys`)
 **Scope:** Vietnamese EPR lookup, guided assessment, guided compliance checklist entry, source inspection, error/retry behavior, and responsive layouts.
 
 This is a new release report. The previous acceptance reports remain historical
@@ -14,6 +14,7 @@ and are not rewritten to describe this refactor as if they had passed it.
 - Invalid numeric input is rejected in the field and does not create a chat turn.
 - Resolve failure keeps the in-memory draft; submit failure shows one actionable error card and keeps the form for another attempt.
 - Checklist entry uses the same inline field renderer and a single primary action.
+- Checklist history keeps its task-specific title after the turn and after reload.
 - Legal lookup remains composer-first and citation markers open the relevant source drawer.
 - Unknown explicit article (`Điều 999`) safe-stops without presenting unrelated candidate sources.
 - Stop, reload, feedback restore, regeneration failure/retry, route navigation, history retry, and official-web source labeling remain covered.
@@ -25,17 +26,16 @@ and are not rewritten to describe this refactor as if they had passed it.
 | --- | --- |
 | Python `pytest` | **390 passed, 3 skipped** |
 | Ruff | **pass** |
-| Vitest | **11 files, 29 tests passed** |
-| TypeScript/Vite production build | **pass**; existing bundle-size warning remains |
-| ESLint | **pass with 1 existing warning** in `src/utils/markdown.tsx` |
-| Mocked + real FastAPI Playwright | **20 passed** |
-| In-app browser smoke | **pass** on the guided assessment path |
-| Mypy | **not clean**: 46 existing errors remain in legacy backend/dependency typing; no errors remain in the new resolver/session changes |
+| Vitest | **13 files, 37 tests passed** |
+| TypeScript/Vite production build | **pass**; existing bundle-size warning remains and bundle splitting is deferred |
+| ESLint | **pass with no warnings** |
+| Mocked + real FastAPI Playwright | **23 passed** |
+| Mypy | **pass** with the repository acceptance environment |
 
 The Playwright run used the deterministic FastAPI service and covered both the
-mocked frontend contract and the real local SSE service. The in-app smoke was
-performed against the local preview service and confirmed the rendered form,
-dependent fields, single submit, result hierarchy, and user-facing fact labels.
+mocked frontend contract and the real local SSE service. It confirmed the
+rendered form, dependent fields, single submit, result hierarchy, task-specific
+history title, capability explanations, source gating, and responsive layouts.
 
 ## Release boundaries
 
