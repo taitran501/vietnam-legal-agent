@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import json
+
 from scripts import build_index
 from scripts.canonical_corpus import (
     amendment_metadata_for_anchor,
+    appendix_sha256,
     canonical_articles,
     canonical_chunks,
     corpus_sha256,
+    default_appendix_path,
     explicit_anchors,
     sha256_file,
 )
@@ -49,6 +53,35 @@ def test_text_source_hash_is_stable_across_checkout_line_endings(tmp_path):
     crlf.write_bytes('{"article": "Điều 77"}\r\n{"article": "Điều 78"}\r\n'.encode())
 
     assert sha256_file(lf) == sha256_file(crlf)
+
+
+def test_appendix_hash_ignores_converter_pdf_digest(tmp_path):
+    first = tmp_path / "first.jsonl"
+    second = tmp_path / "second.jsonl"
+    row = {
+        "Text": "Điều 77 | Nội dung",
+        "Source_Page": 1,
+        "Row_Id": "p1-t0-r0",
+        "PDF_SHA256": "converter-a",
+    }
+    first.write_text(json.dumps(row, ensure_ascii=False) + "\n", encoding="utf-8", newline="")
+    row["PDF_SHA256"] = "converter-b"
+    second.write_bytes((json.dumps(row, ensure_ascii=False) + "\r\n").encode("utf-8"))
+
+    assert appendix_sha256(first) == appendix_sha256(second)
+
+
+def test_default_appendix_path_prefers_runtime_artifact_and_keeps_legacy_fallback(tmp_path):
+    legacy = tmp_path / "data" / "appendix_xxii.jsonl"
+    runtime = tmp_path / "artifacts" / "appendix_xxii.jsonl"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy\n", encoding="utf-8")
+
+    assert default_appendix_path(tmp_path) == legacy
+
+    runtime.parent.mkdir(parents=True)
+    runtime.write_text("runtime\n", encoding="utf-8")
+    assert default_appendix_path(tmp_path) == runtime
 
 
 def test_operation_level_amendment_map_keeps_substantive_and_targeted_sources_separate():

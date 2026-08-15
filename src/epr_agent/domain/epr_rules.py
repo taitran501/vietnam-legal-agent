@@ -119,7 +119,7 @@ _CASE_FIELD_HELP_TEXT = {
     "activity_purpose": "Chọn mục đích kinh doanh hoặc nghiên cứu, học tập, thử nghiệm.",
     "annual_revenue_vnd": "Nhập doanh thu bán sản phẩm liên quan trong một năm, tính bằng VNĐ.",
     "reused_by_producer": "Chỉ chọn Có nếu doanh nghiệp tự thu hồi và tiếp tục tái sử dụng bao bì.",
-    "recovery_rate": "Nhập tỷ lệ thu hồi, đóng gói lại và tiếp tục đưa ra thị trường.",
+    "recovery_rate": "Nhập tỷ lệ thu hồi, đóng gói lại và tiếp tục đưa ra thị trường. Tỷ lệ này chưa tự thay thế căn cứ cần đối chiếu riêng.",
 }
 
 
@@ -273,6 +273,23 @@ def missing_fact_keys(facts: dict[str, FactValue]) -> list[str]:
     return [key for key in required_fact_keys(facts) if not _value(facts, key)]
 
 
+def submission_blocked_reason(facts: dict[str, FactValue]) -> str:
+    """Explain why a complete form still cannot be submitted safely.
+
+    These are valid user choices, not malformed values.  The current rule
+    pack intentionally refuses to infer a legal outcome for them, so the form
+    must not present a completed-count badge as if the next step were ready.
+    Keeping this decision in the resolver prevents the frontend and runtime
+    from maintaining separate copies of the same branch rules.
+    """
+
+    if _value(facts, "product_group") == "bao_bi" and _value(facts, "packaged_goods_category") in _UNRESOLVED_CATEGORIES:
+        return "Nhóm hàng hóa “Khác” cần được đối chiếu với điều khoản cụ thể. Biểu mẫu hiện chưa thể tự kết luận cho lựa chọn này."
+    if _value(facts, "reused_by_producer") in _UNRESOLVED_REUSE_VALUES:
+        return "Trường hợp có thu hồi và tái sử dụng cần được đối chiếu thêm căn cứ riêng. Tỷ lệ bạn nhập chưa đủ để biểu mẫu tự kết luận."
+    return ""
+
+
 def case_fields(facts: dict[str, FactValue], missing: list[str]) -> list[CaseField]:
     required = set(required_fact_keys(facts))
     options = {
@@ -422,14 +439,16 @@ class CaseFormResolver:
             bool(merged.get(field.key) and merged[field.key].value and field.key not in errors)
             for field in required_fields
         )
+        blocked_reason = submission_blocked_reason(merged)
         return CaseFormState(
             form_version=self.FORM_VERSION,
             task_type=cast(Any, task_type),
-            status="ready" if not missing and not errors else "collecting",
+            status="ready" if not missing and not errors and not blocked_reason else "collecting",
             facts=merged,
             fields=fields,
             missing_facts=missing,
             validation_errors=errors,
+            submission_blocked_reason=blocked_reason,
             completed_count=completed_count,
             required_count=len(required_fields),
         )

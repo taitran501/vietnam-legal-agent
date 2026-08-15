@@ -161,6 +161,7 @@ def _hydrate_persisted_case(raw: dict[str, Any] | None) -> dict[str, Any] | None
     payload["completed_count"] = resolved.completed_count
     payload["required_count"] = resolved.required_count
     payload["validation_errors"] = resolved.validation_errors
+    payload["submission_blocked_reason"] = resolved.submission_blocked_reason
     return payload
 
 
@@ -180,6 +181,7 @@ def _metadata_v4(state: AgentState) -> dict[str, Any]:
             "completed_count": (state.get("case_state") or {}).get("completed_count", 0),
             "required_count": (state.get("case_state") or {}).get("required_count", 0),
             "validation_errors": state.get("validation_errors") or (state.get("case_state") or {}).get("validation_errors", {}),
+            "submission_blocked_reason": (state.get("case_state") or {}).get("submission_blocked_reason", ""),
         }
     )
     return data
@@ -433,6 +435,7 @@ class V4WorkflowRuntime(WorkflowRuntime):
             fields=resolved.fields,
             form_version=resolved.form_version,
             validation_errors=resolved.validation_errors,
+            submission_blocked_reason=resolved.submission_blocked_reason,
             completed_count=resolved.completed_count,
             required_count=resolved.required_count,
         )
@@ -449,6 +452,7 @@ class V4WorkflowRuntime(WorkflowRuntime):
             "confidence": state["understanding_confidence"],
             "missing_facts": missing,
             "validation_errors": resolved.validation_errors,
+            "submission_blocked_reason": resolved.submission_blocked_reason,
             "fact_provenance": {
                 key: {"source": value.source.value, "verified": value.verified}
                 for key, value in facts.items()
@@ -463,6 +467,25 @@ class V4WorkflowRuntime(WorkflowRuntime):
                 outcome=WorkflowOutcome.NEEDS_INFORMATION.value,
                 result_type=ResultType.NONE.value,
                 termination_reason=TerminationReason.AWAITING_USER_INPUT.value,
+            )
+            return state
+
+        if resolved.submission_blocked_reason:
+            cast(dict[str, Any], state).update(
+                answer=resolved.submission_blocked_reason,
+                source="error",
+                awaiting_user_input=False,
+                outcome=WorkflowOutcome.INSUFFICIENT_EVIDENCE.value,
+                result_type=ResultType.NONE.value,
+                termination_reason=TerminationReason.INSUFFICIENT_EVIDENCE.value,
+                evidence_status="insufficient",
+                available_actions=[],
+                safe_stop_reason="invalid_or_unresolved_fact",
+                assessment={
+                    "status": AssessmentStatus.CANNOT_DETERMINE.value,
+                    "conclusion": resolved.submission_blocked_reason,
+                    "assumptions": ["Cần đối chiếu căn cứ riêng trước khi có thể đưa ra kết luận."],
+                },
             )
             return state
 

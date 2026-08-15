@@ -27,9 +27,11 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from functools import lru_cache
-from typing import TypeVar
+from typing import TypeAlias, TypeVar
+from uuid import UUID
 
 from langchain_core.documents import Document
+from qdrant_client.grpc import PointId
 
 from backend.api import metrics
 from backend.config import get_settings
@@ -48,6 +50,7 @@ _RERANK_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ce-rera
 _RETRIEVAL_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="retrieval")
 
 T = TypeVar("T")
+QdrantOffset: TypeAlias = int | str | UUID | PointId | None
 
 
 def _is_retryable_qdrant_error(exc: Exception) -> bool:
@@ -174,17 +177,20 @@ def _build_article_index():
         client = _get_qdrant_client()
         vs = _get_law_vectorstore()
 
-        offset = None
+        offset: QdrantOffset = None
         while True:
-            records, next_offset = _with_qdrant_retry(
-                "scroll(article_index)",
-                lambda offset=offset: client.scroll(
+            def _scroll_article_index(current_offset: QdrantOffset = offset):
+                return client.scroll(
                     collection_name=vs.collection_name,
                     limit=500,
-                    offset=offset,
+                    offset=current_offset,
                     with_payload=True,
                     with_vectors=False,
-                ),
+                )
+
+            records, next_offset = _with_qdrant_retry(
+                "scroll(article_index)",
+                _scroll_article_index,
             )
 
             if not records:
@@ -198,14 +204,14 @@ def _build_article_index():
                     for key in _canonical_article_keys(dieu):
                         if key not in _article_index:
                             _article_index[key] = []
-                        _article_index[key].append(record.id)
+                        _article_index[key].append(str(record.id))
                     anchor_key = _anchor_key(dieu, payload.get("Khoan", ""), payload.get("Diem", ""))
-                    _anchor_index.setdefault(anchor_key, []).append(record.id)
+                    _anchor_index.setdefault(anchor_key, []).append(str(record.id))
                 if chuong:
                     chuong_key = f"chuong:{chuong}"
                     if chuong_key not in _article_index:
                         _article_index[chuong_key] = []
-                    _article_index[chuong_key].append(record.id)
+                    _article_index[chuong_key].append(str(record.id))
 
             if next_offset is None:
                 break
@@ -295,17 +301,20 @@ def _build_lexical_index() -> None:
         vs = _get_law_vectorstore()
 
         records = []
-        offset = None
+        offset: QdrantOffset = None
         while True:
-            batch, next_offset = _with_qdrant_retry(
-                "scroll(lexical_index)",
-                lambda offset=offset: client.scroll(
+            def _scroll_lexical_index(current_offset: QdrantOffset = offset):
+                return client.scroll(
                     collection_name=vs.collection_name,
                     limit=500,
-                    offset=offset,
+                    offset=current_offset,
                     with_payload=True,
                     with_vectors=False,
-                ),
+                )
+
+            batch, next_offset = _with_qdrant_retry(
+                "scroll(lexical_index)",
+                _scroll_lexical_index,
             )
             if not batch:
                 break
@@ -574,9 +583,11 @@ def _normalize_semantic_score(score: object) -> float:
     """Best-effort normalization for Qdrant cosine scores."""
     if score is None:
         return 0.0
+    if not isinstance(score, (int, float, str)):
+        return 0.0
     try:
         value = float(score)
-    except (TypeError, ValueError):
+    except ValueError:
         return 0.0
     if math.isnan(value) or math.isinf(value):
         return 0.0
@@ -862,7 +873,7 @@ class CrossEncoderReranker(BaseReranker):
             raise RuntimeError(self.unavailable_reason)
 
         try:
-            from sentence_transformers import CrossEncoder  # type: ignore
+            from sentence_transformers import CrossEncoder
         except Exception as exc:
             self.unavailable_reason = "sentence-transformers is required for cross-encoder reranking"
             raise RuntimeError(self.unavailable_reason) from exc
@@ -1225,20 +1236,25 @@ class _EnsembleRetriever:
                 search_params = None
 
             def _query_points():
-                kwargs = {
-                    "collection_name": vs.collection_name,
-                    "query": query_vector,
-                    "limit": k,
-                    "with_payload": True,
-                    "with_vectors": False,
-                }
                 if search_params is not None:
-                    kwargs["search_params"] = search_params
-                try:
-                    return client.query_points(**kwargs)
-                except TypeError:
-                    kwargs.pop("search_params", None)
-                    return client.query_points(**kwargs)
+                    try:
+                        return client.query_points(
+                            collection_name=vs.collection_name,
+                            query=query_vector,
+                            limit=k,
+                            with_payload=True,
+                            with_vectors=False,
+                            search_params=search_params,
+                        )
+                    except TypeError:
+                        pass
+                return client.query_points(
+                    collection_name=vs.collection_name,
+                    query=query_vector,
+                    limit=k,
+                    with_payload=True,
+                    with_vectors=False,
+                )
 
             response = _with_qdrant_retry(
                 "query_points(semantic)",

@@ -19,7 +19,7 @@ import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useChatStore } from '@/state/chatStore';
 import { useAuthStore } from '@/state/authStore';
 import { toast } from '@/state/toastStore';
-import type { CaseFormState, CaseState, ReadinessResponse, SourceDocument } from '@/types';
+import type { CaseFormState, CaseState, ChatMessage, ReadinessResponse, SourceDocument } from '@/types';
 import {
   AUTH_EXPIRED_EVENT,
   beginLogin,
@@ -31,6 +31,7 @@ import {
 } from '@/auth/oidc';
 import { getMe } from '@/api/me';
 import { capabilityUnavailableCopy, eprPlainName, previewNotice, taskCopy } from '@/lib/userCopy';
+import { downloadPreliminaryReport } from '@/lib/reportExport';
 
 interface OpenSources {
   citations: Array<Record<string, unknown>>;
@@ -50,6 +51,7 @@ type GuidedDraftSnapshot = {
   facts: Record<string, string>;
   statuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>;
   formState: CaseFormState | null;
+  dirty: boolean;
 };
 
 function capabilityStatus(readiness: ReadinessResponse | null, name: keyof ReadinessResponse['capabilities']) {
@@ -206,13 +208,13 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
     setComposerDraft({ text, intent, interactionSource: 'quick_action' });
   };
 
-  const handleGuidedDraftChange = useCallback((facts: Record<string, string>, statuses: GuidedDraftSnapshot['statuses'], formState: CaseFormState | null) => {
+  const handleGuidedDraftChange = useCallback((facts: Record<string, string>, statuses: GuidedDraftSnapshot['statuses'], formState: CaseFormState | null, dirty: boolean) => {
     if (!guidedTask) return;
-    setGuidedDraft({ taskType: guidedTask, facts, statuses, formState });
+    setGuidedDraft({ taskType: guidedTask, facts, statuses, formState, dirty });
   }, [guidedTask]);
 
-  const handleRecoveryDraftChange = useCallback((facts: Record<string, string>, statuses: GuidedDraftSnapshot['statuses'], formState: CaseFormState | null) => {
-    setGuidedDraft((current) => current ? { ...current, facts, statuses, formState } : current);
+  const handleRecoveryDraftChange = useCallback((facts: Record<string, string>, statuses: GuidedDraftSnapshot['statuses'], formState: CaseFormState | null, dirty: boolean) => {
+    setGuidedDraft((current) => current ? { ...current, facts, statuses, formState, dirty } : current);
   }, []);
 
   const handleStartGuidedCase = (taskType: CaseState['task_type']) => {
@@ -267,7 +269,7 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
     taskType: CaseState['task_type'] = 'assess_epr_obligation',
   ) => {
     if (!activeSessionId || !caseReady) return;
-    const prompt = activeCase?.last_query || 'Tiếp tục đánh giá tình huống này.';
+    const prompt = taskCopy[taskType].turnPrompt;
     void sendMessage(prompt, activeSessionId, 'auto', {
       operation: 'continue_case',
       intentHint: taskType === 'build_compliance_checklist' ? 'compliance_checklist' : 'case_assessment',
@@ -291,9 +293,19 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
     return true;
   }, [caseDirty]);
 
+  const closeGuidedCase = useCallback((): boolean => {
+    if (guidedDraft?.dirty && !window.confirm('Bỏ các thông tin chưa gửi?')) return false;
+    setGuidedTask(null);
+    setGuidedDraft(null);
+    setComposerDraft({ text: '', intent: 'auto', interactionSource: 'composer' });
+    return true;
+  }, [guidedDraft?.dirty, setComposerDraft]);
+
   const handleNewSession = () => {
     setOpenSources(null);
-    if (!closeCaseDrawer()) return;
+    if (!closeCaseDrawer() || !closeGuidedCase()) return;
+    if (isStreaming) stopGeneration();
+    useChatStore.getState().clearChat();
     navigate('/');
   };
 
@@ -320,6 +332,17 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
       setOpenSources({ documents, citations, focusIndex, preview: answerPreview ?? preview });
     }
   };
+
+  const handleExportReport = useCallback((message: ChatMessage) => {
+    if (!message.workflow) return;
+    downloadPreliminaryReport({
+      answer: message.content,
+      timestamp: message.timestamp,
+      workflow: message.workflow,
+      documents: message.documents || [],
+    });
+    toast.success('Đã tải báo cáo sơ bộ để đối chiếu');
+  }, []);
 
   useKeyboardShortcuts({ onStop: stopGeneration, isStreaming });
 
@@ -362,11 +385,7 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
       onStop={stopGeneration}
       onStartCase={handleStartGuidedCase}
       onGuidedSubmit={submitGuidedCase}
-      onCancelGuided={() => {
-        setGuidedTask(null);
-        setGuidedDraft(null);
-        setComposerDraft({ text: '', intent: 'auto', interactionSource: 'composer' });
-      }}
+      onCancelGuided={closeGuidedCase}
       onGuidedDraftChange={handleGuidedDraftChange}
       draftText={composerDraft.text}
       onDraftChange={(text) => setComposerDraft({ text, interactionSource: 'composer' })}
@@ -384,6 +403,7 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
         onOpenCase={activeCase ? () => setCaseDrawerOpen(true) : undefined}
         onResearch={handleResearch}
         onOpenSources={handleOpenSources}
+        onExport={handleExportReport}
         webResearchReady={webReady}
         onRegenerate={handleRegenerate}
         onRetry={() => void retryLastTurn()}

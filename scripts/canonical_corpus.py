@@ -84,6 +84,39 @@ def sha256_file(path: Path) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def appendix_sha256(path: Path) -> str:
+    """Hash Appendix rows while ignoring converter-specific PDF metadata.
+
+    LibreOffice can produce byte-different PDFs for the same source document
+    across hosts and versions.  ``PDF_SHA256`` records that provenance for
+    inspection, but it must not change the legal corpus identity when the
+    extracted row content and source document are unchanged.
+    """
+
+    rows: list[str] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        if not isinstance(record, dict):
+            raise TypeError(f"{path} must contain one JSON object per line")
+        canonical = {key: value for key, value in record.items() if key != "PDF_SHA256"}
+        rows.append(json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+    payload = ("\n".join(rows) + "\n").encode("utf-8") if rows else b""
+    return hashlib.sha256(payload).hexdigest()
+
+
+def default_appendix_path(root: Path | None = None) -> Path:
+    """Return the runtime artifact path, falling back to the legacy location."""
+
+    root = root or ROOT
+    runtime_path = root / "artifacts" / "appendix_xxii.jsonl"
+    if runtime_path.is_file():
+        return runtime_path
+    legacy_path = root / "data" / "appendix_xxii.jsonl"
+    return legacy_path if legacy_path.is_file() else runtime_path
+
+
 def load_amendment_map(path: Path | None = None) -> dict[str, Any]:
     """Load the operation-level amendment map used by ingestion metadata.
 
@@ -374,9 +407,16 @@ def corpus_sha256_from_manifest(
         "chunking_profile": CHUNKING_PROFILE,
         "embedding_profile": EMBEDDING_PROFILE,
     }
-    appendix = appendix_path or root / "data" / "appendix_xxii.jsonl"
+    appendix = appendix_path or default_appendix_path(root)
     if appendix.exists():
-        payload["appendix_xxii_sha256"] = sha256_file(appendix)
+        payload["appendix_xxii_sha256"] = appendix_sha256(appendix)
+    elif str(manifest.get("appendix_xxii_sha256") or "").strip():
+        # The generated artifact is intentionally ignored by Git.  A
+        # maintainer-synchronised manifest keeps its canonical digest so a
+        # clean checkout can still reproduce the corpus identity; the V4
+        # indexer separately requires the runtime artifact to exist before it
+        # can promote an index.
+        payload["appendix_xxii_sha256"] = str(manifest["appendix_xxii_sha256"])
     amendment_map_reference = str(manifest.get("amendment_map_file") or "").strip()
     amendment_map = root / amendment_map_reference if amendment_map_reference else None
     if amendment_map and amendment_map.is_file():
@@ -449,7 +489,7 @@ def load_extracted_records(path: Path | None = None) -> list[dict[str, Any]]:
 def load_appendix_xxii_records(path: Path | None = None, *, required: bool = False) -> list[dict[str, Any]]:
     """Load only row-level Appendix data produced by the source extractor."""
 
-    path = path or ROOT / "data" / "appendix_xxii.jsonl"
+    path = path or default_appendix_path()
     if not path.exists():
         if required:
             raise RuntimeError("appendix_xxii_provenance_missing")

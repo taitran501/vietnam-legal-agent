@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { capabilityUnavailableCopy, eprPlainName, errorPresentation, previewNotice, safeStopCopy, taskCopy } from './userCopy';
+import { capabilityUnavailableCopy, caseFormErrorMessage, eprPlainName, errorPresentation, previewNotice, safeStopCopy, taskCopy } from './userCopy';
 
 describe('user-facing copy', () => {
   it('keeps default task labels understandable without internal vocabulary', () => {
@@ -20,6 +20,16 @@ describe('user-facing copy', () => {
       title: 'Bạn đang gửi yêu cầu hơi nhanh',
       message: 'Vui lòng chờ một chút rồi thử lại.',
     });
+    expect(errorPresentation({ code: 'pipeline_error', message: 'Request failed with status code 500', retryable: true })).toEqual({
+      title: 'Không thể hoàn tất câu trả lời',
+      message: 'Hãy thử lại hoặc thu hẹp câu hỏi.',
+    });
+  });
+
+  it('does not expose transport errors beside the guided form', () => {
+    expect(caseFormErrorMessage(new Error('Request failed with status code 500'))).toContain('Thông tin bạn đã nhập vẫn được giữ lại');
+    expect(caseFormErrorMessage({ response: { status: 422 } })).toContain('chưa hợp lệ');
+    expect(caseFormErrorMessage(new Error('Dịch vụ tạm thời không khả dụng.'))).toBe('Dịch vụ tạm thời không khả dụng.');
   });
 
   it('keeps guided turn prompts aligned with the selected task', () => {

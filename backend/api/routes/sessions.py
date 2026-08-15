@@ -124,6 +124,7 @@ class CaseStateResponse(BaseModel):
     completed_count: int = 0
     required_count: int = 0
     validation_errors: dict[str, str] = Field(default_factory=dict)
+    submission_blocked_reason: str = ""
     updated_at: float | None = None
 
 
@@ -348,6 +349,7 @@ async def get_session_case(request: Request, session_id: str):
         case_state["completed_count"] = resolved.completed_count
         case_state["required_count"] = resolved.required_count
         case_state["validation_errors"] = resolved.validation_errors
+        case_state["submission_blocked_reason"] = resolved.submission_blocked_reason
     return CaseStateResponse(**case_state)
 
 
@@ -398,6 +400,7 @@ async def update_session_case(request: Request, session_id: str, body: UpdateCas
             fields=resolved.fields,
             form_version=resolved.form_version,
             validation_errors=resolved.validation_errors,
+            submission_blocked_reason=resolved.submission_blocked_reason,
             completed_count=resolved.completed_count,
             required_count=resolved.required_count,
         ).model_dump(mode="json")
@@ -425,6 +428,7 @@ async def update_session_case(request: Request, session_id: str, body: UpdateCas
         saved["completed_count"] = resolved.completed_count
         saved["required_count"] = resolved.required_count
         saved["validation_errors"] = resolved.validation_errors
+        saved["submission_blocked_reason"] = resolved.submission_blocked_reason
     return CaseStateResponse(**saved)
 
 

@@ -13,6 +13,7 @@ interface MessageListProps {
   onOpenCase?: () => void;
   onContinueCase?: (facts: Record<string, string>, statuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>, taskType: CaseState['task_type']) => Promise<void>;
   onResearch?: (query: string) => void;
+  onExport?: (message: ChatMessage) => void;
   onOpenSources: (documents: SourceDocument[], citations: Array<Record<string, unknown>>, focusIndex?: number, preview?: boolean) => void;
   onRegenerate?: () => void;
   onRetry?: () => void;
@@ -28,6 +29,7 @@ export function MessageList({
   onOpenCase,
   onContinueCase,
   onResearch,
+  onExport,
   onOpenSources,
   onRegenerate,
   onRetry,
@@ -77,6 +79,7 @@ export function MessageList({
               onResearch={message.role === 'assistant' && webResearchReady && message.workflow?.available_actions?.includes('research_web')
                 ? () => onResearch?.(messages[index - 1]?.content || '')
                 : undefined}
+              onExport={onExport}
               webResearchReady={webResearchReady}
               onOpenSources={onOpenSources}
               onRegenerate={

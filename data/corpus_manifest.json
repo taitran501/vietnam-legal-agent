@@ -4,6 +4,7 @@
   "corpus_as_of_date": null,
   "legal_review_status": "pending",
   "promotion_status": "blocked_until_legal_review_and_extraction",
+  "appendix_xxii_sha256": "725b42a4c3570b4664d34bcb96cfb592af58a59fe25b171bffdd234f190ae7db",
   "amendment_map_file": "data/amendment_map.json",
   "rule_pack_file": "data/epr_rule_pack.json",
   "documents": [

@@ -22,26 +22,31 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 def get_llm_fast() -> ChatOpenAI:
     """gpt-3.5-turbo — chitchat responses, FAQ answer generation (plain text output only).
     Do NOT use with .with_structured_output() — use get_llm_router() for that."""
-    return ChatOpenAI(model="gpt-3.5-turbo", temperature=0, request_timeout=30)
+    return ChatOpenAI(model="gpt-3.5-turbo", temperature=0, request_timeout=30)  # type: ignore[call-arg]
 
 
 @lru_cache(maxsize=1)
 def get_llm_router() -> ChatOpenAI:
     """gpt-4o-mini — query routing with Structured Outputs (.with_structured_output()).
     gpt-3.5-turbo only supports JSON mode (no strict schema), so routing must use this."""
-    return ChatOpenAI(model="gpt-4o-mini", temperature=0, request_timeout=30)
+    return ChatOpenAI(model="gpt-4o-mini", temperature=0, request_timeout=30)  # type: ignore[call-arg]
 
 
 @lru_cache(maxsize=1)
 def get_llm_smart() -> ChatOpenAI:
     """gpt-4o-mini — query rewriting, legal generation, LLM-as-judge evaluation."""
-    return ChatOpenAI(model="gpt-4o-mini", temperature=0, request_timeout=30)
+    return ChatOpenAI(model="gpt-4o-mini", temperature=0, request_timeout=30)  # type: ignore[call-arg]
 
 
 @lru_cache(maxsize=1)
 def get_llm_stream() -> ChatOpenAI:
     """gpt-3.5-turbo with streaming enabled — token-by-token answer delivery."""
-    return ChatOpenAI(model="gpt-3.5-turbo", temperature=0, streaming=True, request_timeout=30)
+    return ChatOpenAI(  # type: ignore[call-arg]
+        model="gpt-3.5-turbo",
+        temperature=0,
+        streaming=True,
+        request_timeout=30,
+    )
 
 
 @lru_cache(maxsize=1)

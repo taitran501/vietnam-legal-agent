@@ -122,7 +122,7 @@ def extract(source: Path, output: Path) -> dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, default=ROOT / "data" / "08_2022_ND-CP_479457.doc")
-    parser.add_argument("--output", type=Path, default=ROOT / "data" / "appendix_xxii.jsonl")
+    parser.add_argument("--output", type=Path, default=ROOT / "artifacts" / "appendix_xxii.jsonl")
     args = parser.parse_args()
     print(json.dumps(extract(args.source, args.output), ensure_ascii=False, sort_keys=True))
 

@@ -8,13 +8,14 @@ import { displayFactLabel, displayFactValue, safeStopCopy } from '@/lib/userCopy
 interface WorkflowResultCardProps {
   onOpenCase?: () => void;
   onContinueCase?: (facts: Record<string, string>, statuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>, taskType: CaseState['task_type']) => Promise<void>;
-  onOpenSources?: () => void;
+  onOpenSources?: (focusIndex?: number) => void;
   onResearch?: () => void;
+  onExport?: () => void;
   webResearchReady?: boolean;
   workflow?: WorkflowMetadata;
 }
 
-export function WorkflowResultCard({ onOpenCase, onContinueCase, onOpenSources, onResearch, webResearchReady = false, workflow }: WorkflowResultCardProps) {
+export function WorkflowResultCard({ onOpenCase, onContinueCase, onOpenSources, onResearch, onExport, webResearchReady = false, workflow }: WorkflowResultCardProps) {
   if (!workflow) return null;
   const rawStopReason = workflow.safe_stop_reason || workflow.citation_error || workflow.termination_reason || '';
   const stopKey = ({
@@ -38,6 +39,7 @@ export function WorkflowResultCard({ onOpenCase, onContinueCase, onOpenSources, 
     (workflow.result_type === 'checklist' && workflow.outcome === 'completed')
     || (!workflow.outcome && !workflow.result_type)
   ) && Boolean(workflow.checklist?.length);
+  const canExport = Boolean(onExport && workflow.outcome === 'completed' && (hasAssessment || hasChecklist));
   const hasMissingFacts = Boolean(workflow.missing_facts?.length);
   const meaningfulAssumptions = (workflow.assumptions || []).filter((assumption) => assumption.trim());
   const hasAssumptions = Boolean(meaningfulAssumptions.length);
@@ -130,7 +132,7 @@ export function WorkflowResultCard({ onOpenCase, onContinueCase, onOpenSources, 
                 <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[#80d5cb] text-[10px] font-semibold text-[#006a63]">
                   {index + 1}
                 </span>
-                <span><span className="font-medium">{String(item.item || 'Hạng mục cần thực hiện')}</span>{typeof item.action === 'string' && item.action && <span className="block text-xs text-[#667085]">{item.action}</span>}{Array.isArray(item.evidence_indices) && item.evidence_indices.length > 0 && (onOpenSources ? <button className="block text-left text-xs text-[#006a63] underline" onClick={onOpenSources} type="button">Xem căn cứ ({(item.evidence_indices as unknown[]).map((value) => String(value)).join(', ')})</button> : <span className="block text-xs text-[#006a63]">Căn cứ ({(item.evidence_indices as unknown[]).map((value) => String(value)).join(', ')})</span>)}</span>
+                <span><span className="font-medium">{String(item.item || 'Hạng mục cần thực hiện')}</span>{typeof item.action === 'string' && item.action && <span className="block text-xs text-[#667085]">{item.action}</span>}{Array.isArray(item.evidence_indices) && item.evidence_indices.length > 0 && (onOpenSources ? <button className="block text-left text-xs text-[#006a63] underline" onClick={() => { const firstIndex = Number((item.evidence_indices as unknown[])[0]); onOpenSources(Number.isFinite(firstIndex) ? firstIndex : undefined); }} type="button">Xem căn cứ ({(item.evidence_indices as unknown[]).map((value) => String(value)).join(', ')})</button> : <span className="block text-xs text-[#006a63]">Căn cứ ({(item.evidence_indices as unknown[]).map((value) => String(value)).join(', ')})</span>)}</span>
               </li>
             ))}
           </ol>
@@ -144,6 +146,16 @@ export function WorkflowResultCard({ onOpenCase, onContinueCase, onOpenSources, 
             {meaningfulAssumptions.map((assumption, index) => <li key={index}>{assumption}</li>)}
           </ul>
         </details>
+      )}
+      {canExport && (
+        <button
+          className="inline-flex items-center gap-2 rounded-lg border border-[#0f766e] bg-white px-3 py-2 text-xs font-semibold text-[#006a63] hover:bg-[#f1f4f3] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e]"
+          onClick={onExport}
+          type="button"
+        >
+          <Icon name="fileText" size={15} />
+          Tải báo cáo sơ bộ
+        </button>
       )}
       {workflow.corpus_as_of_date && <p className="text-[11px] text-[#667085]">Thông tin được cập nhật đến: {workflow.corpus_as_of_date}</p>}
       <TraceDrawer traceId={workflow.trace_id} />

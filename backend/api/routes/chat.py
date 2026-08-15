@@ -17,22 +17,7 @@ import logging
 import uuid
 
 from fastapi import APIRouter, HTTPException, Request
-
-try:
-    from sse_starlette.sse import EventSourceResponse
-except ImportError:  # pragma: no cover - production installs sse-starlette
-    from starlette.responses import StreamingResponse
-
-    class EventSourceResponse(StreamingResponse):
-        """Small test/runtime fallback when the optional SSE package is absent."""
-
-        def __init__(self, content, *, status_code=200, headers=None, ping=None):
-            async def frames():
-                async for item in content:
-                    payload = item.get("data", item) if isinstance(item, dict) else item
-                    yield f"data: {payload}\n\n"
-
-            super().__init__(frames(), status_code=status_code, headers=headers, media_type="text/event-stream")
+from sse_starlette.sse import EventSourceResponse
 
 from backend.api import metrics
 from backend.api.principal import principal_from_request_state

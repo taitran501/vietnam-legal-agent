@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from scripts.canonical_corpus import corpus_sha256_from_manifest, sha256_file
+from scripts.canonical_corpus import appendix_sha256, corpus_sha256_from_manifest, default_appendix_path, sha256_file
 
 from epr_agent.domain.legal import (
     CHUNKING_PROFILE,
@@ -110,7 +110,9 @@ def desired_state(
     if not amendment_path.is_file():
         raise FileNotFoundError(f"amendment map is missing: {amendment_path}")
 
-    appendix = root / "data" / "appendix_xxii.jsonl"
+    appendix = default_appendix_path(root)
+    if appendix.is_file():
+        desired_manifest["appendix_xxii_sha256"] = appendix_sha256(appendix)
     corpus_sha = corpus_sha256_from_manifest(
         desired_manifest,
         law_path=root / "data" / "law.json",

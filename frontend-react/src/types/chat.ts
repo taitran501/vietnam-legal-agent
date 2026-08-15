@@ -164,6 +164,7 @@ export interface CaseState {
   completed_count?: number;
   required_count?: number;
   validation_errors?: Record<string, string>;
+  submission_blocked_reason?: string;
 }
 
 export interface CaseFormState {
@@ -174,6 +175,7 @@ export interface CaseFormState {
   fields: CaseField[];
   missing_facts: string[];
   validation_errors: Record<string, string>;
+  submission_blocked_reason?: string;
   completed_count: number;
   required_count: number;
 }

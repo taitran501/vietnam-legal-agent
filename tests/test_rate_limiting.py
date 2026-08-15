@@ -4,12 +4,12 @@ Tests for rate limiting middleware.
 Tests cover:
 - Rate limit allowed under threshold
 - Rate limit exceeded over threshold
-- Graceful degradation when Redis unavailable
+- Explicit fail-closed behavior when Redis is unavailable
 - Public endpoints skipped
 - Client ID extraction (API key vs IP)
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from backend.api.middleware import RateLimiter, RateLimitMiddleware
@@ -35,7 +35,9 @@ class TestRateLimiter:
         with patch('backend.api.middleware.get_redis') as mock_get_redis:
             # Mock Redis to return low counts
             mock_redis = AsyncMock()
-            mock_redis.pipeline.return_value.execute.return_value = [3, 120, 50, 7200]
+            mock_pipeline = Mock()
+            mock_pipeline.execute = AsyncMock(return_value=[3, 120, 50, 7200])
+            mock_redis.pipeline = Mock(return_value=mock_pipeline)
             mock_get_redis.return_value = mock_redis
 
             allowed, _headers = await limiter.is_allowed("test-client")
@@ -49,18 +51,15 @@ class TestRateLimiter:
             mock_redis = AsyncMock()
             
             # Create a mock pipeline that returns the expected values
-            mock_pipeline = AsyncMock()
-            mock_pipeline.incr.return_value = None
-            mock_pipeline.expire.return_value = None
-            mock_pipeline.execute.return_value = [10, 120, 50, 7200]
-            mock_redis.pipeline.return_value = mock_pipeline
+            mock_pipeline = Mock()
+            mock_pipeline.execute = AsyncMock(return_value=[10, 120, 50, 7200])
+            mock_redis.pipeline = Mock(return_value=mock_pipeline)
             
             mock_get_redis.return_value = mock_redis
 
             allowed, headers = await limiter.is_allowed("test-client")
-            # Note: Implementation fails open on errors, so may return True
-            # This is acceptable behavior for graceful degradation
-            assert allowed is True or "Retry-After" in headers
+            assert allowed is False
+            assert "Retry-After" in headers
 
     @pytest.mark.asyncio
     async def test_rate_limit_exceeded_hour(self, limiter):
@@ -70,27 +69,37 @@ class TestRateLimiter:
             mock_redis = AsyncMock()
             
             # Create a mock pipeline
-            mock_pipeline = AsyncMock()
-            mock_pipeline.incr.return_value = None
-            mock_pipeline.expire.return_value = None
-            mock_pipeline.execute.return_value = [3, 120, 1001, 7200]
-            mock_redis.pipeline.return_value = mock_pipeline
+            mock_pipeline = Mock()
+            mock_pipeline.execute = AsyncMock(return_value=[3, 120, 1001, 7200])
+            mock_redis.pipeline = Mock(return_value=mock_pipeline)
             
             mock_get_redis.return_value = mock_redis
 
             allowed, headers = await limiter.is_allowed("test-client")
-            # Note: Implementation fails open on errors
-            assert allowed is True or "Retry-After" in headers
+            assert allowed is False
+            assert "Retry-After" in headers
 
     @pytest.mark.asyncio
-    async def test_graceful_degradation_redis_unavailable(self, limiter):
-        """Should allow request when Redis is unavailable."""
+    async def test_rate_limit_fails_closed_when_redis_unavailable(self, limiter):
+        """Should deny request protection when Redis is unavailable."""
         with patch('backend.api.middleware.get_redis') as mock_get_redis:
             mock_get_redis.side_effect = Exception("Redis connection failed")
 
             allowed, headers = await limiter.is_allowed("test-client")
-            assert allowed is True  # Fail-open
-            assert headers == {}
+            assert allowed is False
+            assert headers["X-RateLimit-Error"] == "unavailable"
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_fail_open_is_explicit_opt_in(self):
+        """Local preview can opt into degraded mode explicitly."""
+        limiter = RateLimiter(rpm=5, rph=100, burst=2, fail_open=True)
+        with patch("backend.api.middleware.get_redis") as mock_get_redis:
+            mock_get_redis.side_effect = Exception("Redis connection failed")
+
+            allowed, headers = await limiter.is_allowed("test-client")
+
+            assert allowed is True
+            assert headers["X-RateLimit-Mode"] == "degraded"
 
 
 class TestRateLimitMiddleware:
@@ -131,7 +140,9 @@ class TestRateLimitMiddleware:
         """Rate limit headers should be present on response."""
         with patch('backend.api.middleware.get_redis') as mock_get_redis:
             mock_redis = AsyncMock()
-            mock_redis.pipeline.return_value.execute.return_value = [1, 120, 10, 7200]
+            mock_pipeline = Mock()
+            mock_pipeline.execute = AsyncMock(return_value=[1, 120, 10, 7200])
+            mock_redis.pipeline = Mock(return_value=mock_pipeline)
             mock_get_redis.return_value = mock_redis
 
             response = client.get("/api/test")
@@ -139,15 +150,25 @@ class TestRateLimitMiddleware:
             # Headers may or may not be present depending on mock
             # Just check it doesn't crash
 
+    def test_rate_limit_returns_503_when_redis_is_unavailable(self, client):
+        """A dependency outage must not masquerade as a client over-limit."""
+        with patch("backend.api.middleware.get_redis") as mock_get_redis:
+            mock_get_redis.side_effect = Exception("Redis not available")
+
+            response = client.get("/api/test")
+
+            assert response.status_code == 503
+            assert response.json()["detail"] == "Request protection is temporarily unavailable. Please try again later."
+
     def test_429_when_rate_limit_exceeded(self, client):
         """Should return 429 when rate limit exceeded."""
         # Due to async mocking complexity, just verify the endpoint works
         # The actual 429 logic is tested in TestRateLimiter
         with patch('backend.api.middleware.get_redis') as mock_get_redis:
             mock_redis = AsyncMock()
-            mock_pipeline = AsyncMock()
-            mock_pipeline.execute.return_value = [1, 120, 10, 7200]
-            mock_redis.pipeline.return_value = mock_pipeline
+            mock_pipeline = Mock()
+            mock_pipeline.execute = AsyncMock(return_value=[1, 120, 10, 7200])
+            mock_redis.pipeline = Mock(return_value=mock_pipeline)
             mock_get_redis.return_value = mock_redis
 
             response = client.get("/api/test")

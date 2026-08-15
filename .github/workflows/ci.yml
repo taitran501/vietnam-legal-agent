@@ -17,8 +17,9 @@ jobs:
       - run: python -m pip install -e ".[dev]"
       - run: python -m scripts.sync_corpus_metadata --check
       - run: python -m pytest -q
+      - run: python -m tests.eval.run_eval --suite all
       - run: ruff check src/epr_agent backend scripts tests
-      - run: mypy src/epr_agent
+      - run: mypy src/epr_agent backend
 
   frontend:
     runs-on: ubuntu-latest
@@ -36,3 +37,25 @@ jobs:
       - run: npm run lint
       - run: npm run test
       - run: npm run build
+
+  e2e:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend-react/package-lock.json
+      - run: npm ci
+        working-directory: frontend-react
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend-react
+      - run: npm run test:e2e -- --reporter=line
+        working-directory: frontend-react

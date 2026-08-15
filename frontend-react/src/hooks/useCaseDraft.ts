@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { resolveCaseForm, type CaseFormFactUpdate } from '@/api/caseForm';
 import type { CaseFormState, CaseState, FactValue } from '@/types';
+import { caseFormErrorMessage } from '@/lib/userCopy';
 
 type DraftStatus = 'idle' | 'resolving' | 'editing' | 'ready' | 'submitting' | 'failed';
 type ConfirmationStatus = 'user_confirmed' | 'document_verified' | 'unknown';
+type DraftErrorPhase = 'resolve' | 'submit';
 
 function plainFacts(caseState?: CaseState | CaseFormState | null): Record<string, string> {
   return Object.fromEntries(Object.entries(caseState?.facts || {}).map(([key, value]) => [
@@ -41,6 +43,7 @@ export function useCaseDraft(
     : null);
   const [status, setStatus] = useState<DraftStatus>(initialCaseState ? 'editing' : 'idle');
   const [error, setError] = useState('');
+  const [errorPhase, setErrorPhase] = useState<DraftErrorPhase>('resolve');
   const [baseline, setBaseline] = useState(() => JSON.stringify({ facts: plainFacts(initialCaseState), statuses: statusesFor(initialCaseState), taskType }));
 
   const resolve = useCallback(async (signal?: AbortSignal) => {
@@ -55,10 +58,12 @@ export function useCaseDraft(
       if (sequence !== requestSequence.current) return;
       setFormState(next);
       setError('');
+      setErrorPhase('resolve');
       setStatus(next.validation_errors && Object.keys(next.validation_errors).length ? 'editing' : next.status === 'ready' ? 'ready' : 'editing');
     } catch (cause) {
       if (controller.signal.aborted || sequence !== requestSequence.current) return;
-      setError(cause instanceof Error ? cause.message : 'Không thể cập nhật biểu mẫu.');
+      setError(caseFormErrorMessage(cause));
+      setErrorPhase('resolve');
       setStatus('editing');
     }
   }, [facts, statuses, taskType]);
@@ -82,7 +87,7 @@ export function useCaseDraft(
   }, []);
 
   const submit = useCallback(async () => {
-    if (!formState || formState.status !== 'ready' || Object.keys(formState.validation_errors || {}).length) return false;
+    if (!formState || formState.status !== 'ready' || Object.keys(formState.validation_errors || {}).length || formState.submission_blocked_reason) return false;
     setStatus('submitting');
     setError('');
     try {
@@ -91,11 +96,17 @@ export function useCaseDraft(
       setStatus('ready');
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Không thể xử lý thông tin.');
+      setError(caseFormErrorMessage(cause));
+      setErrorPhase('submit');
       setStatus('failed');
       return false;
     }
   }, [facts, formState, onSubmit, statuses, taskType]);
+
+  const retry = useCallback(() => {
+    if (errorPhase === 'submit') return submit();
+    return resolve();
+  }, [errorPhase, resolve, submit]);
 
   const dirty = useMemo(() => JSON.stringify({ facts, statuses, taskType }) !== baseline, [baseline, facts, statuses, taskType]);
   const discard = useCallback(() => {
@@ -116,9 +127,13 @@ export function useCaseDraft(
     status,
     error,
     dirty,
-    isReady: formState?.status === 'ready' && Object.keys(formState.validation_errors || {}).length === 0,
+    isReady: formState?.status === 'ready'
+      && Object.keys(formState.validation_errors || {}).length === 0
+      && !formState.submission_blocked_reason,
+    errorPhase,
     setFact,
     submit,
+    retry,
     resolve,
     discard,
   };

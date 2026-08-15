@@ -6,6 +6,14 @@ preview run is not approval.
 
 ## Release gates
 
+Before starting a production backend, configure a real PostgreSQL URL, Qdrant
+endpoint, OpenAI key, at least one authentication mechanism (OIDC, service
+token, or legacy compatibility key), and HTTPS `ALLOWED_ORIGINS` when the UI is
+cross-origin. `POSTGRES_PASSWORD` is required by Compose and has no insecure
+default. The backend rejects production startup when auth is disabled, rate
+limiting is fail-open, trace debugging is enabled, or local/HTTP CORS origins
+are configured.
+
 Run these from the exact release commit:
 
 ```powershell
@@ -55,3 +63,7 @@ missing approval must leave the active alias unchanged.
 Monitor authentication failures, cross-owner denials, capability reasons,
 stopped turns, SSE error codes, source rejection, feedback failures, corpus
 version/hash, retrieval latency, and assessment outcomes.
+
+The `/metrics` gateway path is restricted to loopback and private scrape
+networks and proxies to the authenticated backend metrics route. Keep the
+reverse proxy behind TLS in any user-facing deployment.

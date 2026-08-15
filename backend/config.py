@@ -9,6 +9,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,7 +26,9 @@ class Settings(BaseSettings):
     )
 
     # ── OpenAI ──────────────────────────────────────────────────────────────
-    openai_api_key: str = Field(..., description="OpenAI API key")
+    # Empty is a valid local/preview configuration.  Readiness remains the
+    # authoritative gate and blocks legal capabilities when the key is absent.
+    openai_api_key: str = Field(default="", description="OpenAI API key")
 
     # ── Qdrant ──────────────────────────────────────────────────────────────
     use_qdrant_cloud: bool = Field(default=False)
@@ -43,6 +46,10 @@ class Settings(BaseSettings):
 
     # ── Redis ────────────────────────────────────────────────────────────────
     redis_url: str = Field(default="redis://localhost:6379/0")
+    rate_limit_fail_open: bool = Field(
+        default=False,
+        description="Allow requests when Redis rate limiting is unavailable; keep false for production safety",
+    )
     cache_ttl_seconds: int = Field(default=3600)       # exact-match cache TTL
     corpus_version: str = Field(
         default="epr-law-structure-v4-amendment-chain",
@@ -109,6 +116,10 @@ class Settings(BaseSettings):
     web_excerpt_max_chars: int = Field(default=1200, ge=200, le=4000)
 
     # ── Authentication ───────────────────────────────────────────────────────
+    allowed_origins: str = Field(
+        default="",
+        description="Comma-separated browser origins allowed by CORS; leave empty for same-origin deployments",
+    )
     api_keys: str = Field(
         default="",
         description="Comma-separated list of valid API keys (e.g. 'key1,key2')",
@@ -290,3 +301,66 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Return cached Settings singleton."""
     return Settings()
+
+
+def _looks_like_configured_secret(value: str | None) -> bool:
+    """Return whether a value is non-empty and not a documentation placeholder."""
+
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return False
+    return not normalized.startswith(("your-", "replace-", "change-me", "example-"))
+
+
+def validate_production_settings(settings: Settings) -> None:
+    """Fail fast when a production process would start with unsafe defaults.
+
+    Preview mode deliberately remains permissive so local deterministic journeys
+    can run without paid providers.  Production mode must instead fail before
+    opening dependency connections when its security or persistence contract is
+    incomplete.
+    """
+
+    if settings.corpus_runtime_mode != "production":
+        return
+
+    errors: list[str] = []
+    if not settings.require_auth:
+        errors.append("REQUIRE_AUTH must be true")
+    if settings.rate_limit_fail_open:
+        errors.append("RATE_LIMIT_FAIL_OPEN must be false")
+    if settings.enable_trace_debug_api:
+        errors.append("ENABLE_TRACE_DEBUG_API must be false")
+    database_url = str(settings.database_url or "")
+    if not database_url.startswith(("postgresql://", "postgres://", "postgresql+asyncpg://")):
+        errors.append("DATABASE_URL must point to PostgreSQL")
+    if not _looks_like_configured_secret(settings.openai_api_key):
+        errors.append("OPENAI_API_KEY must be configured")
+    if not settings.use_qdrant_cloud and not settings.qdrant_url:
+        errors.append("QDRANT_URL must be configured when Qdrant Cloud is disabled")
+
+    has_legacy_key = any(
+        _looks_like_configured_secret(value)
+        for value in settings.api_keys.split(",")
+    )
+    has_service_tokens = bool(settings.service_token_definitions.strip())
+    has_oidc = bool(settings.oidc_issuer and settings.oidc_audience)
+    if not (has_legacy_key or has_service_tokens or has_oidc):
+        errors.append("configure API_KEYS, SERVICE_TOKEN_DEFINITIONS, or OIDC_ISSUER/OIDC_AUDIENCE")
+
+    for raw_origin in settings.allowed_origins.split(","):
+        origin = raw_origin.strip()
+        if not origin:
+            continue
+        parsed = urlsplit(origin)
+        if origin == "*":
+            errors.append("ALLOWED_ORIGINS must not contain '*'")
+            continue
+        if parsed.scheme != "https" or not parsed.netloc:
+            errors.append("ALLOWED_ORIGINS must contain only valid HTTPS origins")
+            continue
+        if parsed.hostname in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}:
+            errors.append("ALLOWED_ORIGINS must not contain local development hosts")
+
+    if errors:
+        raise ValueError("Unsafe production configuration: " + "; ".join(errors))

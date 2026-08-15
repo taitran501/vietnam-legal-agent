@@ -12,13 +12,13 @@ from typing import Any
 
 from backend.api.routes import chat as chat_routes
 from backend.api.routes.chat import router as chat_router
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
 from epr_agent.agent.graph import WorkflowDependencies
 from epr_agent.agent.planner import BoundedPlanner
 from epr_agent.agent.v4 import V4WorkflowRuntime
-from epr_agent.domain.epr_rules import CaseFormResolver, case_fields, missing_fact_keys
-from epr_agent.domain.models import DocumentRecord
+from epr_agent.domain.epr_rules import CaseFormResolver
+from epr_agent.domain.models import AgentState, DocumentRecord
 from epr_agent.domain.v4 import CaseStateV4, FactSource, FactValue
 from epr_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
 from epr_agent.tools.evidence import EvidenceEvaluator
@@ -287,7 +287,7 @@ class BrowserHistoryGateway:
     ) -> dict[str, Any]:
         saved = {
             **state,
-            "status": "collecting" if state.get("missing_facts") else "ready",
+            "status": "collecting" if state.get("missing_facts") or state.get("submission_blocked_reason") else "ready",
         }
         self.cases[(user_id, conversation_id)] = saved
         return saved
@@ -300,7 +300,7 @@ class BrowserHistoryGateway:
     async def get_case(self, user_id: str, conversation_id: str) -> dict[str, Any] | None:
         return self.cases.get((user_id, conversation_id))
 
-    async def record_run(self, state: dict[str, Any], started_at: float, ended_at: float) -> None:
+    async def record_run(self, state: AgentState, started_at: float, ended_at: float) -> None:
         self.runs.append(dict(state))
 
 
@@ -395,6 +395,8 @@ async def resolve_case_form(body: dict[str, Any]) -> dict[str, Any]:
 
 @app.get("/api/v1/sessions/{session_id}/case")
 async def get_case(session_id: str) -> dict[str, Any] | None:
+    if ("dev-local", session_id) not in history.messages:
+        raise HTTPException(status_code=404, detail="Session not found")
     return await history.get_case("dev-local", session_id)
 
 
@@ -402,6 +404,8 @@ async def get_case(session_id: str) -> dict[str, Any] | None:
 async def update_case(session_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Deterministic case-panel adapter used by the real browser suite."""
 
+    if ("dev-local", session_id) not in history.messages:
+        raise HTTPException(status_code=404, detail="Session not found")
     existing = await history.get_case("dev-local", session_id) or {}
     task_type = str(body.get("task_type") or existing.get("task_type") or "assess_epr_obligation")
     raw_facts = dict(body.get("facts") or {})
@@ -410,16 +414,21 @@ async def update_case(session_id: str, body: dict[str, Any]) -> dict[str, Any]:
         for key, value in raw_facts.items()
         if str(value).strip()
     }
-    missing = missing_fact_keys(facts)
+    resolved = case_form_resolver.resolve(task_type, facts)
     case = CaseStateV4(
         task_type=task_type,
-        status="ready" if not missing else "collecting",
-        facts=facts,
-        missing_facts=missing,
+        status=resolved.status,
+        facts=resolved.facts,
+        missing_facts=resolved.missing_facts,
         last_query=str(existing.get("last_query") or ""),
+        fields=resolved.fields,
+        form_version=resolved.form_version,
+        validation_errors=resolved.validation_errors,
+        submission_blocked_reason=resolved.submission_blocked_reason,
+        completed_count=resolved.completed_count,
+        required_count=resolved.required_count,
     )
     payload = case.model_dump(mode="json")
-    payload["fields"] = [field.model_dump() for field in case_fields(facts, missing)]
     return await history.save_case("dev-local", session_id, payload)
 
 
@@ -443,6 +452,8 @@ async def sessions() -> list[dict[str, Any]]:
 
 @app.get("/api/v1/sessions/{session_id}")
 async def session_detail(session_id: str) -> dict[str, Any]:
+    if ("dev-local", session_id) not in history.messages:
+        raise HTTPException(status_code=404, detail="Session not found")
     messages = history.messages.get(("dev-local", session_id), [])
     return {
         "id": session_id,

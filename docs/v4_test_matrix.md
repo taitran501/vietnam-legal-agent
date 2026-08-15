@@ -11,7 +11,7 @@ Run from the repository root with the acceptance environment:
 ```powershell
 .venv_acceptance\Scripts\python.exe -m pytest -q
 .venv_acceptance\Scripts\ruff.exe check src/epr_agent backend scripts tests
-.venv_acceptance\Scripts\mypy.exe src/epr_agent
+.venv_acceptance\Scripts\mypy.exe src/epr_agent backend
 python -m tests.eval.run_eval --suite all --output data/eval/v4-deterministic.json
 ```
 
@@ -40,6 +40,7 @@ form; field resolution is limited to the side-effect-free form endpoint.
 Start the real stack and let the one-shot indexer finish before testing:
 
 ```powershell
+# Copy .env.example to .env and set POSTGRES_PASSWORD first.
 docker compose up -d --build
 docker compose ps -a
 Invoke-RestMethod http://127.0.0.1/api/v1/ready

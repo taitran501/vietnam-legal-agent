@@ -5,7 +5,7 @@ Implements distributed rate limiting using Redis for multi-worker support.
 Supports:
 - Per-client rate limiting (by API key or IP)
 - Configurable requests per minute/hour
-- Graceful degradation when Redis is unavailable
+- Configurable degradation when Redis is unavailable (fail-closed by default)
 - Distributed token bucket algorithm
 """
 
@@ -33,10 +33,12 @@ class RateLimiter:
         rpm: int = 60,        # Requests per minute
         rph: int = 1000,      # Requests per hour
         burst: int = 10,      # Burst allowance
+        fail_open: bool = False,
     ):
         self.rpm = rpm
         self.rph = rph
         self.burst = burst
+        self.fail_open = fail_open
     
     async def is_allowed(self, client_id: str) -> tuple[bool, dict[str, str]]:
         """
@@ -90,10 +92,14 @@ class RateLimiter:
             
             return True, headers
             
-        except Exception as exc:  # noqa: BLE001 - rate limiting deliberately fails open during Redis outages
+        except Exception as exc:  # noqa: BLE001 - dependency boundary is converted to a safe decision
             logger.warning("Rate limiter check failed: %s", exc)
-            # Fail-open: allow request if Redis is unavailable
-            return True, {}
+            if self.fail_open:
+                return True, {"X-RateLimit-Mode": "degraded"}
+            return False, {
+                "Retry-After": "5",
+                "X-RateLimit-Error": "unavailable",
+            }
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -113,7 +119,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         
         # Check rate limit
         allowed, headers = await self.limiter.is_allowed(client_id)
-        
+
+        if headers.get("X-RateLimit-Error") == "unavailable":
+            from starlette.responses import JSONResponse
+
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Request protection is temporarily unavailable. Please try again later."},
+                headers=headers,
+            )
+
         if not allowed:
             from starlette.responses import JSONResponse
             return JSONResponse(

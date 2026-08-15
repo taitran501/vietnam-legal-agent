@@ -29,4 +29,5 @@ def test_case_form_resolve_is_side_effect_free_and_returns_field_metadata():
     assert payload["completed_count"] == 1
     assert payload["required_count"] >= payload["completed_count"]
     assert payload["validation_errors"] == {}
+    assert payload["submission_blocked_reason"] == ""
     assert any(field["key"] == "business_role" for field in payload["fields"])
