@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from scripts.canonical_corpus import corpus_sha256_from_manifest
 from scripts.sync_corpus_metadata import synchronize
 
 
@@ -84,3 +85,32 @@ def test_sync_check_detects_source_drift_without_rewriting(tmp_path: Path) -> No
     assert report["status"] == "out_of_sync"
     assert "corpus_manifest_out_of_sync" in report["issues"]
     assert "runtime_manifest_out_of_sync" in report["issues"]
+
+
+def test_sync_uses_generated_runtime_appendix_artifact(tmp_path: Path) -> None:
+    manifest, runtime = _fixture(tmp_path)
+    appendix = tmp_path / "artifacts" / "appendix_xxii.jsonl"
+    appendix.parent.mkdir(parents=True)
+    appendix.write_text(
+        json.dumps({"Row_Id": "p1-t0-r0", "Text": "Điều 77", "PDF_SHA256": "converter"}) + "\n",
+        encoding="utf-8",
+    )
+
+    synchronize(write=True, root=tmp_path, manifest_path=manifest, runtime_manifest_path=runtime)
+    checked = synchronize(write=False, root=tmp_path, manifest_path=manifest, runtime_manifest_path=runtime)
+    synced_manifest = json.loads(manifest.read_text(encoding="utf-8"))
+    with_appendix = corpus_sha256_from_manifest(synced_manifest, root=tmp_path, appendix_path=appendix)
+    manifest_without_declared_appendix = dict(synced_manifest)
+    manifest_without_declared_appendix.pop("appendix_xxii_sha256")
+    without_appendix = corpus_sha256_from_manifest(
+        manifest_without_declared_appendix,
+        root=tmp_path,
+        appendix_path=tmp_path / "missing-appendix.jsonl",
+    )
+
+    assert checked["status"] == "ok"
+    assert checked["corpus_sha256"] == with_appendix
+    assert checked["corpus_sha256"] != without_appendix
+
+    appendix.unlink()
+    assert synchronize(write=False, root=tmp_path, manifest_path=manifest, runtime_manifest_path=runtime)["status"] == "ok"
