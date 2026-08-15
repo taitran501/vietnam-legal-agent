@@ -37,7 +37,7 @@ def setup_logging():
     
     if log_format == "json":
         try:
-            from pythonjsonlogger import jsonlogger  # type: ignore[import-not-found]
+            from pythonjsonlogger import jsonlogger
             
             handler = logging.StreamHandler()
             formatter = jsonlogger.JsonFormatter(

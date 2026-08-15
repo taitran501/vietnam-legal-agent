@@ -127,7 +127,7 @@ async def validate_oidc_token(token: str) -> Principal:
     if not settings.oidc_issuer or not settings.oidc_audience:
         raise AuthenticationError("OIDC is not configured")
     try:
-        import jwt  # type: ignore[import-not-found]  # PyJWT is a runtime dependency without bundled stubs.
+        import jwt
     except ImportError as exc:  # pragma: no cover - dependency is installed in production
         raise AuthenticationError("OIDC JWT support is not installed") from exc
 

@@ -27,7 +27,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from functools import lru_cache
-from typing import TypeVar
+from typing import TypeAlias, TypeVar
 from uuid import UUID
 
 from langchain_core.documents import Document
@@ -50,7 +50,7 @@ _RERANK_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ce-rera
 _RETRIEVAL_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="retrieval")
 
 T = TypeVar("T")
-QdrantOffset = int | str | UUID | PointId | None
+QdrantOffset: TypeAlias = int | str | UUID | PointId | None
 
 
 def _is_retryable_qdrant_error(exc: Exception) -> bool:
