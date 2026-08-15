@@ -106,6 +106,17 @@ def appendix_sha256(path: Path) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def default_appendix_path(root: Path | None = None) -> Path:
+    """Return the runtime artifact path, falling back to the legacy location."""
+
+    root = root or ROOT
+    runtime_path = root / "artifacts" / "appendix_xxii.jsonl"
+    if runtime_path.is_file():
+        return runtime_path
+    legacy_path = root / "data" / "appendix_xxii.jsonl"
+    return legacy_path if legacy_path.is_file() else runtime_path
+
+
 def load_amendment_map(path: Path | None = None) -> dict[str, Any]:
     """Load the operation-level amendment map used by ingestion metadata.
 
@@ -396,7 +407,7 @@ def corpus_sha256_from_manifest(
         "chunking_profile": CHUNKING_PROFILE,
         "embedding_profile": EMBEDDING_PROFILE,
     }
-    appendix = appendix_path or root / "data" / "appendix_xxii.jsonl"
+    appendix = appendix_path or default_appendix_path(root)
     if appendix.exists():
         payload["appendix_xxii_sha256"] = appendix_sha256(appendix)
     elif str(manifest.get("appendix_xxii_sha256") or "").strip():
@@ -478,7 +489,7 @@ def load_extracted_records(path: Path | None = None) -> list[dict[str, Any]]:
 def load_appendix_xxii_records(path: Path | None = None, *, required: bool = False) -> list[dict[str, Any]]:
     """Load only row-level Appendix data produced by the source extractor."""
 
-    path = path or ROOT / "data" / "appendix_xxii.jsonl"
+    path = path or default_appendix_path()
     if not path.exists():
         if required:
             raise RuntimeError("appendix_xxii_provenance_missing")

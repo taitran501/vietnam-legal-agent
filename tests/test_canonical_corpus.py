@@ -9,6 +9,7 @@ from scripts.canonical_corpus import (
     canonical_articles,
     canonical_chunks,
     corpus_sha256,
+    default_appendix_path,
     explicit_anchors,
     sha256_file,
 )
@@ -68,6 +69,19 @@ def test_appendix_hash_ignores_converter_pdf_digest(tmp_path):
     second.write_bytes((json.dumps(row, ensure_ascii=False) + "\r\n").encode("utf-8"))
 
     assert appendix_sha256(first) == appendix_sha256(second)
+
+
+def test_default_appendix_path_prefers_runtime_artifact_and_keeps_legacy_fallback(tmp_path):
+    legacy = tmp_path / "data" / "appendix_xxii.jsonl"
+    runtime = tmp_path / "artifacts" / "appendix_xxii.jsonl"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy\n", encoding="utf-8")
+
+    assert default_appendix_path(tmp_path) == legacy
+
+    runtime.parent.mkdir(parents=True)
+    runtime.write_text("runtime\n", encoding="utf-8")
+    assert default_appendix_path(tmp_path) == runtime
 
 
 def test_operation_level_amendment_map_keeps_substantive_and_targeted_sources_separate():
