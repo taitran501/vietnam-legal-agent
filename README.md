@@ -1,344 +1,282 @@
 # EPR Compliance Copilot
 
 [![CI](https://github.com/taitran501/legal_epr/actions/workflows/ci.yml/badge.svg)](https://github.com/taitran501/legal_epr/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-EPR Compliance Copilot is a Vietnamese-language application that helps
-businesses understand and prepare for Extended Producer Responsibility (EPR)
-requirements in Vietnam.
+Vietnamese-first software for preliminary Extended Producer Responsibility
+(EPR) research and compliance preparation.
 
-Users can ask about a legal provision, explain a situation, prepare a
-compliance checklist, and inspect the official sources behind an answer. The
-application is intentionally focused on Vietnamese EPR law and returns a
-preliminary, source-grounded result rather than pretending to replace a
-lawyer or an official legal opinion.
+EPR Compliance Copilot helps a user look up a provision, assess a business
+situation, or prepare an evidence-linked checklist. It is deliberately
+bounded: answers are checked against the active repository-managed corpus,
+user-provided facts remain labelled as unverified, and the workflow can stop
+when evidence or a required dependency is missing.
 
-## Thử nhanh
+> **Important:** This project provides preliminary information. It is not
+> legal advice, a formal legal opinion, or a substitute for the official
+> text and an organisation's internal approval process.
 
-Nếu bạn chỉ muốn trải nghiệm sản phẩm, hãy chạy local preview theo
-[runbook local preview](docs/runbooks/local-preview.md). Không cần biết route
-hay pipeline: mở màn hình chào mừng, chọn một trong ba việc **Tra cứu quy
-định**, **Kiểm tra trường hợp của doanh nghiệp**, hoặc **Tạo danh sách việc cần
-làm**, rồi làm theo các câu hỏi được hiển thị.
+## Status
 
-Repository hiện chưa có hosted demo công khai. Các acceptance report và số liệu
-kiểm thử local không phải là URL production hay bằng chứng rằng corpus đã được
-phê duyệt pháp lý.
+- The repository supports a local Docker preview and a deterministic browser
+  test environment.
+- GitHub Actions validates the backend, frontend, and browser-test contracts.
+- There is no hosted public demo in this repository.
+- Production legal capability remains subject to corpus review, an approved
+  effective date, deployment configuration, and external operational gates.
 
-### Sản phẩm hiện hỗ trợ
+## What it does
 
-| Bạn muốn làm gì? | Kết quả |
+| Workflow | User-facing result |
 | --- | --- |
-| Tra cứu một điều khoản EPR | Câu trả lời có căn cứ và source drawer để đối chiếu |
-| Kiểm tra trường hợp doanh nghiệp | Thu thập đúng các dữ kiện còn thiếu và trả về đánh giá sơ bộ |
-| Lập checklist tuân thủ | Danh sách việc cần làm gắn với căn cứ |
-| Không đủ căn cứ hoặc corpus chưa sẵn sàng | Dừng an toàn, nêu lý do và không tự thay bằng điều khoản gần giống |
+| Legal lookup | A streamed answer with source citations and a source drawer for comparison. |
+| Case assessment | A guided form that asks for the facts required by the selected task and returns a preliminary assessment. |
+| Compliance checklist | A guided list of preparation actions linked to the available evidence. |
+| Follow-up and recovery | Continue an active case, stop a turn, retry a failed turn, or regenerate a persisted answer. |
+| Explicit web research | Search configured official domains only when the user selects the research workflow. |
 
-Kết quả luôn là thông tin sơ bộ. Người dùng cần đối chiếu văn bản chính thức
-và quy trình phê duyệt nội bộ trước khi ra quyết định quan trọng.
+The UI is Vietnamese-first. It also supports conversation persistence,
+feedback, source-aware preliminary `.txt` report export, and readiness
+messages that explain why a capability is unavailable.
 
-## What you can do
+## Trust boundaries
 
-- Ask questions about EPR provisions, including Articles 77–86.
-- Open citations in a source drawer with the document, article, excerpt, and
-  corpus status.
-- Assess a company situation by filling in the facts the workflow actually
-  needs.
-- Prepare an evidence-linked compliance checklist.
-- Continue a case after answering a follow-up question.
-- Stop a response, retry it, or regenerate it without losing the previous
-  answer.
-- Save conversations, rate answers, and reload them later.
-- Explicitly search approved official websites when web research is needed.
+The application is designed to fail visibly instead of filling gaps with a
+confident-looking answer:
 
-## Usage
-
-After starting the application, the web client exposes the following
-workflows:
-
-- **Legal lookup**: submit a provision or question and inspect the streamed
-  answer with its source citations.
-- **Case assessment**: open **Thông tin tình huống**, complete the required
-  case facts, and select **Lưu và tiếp tục đánh giá**.
-- **Compliance checklist**: select the checklist task, complete the required
-  facts, and select **Lưu và tiếp tục lập checklist**.
-- **Follow-up**: continue in the same conversation; the active case context is
-  loaded before the next turn is routed.
-- **Recovery**: stop an in-progress turn, retry a failed turn, or regenerate a
-  persisted assistant message without duplicating the user message.
-
-Required case fields are supplied by the backend case schema and validated in
-the case panel. Missing facts result in an explicit follow-up request. If an
-article is not supported by the active corpus, the application returns a
-safe-stop result instead of substituting a nearby provision.
-
-## Scope and trust model
-
-The current application covers Vietnamese EPR law. It is designed around a
-few important rules:
-
-- Answers should be supported by an active legal source and show citations.
-- User-entered facts are labelled as user-provided; they are not treated as
+- Legal generation is gated by retrieval and citation checks.
+- Missing provisions, weak evidence, incomplete facts, stale corpus metadata,
+  and unavailable dependencies produce reason-specific safe stops.
+- Facts entered by a user are facts supplied by that user; they are not
   independently verified documents.
-- A missing provision, weak evidence, incomplete case, stale corpus, or
-  unavailable dependency produces a reason-specific safe stop.
-- Web research is an explicit action, not a silent fallback. Web evidence is
-  restricted to configured official domains such as `vanban.chinhphu.vn` and
-  `vbpl.vn`.
-- The corpus contains the 2022 EPR decree and the amendment instruments
-  currently tracked by the repository. Legal approval and the corpus-as-of
-  date remain an external production release decision.
+- Web research is an explicit route and is restricted to configured official
+  domains such as `vanban.chinhphu.vn` and `vbpl.vn`.
+- `preview` mode is for local or staging validation. It does not grant legal
+  approval and must not be used as a production bypass.
 
-When `CORPUS_RUNTIME_MODE=preview`, local or staging users can exercise the
-workflow with a persistent preview warning. Production defaults to
-`production` and blocks legal answers until the corpus passes the technical
-checks and the legal approval gate.
+## Scope and limitations
 
-> This application provides preliminary, source-grounded information. It is
-> not legal advice and should not be the only basis for an important business
-> or compliance decision.
+The current product focuses on Vietnamese EPR law and the instruments tracked
+by the repository corpus. It does not currently provide:
 
-## Run the application locally
+- document upload or OCR;
+- historical-law date selection;
+- broad web search outside configured official domains;
+- long-term user-profile memory;
+- a formal legal or compliance report (the export is explicitly preliminary);
+- legal coverage outside the EPR domain.
+
+## Quick start: Docker Compose
+
+This is the recommended path for the complete local stack: React, FastAPI,
+PostgreSQL, Redis, Qdrant, and the one-shot corpus indexer.
 
 ### Prerequisites
 
-- Python 3.11
-- Node.js 18 or newer
-- Docker Desktop and Docker Compose for the full stack
-- An OpenAI API key for live answer generation
+- Docker Desktop with Compose
+- An OpenAI API key for live embedding/indexing and answer generation
 
-### Option 1: full Docker stack
+### Start an isolated local preview
 
-This is the recommended path when you want the frontend, API, persistence,
-cache, vector search, and indexer together.
-
-```powershell
+```bash
 git clone https://github.com/taitran501/legal_epr.git
-Set-Location legal_epr
-
-Copy-Item .env.example .env
-# Edit .env and set OPENAI_API_KEY and a long random POSTGRES_PASSWORD.
-# Compose intentionally refuses to start with a default database password.
-# For local/staging validation, set CORPUS_RUNTIME_MODE=preview.
-# Keep ALLOWED_ORIGINS empty for this same-origin Compose stack.
-
-docker compose up -d --build
-docker compose ps -a
-Invoke-RestMethod http://127.0.0.1/api/v1/ready
+cd legal_epr
+cp .env.example .env
 ```
 
-Open the application at [http://127.0.0.1](http://127.0.0.1).
+Edit `.env` before starting Compose:
 
-The Compose stack contains:
+```dotenv
+OPENAI_API_KEY=replace-with-your-key
+POSTGRES_PASSWORD=use-a-long-random-local-password
+CORPUS_RUNTIME_MODE=preview
+REQUIRE_AUTH=false
+```
 
-| Service | Purpose |
-| --- | --- |
-| `nginx` | Public entry point on port 80 and SSE proxy |
-| `frontend` | React application |
-| `backend` | FastAPI API and agent workflow |
-| `postgres` | Durable production-style storage |
-| `redis` | Cache, rate limiting, and short-lived context |
-| `qdrant` | Legal vector collection |
-| `indexer` | One-shot corpus audit and index build |
+`REQUIRE_AUTH=false` is only for an isolated local preview. Use OIDC, service
+tokens, or another configured authentication mechanism in a shared or
+deployed environment.
+
+Start and inspect the stack:
+
+```bash
+docker compose up -d --build
+docker compose ps -a
+```
+
+Check readiness:
+
+```bash
+curl http://127.0.0.1/api/v1/ready
+```
+
+Open the application at [http://127.0.0.1](http://127.0.0.1). In preview mode,
+the readiness payload and UI may report `preview_unapproved_corpus`; that is
+an expected warning, not a production approval.
 
 Useful commands:
 
-```powershell
+```bash
 docker compose logs -f backend indexer
 docker compose ps -a
 docker compose down
 ```
 
-Keep `CORPUS_RUNTIME_MODE=preview` for local testing while the corpus approval
-field is pending. Do not use preview mode as a production bypass.
+The Compose services are:
 
-### Option 2: run the API and frontend separately
-
-Create a Python environment and install the backend:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
-python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-In a second terminal, install and start the React application:
-
-```powershell
-Set-Location frontend-react
-npm.cmd install
-$env:VITE_API_PROXY_TARGET = "http://127.0.0.1:8000"
-npm.cmd run dev
-```
-
-Open [http://127.0.0.1:3000](http://127.0.0.1:3000). Vite proxies `/api` to
-the backend. When `DATABASE_URL` is unset, local development uses the SQLite
-history database configured by `HISTORY_DB_PATH`; PostgreSQL is used by the
-Compose deployment.
-
-## Configuration
-
-Copy `.env.example` to `.env` and configure only the services you use. Never
-commit `.env`, database files, Qdrant storage, logs, or generated evaluation
-reports.
-
-| Variable | Purpose |
+| Service | Role |
 | --- | --- |
-| `OPENAI_API_KEY` | Required for live answer and embedding generation |
-| `CORPUS_RUNTIME_MODE` | `production` or `preview`; defaults to `production` |
-| `DATABASE_URL` | PostgreSQL URL; unset uses local SQLite |
-| `POSTGRES_PASSWORD` | Required by Compose; use a long random value and never commit it |
-| `HISTORY_DB_PATH` | SQLite history path when PostgreSQL is not configured |
-| `QDRANT_URL` | Self-hosted Qdrant endpoint |
-| `USE_QDRANT_CLOUD` | Use Qdrant Cloud when set to `true` |
-| `REDIS_URL` | Redis endpoint for cache and rate limiting |
-| `RATE_LIMIT_FAIL_OPEN` | Explicit local-preview override; keep `false` in production |
-| `TAVILY_API_KEY` | Optional provider for explicit official-web research |
-| `OIDC_ISSUER` | OIDC discovery issuer for deployed browser authentication |
-| `OIDC_AUDIENCE` | Expected JWT audience |
-| `OIDC_CLIENT_ID` | React OIDC client ID |
-| `OIDC_REQUIRED_GROUP` | Optional internal-access group or role |
-| `REQUIRE_AUTH` | Keep enabled for deployed environments |
-| `ALLOWED_ORIGINS` | HTTPS browser origins for cross-origin deployments; empty is same-origin |
+| `nginx` | Same-origin entry point and frontend/API gateway on port 80. |
+| `frontend` | React application served by unprivileged Nginx. |
+| `backend` | FastAPI API, bounded workflow, persistence, and readiness checks. |
+| `postgres` | Durable conversation, case, feedback, and run storage. |
+| `redis` | Cache, short-lived context, and rate limiting. |
+| `qdrant` | Legal vector storage. |
+| `indexer` | One-shot corpus audit and immutable index preparation. |
 
-Browser users authenticate through OIDC in a deployed environment. Non-browser
-automation uses `X-Service-Token` with configured scopes. Access tokens are not
-used as conversation ownership keys and are not persisted by the application.
+For the complete preview procedure and promotion boundary, see
+[the local-preview runbook](docs/runbooks/local-preview.md).
 
-For a local deterministic browser test only, authentication can be disabled in
-the isolated test configuration. Do not expose that mode on a shared or
-internet-facing server.
+## Development
 
-When `CORPUS_RUNTIME_MODE=production`, backend startup also fails fast if
-authentication, PostgreSQL, Qdrant, OpenAI, rate-limit safety, debug flags, or
-browser-origin configuration is incomplete. This prevents a deployment from
-silently falling back to local development defaults.
+### Backend checks
 
-## API
+From the repository root, install the development dependencies in a Python
+3.11 environment:
 
-The interactive API documentation is available at
-[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) when the backend is
-running.
-
-Common endpoints:
-
-| Method | Endpoint | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/v1/health` | Process liveness |
-| `GET` | `/api/v1/ready` | Dependency and capability readiness |
-| `GET` | `/api/v1/me` | Current authenticated identity and roles |
-| `POST` | `/api/v1/chat` | Stream a question or case turn over SSE |
-| `PUT` | `/api/v1/conversations/{id}/turns/{turn_id}/cancel` | Cancel a running turn |
-| `GET` | `/api/v1/sessions` | List owned conversations |
-| `GET` | `/api/v1/sessions/{id}` | Load a conversation |
-| `GET/PATCH` | `/api/v1/sessions/{id}/case` | Read or save case facts |
-| `PUT` | `/api/v1/conversations/{id}/messages/{message_id}/feedback` | Save feedback |
-
-`POST /api/v1/chat` supports `message`, `continue_case`, `retry`, and
-`regenerate` operations. A turn has a durable status such as `streaming`,
-`complete`, `stopped`, or `failed`, so a reload does not turn an interrupted
-response into a false completed answer.
-
-## Project structure
-
-```text
-backend/              FastAPI application, authentication, routes, persistence
-src/epr_agent/        Agent domain, workflow, retrieval, evidence, and tracing
-frontend-react/       React UI, SSE client, case panels, and browser tests
-scripts/              Corpus synchronization, migrations, indexing, and audits
-data/                 Legal corpus, rule pack, manifests, and fixtures
-docs/                 Runbooks, acceptance reports, and design documentation
-tests/                Unit, contract, integration, evaluation, and API tests
-```
-
-At a high level, a request moves through:
-
-```text
-React UI → FastAPI/SSE → bounded workflow → retrieval/evidence checks
-         → structured answer → durable persistence → source-aware UI
-```
-
-The workflow has declared routes for legal lookup, explanation/comparison,
-case assessment, checklist preparation, explicit web research, chitchat, and
-out-of-scope requests. Retrieval uses structure-aware legal chunks, explicit
-article anchors, dense search, lexical search, and evidence validation before
-generation.
-
-## Testing and development checks
-
-Backend checks:
-
-```powershell
+```bash
+python -m pip install -e ".[dev]"
 python -m scripts.sync_corpus_metadata --check
 python -m pytest -q
 ruff check src/epr_agent backend scripts tests
 mypy src/epr_agent backend
-python -m tests.eval.run_eval --suite all --output data/eval/v4-deterministic.json
+python -m tests.eval.run_eval --suite all
 ```
 
-Frontend checks:
+### Frontend checks
 
-```powershell
-Set-Location frontend-react
-npm.cmd run test
-npm.cmd run build
-npm.cmd run test:e2e
+```bash
+cd frontend-react
+npm ci
+npm run lint
+npm run test
+npm run build
 ```
 
-The browser suite covers desktop, tablet, and mobile layouts; direct URLs and
-browser history; streaming and cancellation; source citations; case save and
-continuation; feedback reload; retries; safe stops; preview/production
-readiness; and official-web filtering.
+### Browser tests
 
-## Operations and troubleshooting
+The Playwright configuration starts a deterministic FastAPI adapter and a
+Vite server. It does not require production credentials or a live Qdrant
+service:
 
-### `/api/v1/ready` returns `503`
+```bash
+cd frontend-react
+npm ci
+npx playwright install chromium
+npm run test:e2e
+```
 
-Inspect the `capabilities` and `corpus` fields in the response. Common reasons
-are:
+The adapter validates the browser contract, SSE handling, persistence-shaped
+flows, source and case panels, feedback, retries, and safe stops. It is not
+evidence that a production provider, credential, network policy, or legal
+approval is available.
 
-- `database_schema_mismatch`: run the migration procedure in
-  [`docs/runbooks/database-migration.md`](docs/runbooks/database-migration.md).
-- `corpus_promotion_blocked`: production approval or corpus metadata is still
-  missing.
-- `corpus_index_mismatch`: the active Qdrant collection does not match the
-  manifest hash or index contract.
-- `provider_not_configured`: the optional web provider is not configured.
+## Continuous integration contract
 
-### History works but legal chat is unavailable
+The workflow in `.github/workflows/ci.yml` runs on pull requests and pushes to
+`main`:
 
-This is expected when history is ready but the legal corpus or one of its
-dependencies is not. In preview mode the UI shows a persistent warning; in
-production legal chat remains disabled until the promotion gate passes.
+| Job | Checks |
+| --- | --- |
+| `backend` | Corpus metadata sync, pytest, deterministic route evaluation, Ruff, and mypy. |
+| `frontend` | `npm ci`, ESLint, Vitest, and the production TypeScript/Vite build. |
+| `e2e` | Playwright browser tests after the backend and frontend jobs pass. |
 
-### Web research is unavailable
+The CI badge above reports the repository workflow. It does not claim legal
+approval, production readiness, uptime, latency, or the availability of
+external providers.
 
-Set `TAVILY_API_KEY` only when explicit web research is part of the deployment.
-Results are accepted only when they pass the official-domain and relevance
-checks. Web research is never used silently to fill missing company facts.
+## Configuration and security
 
-### Operational runbooks
+Copy [.env.example](.env.example) to `.env`; never commit `.env`, API keys,
+database files, Qdrant storage, logs, or generated evaluation output.
 
-- [Local preview](docs/runbooks/local-preview.md)
-- [Current acceptance status](docs/acceptance_status.md)
-- [External release gates](docs/runbooks/external-release-gates.md)
-- [Database and owner migration](docs/runbooks/database-migration.md)
-- [Production corpus promotion](docs/runbooks/production-promotion.md)
-- [Rollback](docs/runbooks/rollback.md)
-- [Browser acceptance report](docs/browser_acceptance_report.md)
+Important settings include:
 
-## Current limitations
+| Variable | Purpose |
+| --- | --- |
+| `OPENAI_API_KEY` | Embeddings and live answer generation. |
+| `CORPUS_RUNTIME_MODE` | `preview` for local/staging validation; `production` for a release candidate. |
+| `REQUIRE_AUTH` | Authentication switch; disable only for an isolated local test. |
+| `DATABASE_URL` | PostgreSQL connection; local development may use `HISTORY_DB_PATH` when unset. |
+| `POSTGRES_PASSWORD` | Required by Compose; there is no insecure default. |
+| `QDRANT_URL` / `USE_QDRANT_CLOUD` | Self-hosted or Qdrant Cloud vector storage. |
+| `REDIS_URL` | Cache and request-protection backend. |
+| `RATE_LIMIT_FAIL_OPEN` | Keep `false` outside an explicitly isolated preview. |
+| `OIDC_*`, `SERVICE_TOKEN_DEFINITIONS`, `API_KEYS` | Deployment authentication options. |
+| `ALLOWED_ORIGINS` | HTTPS origins for a cross-origin deployment; empty is suitable for the same-origin Compose gateway. |
 
-The application currently focuses on Vietnamese EPR law. The following are
-outside the current product scope:
+In a deployed browser environment, OIDC is the intended authentication path.
+Non-browser automation can use scoped service tokens. Access tokens are not
+used as conversation ownership keys and are not persisted by the application.
 
-- document upload and OCR;
-- export to a formal legal or compliance report (only a preliminary text export is supported);
-- historical-law date selection;
-- long-term user profile memory;
-- broad web search outside the configured official domains;
-- additional legal domains beyond EPR.
+## API and architecture
+
+When the API is run directly, FastAPI documentation is available at
+`http://127.0.0.1:8000/docs`.
+
+Common API routes are:
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/health` | Process liveness. |
+| `GET` | `/api/v1/ready` | Dependency, corpus, and capability readiness. |
+| `POST` | `/api/v1/chat` | Stream a question or guided-workflow turn over SSE. |
+| `GET` | `/api/v1/sessions` | List conversations owned by the current principal. |
+| `GET/PATCH` | `/api/v1/sessions/{id}/case` | Read or save guided case facts. |
+| `PUT` | `/api/v1/conversations/{id}/messages/{message_id}/feedback` | Save answer feedback. |
+
+The main request path is:
+
+```text
+React UI → Nginx/SSE → FastAPI → bounded workflow
+                         → retrieval/evidence checks → answer or safe stop
+                         → durable persistence → source-aware UI
+```
+
+The code and contracts are organised as follows:
+
+```text
+backend/          FastAPI routes, authentication, configuration, and adapters
+src/epr_agent/    Domain models, workflow, retrieval, evidence, and persistence
+frontend-react/   React UI, SSE client, guided forms, and browser tests
+scripts/          Corpus synchronization, audit, and indexing utilities
+data/             Corpus manifests, rule pack, and checked-in fixtures
+docs/             Architecture, behavior contracts, runbooks, and acceptance notes
+tests/            Unit, contract, integration, evaluation, and API tests
+```
+
+Start with [docs/README.md](docs/README.md) for the documentation map,
+[the system overview](docs/architecture/system-overview.md), and
+[the V4 behavior contract](docs/pipeline_v4_behavior_contract.md).
+
+## Production boundary
+
+A passing build or local preview is not a production release. Before enabling
+production legal capability, the release process must independently verify:
+
+- PostgreSQL, Qdrant, Redis, OpenAI, authentication, HTTPS origins, and
+  request-protection settings;
+- source, amendment, rule-pack, corpus, and immutable-index consistency;
+- an approved corpus review status and approved effective date;
+- migrations, ownership isolation, readiness, rollback, monitoring, and
+  authenticated browser/API smoke tests.
+
+See [external release gates](docs/runbooks/external-release-gates.md),
+[production corpus promotion](docs/runbooks/production-promotion.md),
+[database migration](docs/runbooks/database-migration.md), and
+[rollback](docs/runbooks/rollback.md).
 
 ## License
 
-MIT
+[MIT](LICENSE)
