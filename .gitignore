@@ -70,6 +70,11 @@ docs/retrieval/candidate_collection_audit.json
 # Local runtime state and conversation data
 data/*.sqlite3
 data/*.db
+data/**/*.db
+data/**/*.parquet
+data/raw_hf/
+data/corpus/universal_legal/*.parquet
+data/corpus/universal_legal/*.db
 data/*.sqlite3-wal
 data/*.sqlite3-shm
 data/*.sqlite3-journal
