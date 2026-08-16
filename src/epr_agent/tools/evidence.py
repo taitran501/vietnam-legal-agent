@@ -71,14 +71,29 @@ class EvidenceEvaluator:
                 and (metadata.get("official_url") or metadata.get("url"))
                 and metadata.get("authority") == "official"
             )
-        has_anchor = bool(metadata.get("legal_anchor") or metadata.get("Dieu") or metadata.get("Điều") or metadata.get("Parent_Dieu"))
-        has_primary_source = bool(metadata.get("source_file") or metadata.get("source_uri"))
-        has_provenance = bool(
-            (metadata.get("Corpus_Version") or metadata.get("corpus_version"))
-            and (metadata.get("Corpus_SHA256") or metadata.get("corpus_sha"))
-            and (metadata.get("Embedding_Profile") or metadata.get("embedding_profile"))
+        has_anchor = bool(
+            metadata.get("legal_anchor")
+            or metadata.get("Dieu")
+            or metadata.get("Điều")
+            or metadata.get("Parent_Dieu")
+            or metadata.get("source")
+            or metadata.get("topic")
         )
-        return bool(document.source == "legal" and document.document_id and has_anchor and has_primary_source and has_provenance)
+        if metadata.get("source_file") or metadata.get("source_uri"):
+            has_provenance = bool(
+                (metadata.get("Corpus_Version") or metadata.get("corpus_version"))
+                and (metadata.get("Corpus_SHA256") or metadata.get("corpus_sha"))
+                and (metadata.get("Embedding_Profile") or metadata.get("embedding_profile"))
+            )
+            return bool(document.document_id and document.content.strip() and has_anchor and has_provenance)
+
+        has_source = bool(
+            metadata.get("source")
+            or metadata.get("official_url")
+            or metadata.get("law_ref")
+            or metadata.get("topic")
+        )
+        return bool(document.document_id and document.content.strip() and has_anchor and has_source)
 
 
 def is_unresolved_current_law_source(document: DocumentRecord) -> bool:

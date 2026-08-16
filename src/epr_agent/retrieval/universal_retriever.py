@@ -12,17 +12,32 @@ from pydantic import BaseModel, Field
 
 DEFAULT_DB_PATH = os.path.join(os.getcwd(), "data", "corpus", "universal_legal", "universal_legal.db")
 
+# Conversational stop words in Vietnamese QA
+LEGAL_STOP_WORDS = {
+    "và", "của", "các", "có", "được", "trong", "cho", "về", "theo", "tại", "khi", "để", "là", 
+    "những", "thì", "tôi", "muốn", "biết", "như", "thế", "nào", "gì", "bao", "nhiêu", "phải", 
+    "không", "hướng", "dẫn", "với", "hãy", "em", "mình", "anh", "chị", "giúp", "bạn", "ạ", "nhỉ",
+    "xin", "hỏi", "quy", "định", "như_thế_nào", "ra_sao", "bao_nhiêu", "cho_tôi", "làm_sao"
+}
 
-class LegalSearchResult(BaseModel):
-    id: str
-    topic: str = ""
-    subject: str = ""
-    article_title: str = ""
-    chapter_title: str = ""
-    source_note: str = ""
-    source_url: str = ""
-    content_text: str = ""
-    score: float = 0.0
+# Domain keyword boosts for Vietnamese law
+KNOWN_LAW_NAMES = [
+    ("đất đai", "Luật Đất đai"),
+    ("sổ đỏ", "Luật Đất đai"),
+    ("lao động", "Bộ luật Lao động"),
+    ("thử việc", "Bộ luật Lao động"),
+    ("hợp đồng lao động", "Bộ luật Lao động"),
+    ("thương mại", "Luật Thương mại"),
+    ("phạt vi phạm hợp đồng", "Luật Thương mại"),
+    ("doanh nghiệp", "Luật Doanh nghiệp"),
+    ("công ty tnhh", "Luật Doanh nghiệp"),
+    ("cổ phần", "Luật Doanh nghiệp"),
+    ("hình sự", "Bộ luật Hình sự"),
+    ("buôn lậu", "Bộ luật Hình sự"),
+    ("bảo vệ môi trường", "Luật Bảo vệ môi trường"),
+    ("tái chế", "Luật Bảo vệ môi trường"),
+    ("nghị định 08", "Nghị định số 08/2022/NĐ-CP"),
+]
 
 
 class UniversalLegalRetriever:
@@ -33,6 +48,27 @@ class UniversalLegalRetriever:
     @property
     def is_available(self) -> bool:
         return self._available and os.path.exists(self.db_path)
+
+    def _extract_search_terms(self, query: str) -> List[str]:
+        q_lower = query.lower()
+        
+        # 1. Check for specific law or topic signals
+        injected_terms = []
+        for kw, law_name in KNOWN_LAW_NAMES:
+            if kw in q_lower:
+                injected_terms.append(law_name)
+                
+        # 2. Extract words
+        raw_words = re.findall(r"\b[\w\.]+\b", query)
+        content_words = [w for w in raw_words if w.lower() not in LEGAL_STOP_WORDS and len(w) > 1]
+        
+        # Merge unique terms
+        all_terms = []
+        for item in injected_terms + content_words:
+            if item and item not in all_terms:
+                all_terms.append(item)
+                
+        return all_terms[:12]
 
     def search(self, query: str, limit: int = 5, topic_filter: Optional[str] = None) -> List[Dict[str, Any]]:
         """
@@ -46,16 +82,12 @@ class UniversalLegalRetriever:
         if not clean_query:
             return []
 
-        # Extract keywords and numbers (e.g., "Điều 44", "Luật Đất đai", "thử việc")
-        # Tokenize query for FTS5
-        tokens = re.findall(r"\b[\w\.]+\b", clean_query)
-        stop_words = {"và", "của", "các", "có", "được", "trong", "cho", "về", "theo", "tại", "khi", "để", "là", "những", "thì", "tôi", "cho"}
-        meaningful_tokens = [t for t in tokens if t.lower() not in stop_words and len(t) > 1]
-        
-        if not meaningful_tokens:
-            meaningful_tokens = tokens[:3]
+        terms = self._extract_search_terms(clean_query)
+        if not terms:
+            terms = re.findall(r"\b[\w\.]+\b", clean_query)[:4]
 
-        fts_query = " OR ".join(f'"{t}"' for t in meaningful_tokens[:8])
+        # Build FTS5 OR search query with quotes for precision
+        fts_query = " OR ".join(f'"{t}"' for t in terms)
 
         try:
             conn = sqlite3.connect(self.db_path)
@@ -73,7 +105,7 @@ class UniversalLegalRetriever:
             LIMIT ?;
             """
             
-            cursor.execute(sql, (fts_query, limit * 2))
+            cursor.execute(sql, (fts_query, limit * 4))
             rows = cursor.fetchall()
             conn.close()
 

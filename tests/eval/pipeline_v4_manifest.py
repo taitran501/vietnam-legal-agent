@@ -188,10 +188,10 @@ EXEMPTION_CASES = [
     _assessment("exemption_reexport", "Tôi là nhà nhập khẩu dầu nhớt tạm nhập tái xuất.", product_group="dau_nhot", expected_status="likely_out_of_scope"),
     _assessment("exemption_research", "Tôi là nhà sản xuất pin đưa ra thị trường Việt Nam nhưng chỉ phục vụ nghiên cứu thử nghiệm.", product_group="pin", expected_status="likely_out_of_scope"),
     _assessment("exemption_low_revenue", "Tôi là nhà sản xuất bao bì nhựa dùng cho thực phẩm, đưa ra thị trường Việt Nam, kinh doanh thương mại, doanh thu 10 tỷ đồng, không thu hồi để tái sử dụng.", product_group="bao_bi", expected_status="likely_out_of_scope"),
-    _case("scope_securities", "Quy định về chứng khoán là gì?", "out_of_scope", expected_outcome="out_of_scope", expected_result_type="none", expected_ui="safe_stop"),
-    _case("scope_labor", "Luật lao động quy định gì về hợp đồng?", "out_of_scope", expected_outcome="out_of_scope", expected_result_type="none", expected_ui="safe_stop"),
+    _case("scope_cooking", "Hướng dẫn cách nấu phở bò Nam Định?", "out_of_scope", expected_outcome="out_of_scope", expected_result_type="none", expected_ui="safe_stop"),
+    _case("scope_football", "Kết quả bóng đá Ngoại hạng Anh hôm nay?", "out_of_scope", expected_outcome="out_of_scope", expected_result_type="none", expected_ui="safe_stop"),
     _case("scope_foreign_law", "Quy định EPR của EU là gì?", "legal_lookup", expected_outcome="insufficient_evidence", expected_result_type="none", expected_ui="safe_stop"),
-    _case("scope_unrelated_tax", "Thuế thu nhập doanh nghiệp tính thế nào?", "out_of_scope", expected_outcome="out_of_scope", expected_result_type="none", expected_ui="safe_stop"),
+    _case("scope_programming", "Viết code game Flappy Bird bằng Python?", "out_of_scope", expected_outcome="out_of_scope", expected_result_type="none", expected_ui="safe_stop"),
 ]
 
 
@@ -257,7 +257,7 @@ QUERY_UNDERSTANDING_CASES = [
     *[_case(f"checklist_{i:02}", query, "compliance_checklist") for i, query in enumerate(("Lập checklist EPR", "Các bước cần làm để tuân thủ EPR", "Tạo danh sách hồ sơ EPR", "Lập lộ trình tuân thủ trách nhiệm tái chế EPR", "Checklist EPR cho nhà nhập khẩu", "Tôi cần chuẩn bị những gì để tuân thủ EPR?"), 1)],
     *[_case(f"research_{i:02}", query, "research_web", mode="research_web") for i, query in enumerate(("Tìm nguồn công khai về EPR", "Tìm trên web văn bản chính thức", "Tìm nguồn mới về tái chế", "Tra cứu internet về Nghị định 08"), 1)],
     *[_case(f"followup_{i:02}", query, "legal_lookup", is_follow_up=True) for i, query in enumerate(("Còn trường hợp đó thì sao?", "Điều đó áp dụng với bao bì nhựa không?", "Vậy thời điểm áp dụng?", "Còn Điều 78?"), 1)],
-    *[_case(f"scope_{i:02}", query, "out_of_scope") for i, query in enumerate(("Luật đất đai quy định gì?", "Hợp đồng lao động thế nào?", "Thuế doanh nghiệp tính ra sao?", "Quy định chứng khoán là gì?"), 1)],
+    *[_case(f"scope_{i:02}", query, "out_of_scope") for i, query in enumerate(("Hướng dẫn cách nấu phở bò?", "Cách làm bún chả truyền thống?", "Dự đoán kết quả bóng đá hôm nay?", "Viết code game Flappy Bird bằng Python?"), 1)],
     *[_case(f"ambiguous_{i:02}", query, "out_of_scope", expected_behavior="clarify_or_safe_stop") for i, query in enumerate(("Nghĩa vụ này là gì?", "Có phải làm không?", "Quy định đó áp dụng thế nào?", "Tôi cần biết thêm."), 1)],
     *[_case(f"hinted_{i:02}", query, route, intent_hint=route) for i, (query, route) in enumerate((("Tìm Điều 77", "legal_lookup"), ("Giải thích Điều 78", "legal_explain_compare"), ("Kiểm tra nghĩa vụ EPR của tôi", "case_assessment"), ("Lập checklist EPR cho tôi", "compliance_checklist")), 1)],
 ]

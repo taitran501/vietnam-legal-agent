@@ -72,7 +72,7 @@ CASES = [
     ("checklist_full_1", "Lập checklist tuân thủ EPR cho nhà sản xuất bao bì nhựa tại thị trường Việt Nam", "answer_complete", "build_compliance_checklist", True, None),
     ("checklist_full_2", "Các bước cần làm EPR cho nhà nhập khẩu chai nhựa vào thị trường Việt Nam", "answer_complete", "build_compliance_checklist", True, None),
     ("evidence_fallback", "EPR và trách nhiệm tái chế hiện nay quy định thế nào?", "insufficient_evidence", "legal_lookup", False, None),
-    ("out_of_scope", "Quy định về chứng khoán là gì?", "out_of_scope", "legal_lookup", False, None),
+    ("out_of_scope", "Hướng dẫn cách nấu phở bò Nam Định?", "out_of_scope", "legal_lookup", False, None),
 ]
 
 
