@@ -2,9 +2,8 @@ import { useState } from 'react';
 import { ChatInput } from '@/components/Chat/ChatInput';
 import { Icon, type IconName } from '@/components/UI/Icon';
 import { GuidedCaseCard } from '@/components/Case/GuidedCaseCard';
-import type { CaseState } from '@/types';
-import { eprPlainName, taskCopy } from '@/lib/userCopy';
-import type { CaseFormState } from '@/types';
+import type { CaseState, CaseFormState } from '@/types';
+import { taskCopy } from '@/lib/userCopy';
 
 interface WelcomeScreenProps {
   disabled?: boolean;
@@ -49,9 +48,10 @@ const actions: Array<{ icon: IconName; label: string; prompt: string; intent: st
 ];
 
 const suggestions = [
-  'Doanh nghiệp nhập khẩu bao bì có thuộc đối tượng thực hiện EPR không?',
-  'Giải thích Điều 77 về trách nhiệm tái chế sản phẩm, bao bì.',
-  'Tôi cần chuẩn bị thông tin gì để lập danh sách việc cần làm?',
+  'Thủ tục cấp Giấy chứng nhận quyền sử dụng đất (Sổ đỏ) theo Luật Đất đai 2024.',
+  'Thời gian thử việc tối đa của người lao động theo Bộ luật Lao động 2019.',
+  'Doanh nghiệp nhập khẩu bao bì có thuộc đối tượng thực hiện nghĩa vụ EPR không?',
+  'Mức phạt vi phạm hợp đồng tối đa 8% theo quy định Luật Thương mại.',
 ];
 
 export function WelcomeScreen({ disabled = false, isStreaming, onSendPrompt, onPrefillPrompt, onStop, draftText, onDraftChange, intentLabel, onClearIntent, onStartCase, guidedTask = null, onGuidedSubmit, onGuidedDraftChange, onCancelGuided, caseDisabled = false, caseDisabledReason }: WelcomeScreenProps) {
@@ -79,12 +79,12 @@ export function WelcomeScreen({ disabled = false, isStreaming, onSendPrompt, onP
         <h2 className="font-serif-legal mt-6 max-w-[820px] text-center text-[clamp(2rem,4vw,2.75rem)] font-semibold leading-[1.25] tracking-[-0.02em] text-[#172033]">
           Hôm nay bạn muốn tìm hiểu vấn đề pháp lý nào?
         </h2>
-        <p className="mt-3 max-w-[620px] text-center text-sm leading-6 text-[#667085] sm:text-base">
-          Tra cứu quy định về {eprPlainName}, làm rõ nội dung và chuẩn bị bước tiếp theo với nguồn để đối chiếu.
+        <p className="mt-3 max-w-[640px] text-center text-sm leading-6 text-[#667085] sm:text-base">
+          Tra cứu quy định pháp luật Việt Nam (Đất đai, Lao động, Doanh nghiệp, Thuế, EPR...), làm rõ nội dung và đối chiếu nguồn chính thức.
         </p>
-        <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#d9e1df] bg-[#f7faf8] px-3 py-1.5 text-xs font-medium text-[#53615e]">
+        <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#d9e1df] bg-[#f7faf8] px-3.5 py-1.5 text-xs font-medium text-[#53615e]">
           <span className="h-1.5 w-1.5 rounded-full bg-[#0f766e]" />
-          Phạm vi: EPR — {eprPlainName}
+          Kho Dữ liệu: 84.900+ Điều luật & Bộ Pháp điển Quốc gia
         </div>
 
         <div className="mt-8 w-full max-w-[760px]">

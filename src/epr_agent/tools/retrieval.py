@@ -63,6 +63,26 @@ class QdrantLegalRetrievalGateway:
             if request is not None:
                 record.metadata.setdefault("v4_issue_id", request.issue_id)
                 record.metadata.setdefault("v4_required_anchors", request.required_anchors)
+
+        # Augment with Universal Legal Retriever (84,900+ articles covering Land, Labor, Tax, Corporate, Civil, etc.)
+        if len(records) < 5:
+            try:
+                from epr_agent.retrieval.universal_retriever import universal_retriever
+                if universal_retriever.is_available:
+                    needed = (request.top_k if request else 8) - len(records)
+                    u_docs = universal_retriever.search(retrieval_query(query), limit=needed)
+                    for i, u_doc in enumerate(u_docs):
+                        u_meta = dict(u_doc.get("metadata", {}))
+                        records.append(DocumentRecord(
+                            content=u_doc["page_content"],
+                            metadata=u_meta,
+                            document_id=u_doc.get("document_id", f"univ-{i+1}"),
+                            score=u_doc.get("score", 0.85),
+                            source=str(u_meta.get("source") or "Pháp điển & Luật Quốc gia"),
+                        ))
+            except Exception as e:
+                pass
+
         return records
 
 

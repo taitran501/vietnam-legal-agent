@@ -186,6 +186,23 @@ class QueryPlan(BaseModel):
 TaskUnderstanding = QueryPlan
 
 
+NON_LEGAL_OUT_OF_SCOPE_TERMS = (
+    "nấu ăn",
+    "cách nấu",
+    "món ăn",
+    "phở bò",
+    "bún chả",
+    "bóng đá",
+    "kết quả bóng đá",
+    "ngoại hạng anh",
+    "viết code",
+    "lập trình",
+    "thơ tình",
+    "chơi game",
+    "thời tiết ngày mai",
+)
+
+
 def _normalise(text: str) -> str:
     return " ".join((text or "").lower().split())
 
@@ -196,31 +213,26 @@ def is_greeting(query: str) -> bool:
         return False
     if any((re.search(rf"\b{re.escape(term)}\b", q) if len(term) <= 3 else term in q) for term in GREETING_TERMS):
         return True
-    # Keep ordinary small talk out of legal retrieval when it contains no EPR
-    # or legal signal.  This is deliberately conservative.
     return len(q) <= 45 and not any(term in q for term in EPR_TERMS) and any(
         term in q for term in ("thời tiết", "trời đẹp", "khỏe không", "đang làm gì")
     )
 
 
+def is_legal_scope(query: str, history: list[dict[str, Any]] | None = None, active_case: dict[str, Any] | None = None) -> bool:
+    q = _normalise(query)
+    if any(term in q for term in NON_LEGAL_OUT_OF_SCOPE_TERMS):
+        return False
+    return True
+
+
 def is_epr_scope(query: str, history: list[dict[str, Any]] | None = None, active_case: dict[str, Any] | None = None) -> bool:
-    text = " ".join(
-        [_normalise(query)]
-        + [_normalise(str(item.get("content", ""))) for item in (history or [])[-4:]]
-    )
-    if active_case and active_case.get("task_type") in {
-        TaskType.ASSESS_EPR_OBLIGATION.value,
-        TaskType.BUILD_COMPLIANCE_CHECKLIST.value,
-    }:
-        return True
-    return bool(explicit_anchors(query)) or any(term in text for term in EPR_TERMS)
+    return is_legal_scope(query, history, active_case)
 
 
 def is_known_non_epr_query(query: str) -> bool:
-    """Return true only for an explicit topic outside the registered corpus."""
-
+    """Return true only for queries completely outside legal/regulatory scope."""
     q = _normalise(query)
-    return any(term in q for term in NON_EPR_SCOPE_TERMS)
+    return any(term in q for term in NON_LEGAL_OUT_OF_SCOPE_TERMS)
 
 
 def has_explicit_no_evidence_signal(query: str) -> bool:
@@ -240,7 +252,9 @@ def classify_task(query: str, history: list[dict[str, Any]] | None = None, activ
 
     # First-person/company-specific language signals a case assessment.  A
     # general question such as "đối tượng nào phải..." remains legal_lookup.
-    if any(term in q for term in ASSESSMENT_TERMS) or re.search(r"\btôi\b|\bdoanh nghiệp\b|\bcông ty\b", q):
+    if any(term in q for term in ASSESSMENT_TERMS) or (
+        re.search(r"\btôi\b|\bdoanh nghiệp\b|\bcông ty\b", q) and any(t in q for t in EPR_TERMS)
+    ):
         return TaskType.ASSESS_EPR_OBLIGATION
 
     if active_case and active_case.get("task_type") in {
@@ -262,7 +276,7 @@ def classify_route(
     history: list[dict[str, Any]] | None = None,
     active_case: dict[str, Any] | None = None,
 ) -> RouteType:
-    """Choose a product route while preserving legacy task type compatibility."""
+    """Choose a product route while preserving legacy task type compatibility across all Vietnamese laws."""
 
     if research_requested(query):
         return RouteType.RESEARCH_WEB
@@ -270,7 +284,7 @@ def classify_route(
         return RouteType.CHITCHAT
     if is_known_non_epr_query(query):
         return RouteType.OUT_OF_SCOPE
-    if not is_epr_scope(query, history, active_case):
+    if not is_legal_scope(query, history, active_case):
         return RouteType.OUT_OF_SCOPE
     task = classify_task(query, history, active_case)
     if task != TaskType.LEGAL_LOOKUP:

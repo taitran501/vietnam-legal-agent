@@ -173,7 +173,7 @@ async def test_v4_sse_emits_case_update_and_input_required_before_completion():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("query", ["Quy định về chứng khoán là gì?", "Luật lao động quy định gì về hợp đồng?"])
+@pytest.mark.parametrize("query", ["Hướng dẫn cách nấu phở bò Nam Định?", "Kết quả bóng đá Ngoại hạng Anh hôm nay?"])
 async def test_v4_out_of_scope_stops_before_legacy_retrieval(query: str):
     history = MemoryHistory()
     app, retrieval = runtime(history)

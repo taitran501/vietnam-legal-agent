@@ -97,7 +97,7 @@ class GenerationGateway(Protocol):
 class LegalAnswerClaim(BaseModel):
     """A claim that is anchored to one or more selected evidence chunks."""
 
-    text: str = Field(min_length=1, max_length=2200)
+    text: str = Field(min_length=1, max_length=12000)
     evidence_indices: list[int] = Field(min_length=1)
 
 
@@ -289,7 +289,12 @@ class EvidenceGenerationGateway:
         for index, document in enumerate(documents, start=1):
             metadata = document.metadata or {}
             anchor = str(metadata.get("Dieu") or metadata.get("Parent_Dieu") or metadata.get("legal_anchor") or "văn bản được truy xuất")
-            source_text = " ".join((document.content or "").split()).strip()
+            raw_content = document.content or ""
+            if "\n\n" in raw_content:
+                parts = raw_content.split("\n\n", 1)
+                if parts[0].startswith("[") and "]" in parts[0]:
+                    raw_content = parts[1]
+            source_text = " ".join(raw_content.split()).strip()
             if not source_text:
                 continue
             claims.append(

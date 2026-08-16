@@ -217,7 +217,7 @@ async def test_non_epr_corpus_miss_stops_without_web_search():
     deps = make_dependencies(legal=[])
 
     state = await run_workflow(
-        "Quy định về chứng khoán là gì?",
+        "Hướng dẫn cách nấu phở bò Nam Định?",
         user_id="u1",
         conversation_id="c6",
         deps=deps,

@@ -154,7 +154,7 @@ async def test_checklist_has_evidence_and_assumptions(query: str):
 @pytest.mark.asyncio
 async def test_out_of_scope_question_stops_without_web_search():
     state = await run_workflow(
-        "Quy định về chứng khoán là gì?",
+        "Hướng dẫn cách nấu phở bò Nam Định?",
         user_id="trajectory",
         conversation_id="out-of-scope",
         deps=dependencies(legal=False),
