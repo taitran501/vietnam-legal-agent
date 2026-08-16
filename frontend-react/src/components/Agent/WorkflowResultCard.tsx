@@ -136,6 +136,15 @@ export function WorkflowResultCard({ onOpenCase, onContinueCase, onOpenSources, 
               </li>
             ))}
           </ol>
+
+          {/* Compliance Deadlines Callout */}
+          <div className="mt-3.5 rounded-md border border-[#c7deda] bg-[#f0faf8] p-3 text-xs text-[#264e4a]">
+            <p className="font-semibold text-[#005c55]">🗓️ Mốc thời hạn tuân thủ EPR hàng năm:</p>
+            <ul className="mt-1.5 list-disc space-y-1 pl-4 leading-5">
+              <li><span className="font-medium">Trước ngày 31/03:</span> Đăng ký kế hoạch tái chế hoặc kê khai đóng góp tài chính trên Cổng thông tin EPR quốc gia.</li>
+              <li><span className="font-medium">Trước ngày 20/04:</span> Hoàn thành nộp tiền đóng góp tài chính (Quỹ FFC) vào Quỹ Bảo vệ môi trường Việt Nam.</li>
+            </ul>
+          </div>
         </div>
       )}
 
