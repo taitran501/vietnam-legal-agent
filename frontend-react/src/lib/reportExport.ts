@@ -62,13 +62,16 @@ export function buildPreliminaryReport({ answer, timestamp, workflow, documents 
   }
 
   if (workflow.checklist?.length) {
-    lines.push('', '2. Danh sách việc cần làm', '-------------------------');
+    lines.push('', '2. Danh sách việc cần làm (Checklist tuân thủ)', '----------------------------------------------');
+    lines.push('| STT | Hạng mục thực hiện | Thao tác chi tiết | Căn cứ pháp lý |');
+    lines.push('|---|---|---|---|');
     workflow.checklist.forEach((item, index) => {
-      lines.push(`${index + 1}. ${String(item.item || 'Hạng mục cần thực hiện')}`);
-      if (item.action) lines.push(`   Thao tác: ${String(item.action)}`);
-      if (Array.isArray(item.evidence_indices) && item.evidence_indices.length) {
-        lines.push(`   Căn cứ: ${item.evidence_indices.map((value) => String(value)).join(', ')}`);
-      }
+      const itemTitle = String(item.item || 'Hạng mục cần thực hiện').replace(/\|/g, '-');
+      const actionText = (item.action ? String(item.action) : 'Theo quy định').replace(/\|/g, '-');
+      const evidence = Array.isArray(item.evidence_indices) && item.evidence_indices.length
+        ? item.evidence_indices.map((val) => `[${String(val)}]`).join(' ')
+        : 'Theo văn bản luật';
+      lines.push(`| ${index + 1} | ${itemTitle} | ${actionText} | ${evidence} |`);
     });
   }
 
