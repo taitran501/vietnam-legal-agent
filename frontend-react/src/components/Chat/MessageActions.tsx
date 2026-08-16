@@ -87,7 +87,7 @@ export function MessageActions({ copied, message, onCopy, onRegenerate }: Messag
             title={feedbackState === 'pending' ? 'Đang lưu…' : feedbackState === 'saved' ? 'Đã lưu' : 'Hữu ích'}
             type="button"
           >
-            <span aria-hidden="true" className="text-sm leading-none">↑</span>
+            <Icon name="thumbUp" size={14} />
           </button>
           <button
             aria-label="Câu trả lời chưa hữu ích"
@@ -96,7 +96,7 @@ export function MessageActions({ copied, message, onCopy, onRegenerate }: Messag
             title={feedbackState === 'pending' ? 'Đang lưu…' : feedbackState === 'failed' ? 'Lưu thất bại — thử lại' : 'Chưa hữu ích'}
             type="button"
           >
-            <span aria-hidden="true" className="text-sm leading-none">↓</span>
+            <Icon name="thumbDown" size={14} />
           </button>
         </>
       )}
