@@ -1,14 +1,18 @@
-"""
-Universal Vietnamese Legal Retriever.
+"""Universal Vietnamese Legal Retriever.
+
 Provides high-precision retrieval over 84,900+ Codified Legal Articles (Pháp điển)
 and 318 National Codes & Laws across all Vietnamese legal domains.
 """
 
+from __future__ import annotations
+
+import logging
 import os
 import re
 import sqlite3
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from typing import Any
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_DB_PATH = os.path.join(os.getcwd(), "data", "corpus", "universal_legal", "universal_legal.db")
 
@@ -49,7 +53,7 @@ class UniversalLegalRetriever:
     def is_available(self) -> bool:
         return self._available and os.path.exists(self.db_path)
 
-    def _extract_search_terms(self, query: str) -> List[str]:
+    def _extract_search_terms(self, query: str) -> list[str]:
         q_lower = query.lower()
         
         # 1. Check for specific law or topic signals
@@ -70,9 +74,9 @@ class UniversalLegalRetriever:
                 
         return all_terms[:12]
 
-    def search(self, query: str, limit: int = 5, topic_filter: Optional[str] = None) -> List[Dict[str, Any]]:
-        """
-        Executes a high-relevance BM25 search over 84,900+ Vietnamese legal articles.
+    def search(self, query: str, limit: int = 5, topic_filter: str | None = None) -> list[dict[str, Any]]:
+        """Executes a high-relevance BM25 search over 84,900+ Vietnamese legal articles.
+        
         Returns a list of structured document dictionaries compatible with Agent pipelines.
         """
         if not self.is_available:
@@ -164,8 +168,8 @@ class UniversalLegalRetriever:
                     break
 
             return results
-        except Exception as e:
-            print(f"Error in UniversalLegalRetriever: {e}")
+        except (sqlite3.Error, OSError) as e:
+            logger.debug("UniversalLegalRetriever search error: %s", e)
             return []
 
 

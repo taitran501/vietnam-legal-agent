@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+import sqlite3
 from typing import Any, Protocol
 
 from epr_agent.domain.models import DocumentRecord
 from epr_agent.domain.v4 import RetrievalRequest
+
+logger = logging.getLogger(__name__)
 
 
 class RetrievalGateway(Protocol):
@@ -80,8 +84,8 @@ class QdrantLegalRetrievalGateway:
                             score=u_doc.get("score", 0.85),
                             source=str(u_meta.get("source") or "Pháp điển & Luật Quốc gia"),
                         ))
-            except Exception as e:
-                pass
+            except (sqlite3.Error, OSError, ImportError) as exc:
+                logger.debug("Universal retriever augmentation skipped: %s", exc)
 
         return records
 

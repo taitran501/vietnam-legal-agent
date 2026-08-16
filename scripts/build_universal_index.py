@@ -1,7 +1,8 @@
 import os
 import re
-import urllib.request
 import sqlite3
+import urllib.request
+
 import pyarrow.parquet as pq
 
 CORPUS_DIR = os.path.join(os.getcwd(), "data", "corpus", "universal_legal")

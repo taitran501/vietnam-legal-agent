@@ -220,9 +220,7 @@ def is_greeting(query: str) -> bool:
 
 def is_legal_scope(query: str, history: list[dict[str, Any]] | None = None, active_case: dict[str, Any] | None = None) -> bool:
     q = _normalise(query)
-    if any(term in q for term in NON_LEGAL_OUT_OF_SCOPE_TERMS):
-        return False
-    return True
+    return not any(term in q for term in NON_LEGAL_OUT_OF_SCOPE_TERMS)
 
 
 def is_epr_scope(query: str, history: list[dict[str, Any]] | None = None, active_case: dict[str, Any] | None = None) -> bool:
