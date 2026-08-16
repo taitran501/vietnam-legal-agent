@@ -28,19 +28,71 @@ LEGAL_STOP_WORDS = {
 KNOWN_LAW_NAMES = [
     ("đất đai", "Luật Đất đai"),
     ("sổ đỏ", "Luật Đất đai"),
+    ("sổ hồng", "Luật Đất đai"),
+    ("giấy chứng nhận quyền sử dụng đất", "Luật Đất đai"),
+    ("cấp sổ", "Luật Đất đai"),
+    ("quyền sử dụng đất", "Luật Đất đai"),
     ("lao động", "Bộ luật Lao động"),
     ("thử việc", "Bộ luật Lao động"),
     ("hợp đồng lao động", "Bộ luật Lao động"),
+    ("sa thải", "Bộ luật Lao động"),
+    ("kỷ luật lao động", "Bộ luật Lao động"),
+    ("nghỉ phép", "Bộ luật Lao động"),
+    ("tiền lương", "Bộ luật Lao động"),
+    ("lương tối thiểu", "Bộ luật Lao động"),
+    ("bảo hiểm xã hội", "Luật Bảo hiểm xã hội"),
+    ("bhxh", "Luật Bảo hiểm xã hội"),
+    ("đóng bảo hiểm", "Luật Bảo hiểm xã hội"),
+    ("bảo hiểm y tế", "Luật Bảo hiểm y tế"),
+    ("bảo hiểm thất nghiệp", "Luật Bảo hiểm xã hội"),
     ("thương mại", "Luật Thương mại"),
     ("phạt vi phạm hợp đồng", "Luật Thương mại"),
+    ("phạt hợp đồng", "Luật Thương mại"),
+    ("bồi thường", "Bộ luật Dân sự"),
+    ("hợp đồng dân sự", "Bộ luật Dân sự"),
+    ("thừa kế", "Bộ luật Dân sự"),
+    ("di chúc", "Bộ luật Dân sự"),
     ("doanh nghiệp", "Luật Doanh nghiệp"),
     ("công ty tnhh", "Luật Doanh nghiệp"),
     ("cổ phần", "Luật Doanh nghiệp"),
+    ("thành lập công ty", "Luật Doanh nghiệp"),
+    ("hộ kinh doanh", "Luật Doanh nghiệp"),
+    ("đăng ký kinh doanh", "Luật Doanh nghiệp"),
+    ("giải thể công ty", "Luật Doanh nghiệp"),
     ("hình sự", "Bộ luật Hình sự"),
     ("buôn lậu", "Bộ luật Hình sự"),
+    ("trốn thuế", "Bộ luật Hình sự"),
+    ("thuế gtgt", "Luật Thuế giá trị gia tăng"),
+    ("thuế vat", "Luật Thuế giá trị gia tăng"),
+    ("thuế thu nhập doanh nghiệp", "Luật Thuế thu nhập doanh nghiệp"),
+    ("thuế tndn", "Luật Thuế thu nhập doanh nghiệp"),
+    ("thuế thu nhập cá nhân", "Luật Thuế thu nhập cá nhân"),
+    ("thuế tncn", "Luật Thuế thu nhập cá nhân"),
+    ("an toàn thực phẩm", "Luật An toàn thực phẩm"),
+    ("vệ sinh an toàn", "Luật An toàn thực phẩm"),
+    ("kinh doanh thực phẩm", "Luật An toàn thực phẩm"),
+    ("phòng cháy chữa cháy", "Luật Phòng cháy và chữa cháy"),
+    ("pccc", "Luật Phòng cháy và chữa cháy"),
+    ("xây dựng", "Luật Xây dựng"),
+    ("giấy phép xây dựng", "Luật Xây dựng"),
     ("bảo vệ môi trường", "Luật Bảo vệ môi trường"),
     ("tái chế", "Luật Bảo vệ môi trường"),
+    ("xử lý rác", "Luật Bảo vệ môi trường"),
     ("nghị định 08", "Nghị định số 08/2022/NĐ-CP"),
+    ("sở hữu trí tuệ", "Luật Sở hữu trí tuệ"),
+    ("nhãn hiệu", "Luật Sở hữu trí tuệ"),
+    ("bản quyền", "Luật Sở hữu trí tuệ"),
+    ("bảo hiểm", "Luật Kinh doanh bảo hiểm"),
+    ("bảo hiểm nhân thọ", "Luật Kinh doanh bảo hiểm"),
+    ("giao thông", "Luật Giao thông đường bộ"),
+    ("vi phạm giao thông", "Luật Giao thông đường bộ"),
+    ("bằng lái", "Luật Giao thông đường bộ"),
+    ("giấy phép lái xe", "Luật Giao thông đường bộ"),
+    ("bảo vệ người tiêu dùng", "Luật Bảo vệ quyền lợi người tiêu dùng"),
+    ("hàng giả", "Luật Bảo vệ quyền lợi người tiêu dùng"),
+    ("khiếu nại", "Luật Khiếu nại"),
+    ("tố cáo", "Luật Tố cáo"),
+    ("hành chính", "Luật Tố tụng hành chính"),
 ]
 
 
@@ -56,19 +108,38 @@ class UniversalLegalRetriever:
     def _extract_search_terms(self, query: str) -> list[str]:
         q_lower = query.lower()
         
-        # 1. Check for specific law or topic signals
-        injected_terms = []
+        # 1. Inject law names for matched domain keywords (these come first to boost relevance)
+        injected_law_names = []
+        matched_phrases = []  # multi-word domain phrases found in query
         for kw, law_name in KNOWN_LAW_NAMES:
             if kw in q_lower:
-                injected_terms.append(law_name)
-                
-        # 2. Extract words
-        raw_words = re.findall(r"\b[\w\.]+\b", query)
-        content_words = [w for w in raw_words if w.lower() not in LEGAL_STOP_WORDS and len(w) > 1]
-        
-        # Merge unique terms
+                if law_name not in injected_law_names:
+                    injected_law_names.append(law_name)
+                # Keep the matched keyword itself as a phrase if it's multi-word
+                if " " in kw and kw not in matched_phrases:
+                    matched_phrases.append(kw)
+
+        # 2. Extract meaningful content words — exclude conversational stop words
+        #    and also skip very short tokens (1-2 chars) that cause false positives
+        raw_words = re.findall(r"[\w]+", query)
+        content_words = [
+            w for w in raw_words
+            if w.lower() not in LEGAL_STOP_WORDS
+            and len(w) > 2  # skip 1-2 char tokens like "m", "ko", "vs"
+            and not w.isdigit()
+        ]
+
+        # 3. Remove content words that are already captured in a matched phrase
+        #    (avoids "thử" being added separately when "thử việc" is already a phrase)
+        phrase_tokens = set()
+        for p in matched_phrases:
+            for tok in p.split():
+                phrase_tokens.add(tok.lower())
+        content_words = [w for w in content_words if w.lower() not in phrase_tokens]
+
+        # 4. Build final list: law names first, then matched phrases, then remaining words
         all_terms = []
-        for item in injected_terms + content_words:
+        for item in injected_law_names + matched_phrases + content_words:
             if item and item not in all_terms:
                 all_terms.append(item)
                 

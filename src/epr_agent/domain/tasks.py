@@ -358,6 +358,12 @@ def rewrite_follow_up(query: str, history: list[dict[str, Any]] | None, active_c
     This is a deterministic baseline for multi-turn query rewriting.  It uses
     only the recent conversation and active case facts; the durable history is
     still stored separately and is not copied into the retrieval query wholesale.
+
+    Detection heuristic (either condition triggers context injection):
+    - Short pronouns/particles (≤ 60 chars): "vậy", "thế", "còn", pronoun tokens.
+    - Implicit numeric/entity reference (≤ 180 chars): query references a number
+      or key noun that appeared in the previous bot/user message and the query
+      begins with a conditional/interrogative opener signalling dependency.
     """
 
     q = " ".join((query or "").split())
@@ -365,10 +371,51 @@ def rewrite_follow_up(query: str, history: list[dict[str, Any]] | None, active_c
         return q
     previous = latest_user_message(history)
     lower = _normalise(q)
-    dependent = len(lower) <= 60 and (
+
+    # --- Classic short-pronoun dependency ---
+    short_dependent = len(lower) <= 60 and (
         lower.startswith(("vậy", "thế", "còn", "nếu vậy", "trường hợp đó"))
         or any(token in lower for token in ("điều đó", "cái này", "việc này", "nó", "đó thì"))
     )
+
+    # --- Implicit reference: numeric or domain-noun anchored follow-up ---
+    # Catches queries like "nếu hết 60 ngày mà bạn ấy không đạt..." after
+    # a prior answer mentioning "60 ngày" without explicit pronoun.
+    implicit_dependent = False
+    if not short_dependent and previous and 20 < len(lower) <= 180:
+        # Opener tokens that signal the query builds on prior context
+        conditional_openers = (
+            "nếu", "nếu như", "vậy nếu", "còn nếu", "trường hợp", "thế còn",
+            "tiếp theo", "sau đó", "sau khi", "thêm", "ngoài ra", "hơn nữa", "thế thì",
+            "ủa", "ờ thì", "thế mà", "mà", "nhưng", "vậy thì", "ok vậy",
+            "tiện thể", "tiện đây", "theo đó", "như vậy",
+            "mình", "tôi", "chúng tôi", "bêm", "chúng mình",
+            "cuối năm", "lúc đó", "khi đó", "trước khi",
+        )
+        starts_with_conditional = any(lower.startswith(op) for op in conditional_openers)
+        # Check if a key number from bot's last reply appears in this query
+        prev_lower = _normalise(previous)
+        numbers_in_prev = re.findall(r"\b\d+\b", prev_lower)
+        query_numbers = re.findall(r"\b\d+\b", lower)
+        shares_number = bool(set(numbers_in_prev) & set(query_numbers))
+        # Key domain nouns that signal topic continuity without full self-description
+        continuity_nouns = (
+            "bạn ấy", "bạn đó", "người đó", "họ", "anh ấy", "chị ấy",
+            "mảnh đất", "mảnh đó", "đất đó", "thửa đất",
+            "xưởng", "công ty", "doanh nghiệp", "cơ sở",
+            "hợp đồng", "hợp đồng đó", "thời hạn đó", "mức đó",
+            "di chúc", "thừa kế", "tài sản", "tài sản đó",
+            "bằng lái", "giấy phép", "nhãn hiệu", "bản quyền",
+            "nhà", "chủ nhà", "người thuê", "phòng", "phòng trọ",
+            "tiệm", "quán", "cửa hàng", "shop",
+            "đăng ký", "giấy chứng nhận", "hồ sơ",
+            "thuế", "thuế tncn", "bảo hiểm", "bhxh",
+            "hóa đơn", "kế toán", "quyết toán",
+        )
+        has_continuity_noun = any(noun in lower for noun in continuity_nouns)
+        implicit_dependent = starts_with_conditional and (shares_number or has_continuity_noun)
+
+    dependent = short_dependent or implicit_dependent
     if not previous or not dependent:
         return q
 

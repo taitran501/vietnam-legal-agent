@@ -222,6 +222,21 @@ def build_workflow(deps: WorkflowDependencies):
         # An in-progress case owns terse fact-only replies.  This guards
         # against a model accidentally reclassifying "Vật liệu là nhựa" as a
         # standalone legal lookup instead of resuming the collection flow.
+        # Exception: explicit legal threshold / lookup queries escape the lock
+        # so that general factual questions ("ngưỡng dưới 30 tỷ có miễn không")
+        # are answered directly via retrieval rather than stuck in form-filling.
+        import re as _re
+        _q_lower = " ".join(state["query"].lower().split())
+        _explicit_legal_lookup = bool(
+            # numeric threshold with unit: 30 tỷ, 85%, 60 ngày, 6 tháng...
+            _re.search(r"\b\d+\s*(tỷ|triệu|%|phần trăm|ngày|tháng|năm)\b", _q_lower)
+            # explicit lookup phrases
+            or any(p in _q_lower for p in (
+                "là bao nhiêu", "bao nhiêu %", "mức nào", "quy định thế nào",
+                "điều kiện gì", "thủ tục gì", "cần những gì",
+                "giấy tờ gì", "trình tự như thế nào",
+            ))
+        )
         if (
             active_case
             and active_case.get("status", "collecting") != "completed"
@@ -230,13 +245,24 @@ def build_workflow(deps: WorkflowDependencies):
                 TaskType.BUILD_COMPLIANCE_CHECKLIST.value,
             }
             and (understanding.is_follow_up or len(state["query"].strip()) < 160)
+            and not _explicit_legal_lookup
         ):
             task = TaskType(active_case["task_type"])
             route = route_for_task(task)
         # The selected product mode is a user choice, not a model tool call.
         # It is allowed to choose the bounded web-research route but never to
         # silently escape the legal-corpus route on insufficient evidence.
-        if state.get("mode") == RouteType.RESEARCH_WEB.value:
+        # Hard override: explicit legal lookup questions (thresholds, specific
+        # rule phrases) must always go through corpus retrieval, regardless of
+        # the LLM's task classification.
+        if _explicit_legal_lookup and task in {
+            TaskType.ASSESS_EPR_OBLIGATION,
+            TaskType.BUILD_COMPLIANCE_CHECKLIST,
+            TaskType.CHITCHAT,
+        }:
+            task = TaskType.LEGAL_LOOKUP
+            route = RouteType.LEGAL_LOOKUP
+        elif state.get("mode") == RouteType.RESEARCH_WEB.value:
             route = RouteType.RESEARCH_WEB
             task = TaskType.LEGAL_LOOKUP
         elif route == RouteType.OUT_OF_SCOPE:
