@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     enable_trace_debug_api: bool = Field(default=False)
     agent_pipeline_version: str = Field(
         default="pipeline-v4",
-        description="Server-selected workflow runtime. Clients never choose a pipeline version.",
+        description="Server-selected workflow runtime: pipeline-v3 | pipeline-v4 | pipeline-agent. Clients never choose a pipeline version.",
     )
     v4_route_confidence_threshold: float = Field(default=0.70, ge=0.0, le=1.0)
     appendix_xxii_data_path: Path = Field(default=BASE_DIR / "artifacts" / "appendix_xxii.jsonl")
