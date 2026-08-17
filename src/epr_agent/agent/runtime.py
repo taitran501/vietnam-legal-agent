@@ -475,7 +475,7 @@ class AgentWorkflowRuntime:
             return
 
         if route.value == "out_of_scope":
-            safe_msg = "Câu hỏi hiện nằm ngoài phạm vi tra cứu EPR của hệ thống."
+            safe_msg = "Câu hỏi hiện nằm ngoài phạm vi tra cứu pháp luật của hệ thống."
             yield {
                 "type": "response_complete",
                 "text": safe_msg,

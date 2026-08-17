@@ -630,7 +630,7 @@ def build_workflow(deps: WorkflowDependencies):
             state["answer"] = "Tôi chưa thể xác minh đầy đủ câu trả lời từ tài liệu đã truy xuất."
             state["termination_reason"] = TerminationReason.CITATION_VERIFICATION_FAILED.value
         elif not state.get("is_epr_scope"):
-            state["answer"] = "Câu hỏi hiện nằm ngoài phạm vi tra cứu EPR của hệ thống."
+            state["answer"] = "Câu hỏi hiện nằm ngoài phạm vi tra cứu pháp luật của hệ thống."
             state["termination_reason"] = TerminationReason.OUT_OF_SCOPE.value
         else:
             state["answer"] = "Tôi chưa tìm thấy đủ tài liệu liên quan để đưa ra kết luận an toàn."
