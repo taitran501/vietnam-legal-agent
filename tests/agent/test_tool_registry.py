@@ -8,7 +8,9 @@ from epr_agent.agent.tool_registry import (
     ALL_AGENT_TOOLS,
     ToolDependencies,
     ask_user_for_clarification,
+    calculate_statutory_amounts,
     evaluate_epr_obligation,
+    evaluate_legal_case,
     get_case_form_fields,
     load_conversation_context,
     lookup_answer_cache,
@@ -97,7 +99,37 @@ def inject_test_deps():
 
 
 def test_tool_count():
-    assert len(ALL_AGENT_TOOLS) == 7
+    assert len(ALL_AGENT_TOOLS) == 9
+
+
+@pytest.mark.asyncio
+async def test_evaluate_legal_case_multi_domain():
+    # Labor domain evaluation
+    labor_res = await evaluate_legal_case(
+        legal_domain="labor",
+        facts={"dispute_type": "đơn phương sa thải", "monthly_salary_vnd": "10000000"},
+    )
+    assert labor_res["ok"] is True
+    assert labor_res["domain"] == "labor"
+
+    # Corporate domain evaluation
+    corp_res = await evaluate_legal_case(
+        legal_domain="corporate",
+        facts={"shareholder_ratio_percent": "6.0"},
+    )
+    assert corp_res["ok"] is True
+    assert corp_res["status"] == "threshold_met"
+
+
+@pytest.mark.asyncio
+async def test_calculate_statutory_amounts_tool():
+    res = await calculate_statutory_amounts(
+        calculation_type="overtime_salary",
+        parameters={"hourly_wage_vnd": 60000, "overtime_hours": 5, "day_type": "weekend"},
+    )
+    assert res["ok"] is True
+    assert res["statutory_rate_percent"] == 200
+    assert res["total_overtime_pay_vnd"] == 600_000
 
 
 @pytest.mark.asyncio

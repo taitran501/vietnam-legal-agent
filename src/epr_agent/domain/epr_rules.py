@@ -136,9 +136,13 @@ def extract_explicit_epr_facts(query: str, *, source: FactSource = FactSource.US
 
     text = _normalise(query)
     found: dict[str, FactValue] = {}
-    if re.search(r"nhà\s*sản\s*xuất|sản\s*xuất|xưởng\s*(?:tôi|em|mình|chúng tôi)?\s*(?:làm|sản xuất|gia công|chế tạo)|nhà\s*máy\s*sản\s*xuất|cơ\s*sở\s*sản\s*xuất|tự\s*làm|tự\s*sản\s*xuất", text):
+    if "nhà sản xuất" in text:
+        found["business_role"] = _fact("manufacturer", source, "nhà sản xuất", turn_id=turn_id)
+    elif "nhà nhập khẩu" in text:
+        found["business_role"] = _fact("importer", source, "nhà nhập khẩu", turn_id=turn_id)
+    elif re.search(r"sản\s*xuất|xưởng\s*(?:tôi|em|mình|chúng tôi)?\s*(?:làm|sản xuất|gia công|chế tạo)|nhà\s*máy|cơ\s*sở|tự\s*làm|tự\s*sản\s*xuất", text):
         found["business_role"] = _fact("manufacturer", source, "sản xuất", turn_id=turn_id)
-    elif re.search(r"nhà\s*nhập\s*khẩu|nhập\s*khẩu|nhập\s*từ|nhập\s*về|nhập\s*hàng|mua\s*từ\s*nước\s*ngoài", text):
+    elif re.search(r"nhập\s*khẩu|nhập\s*từ|nhập\s*về|nhập\s*hàng|mua\s*từ\s*nước\s*ngoài", text):
         found["business_role"] = _fact("importer", source, "nhập khẩu", turn_id=turn_id)
 
     if "nguyên liệu" in text:
@@ -174,7 +178,7 @@ def extract_explicit_epr_facts(query: str, *, source: FactSource = FactSource.US
         found["market_placement"] = _fact("export_only", source, "xuất khẩu", turn_id=turn_id)
     elif "tạm nhập" in text and "tái xuất" in text:
         found["market_placement"] = _fact("temporary_import_reexport", source, "tạm nhập tái xuất", turn_id=turn_id)
-    elif any(marker in text for marker in ("đưa ra thị trường việt nam", "bán tại việt nam", "bán ở việt nam", "bán tại vn", "bán ở vn", "tại việt nam", "ở việt nam", "tại vn", "ở vn", "thị trường việt nam", "thị trường vn", "trong nước", "nội địa", "bán cho các chợ", "bán cho quán", "về vn", "về việt nam")):
+    elif any(marker in text for marker in ("đưa ra thị trường việt nam", "đưa ra thị trường vn", "thị trường việt nam", "thị trường vn", "bán tại việt nam", "bán ở việt nam", "bán tại vn", "bán ở vn", "bán cho các chợ", "bán cho quán")):
         found["market_placement"] = _fact("vietnam_market", source, "thị trường Việt Nam", turn_id=turn_id)
 
     if any(marker in text for marker in ("nghiên cứu", "học tập", "thử nghiệm")):

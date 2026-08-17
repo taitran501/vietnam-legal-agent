@@ -13,11 +13,9 @@ from typing import Any
 
 from epr_agent.domain.epr_rules import (
     CaseFormResolver,
-    evaluate_assessment,
     follow_up_question,
 )
 from epr_agent.domain.models import DocumentRecord, EvidenceAssessment, TaskType
-from epr_agent.domain.v4 import FactConfirmationStatus, FactSource, FactValue
 from epr_agent.tools.cache import RedisExactAnswerCache, ScopedAnswerCache
 from epr_agent.tools.evidence import EvidenceEvaluator, verify_citations
 from epr_agent.tools.generation import EvidenceGenerationGateway, GenerationGateway
@@ -216,72 +214,107 @@ async def lookup_answer_cache(query: str, route: str = "legal_lookup") -> dict[s
         return {"hit": False, "answer": None, "error": str(exc), "ok": False}
 
 
-async def evaluate_epr_obligation(facts: dict[str, str]) -> dict[str, Any]:
-    """Áp dụng bộ quy tắc EPR (EPR Rule Pack) để đánh giá nghĩa vụ pháp lý từ các dữ kiện đã thu thập.
+async def evaluate_legal_case(
+    legal_domain: str,
+    facts: dict[str, str],
+) -> dict[str, Any]:
+    """Đánh giá tình huống pháp lý và xác định trách nhiệm/rủi ro trên 7 lĩnh vực pháp luật.
 
-    Sử dụng khi: Đã có đủ các thông tin tình huống (vai trò doanh nghiệp, đối tượng bao bì/sản phẩm, thị trường, doanh thu).
+    Lĩnh vực hỗ trợ (legal_domain):
+    - 'labor': Đơn phương chấm dứt HĐLĐ (Đ.36/41 BLLĐ), tiền lương làm thêm giờ, trợ cấp thôi việc.
+    - 'civil_contract': Tăng giá thuê nhà (Đ.478 BLDS), phạt vi phạm hợp đồng, đặt cọc, lãi suất vay.
+    - 'marriage_family': Ly hôn đơn phương (Đ.56 Luật HN&GĐ), xin cấp trích lục kết hôn bị giữ.
+    - 'corporate': Quyền cổ đông 5% triệu tập họp ĐHĐCĐ bất thường (Đ.115 Luật Doanh nghiệp).
+    - 'land': Bồi thường thu hồi đất nông nghiệp (Đ.96 Luật Đất đai), điều kiện bồi thường.
+    - 'traffic': Mức phạt vượt đèn đỏ, nồng độ cồn theo Nghị định 100/2019/NĐ-CP & NĐ 123/2021/NĐ-CP.
+    - 'epr': Ngưỡng doanh thu 30 tỷ, trách nhiệm tái chế bao bì/sản phẩm theo Luật BVMT 2020.
 
     Args:
-        facts: Từ điển các sự kiện đã cung cấp, ví dụ:
-               {'business_role': 'manufacturer', 'object_kind': 'commercial_packaging',
-                'product_group': 'bao_bi', 'market_placement': 'vietnam_market', 'annual_revenue_vnd': '40000000000'}
+        legal_domain: Tên lĩnh vực pháp luật cần đánh giá.
+        facts: Từ điển các sự kiện/dữ kiện thu thập từ người dùng.
     """
+    from epr_agent.domain.legal_rules import evaluate_universal_case
+
     try:
-        typed_facts: dict[str, FactValue] = {
-            k: FactValue(
-                value=str(v),
-                source=FactSource.USER_TURN,
-                confirmation_status=FactConfirmationStatus.USER_CONFIRMED,
-                verified=True,
-            )
-            for k, v in (facts or {}).items()
-            if str(v).strip()
-        }
-        assessment_result = evaluate_assessment(typed_facts, evidence_ids={})
-        return {
-            "status": assessment_result.status.value,
-            "conclusion": assessment_result.conclusion,
-            "reasons": [r.model_dump(mode="json") for r in assessment_result.reasons],
-            "missing_facts": assessment_result.missing_facts,
-            "assumptions": assessment_result.assumptions,
-            "next_steps": assessment_result.next_steps,
-            "rule_id": assessment_result.rule_id,
-            "ok": True,
-        }
+        return evaluate_universal_case(legal_domain=legal_domain, facts=facts)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("evaluate_epr_obligation failed: %s", exc)
+        logger.warning("evaluate_legal_case failed for domain=%r: %s", legal_domain, exc)
+        return {"status": "error", "error": str(exc), "ok": False}
+
+
+async def evaluate_epr_obligation(facts: dict[str, str]) -> dict[str, Any]:
+    """Đánh giá nghĩa vụ EPR của doanh nghiệp (Wrapper cho evaluate_legal_case)."""
+    return await evaluate_legal_case(legal_domain="epr", facts=facts)
+
+
+async def calculate_statutory_amounts(
+    calculation_type: str,
+    parameters: dict[str, Any],
+) -> dict[str, Any]:
+    """Thực hiện các phép tính toán số liệu pháp lý theo luật định (tiền lương làm thêm, bồi thường sa thải, mức phạt).
+
+    Các loại tính toán hỗ trợ (calculation_type):
+    - 'overtime_salary': Tính tiền lương làm thêm giờ (150% ngày thường, 200% chủ nhật, 300% ngày lễ/tết theo Đ.98 BLLĐ).
+      Params: {'hourly_wage_vnd': float, 'overtime_hours': float, 'day_type': 'weekday' | 'weekend' | 'holiday'}
+    - 'unlawful_termination_compensation': Tính mức bồi thường tối thiểu khi sa thải trái luật theo Đ.41 BLLĐ (ít nhất 2 tháng lương + tiền lương những ngày không được làm việc).
+      Params: {'monthly_salary_vnd': float, 'months_unworked': float}
+    - 'severance_allowance': Tính trợ cấp thôi việc theo Đ.46 BLLĐ (0.5 tháng lương/năm làm việc).
+      Params: {'monthly_salary_average_6m_vnd': float, 'qualifying_working_years': float}
+
+    Args:
+        calculation_type: Loại công thức cần tính toán.
+        parameters: Các tham số đầu vào cho công thức.
+    """
+    from epr_agent.domain.legal_rules import calculate_legal_formula
+
+    try:
+        return calculate_legal_formula(calculation_type=calculation_type, parameters=parameters)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("calculate_statutory_amounts failed for type=%r: %s", calculation_type, exc)
         return {"status": "error", "error": str(exc), "ok": False}
 
 
 async def get_case_form_fields(
-    task_type: str = "assess_epr_obligation",
+    task_type: str = "assess_legal_case",
+    legal_domain: str = "general",
     known_facts: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Lấy danh sách các trường thông tin cần thiết và xác định thông tin nào còn thiếu.
-
-    Sử dụng khi: Bắt đầu xử lý tình huống đánh giá nghĩa vụ (case_assessment) hoặc lập checklist tuân thủ.
+    """Lấy danh sách các trường thông tin cần thiết và xác định thông tin nào còn thiếu theo từng lĩnh vực luật.
 
     Args:
-        task_type: Loại tác vụ ('assess_epr_obligation' hoặc 'build_compliance_checklist').
+        task_type: Loại tác vụ ('assess_legal_case', 'build_compliance_checklist', hoặc 'assess_epr_obligation').
+        legal_domain: Lĩnh vực pháp luật ('labor', 'civil_contract', 'marriage_family', 'corporate', 'land', 'traffic', 'epr').
         known_facts: Các thông tin người dùng đã cung cấp sẵn.
     """
+    from epr_agent.domain.legal_rules import UniversalCaseFormResolver
+
     deps = get_tool_dependencies()
     try:
-        form_state = deps.case_resolver.from_strings(
-            task_type=task_type,
-            facts=None,
-            updates=known_facts or {},
+        # If explicitly requesting EPR legacy task form
+        if legal_domain in ("epr", "bao_bi") or task_type == "assess_epr_obligation":
+            form_state = deps.case_resolver.from_strings(
+                task_type=task_type,
+                facts=None,
+                updates=known_facts or {},
+            )
+            return {
+                "domain": "epr",
+                "status": form_state.status,
+                "missing_facts": list(form_state.missing_facts),
+                "completed_count": form_state.completed_count,
+                "required_count": form_state.required_count,
+                "fields": [f.model_dump(mode="json") for f in form_state.fields],
+                "submission_blocked_reason": form_state.submission_blocked_reason,
+                "suggested_follow_up": follow_up_question(list(form_state.missing_facts)),
+                "ok": True,
+            }
+
+        # Multi-domain dynamic form resolver
+        resolver = UniversalCaseFormResolver()
+        return resolver.resolve_form_state(
+            legal_domain=legal_domain,
+            known_facts=known_facts or {},
         )
-        return {
-            "status": form_state.status,
-            "missing_facts": list(form_state.missing_facts),
-            "completed_count": form_state.completed_count,
-            "required_count": form_state.required_count,
-            "fields": [f.model_dump(mode="json") for f in form_state.fields],
-            "submission_blocked_reason": form_state.submission_blocked_reason,
-            "suggested_follow_up": follow_up_question(list(form_state.missing_facts)),
-            "ok": True,
-        }
     except Exception as exc:  # noqa: BLE001
         logger.warning("get_case_form_fields failed: %s", exc)
         return {"status": "error", "missing_facts": [], "fields": [], "error": str(exc), "ok": False}
@@ -335,8 +368,10 @@ ALL_AGENT_TOOLS = [
     search_legal_provisions,
     search_web_official,
     lookup_answer_cache,
+    evaluate_legal_case,
     evaluate_epr_obligation,
     get_case_form_fields,
+    calculate_statutory_amounts,
     load_conversation_context,
     ask_user_for_clarification,
 ]
