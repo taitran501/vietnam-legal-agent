@@ -200,6 +200,12 @@ NON_LEGAL_OUT_OF_SCOPE_TERMS = (
     "thơ tình",
     "chơi game",
     "thời tiết ngày mai",
+    "ignore all previous instructions",
+    "ignore previous instructions",
+    "coding assistant",
+    "write code",
+    "python code",
+    "flask backend",
 )
 
 
