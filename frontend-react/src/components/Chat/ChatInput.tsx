@@ -10,6 +10,7 @@ interface ChatInputProps {
   onStop: () => void;
   variant?: 'conversation' | 'welcome';
   value?: string;
+  placeholder?: string;
   intentLabel?: string;
   onValueChange?: (value: string) => void;
   onClearIntent?: () => void;
@@ -25,6 +26,7 @@ export function ChatInput({
   onStop,
   variant = 'conversation',
   value,
+  placeholder,
   intentLabel,
   onValueChange,
   onClearIntent,
@@ -95,7 +97,7 @@ export function ChatInput({
           disabled={isDisabled}
           onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setInput(event.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={variant === 'welcome' ? 'Nhập câu hỏi hoặc mô tả tình huống pháp lý…' : 'Hỏi thêm về nội dung này…'}
+          placeholder={placeholder ?? (variant === 'welcome' ? 'Nhập câu hỏi hoặc mô tả tình huống pháp lý…' : 'Hỏi thêm về nội dung này…')}
           ref={textareaRef}
           rows={1}
           value={input}

@@ -2,11 +2,27 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { WelcomeScreen } from './WelcomeScreen';
 
-describe('WelcomeScreen quick actions', () => {
-  it('opens the guided assessment without sending a network-backed turn', () => {
-    const onSendPrompt = vi.fn();
+describe('WelcomeScreen legal goal buttons & dynamic suggestions', () => {
+  it('renders the 3 core legal goal buttons', () => {
+    render(
+      <WelcomeScreen
+        draftText=""
+        isStreaming={false}
+        onClearIntent={vi.fn()}
+        onDraftChange={vi.fn()}
+        onPrefillPrompt={vi.fn()}
+        onSendPrompt={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: /kiểm tra tính hợp pháp & nghĩa vụ/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /hướng dẫn hồ sơ & thủ tục/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /bảo vệ quyền lợi & tranh chấp/i })).toBeInTheDocument();
+  });
+
+  it('switches suggestions and placeholder dynamically when a goal button is clicked', () => {
     const onPrefillPrompt = vi.fn();
-    const onStartCase = vi.fn();
     render(
       <WelcomeScreen
         draftText=""
@@ -14,50 +30,59 @@ describe('WelcomeScreen quick actions', () => {
         onClearIntent={vi.fn()}
         onDraftChange={vi.fn()}
         onPrefillPrompt={onPrefillPrompt}
-        onSendPrompt={onSendPrompt}
+        onSendPrompt={vi.fn()}
         onStop={vi.fn()}
-        onStartCase={onStartCase}
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /kiểm tra trường hợp của doanh nghiệp/i }));
+    // Initially default suggestions
+    expect(screen.getByText(/gợi ý tình huống pháp lý phổ biến/i)).toBeInTheDocument();
 
-    expect(onStartCase).toHaveBeenCalledWith('assess_epr_obligation');
-    expect(onPrefillPrompt).not.toHaveBeenCalled();
-    expect(onSendPrompt).not.toHaveBeenCalled();
+    // Click Goal 1: Legality
+    fireEvent.click(screen.getByRole('button', { name: /kiểm tra tính hợp pháp & nghĩa vụ/i }));
+    expect(screen.getByText(/tình huống mẫu: kiểm tra tính hợp pháp & nghĩa vụ/i)).toBeInTheDocument();
+    expect(screen.getByText(/phạt vi phạm 15% giá trị/i)).toBeInTheDocument();
+
+    // Click a suggestion from Goal 1
+    fireEvent.click(screen.getByText(/phạt vi phạm 15% giá trị/i));
+    expect(onPrefillPrompt).toHaveBeenCalledWith(
+      expect.stringContaining('15% giá trị'),
+      'legal_lookup',
+    );
+
+    // Click Goal 3: Dispute
+    fireEvent.click(screen.getByRole('button', { name: /bảo vệ quyền lợi & tranh chấp/i }));
+    expect(screen.getByText(/tình huống mẫu: bảo vệ quyền lợi & tranh chấp/i)).toBeInTheDocument();
+    expect(screen.getByText(/bên bán đổi ý không bán và không chịu trả lại tiền cọc/i)).toBeInTheDocument();
+
+    // Click reset "Xem tất cả chủ đề"
+    fireEvent.click(screen.getByRole('button', { name: /xem tất cả chủ đề/i }));
+    expect(screen.getByText(/gợi ý tình huống pháp lý phổ biến/i)).toBeInTheDocument();
   });
 
-  it('keeps legal lookup and examples as editable prefill', () => {
-    const onSendPrompt = vi.fn();
-    const onPrefillPrompt = vi.fn();
-    const onStartCase = vi.fn();
+  it('toggles active goal off when clicked again', () => {
     render(
       <WelcomeScreen
         draftText=""
         isStreaming={false}
         onClearIntent={vi.fn()}
         onDraftChange={vi.fn()}
-        onPrefillPrompt={onPrefillPrompt}
-        onSendPrompt={onSendPrompt}
+        onPrefillPrompt={vi.fn()}
+        onSendPrompt={vi.fn()}
         onStop={vi.fn()}
-        onStartCase={onStartCase}
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Tra cứu quy định' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Kiểm tra trường hợp của doanh nghiệp' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Tạo danh sách việc cần làm' }));
-    const exampleButtons = screen.getAllByRole('button').filter((button) => button.textContent?.includes('EPR'));
-    for (const button of exampleButtons) fireEvent.click(button);
+    const goalBtn = screen.getByRole('button', { name: /hướng dẫn hồ sơ & thủ tục/i });
+    fireEvent.click(goalBtn);
+    expect(screen.getByText(/tình huống mẫu: hướng dẫn hồ sơ & thủ tục/i)).toBeInTheDocument();
 
-    expect(onPrefillPrompt).toHaveBeenCalledTimes(1 + exampleButtons.length);
-    expect(onStartCase).toHaveBeenCalledTimes(2);
-    expect(onSendPrompt).not.toHaveBeenCalled();
-    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Câu hỏi pháp lý' }));
+    // Click again to toggle off
+    fireEvent.click(goalBtn);
+    expect(screen.getByText(/gợi ý tình huống pháp lý phổ biến/i)).toBeInTheDocument();
   });
 
-  it('keeps a ready case action available when only legal lookup is blocked', () => {
-    const onStartCase = vi.fn();
+  it('disables goal buttons and inputs when isStreaming or disabled is true', () => {
     render(
       <WelcomeScreen
         disabled
@@ -68,36 +93,12 @@ describe('WelcomeScreen quick actions', () => {
         onPrefillPrompt={vi.fn()}
         onSendPrompt={vi.fn()}
         onStop={vi.fn()}
-        onStartCase={onStartCase}
-        caseDisabled={false}
       />,
     );
 
-    expect(screen.getByRole('button', { name: 'Tra cứu quy định' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Kiểm tra trường hợp của doanh nghiệp' })).toBeEnabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Kiểm tra trường hợp của doanh nghiệp' }));
-    expect(onStartCase).toHaveBeenCalledWith('assess_epr_obligation');
-  });
-
-  it('explains why a case action is disabled without relying on a tooltip', () => {
-    render(
-      <WelcomeScreen
-        caseDisabled
-        caseDisabledReason="Chức năng này đang tạm khóa trong lúc văn bản pháp luật được kiểm tra."
-        draftText=""
-        isStreaming={false}
-        onClearIntent={vi.fn()}
-        onDraftChange={vi.fn()}
-        onPrefillPrompt={vi.fn()}
-        onSendPrompt={vi.fn()}
-        onStop={vi.fn()}
-        onStartCase={vi.fn()}
-      />,
-    );
-
-    const action = screen.getByRole('button', { name: 'Kiểm tra trường hợp của doanh nghiệp' });
-    expect(action).toBeDisabled();
-    expect(screen.getByText('Chức năng này đang tạm khóa trong lúc văn bản pháp luật được kiểm tra.')).toBeInTheDocument();
-    expect(action).toHaveAttribute('aria-describedby', 'case-capability-message');
+    expect(screen.getByRole('button', { name: /kiểm tra tính hợp pháp & nghĩa vụ/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /hướng dẫn hồ sơ & thủ tục/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /bảo vệ quyền lợi & tranh chấp/i })).toBeDisabled();
   });
 });
+

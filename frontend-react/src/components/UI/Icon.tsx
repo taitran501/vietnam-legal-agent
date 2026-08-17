@@ -24,6 +24,7 @@ export type IconName =
   | 'scale'
   | 'search'
   | 'send'
+  | 'shield'
   | 'source'
   | 'stop'
   | 'thumbDown'
@@ -172,6 +173,11 @@ const paths: Record<IconName, ReactNode> = {
     <>
       <path d="m22 2-7 20-4-9-9-4Z" />
       <path d="M22 2 11 13" />
+    </>
+  ),
+  shield: (
+    <>
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
     </>
   ),
   source: (

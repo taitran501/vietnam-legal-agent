@@ -104,7 +104,7 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
             corpus["status"] = "promotion_blocked" if not legal_gate_ready else "version_mismatch"
     except Exception as exc:  # noqa: BLE001 - readiness must be safe when a collection is absent
         logger.info("Legal corpus is not ready: %s", exc)
-        dependencies["qdrant"] = "error"
+        dependencies["qdrant"] = "preview" if settings.corpus_runtime_mode == "preview" else "error"
     try:
         from backend.history.store import _store
 
@@ -133,9 +133,9 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
     legal_gate_ready = bool(audit.get("ready_for_promotion")) if settings.corpus_runtime_mode == "production" else technical_corpus_ready
     legal_ready = (
         dependencies["database"] == "ok"
-        and dependencies["qdrant"] == "ok"
+        and (dependencies["qdrant"] == "ok" or (settings.corpus_runtime_mode == "preview" and dependencies["qdrant"] in {"ok", "preview"}))
         and dependencies["openai"] == "ok"
-        and index_matches
+        and (index_matches or settings.corpus_runtime_mode == "preview")
         and legal_gate_ready
     )
     if legal_ready:

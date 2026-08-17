@@ -119,10 +119,11 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
   const lastAssistantStatus = [...messages].reverse().find((message) => message.role === 'assistant')?.status;
 
   const intentLabels: Record<string, string> = {
-    legal_lookup: 'Tra cứu quy định',
+    legal_lookup: 'Kiểm tra tính hợp pháp & Nghĩa vụ',
     legal_explain_compare: 'Giải thích hoặc so sánh',
     case_assessment: 'Kiểm tra trường hợp',
-    compliance_checklist: 'Danh sách việc cần làm',
+    compliance_checklist: 'Hướng dẫn hồ sơ & Thủ tục',
+    protect_rights: 'Bảo vệ quyền lợi & Tranh chấp',
   };
 
   useEffect(() => {
