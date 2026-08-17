@@ -7,6 +7,7 @@ import json
 import logging
 import re
 import time
+import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -371,13 +372,325 @@ class WorkflowRuntime:
             }
 
 
+class AgentWorkflowRuntime:
+    """Autonomous Agent runtime implementing the standard SSE streaming contract."""
+
+    def __init__(
+        self,
+        deps: WorkflowDependencies,
+        *,
+        runner: Any | None = None,
+        guardrails: Any | None = None,
+        answer_chunk_size: int = 180,
+        answer_chunk_delay_s: float = 0.015,
+    ) -> None:
+        self.deps = deps
+        self.answer_chunk_size = answer_chunk_size
+        self.answer_chunk_delay_s = max(answer_chunk_delay_s, 0.0)
+
+        from epr_agent.agent.guardrails import AgentGuardrails
+
+        self._guardrails = guardrails or AgentGuardrails()
+        self._runner = runner
+
+    @property
+    def runner(self) -> Any:
+        if self._runner is None:
+            from epr_agent.agent.agent_loop import AgentRunConfig, EprAgentRunner
+
+            self._runner = EprAgentRunner(
+                config=AgentRunConfig(max_steps=5, max_search_calls=4, max_web_calls=1)
+            )
+        return self._runner
+
+    async def stream(self, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+        query = str(kwargs.get("query") or "").strip()
+        user_id = str(kwargs.get("user_id") or "")
+        conversation_id = str(kwargs.get("conversation_id") or "")
+        trace_id = str(kwargs.get("trace_id") or uuid.uuid4())
+        mode = str(kwargs.get("mode") or "auto")
+        started_at = time.perf_counter()
+        started_wall = datetime.now(UTC)
+
+        from backend.config import get_settings
+
+        preview = get_settings().corpus_runtime_mode == "preview"
+
+        # ── 1. Input Validation Guardrail ──
+        yield {"type": "status", "message": "Đang kiểm tra câu hỏi…", "stage": "validate_input"}
+        is_valid, input_reason = self._guardrails.check_input(query)
+        if not is_valid:
+            safe_msg = (
+                "Câu hỏi cần có nội dung và không vượt quá 3.000 ký tự. Bạn hãy gửi lại câu hỏi ngắn gọn hơn."
+            )
+            yield {
+                "type": "response_complete",
+                "text": safe_msg,
+                "documents": [],
+                "source": "error",
+                "stage": "complete",
+                "pipeline_version": "pipeline-agent",
+                "termination_reason": TerminationReason.INVALID_INPUT.value,
+                "trace_id": trace_id,
+            }
+            return
+
+        # ── 2. Context Loading ──
+        yield {"type": "status", "message": "Đang nạp ngữ cảnh cuộc trò chuyện…", "stage": "load_context"}
+        snapshot = await self.deps.history.load(user_id, conversation_id, max_messages=6)
+
+        # ── 3. Fast Bypass for Chitchat & Out of Scope ──
+        from epr_agent.domain.tasks import classify_route
+
+        route = classify_route(query, snapshot.history, snapshot.active_case)
+        if route.value == "chitchat":
+            yield {"type": "status", "message": "Đang soạn câu trả lời…", "stage": "compose"}
+            answer = await self.deps.generation.chitchat(query, snapshot.history)
+            chunks = split_verified_answer_for_stream(answer, max_chunk_chars=self.answer_chunk_size)
+            for idx, chunk in enumerate(chunks, start=1):
+                yield {
+                    "type": "response_chunk",
+                    "chunk": chunk,
+                    "chunk_index": idx,
+                    "chunk_count": len(chunks),
+                    "stage": "streaming",
+                }
+            await self.deps.history.save_exchange(
+                user_id,
+                conversation_id,
+                query,
+                answer,
+                {"pipeline_version": "pipeline-agent", "route": "chitchat", "source": "chitchat"},
+            )
+            yield {
+                "type": "response_complete",
+                "text": answer,
+                "documents": [],
+                "source": "chitchat",
+                "stage": "complete",
+                "pipeline_version": "pipeline-agent",
+                "termination_reason": TerminationReason.ANSWER_COMPLETE.value,
+                "trace_id": trace_id,
+            }
+            return
+
+        if route.value == "out_of_scope":
+            safe_msg = "Câu hỏi hiện nằm ngoài phạm vi tra cứu EPR của hệ thống."
+            yield {
+                "type": "response_complete",
+                "text": safe_msg,
+                "documents": [],
+                "source": "error",
+                "stage": "complete",
+                "pipeline_version": "pipeline-agent",
+                "termination_reason": TerminationReason.OUT_OF_SCOPE.value,
+                "trace_id": trace_id,
+            }
+            return
+
+        # ── 4. Autonomous Agent Cognitive Loop ──
+        _tool_status_messages = {
+            "search_legal_provisions": "Đang tra cứu kho văn bản pháp luật…",
+            "search_web_official": "Đang tìm kiếm thông tin từ cổng chính thức…",
+            "lookup_answer_cache": "Đang kiểm tra bộ nhớ đệm câu trả lời…",
+            "evaluate_epr_obligation": "Đang đối chiếu quy định và tính toán nghĩa vụ…",
+            "get_case_form_fields": "Đang kiểm tra thông tin tình huống…",
+            "load_conversation_context": "Đang nạp ngữ cảnh hội thoại…",
+            "ask_user_for_clarification": "Đang soạn câu hỏi làm rõ thông tin…",
+        }
+
+        result = None
+        async for event in self.runner.stream(
+            query,
+            history=snapshot.history,
+            active_case=snapshot.active_case,
+            history_summary=snapshot.summary,
+            mode=mode,
+            trace_id=trace_id,
+        ):
+            if event.get("type") == "agent_tool_call":
+                tool_name = event.get("tool", "")
+                msg = _tool_status_messages.get(tool_name, "Đang xử lý bước tiếp theo…")
+                yield {
+                    "type": "workflow_step",
+                    "step": event.get("step", 1),
+                    "action": tool_name,
+                    "status": "completed",
+                    "trace_id": trace_id,
+                }
+                yield {
+                    "type": "status",
+                    "message": msg,
+                    "stage": tool_name,
+                }
+            elif event.get("type") == "agent_complete":
+                result = event.get("result")
+
+        if result is None:
+            yield {
+                "type": "error",
+                "code": "agent_error",
+                "message": "Không nhận được phản hồi từ agent.",
+                "retryable": True,
+                "trace_id": trace_id,
+                "pipeline_version": "pipeline-agent",
+            }
+            return
+
+        # ── 5. Output Verification Guardrail ──
+        final_answer = result.answer
+        termination_reason = result.termination_reason
+        citations = list(result.citations)
+        source = result.source
+        evidence = list(result.evidence)
+
+        if (
+            termination_reason == TerminationReason.ANSWER_COMPLETE.value
+            and source not in {"error", "follow_up"}
+            and not result.cache_hit
+        ):
+            yield {"type": "status", "message": "Đang xác minh căn cứ pháp lý và trích dẫn…", "stage": "verify"}
+            passed, reason, safe_fallback, checked_citations = await self._guardrails.check_output(
+                final_answer,
+                evidence,
+                claim_verifier=self.deps.claim_verifier,
+            )
+            citations = checked_citations
+            if not passed:
+                final_answer = safe_fallback
+                termination_reason = TerminationReason.CITATION_VERIFICATION_FAILED.value
+                source = "error"
+                evidence = []
+
+        # ── 6. Stream Answer Delivery ──
+        if final_answer:
+            chunks = split_verified_answer_for_stream(final_answer, max_chunk_chars=self.answer_chunk_size)
+            yield {
+                "type": "status",
+                "message": "Đang hiển thị câu trả lời…",
+                "stage": "streaming",
+            }
+            for idx, chunk in enumerate(chunks, start=1):
+                yield {
+                    "type": "response_chunk",
+                    "chunk": chunk,
+                    "chunk_index": idx,
+                    "chunk_count": len(chunks),
+                    "stage": "streaming",
+                }
+                if idx < len(chunks) and self.answer_chunk_delay_s:
+                    await asyncio.sleep(self.answer_chunk_delay_s)
+
+        # ── 7. Persistence & Telemetry ──
+        mock_state: AgentState = {
+            "trace_id": trace_id,
+            "user_id": user_id,
+            "conversation_id": conversation_id,
+            "query": query,
+            "answer": final_answer,
+            "task_type": result.task_type,
+            "route": result.route,
+            "source": source,
+            "evidence": evidence,
+            "citations": citations,
+            "active_case": snapshot.active_case,
+            "case_state": result.case_state,
+            "assessment": result.assessment,
+            "awaiting_user_input": result.awaiting_user_input,
+            "pipeline_version": "pipeline-agent",
+            "termination_reason": termination_reason,
+            "action_sequence": [s.tool for s in result.trajectory],
+            "run_started_at": started_wall.isoformat(),
+            "run_ended_at": datetime.now(UTC).isoformat(),
+            "run_duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+            "preview": preview,
+        }
+
+        try:
+            if result.awaiting_user_input and snapshot.active_case:
+                await self.deps.history.save_case(user_id, conversation_id, snapshot.active_case)
+            await self.deps.history.save_exchange(
+                user_id,
+                conversation_id,
+                query,
+                final_answer,
+                _metadata(mock_state),
+            )
+            await self.deps.history.record_run(mock_state, started_at, time.perf_counter())
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Agent persistence error: %s", exc)
+
+        # ── 8. Complete Event ──
+        yield {
+            "type": "response_complete",
+            "text": final_answer,
+            "documents": _documents_for_api(mock_state),
+            "source": source,
+            "stage": "complete",
+            "pipeline_version": "pipeline-agent",
+            "termination_reason": termination_reason,
+            "trace_id": trace_id,
+            "awaiting_user_input": result.awaiting_user_input,
+            "case_state": result.case_state,
+            **_metadata(mock_state),
+        }
+
+    async def run(self, **kwargs: Any) -> AgentState:
+        """Run and return AgentState for testing compatibility."""
+        query = str(kwargs.get("query") or "")
+        user_id = str(kwargs.get("user_id") or "")
+        conversation_id = str(kwargs.get("conversation_id") or "")
+        trace_id = str(kwargs.get("trace_id") or uuid.uuid4())
+        started_at = time.perf_counter()
+        started_wall = datetime.now(UTC)
+
+        snapshot = await self.deps.history.load(user_id, conversation_id, max_messages=6)
+        result = await self.runner.run(
+            query,
+            history=snapshot.history,
+            active_case=snapshot.active_case,
+            history_summary=snapshot.summary,
+            trace_id=trace_id,
+        )
+
+        from backend.config import get_settings
+
+        state: AgentState = {
+            "trace_id": trace_id,
+            "user_id": user_id,
+            "conversation_id": conversation_id,
+            "query": query,
+            "answer": result.answer,
+            "task_type": result.task_type,
+            "route": result.route,
+            "source": result.source,
+            "evidence": result.evidence,
+            "citations": result.citations,
+            "active_case": snapshot.active_case,
+            "case_state": result.case_state,
+            "assessment": result.assessment,
+            "awaiting_user_input": result.awaiting_user_input,
+            "pipeline_version": "pipeline-agent",
+            "termination_reason": result.termination_reason,
+            "action_sequence": [s.tool for s in result.trajectory],
+            "run_started_at": started_wall.isoformat(),
+            "run_ended_at": datetime.now(UTC).isoformat(),
+            "run_duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+            "preview": get_settings().corpus_runtime_mode == "preview",
+        }
+        return state
+
+
 @lru_cache(maxsize=1)
 def get_default_runtime() -> WorkflowRuntime:
-    # Runtime selection is server-owned.  The public request schema has no
+    # Runtime selection is server-owned. The public request schema has no
     # pipeline field, so a browser cannot force an experimental workflow.
     from backend.config import get_settings
 
-    if get_settings().agent_pipeline_version == "pipeline-v4":
+    version = get_settings().agent_pipeline_version
+    if version == "pipeline-agent":
+        return AgentWorkflowRuntime(default_dependencies())  # type: ignore[return-value]
+    if version == "pipeline-v4":
         from epr_agent.agent.v4 import V4WorkflowRuntime
 
         return V4WorkflowRuntime(default_dependencies())
@@ -424,3 +737,4 @@ async def stream_chat(
         )
     async for event in selected.stream(**request_kwargs):
         yield event
+
