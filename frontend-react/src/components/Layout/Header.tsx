@@ -32,12 +32,12 @@ export function Header({ hasActiveCase = false, me, readiness, onLogout, onOpenC
         </button>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h1 className="truncate text-sm font-semibold text-[#172033] sm:text-base">Trợ lý pháp lý về EPR</h1>
-            <span aria-label={`EPR: ${eprPlainName}`} className="rounded-full bg-[#e7eceb] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#006a63]" title={eprPlainName}>
-              EPR
+            <h1 className="truncate text-sm font-semibold text-[#172033] sm:text-base">Trợ lý Pháp luật Việt Nam</h1>
+            <span aria-label="Hệ thống Pháp luật Việt Nam" className="rounded-full bg-[#e7eceb] px-2 py-0.5 text-[10px] font-semibold tracking-wide text-[#006a63]" title="Tra cứu Pháp luật Việt Nam">
+              Pháp luật VN
             </span>
           </div>
-          <p className="hidden text-[11px] text-[#667085] sm:block">Tra cứu · Làm rõ · Chuẩn bị bước tiếp theo</p>
+          <p className="hidden text-[11px] text-[#667085] sm:block">Tra cứu căn cứ · Tư vấn tình huống · Hướng dẫn thủ tục</p>
         </div>
       </div>
 

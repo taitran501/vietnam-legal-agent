@@ -395,7 +395,6 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
     />
   ) : (
     <>
-      <WorkflowTimeline isStreaming={isStreaming} statusMessage={statusMessage} steps={workflowSteps} turnStatus={lastAssistantStatus} />
       <MessageList
         error={error}
         isStreaming={isStreaming}
@@ -593,12 +592,12 @@ export default function App() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#fcfcfa] p-6 text-[#172033]">
         <section className="w-full max-w-md rounded-2xl border border-[#d9e1df] bg-white p-7 shadow-sm">
-          <h1 className="text-lg font-semibold">Trợ lý pháp lý về EPR</h1>
+          <h1 className="text-lg font-semibold">Trợ lý Pháp luật Việt Nam</h1>
           <p className="mt-2 text-sm text-[#667085]">
             {authState === 'loading'
               ? 'Đang kiểm tra phiên đăng nhập…'
               : authState === 'signed_out'
-                ? `Đăng nhập để tra cứu ${eprPlainName} và lưu lại các cuộc trò chuyện.`
+                ? 'Đăng nhập để tra cứu pháp luật và lưu lại các cuộc trò chuyện.'
                 : authError}
           </p>
           {authState !== 'loading' && (

@@ -132,7 +132,7 @@ export function WelcomeScreen({
           Hôm nay bạn muốn tìm hiểu vấn đề pháp lý nào?
         </h2>
         <p className="mt-3 max-w-[640px] text-center text-sm leading-6 text-[#667085] sm:text-base">
-          Trợ lý AI tra cứu và giải đáp pháp luật Việt Nam (Đất đai, Lao động, Doanh nghiệp, Thuế, Dân sự, Môi trường...), làm rõ quyền lợi và đối chiếu căn cứ pháp lý chính thức.
+          Trợ lý tra cứu và giải đáp pháp luật Việt Nam (Đất đai, Lao động, Doanh nghiệp, Thuế, Dân sự, Môi trường...), làm rõ quyền lợi và đối chiếu căn cứ pháp lý chính thức.
         </p>
         <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#d9e1df] bg-[#f7faf8] px-3.5 py-1.5 text-xs font-medium text-[#53615e]">
           <span className="h-1.5 w-1.5 rounded-full bg-[#0f766e]" />
