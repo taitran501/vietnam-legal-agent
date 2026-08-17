@@ -5,12 +5,8 @@ from __future__ import annotations
 import pytest
 
 from epr_agent.agent.agent_loop import AgentRunResult, AgentStep
-from epr_agent.agent.guardrails import AgentGuardrails
 from epr_agent.agent.runtime import AgentWorkflowRuntime, WorkflowDependencies, get_default_runtime
-from epr_agent.agent.tool_registry import ToolDependencies, set_tool_dependencies
-from epr_agent.domain.epr_rules import CaseFormResolver
 from epr_agent.domain.models import DocumentRecord, TerminationReason
-from epr_agent.tools.cache import ScopedAnswerCache
 from epr_agent.tools.evidence import EvidenceEvaluator
 from epr_agent.tools.history import ContextSnapshot, HistoryGateway
 from epr_agent.tools.retrieval import StaticRetrievalGateway

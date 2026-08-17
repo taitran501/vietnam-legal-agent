@@ -31,7 +31,7 @@ class FakeHistoryGateway(HistoryGateway):
     async def initialize(self) -> None:
         pass
 
-    async def load(self, user_id: str, conversation_id: str, max_messages: int = 6) -> HistorySnapshot:
+    async def load(self, user_id: str, conversation_id: str, max_messages: int = 6) -> ContextSnapshot:
         return self.snapshot
 
     async def save_exchange(self, user_id: str, conversation_id: str, user_query: str, assistant_answer: str, metadata: dict | None = None) -> int:

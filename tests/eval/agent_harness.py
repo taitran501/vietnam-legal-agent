@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import logging
 import sys
 import time
@@ -28,12 +27,11 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-from epr_agent.agent.agent_loop import AgentRunConfig, AgentRunResult, EprAgentRunner
-from epr_agent.agent.guardrails import AgentGuardrails
+from epr_agent.agent.agent_loop import AgentRunConfig, EprAgentRunner
 from epr_agent.agent.runtime import AgentWorkflowRuntime, WorkflowDependencies
 from epr_agent.agent.tool_registry import ToolDependencies, set_tool_dependencies
 from epr_agent.domain.epr_rules import CaseFormResolver
-from epr_agent.domain.models import DocumentRecord, TerminationReason
+from epr_agent.domain.models import DocumentRecord
 from epr_agent.tools.cache import CachedAnswer
 from epr_agent.tools.evidence import EvidenceEvaluator
 from epr_agent.tools.history import ContextSnapshot, HistoryGateway
@@ -108,7 +106,7 @@ def _build_mock_llm_for_case(case: AgentTestCase) -> Any:
                 }],
             ),
             AIMessage(
-                content=f"Quy định về trách nhiệm tái chế bạn hỏi tại Điều 77 [1] với tỷ lệ và ngưỡng 30 tỷ theo quy định doanh thu ngày 20 tháng 4.",
+                content="Quy định về trách nhiệm tái chế bạn hỏi tại Điều 77 [1] với tỷ lệ và ngưỡng 30 tỷ theo quy định doanh thu ngày 20 tháng 4.",
             ),
         ]
     elif case.category == "multi_hop":
@@ -330,10 +328,10 @@ class AgentHarness:
         failures: list[str] = []
 
         # 1. Termination Reason Check
-        if actual_termination != case.expected_termination:
-            # Tolerant match for answer_complete vs cache_hit
-            if not (case.expected_termination == "answer_complete" and actual_termination == "cache_hit"):
-                failures.append(f"Termination mismatch: expected '{case.expected_termination}', got '{actual_termination}'")
+        if actual_termination != case.expected_termination and not (
+            case.expected_termination == "answer_complete" and actual_termination == "cache_hit"
+        ):
+            failures.append(f"Termination mismatch: expected '{case.expected_termination}', got '{actual_termination}'")
 
         # 2. Step Budget Efficiency Check
         if step_count > case.max_steps_allowed:
@@ -387,7 +385,7 @@ class AgentHarness:
         avg_latency = sum(r.latency_ms for r in results) / total_count if total_count else 0
 
         print("\n" + "═" * 80)
-        print(f"📊 SUMMARY BENCHMARK REPORT:")
+        print("📊 SUMMARY BENCHMARK REPORT:")
         print(f"   • Total Cases   : {total_count}")
         print(f"   • Passed        : {passed_count} ({pass_rate:.1f}%)")
         print(f"   • Failed        : {total_count - passed_count}")

@@ -418,7 +418,7 @@ class AgentWorkflowRuntime:
 
         # ── 1. Input Validation Guardrail ──
         yield {"type": "status", "message": "Đang kiểm tra câu hỏi…", "stage": "validate_input"}
-        is_valid, input_reason = self._guardrails.check_input(query)
+        is_valid, _input_reason = self._guardrails.check_input(query)
         if not is_valid:
             safe_msg = (
                 "Câu hỏi cần có nội dung và không vượt quá 3.000 ký tự. Bạn hãy gửi lại câu hỏi ngắn gọn hơn."
@@ -550,7 +550,7 @@ class AgentWorkflowRuntime:
             and not result.cache_hit
         ):
             yield {"type": "status", "message": "Đang xác minh căn cứ pháp lý và trích dẫn…", "stage": "verify"}
-            passed, reason, safe_fallback, checked_citations = await self._guardrails.check_output(
+            passed, _reason, safe_fallback, checked_citations = await self._guardrails.check_output(
                 final_answer,
                 evidence,
                 claim_verifier=self.deps.claim_verifier,

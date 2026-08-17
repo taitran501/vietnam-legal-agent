@@ -1,66 +1,48 @@
-# Tài liệu kiến trúc và vận hành
+# Architecture and Operational Documentation
 
-Đây là mục lục tài liệu của EPR Chatbot. Ứng dụng chỉ hỗ trợ tra cứu và
-đánh giá sơ bộ pháp luật EPR Việt Nam; tài liệu này không thay thế văn bản
-pháp luật hoặc ý kiến tư vấn pháp lý.
+This is the documentation index for EPR Compliance Copilot. The application assists with research and preliminary assessment of Vietnamese Extended Producer Responsibility (EPR) regulations; this documentation does not constitute official legal text or formal legal advice.
 
-## Source of truth
+## Sources of Truth
 
-- **Behavior contract:** [pipeline_v4_behavior_contract.md](pipeline_v4_behavior_contract.md)
-  mô tả hành vi mà backend phải giữ ổn định.
-- **Domain contract:** mã nguồn trong `src/epr_agent/domain/`, đặc biệt
-  `v4.py` và `epr_rules.py` (`CaseFormResolver`), là nguồn duy nhất cho field,
-  dependency, validation và trạng thái hồ sơ. Route
-  `backend/api/routes/case_form.py` chỉ là adapter HTTP side-effect-free.
-- **API contract:** schema Pydantic trong `backend/api/schemas.py` và các route
-  trong `backend/api/routes/` là nguồn cho request/response công khai.
-- **UI contract:** các component và test trong `frontend-react/src/` mô tả
-  cách một người dùng phổ thông đi qua sản phẩm.
-- **Release evidence:** acceptance reports chỉ ghi nhận commit và môi trường
-  thực sự đã được kiểm tra; không sửa báo cáo cũ để biến một release chưa test
-  thành đã đạt.
-- **Repository hygiene:** binary design exports và raw audit output không nằm
-  trong tài liệu được review trên GitHub; chỉ giữ quyết định, contract và kết
-  quả acceptance đã được tóm tắt.
+- **Behavior Contract:** [pipeline_v4_behavior_contract.md](pipeline_v4_behavior_contract.md) defines the backend behavior that must remain stable.
+- **Autonomous Agent Contract:** [autonomous-agent-architecture.md](architecture/autonomous-agent-architecture.md) specifies the ReAct cognitive loop, tool registry, budget control, and trajectory harness.
+- **Domain Contract:** Source code in `src/epr_agent/domain/`, particularly `v4.py` and `epr_rules.py` (`CaseFormResolver`), is the sole source of truth for fields, dependencies, validation, and case states. The route `backend/api/routes/case_form.py` is a side-effect-free HTTP adapter.
+- **API Contract:** Pydantic schemas in `backend/api/schemas.py` and routes in `backend/api/routes/` serve as the public request/response contract.
+- **UI Contract:** Components and tests in `frontend-react/src/` define the guided user journey.
+- **Release Evidence:** Acceptance reports record strictly verified commits and environments.
+- **Repository Hygiene:** Binary design exports and raw audit dumps are kept outside Git-tracked documentation; only summarized contracts, architectural decisions, and acceptance evidence are maintained.
 
-## Bản đồ tài liệu
+## Documentation Map
 
-### Kiến trúc
+### Architecture
 
-- [Tổng quan hệ thống](architecture/system-overview.md)
-- [Luồng guided form](architecture/guided-user-flows.md)
-- [Mô hình domain](architecture/domain-model.md)
-- [Chiến lược kiểm thử](architecture/testing-strategy.md)
-- [Các quyết định kiến trúc](architecture/decisions/)
+- [System Overview](architecture/system-overview.md)
+- [Autonomous Agent Architecture & Evaluation Harness](architecture/autonomous-agent-architecture.md)
+- [Guided User Flows](architecture/guided-user-flows.md)
+- [Domain Model](architecture/domain-model.md)
+- [Testing Strategy](architecture/testing-strategy.md)
+- [Architectural Decision Records (ADRs)](architecture/decisions/)
 
-### Retrieval và behavior
+### Retrieval and Behavior
 
-- [V4 behavior contract](pipeline_v4_behavior_contract.md)
-- [V4 test matrix](v4_test_matrix.md)
-- [RAG pipeline](rag_pipeline.md)
-- [Retrieval](retrieval/README.md)
+- [V4 Behavior Contract](pipeline_v4_behavior_contract.md)
+- [V4 Test Matrix](v4_test_matrix.md)
+- [RAG Pipeline](rag_pipeline.md)
+- [Retrieval Guide](retrieval/README.md)
 
-### Vận hành
+### Operations & Runbooks
 
-- [Local preview](runbooks/local-preview.md)
-- [Database migration](runbooks/database-migration.md)
-- [Production promotion](runbooks/production-promotion.md)
-- [Rollback](runbooks/rollback.md)
+- [Local Preview](runbooks/local-preview.md)
+- [Database Migration](runbooks/database-migration.md)
+- [Production Promotion](runbooks/production-promotion.md)
+- [Rollback Runbook](runbooks/rollback.md)
 
-### Acceptance
+### Acceptance & Quality
 
-The working-tree status is [Current acceptance status](acceptance_status.md).
-The current guided-UX acceptance report is [Guided user experience browser acceptance](browser_acceptance_report_guided_user_experience.md).
-Each report is scoped to the commit and environment it names; later commits
-are not covered automatically. The other reports below are historical
-snapshots and remain useful only for the release, pipeline, and environment
-they name.
+- [Current Acceptance Status](acceptance_status.md) — working-tree remediation status
+- [Guided User Experience Acceptance](browser_acceptance_report_guided_user_experience.md) — latest committed guided-UX snapshot
+- [Browser Acceptance Report](browser_acceptance_report.md) — historical browser/API snapshot
+- [V4 Acceptance Report](pipeline_v4_acceptance_report.md) — historical V4 pipeline snapshot
+- [Baseline Acceptance Report](acceptance_report.md) — historical baseline snapshot
 
-- [Current acceptance status](acceptance_status.md) — working-tree remediation status
-- [Guided user experience browser acceptance](browser_acceptance_report_guided_user_experience.md) — latest committed guided-UX snapshot
-- [Browser acceptance report](browser_acceptance_report.md) — historical browser/API snapshot
-- [V4 acceptance report](pipeline_v4_acceptance_report.md) — historical V4 pipeline snapshot
-- [Acceptance report](acceptance_report.md) — historical baseline snapshot
-
-Các sơ đồ Mermaid được đặt trực tiếp trong Markdown để GitHub render và để
-reviewer có thể review thay đổi kiến trúc cùng thay đổi code.
+Mermaid diagrams are embedded directly in Markdown files for inline GitHub rendering and peer review.

@@ -32,6 +32,7 @@ when evidence or a required dependency is missing.
 | Legal lookup | A streamed answer with source citations and a source drawer for comparison. |
 | Case assessment | A guided form that asks for the facts required by the selected task and returns a preliminary assessment. |
 | Compliance checklist | A guided list of preparation actions linked to the available evidence. |
+| Autonomous Agent | Dynamic multi-step reasoning (ReAct loop) with tool calling, budget control ($\le 5$ steps), and layman-friendly query handling. |
 | Follow-up and recovery | Continue an active case, stop a turn, retry a failed turn, or regenerate a persisted answer. |
 | Explicit web research | Search configured official domains only when the user selects the research workflow. |
 
@@ -148,6 +149,8 @@ From the repository root, install the development dependencies in a Python
 python -m pip install -e ".[dev]"
 python -m scripts.sync_corpus_metadata --check
 python -m pytest -q
+python tests/eval/agent_harness.py --suite all
+pytest tests/eval/test_non_user_flows.py -v
 ruff check src/epr_agent backend scripts tests
 mypy src/epr_agent backend
 python -m tests.eval.run_eval --suite all
@@ -208,6 +211,7 @@ Important settings include:
 | `OPENAI_API_KEY` | Embeddings and live answer generation. |
 | `CORPUS_RUNTIME_MODE` | `preview` for local/staging validation; `production` for a release candidate. |
 | `REQUIRE_AUTH` | Authentication switch; disable only for an isolated local test. |
+| `AGENT_PIPELINE_VERSION` | `pipeline-v4` for deterministic bounded workflow; `pipeline-agent` for autonomous ReAct agent loop. |
 | `DATABASE_URL` | PostgreSQL connection; local development may use `HISTORY_DB_PATH` when unset. |
 | `POSTGRES_PASSWORD` | Required by Compose; there is no insecure default. |
 | `QDRANT_URL` / `USE_QDRANT_CLOUD` | Self-hosted or Qdrant Cloud vector storage. |
@@ -239,7 +243,7 @@ Common API routes are:
 The main request path is:
 
 ```text
-React UI → Nginx/SSE → FastAPI → bounded workflow
+React UI → Nginx/SSE → FastAPI → bounded workflow / autonomous agent loop
                          → retrieval/evidence checks → answer or safe stop
                          → durable persistence → source-aware UI
 ```
@@ -248,16 +252,17 @@ The code and contracts are organised as follows:
 
 ```text
 backend/          FastAPI routes, authentication, configuration, and adapters
-src/epr_agent/    Domain models, workflow, retrieval, evidence, and persistence
+src/epr_agent/    Domain models, workflow, autonomous agent, retrieval, evidence, and persistence
 frontend-react/   React UI, SSE client, guided forms, and browser tests
 scripts/          Corpus synchronization, audit, and indexing utilities
 data/             Corpus manifests, rule pack, and checked-in fixtures
 docs/             Architecture, behavior contracts, runbooks, and acceptance notes
-tests/            Unit, contract, integration, evaluation, and API tests
+tests/            Unit, contract, integration, evaluation harness, and API tests
 ```
 
 Start with [docs/README.md](docs/README.md) for the documentation map,
-[the system overview](docs/architecture/system-overview.md), and
+[the system overview](docs/architecture/system-overview.md),
+[the autonomous agent architecture](docs/architecture/autonomous-agent-architecture.md), and
 [the V4 behavior contract](docs/pipeline_v4_behavior_contract.md).
 
 ## Production boundary

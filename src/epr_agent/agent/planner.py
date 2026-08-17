@@ -8,6 +8,7 @@ boundary between an agentic workflow and an unconstrained chatbot loop.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from epr_agent.domain.models import Action, AgentState
 from epr_agent.domain.routes import RouteType

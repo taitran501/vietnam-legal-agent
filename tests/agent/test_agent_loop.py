@@ -9,7 +9,6 @@ from epr_agent.agent.agent_loop import AgentRunConfig, EprAgentRunner
 from epr_agent.agent.tool_registry import ToolDependencies, set_tool_dependencies
 from epr_agent.domain.epr_rules import CaseFormResolver
 from epr_agent.domain.models import DocumentRecord
-from epr_agent.tools.cache import CachedAnswer
 from epr_agent.tools.evidence import EvidenceEvaluator
 from epr_agent.tools.history import ContextSnapshot, HistoryGateway
 from epr_agent.tools.retrieval import StaticRetrievalGateway

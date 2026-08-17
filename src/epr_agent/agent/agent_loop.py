@@ -11,13 +11,13 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from epr_agent.agent.agent_prompt import SYSTEM_PROMPT
 from epr_agent.agent.planner import AgentBudgetController
 from epr_agent.agent.tool_registry import ALL_AGENT_TOOLS
-from epr_agent.domain.models import DocumentRecord, TerminationReason
+from epr_agent.domain.models import TerminationReason
 
 logger = logging.getLogger(__name__)
 
@@ -370,7 +370,7 @@ class EprAgentRunner:
         try:
             result = await asyncio.wait_for(tool_func(**args), timeout=self.config.tool_timeout_s)
             return result if isinstance(result, dict) else {"result": result, "ok": True}
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return {"error": f"Tool '{name}' timed out after {self.config.tool_timeout_s}s", "ok": False}
         except Exception as exc:  # noqa: BLE001
             return {"error": f"{type(exc).__name__}: {exc}", "ok": False}

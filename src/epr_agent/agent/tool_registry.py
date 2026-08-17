@@ -17,7 +17,6 @@ from epr_agent.domain.epr_rules import (
     follow_up_question,
 )
 from epr_agent.domain.models import DocumentRecord, EvidenceAssessment, TaskType
-from epr_agent.domain.routes import RouteType
 from epr_agent.domain.v4 import FactConfirmationStatus, FactSource, FactValue
 from epr_agent.tools.cache import RedisExactAnswerCache, ScopedAnswerCache
 from epr_agent.tools.evidence import EvidenceEvaluator, verify_citations
@@ -95,7 +94,7 @@ def _suggest_followup(query: str, assessment: EvidenceAssessment) -> str | None:
     if assessment.reason == "content_too_short":
         return f"Thử mở rộng từ khóa hoặc thêm tên văn bản (ví dụ: '{query} Nghị định 08')"
     if assessment.reason == "not_enough_docs":
-        return f"Thử tìm bằng các thuật ngữ đồng nghĩa của EPR hoặc tên đối tượng liên quan."
+        return "Thử tìm bằng các thuật ngữ đồng nghĩa của EPR hoặc tên đối tượng liên quan."
     return None
 
 
@@ -200,7 +199,7 @@ async def lookup_answer_cache(query: str, route: str = "legal_lookup") -> dict[s
         cached, key = await deps.cache.lookup(TaskType.LEGAL_LOOKUP, query, route=route)
         if cached is not None:
             docs = [DocumentRecord.from_dict(d) for d in cached.evidence]
-            valid, _, reason = verify_citations(cached.answer, docs, TaskType.LEGAL_LOOKUP)
+            valid, _, _reason = verify_citations(cached.answer, docs, TaskType.LEGAL_LOOKUP)
             if valid:
                 return {
                     "hit": True,
@@ -227,7 +226,6 @@ async def evaluate_epr_obligation(facts: dict[str, str]) -> dict[str, Any]:
                {'business_role': 'manufacturer', 'object_kind': 'commercial_packaging',
                 'product_group': 'bao_bi', 'market_placement': 'vietnam_market', 'annual_revenue_vnd': '40000000000'}
     """
-    deps = get_tool_dependencies()
     try:
         typed_facts: dict[str, FactValue] = {
             k: FactValue(
