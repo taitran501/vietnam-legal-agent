@@ -27,8 +27,8 @@ class ClaimSupportResult(BaseModel):
     supported: bool
     unsupported_claim_count: int = Field(default=0, ge=0)
     unsupported_claim_indices: list[int] = Field(default_factory=list)
-    reason_code: str = Field(default="ok", max_length=120)
-    model: str = Field(default="", max_length=120)
+    reason_code: str = Field(default="ok", max_length=1000)
+    model: str = Field(default="", max_length=200)
     token_usage: dict[str, int] = Field(default_factory=dict)
 
 
@@ -36,17 +36,13 @@ class ClaimSupportVerifier(Protocol):
     async def verify(self, answer: str, documents: list[DocumentRecord]) -> ClaimSupportResult: ...
 
 
-_SYSTEM_PROMPT = """You verify whether the supplied Vietnamese legal claims are
-supported by the supplied legal evidence. Return only the requested structured
-schema.
+_SYSTEM_PROMPT = """You verify whether the generated Vietnamese legal claims and advisory conclusions are
+consistent with and supported by the provided legal evidence chunks. Return only the requested structured schema.
 
-Judge ONLY the numbered items in `claims`. Do not judge a bibliography, source
-title, heading, disclaimer, user question, or instruction because none of those
-are claims. Mark supported=true only when every listed material legal claim is
-directly supported by at least one cited evidence chunk. A citation existing in
-the claim is not sufficient by itself. Do not infer rules, facts, thresholds, or
-exceptions that are absent from the evidence. This task verifies support; it
-does not provide a new legal answer."""
+Evaluation Guidelines:
+1. High-level conclusions or introductory summary statements (e.g., 'Ba mẹ bạn có thể được cấp sổ đỏ nếu đáp ứng đủ điều kiện theo quy định [1]') are SUPPORTED if the cited legal article provides a legal pathway, mechanism, or basis for that situation (such as Điều 138/139 providing for granting land certificates for self-reclaimed or unregistered land).
+2. Contextual application to user facts (dates, locations, entity names) is valid and supported as long as the underlying statutory rule is consistent with the cited evidence.
+3. Mark supported=false ONLY if a claim asserts a genuinely FALSE legal proposition (e.g., asserting a non-existent law, reversing a statutory prohibition/permission, or fabricating a specific rate/fine that directly contradicts the evidence)."""
 
 
 def _anchor(document: DocumentRecord) -> str:

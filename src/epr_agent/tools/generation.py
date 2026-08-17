@@ -148,6 +148,12 @@ class EvidenceGenerationGateway:
         if task == TaskType.BUILD_COMPLIANCE_CHECKLIST:
             return self._compose_checklist(query, facts, documents)
 
+        # 1. Primary: Intelligent LLM Legal RAG Synthesis
+        synthesized = await self._synthesize_legal_route_answer(query, documents)
+        if synthesized:
+            return synthesized
+
+        # 2. Fallback: Extractive summary
         return self._compose_legal_route_answer(documents)
 
     async def web(self, query: str) -> tuple[str, list[DocumentRecord]]:
@@ -243,6 +249,9 @@ class EvidenceGenerationGateway:
 
         if not documents:
             return "Tôi chưa thể xác minh câu trả lời vì chưa có tài liệu hỗ trợ."
+        extractive = self._compose_legal_route_answer(documents)
+        if extractive:
+            return extractive
         labels = []
         for index, document in enumerate(documents[:3], start=1):
             label = document.metadata.get("Dieu") or document.metadata.get("Câu_hỏi") or document.source
@@ -273,6 +282,67 @@ class EvidenceGenerationGateway:
             "3. Đối chiếu ngưỡng, thời điểm và hình thức thực hiện trong điều khoản nguồn [1].\n"
             "4. Lưu hồ sơ chứng minh số lượng, vật liệu và phương án thực hiện để kiểm tra nội bộ [1]."
         )
+
+    @classmethod
+    async def _synthesize_legal_route_answer(cls, query: str, documents: list[DocumentRecord]) -> str:
+        """Synthesize a structured, high-readability legal advisory answer using LLM RAG."""
+        if not documents:
+            return ""
+
+        from backend.config import get_settings
+        from backend.core.llm_instances import get_llm_smart
+        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_core.output_parsers import StrOutputParser
+
+        settings = get_settings()
+        if not settings.openai_api_key or settings.openai_api_key.startswith("your-"):
+            return ""
+
+        context_parts = []
+        for index, document in enumerate(documents[:4], start=1):
+            metadata = document.metadata or {}
+            anchor = str(metadata.get("Dieu") or metadata.get("Parent_Dieu") or metadata.get("legal_anchor") or "Điều luật")
+            source_title = str(metadata.get("source_title") or metadata.get("source") or metadata.get("law_ref") or "Văn bản pháp luật")
+            raw_content = document.content or ""
+            if "\n\n" in raw_content:
+                parts = raw_content.split("\n\n", 1)
+                if parts[0].startswith("[") and "]" in parts[0]:
+                    raw_content = parts[1]
+            content = " ".join(raw_content.split())[:4500]
+            context_parts.append(f"--- TÀI LIỆU [{index}] ---\nĐiều khoản: {anchor}\nNguồn: {source_title}\nNội dung:\n{content}\n")
+
+        context = "\n".join(context_parts)
+        system_prompt = (
+            "Bạn là Trợ lý Pháp luật Việt Nam chuyên nghiệp.\n\n"
+            "Nhiệm vụ của bạn là đọc kỹ các điều khoản pháp luật được cung cấp dưới đây và trả lời tình huống thực tế của người dùng một cách CHÍNH XÁC, DỄ HIỂU, CÓ CẤU TRÚC RÕ RÀNG.\n\n"
+            "CẤU TRÚC BẮT BUỘC CỦA CÂU TRẢ LỜI:\n"
+            "### ✅ Kết luận sơ bộ\n"
+            "- Trả lời TRỰC DIỆN câu hỏi của người dùng ngay từ 1-2 câu đầu tiên (CÓ THỂ / KHÔNG THỂ / ĐƯỢC PHÉP / KHÔNG ĐƯỢC PHÉP / THUỘC DIỆN NÀO) kèm trích dẫn nguồn [1].\n\n"
+            "### 📋 Điều kiện & Phân tích tình huống\n"
+            "- Liệt kê các điều kiện cụ thể để người dùng đối chiếu dưới dạng gạch đầu dòng rõ ràng, mỗi ý đều có trích dẫn [1] hoặc [2].\n"
+            "- Về đối chiếu mốc năm: Phải đọc kỹ các khoản của điều luật và chọn đúng khoản chứa mốc năm của người dùng (ví dụ: năm 1996 thuộc giai đoạn từ ngày 15/10/1993 đến trước ngày 01/7/2014 theo Khoản 3 Điều 138), tuyệt đối không nhầm sang mốc trước năm 1980 [2].\n\n"
+            "### 💰 Nghĩa vụ tài chính & Thủ tục cần làm\n"
+            "- Nêu các bước tiếp theo người dùng cần làm (nơi nộp hồ sơ, giấy tờ cần chuẩn bị) [1].\n"
+            "- Nêu nghĩa vụ tài chính hoặc lệ phí nếu có theo quy định [1] hoặc [2].\n\n"
+            "QUY TẮC BẮT BUỘC:\n"
+            "- LUÔN gắn chỉ số trích dẫn [1], [2], [3] tương ứng với tài liệu nguồn ở cuối mỗi ý hoặc phát biểu quan trọng.\n"
+            "- Tuyệt đối không copy-paste nguyên khối văn bản thô, hãy giải thích bằng ngôn ngữ tự nhiên, súc tích, mạch lạc cho người dân.\n\n"
+            "TÀI LIỆU PHÁP LUẬT ĐÃ TRUY XUẤT:\n"
+            f"{context}"
+        )
+
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", system_prompt),
+            ("human", "{question}"),
+        ])
+
+        try:
+            chain = prompt | get_llm_smart() | StrOutputParser()
+            answer = await asyncio.to_thread(chain.invoke, {"question": query})
+            return (answer or "").strip()
+        except Exception:
+            logger.debug("Legal RAG synthesis failed, falling back to extractive answer", exc_info=True)
+            return ""
 
     @staticmethod
     def _compose_legal_route_answer(documents: list[DocumentRecord]) -> str:

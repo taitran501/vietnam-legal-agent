@@ -42,23 +42,18 @@ class _QueryRoute(BaseModel):
     )
 
 
-_ROUTER_SYSTEM = """Bạn là bộ lọc đầu vào cho chatbot pháp lý EPR.
+_ROUTER_SYSTEM = """Bạn là bộ lọc đầu vào cho Trợ lý Pháp luật Việt Nam.
 
 Phân loại câu hỏi vào ĐÚNG MỘT trong 2 nhóm:
 
-**epr_query** — Bất kỳ câu hỏi THỰC SỰ nào, kể cả:
-  - Câu hỏi về EPR, tái chế, luật môi trường (đây là trọng tâm)
-  - Câu hỏi pháp lý liên quan đến doanh nghiệp, nhà sản xuất
-  - Câu hỏi không rõ ràng nhưng có vẻ cần tra cứu thông tin
-  → Chọn epr_query khi nghi ngờ
+**epr_query** — Bất kỳ câu hỏi tra cứu hoặc tư vấn pháp lý thực sự nào (Đất đai, Lao động, Dân sự, Doanh nghiệp, Thuế, Môi trường/EPR, Giao thông, Hành chính...).
+  → Chọn nhóm này cho mọi câu hỏi cần đối chiếu pháp luật hoặc giải đáp tình huống.
 
 **chitchat** — CHỈ chọn khi câu hỏi là giao tiếp xã giao thuần túy:
   - Lời chào hỏi: "xin chào", "hello", "hi"
   - Cảm ơn, tạm biệt: "cảm ơn", "bye", "tạm biệt"
-  - Hỏi danh tính trợ lý: "bạn là ai", "bạn tên gì", "bạn làm được gì"
-  - Chuỗi ký tự vô nghĩa: "asdf", "123abc", spam
-
-QUY TẮC: Nếu câu hỏi có nội dung tra cứu dù không liên quan EPR → epr_query (corpus sẽ tự xử lý)."""
+  - Hỏi danh tính trợ lý: "bạn là ai", "bạn tên gì", "bạn làm được gì", "bạn giúp được gì"
+  - Chuỗi ký tự vô nghĩa: "asdf", "123abc", spam."""
 
 _router_prompt = ChatPromptTemplate.from_messages([
     ("system", _ROUTER_SYSTEM),

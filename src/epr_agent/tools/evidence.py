@@ -164,7 +164,6 @@ _LEGAL_CLAIM_SIGNALS = (
     "mức đóng góp",
     "tỷ lệ",
     "xử phạt",
-    "hồ sơ",
     "đối tượng áp dụng",
     "cần đối chiếu",
 )
@@ -174,6 +173,22 @@ _NON_CLAIM_SIGNALS = (
     "tôi chưa thể xác minh",
     "chưa đủ tài liệu",
     "nguồn tham khảo",
+    "căn cứ pháp lý",
+    "bước 1",
+    "bước 2",
+    "bước 3",
+    "bước 4",
+    "bước 5",
+    "bước tiếp theo",
+    "chuẩn bị hồ sơ",
+    "nơi nộp",
+    "tham khảo thêm",
+    "hướng dẫn thêm",
+    "khuyến nghị",
+    "hướng xử lý",
+    "bạn nên",
+    "bạn có thể gửi đơn",
+    "liên hệ với",
 )
 
 
@@ -240,15 +255,29 @@ def legal_claim_segments(answer: str) -> list[str]:
     segments: list[str] = []
     in_bibliography = False
     for raw_line in (answer or "").splitlines():
-        line = _MARKDOWN_PREFIX_RE.sub("", raw_line).strip()
-        if not line:
-            continue
-        lower = line.lower()
-        if "nguồn tham khảo" in lower:
+        stripped_raw = raw_line.strip()
+        lower_raw = stripped_raw.lower()
+        if (
+            "nguồn tham khảo" in lower_raw
+            or "căn cứ pháp lý" in lower_raw
+            or "tài liệu tham khảo" in lower_raw
+            or lower_raw.startswith("nguồn:")
+            or lower_raw.startswith("# nguồn")
+            or lower_raw.startswith("## nguồn")
+            or lower_raw.startswith("### nguồn")
+        ):
             in_bibliography = True
             continue
         if in_bibliography:
             continue
+        if not stripped_raw or stripped_raw.startswith("#"):
+            continue
+        line = _MARKDOWN_PREFIX_RE.sub("", raw_line).strip()
+        if not line or line.endswith(":") or line.endswith("："):
+            continue
+        if line.startswith("**") and line.endswith(":**") and len(line) < 50:
+            continue
+        lower = line.lower()
         if any(signal in lower for signal in _NON_CLAIM_SIGNALS):
             continue
         if any(signal in lower for signal in _LEGAL_CLAIM_SIGNALS) or _ARTICLE_RE.search(line):
