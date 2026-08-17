@@ -22,10 +22,11 @@ interface WorkflowTimelineProps {
   isStreaming: boolean;
   statusMessage?: string;
   steps: WorkflowStep[];
+  streamingContent?: string;
   turnStatus?: 'pending' | 'streaming' | 'complete' | 'stopped' | 'failed' | 'superseded';
 }
 
-export function WorkflowTimeline({ isStreaming, statusMessage, steps, turnStatus }: WorkflowTimelineProps) {
+export function WorkflowTimeline({ isStreaming, statusMessage, steps, streamingContent, turnStatus }: WorkflowTimelineProps) {
   const [expanded, setExpanded] = useState(false);
   const current = steps[steps.length - 1];
   const debugEnabled = import.meta.env.VITE_ENABLE_TRACE_DEBUG === 'true';
@@ -34,6 +35,7 @@ export function WorkflowTimeline({ isStreaming, statusMessage, steps, turnStatus
     if (isStreaming) setExpanded(false);
   }, [isStreaming]);
 
+  if (isStreaming && Boolean(streamingContent)) return null;
   if (!isStreaming && (turnStatus === 'complete' || steps.length === 0)) return null;
 
   const currentLabel = isStreaming ? (current?.label || 'Đang kiểm tra thông tin và căn cứ…') : current?.label || (current ? labels[current.action] || 'Đang xử lý' : statusMessage || 'Đang chuẩn bị…');

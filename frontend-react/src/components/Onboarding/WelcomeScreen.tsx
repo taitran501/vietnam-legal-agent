@@ -77,6 +77,25 @@ export const legalGoals: LegalGoal[] = [
   },
 ];
 
+export const actions = [
+  {
+    icon: 'search' as const,
+    label: 'Tra cứu quy định',
+    prompt: 'Điều 77 quy định gì về trách nhiệm tái chế?',
+    intent: 'legal_lookup',
+  },
+  {
+    icon: 'building' as const,
+    label: 'Kiểm tra trường hợp của doanh nghiệp',
+    taskType: 'assess_epr_obligation' as const,
+  },
+  {
+    icon: 'checklist' as const,
+    label: 'Tạo danh sách việc cần làm',
+    taskType: 'build_compliance_checklist' as const,
+  },
+];
+
 export const defaultSuggestions = [
   'Thủ tục cấp Giấy chứng nhận quyền sử dụng đất (Sổ đỏ) lần đầu theo Luật Đất đai mới.',
   'Thời gian thử việc tối đa và mức lương thử việc theo quy định Bộ luật Lao động.',
@@ -94,6 +113,7 @@ export function WelcomeScreen({
   onDraftChange,
   intentLabel,
   onClearIntent,
+  onStartCase,
   guidedTask = null,
   onGuidedSubmit,
   onGuidedDraftChange,
@@ -110,6 +130,16 @@ export function WelcomeScreen({
   const handlePrefill = (prompt: string, intent: string) => {
     onPrefillPrompt(prompt, intent);
     setPrefillRevision((revision) => revision + 1);
+  };
+
+  const handleAction = (action: (typeof actions)[number]) => {
+    if (action.taskType && onStartCase) {
+      onStartCase(action.taskType);
+      return;
+    }
+    if (action.prompt) {
+      handlePrefill(action.prompt, action.intent);
+    }
   };
 
   const handleGoalClick = (goal: LegalGoal) => {
@@ -163,23 +193,39 @@ export function WelcomeScreen({
                 placeholder={activeGoal?.placeholder}
                 variant="welcome"
               />
-              <div className="mt-3 flex flex-wrap justify-center gap-2" aria-label="Mục tiêu pháp lý">
+              <div className="mt-3 flex flex-wrap justify-center gap-2" aria-label="Tác vụ gợi ý">
+                {actions.map((action) => (
+                  <button
+                    aria-describedby={action.taskType && caseDisabled && caseDisabledReason ? 'case-capability-message' : undefined}
+                    className="inline-flex min-h-10 items-center gap-2 rounded-full border border-[#bdc9c6] bg-white px-3.5 py-2 text-xs font-medium text-[#3e4947] transition-colors hover:border-[#0f766e] hover:bg-[#f1f4f3] hover:text-[#005c55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] sm:text-sm"
+                    disabled={isStreaming || (!action.taskType && disabled) || Boolean(action.taskType && caseDisabled)}
+                    key={action.label}
+                    onClick={() => handleAction(action)}
+                    title={action.taskType && caseDisabled ? caseDisabledReason : undefined}
+                    type="button"
+                  >
+                    <Icon name={action.icon} size={16} />
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-2 flex flex-wrap justify-center gap-2" aria-label="Mục tiêu pháp lý">
                 {legalGoals.map((goal) => {
                   const isSelected = selectedGoalId === goal.id;
                   return (
                     <button
                       className={cn(
-                        'inline-flex min-h-10 items-center gap-2 rounded-full border px-3.5 py-2 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] sm:text-sm',
+                        'inline-flex min-h-9 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e]',
                         isSelected
                           ? 'border-[#0f766e] bg-[#e7f4f1] font-semibold text-[#005c55] shadow-sm ring-1 ring-[#0f766e]'
-                          : 'border-[#bdc9c6] bg-white text-[#3e4947] hover:border-[#0f766e] hover:bg-[#f1f4f3] hover:text-[#005c55]'
+                          : 'border-[#d9e1df] bg-[#f7faf8] text-[#53615e] hover:border-[#0f766e] hover:bg-white hover:text-[#005c55]'
                       )}
                       disabled={isStreaming || disabled}
                       key={goal.id}
                       onClick={() => handleGoalClick(goal)}
                       type="button"
                     >
-                      <Icon name={goal.icon} size={16} />
+                      <Icon name={goal.icon} size={15} />
                       {goal.label}
                     </button>
                   );

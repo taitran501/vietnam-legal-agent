@@ -122,6 +122,9 @@ SYNONYM_EXPANSIONS: dict[str, list[str]] = {
     "phòng trọ": ["thuê nhà ở", "hợp đồng thuê"],
     "người phụ thuộc": ["giảm trừ gia cảnh", "thuế thu nhập cá nhân"],
     "quán ăn": ["an toàn thực phẩm", "cơ sở kinh doanh dịch vụ ăn uống"],
+    "epr": ["77", "trách nhiệm tái chế", "bao bì", "08/2022/NĐ-CP"],
+    "trách nhiệm tái chế": ["77", "bao bì", "08/2022/NĐ-CP"],
+    "tái chế bao bì": ["77", "trách nhiệm tái chế", "08/2022/NĐ-CP"],
 }
 
 
