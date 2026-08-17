@@ -172,8 +172,6 @@ _NON_CLAIM_SIGNALS = (
     "không thay thế việc kiểm tra hồ sơ pháp lý",
     "tôi chưa thể xác minh",
     "chưa đủ tài liệu",
-    "nguồn tham khảo",
-    "căn cứ pháp lý",
     "bước 1",
     "bước 2",
     "bước 3",
@@ -259,12 +257,9 @@ def legal_claim_segments(answer: str) -> list[str]:
         lower_raw = stripped_raw.lower()
         if (
             "nguồn tham khảo" in lower_raw
-            or "căn cứ pháp lý" in lower_raw
             or "tài liệu tham khảo" in lower_raw
-            or lower_raw.startswith("nguồn:")
-            or lower_raw.startswith("# nguồn")
-            or lower_raw.startswith("## nguồn")
-            or lower_raw.startswith("### nguồn")
+            or lower_raw.startswith(("nguồn:", "căn cứ pháp lý:", "# căn cứ pháp lý", "## căn cứ pháp lý", "### căn cứ pháp lý", "# nguồn", "## nguồn", "### nguồn"))
+            or (len(stripped_raw) < 40 and "căn cứ pháp lý" in lower_raw and stripped_raw.endswith((": ", ":", "：")))
         ):
             in_bibliography = True
             continue
@@ -273,7 +268,7 @@ def legal_claim_segments(answer: str) -> list[str]:
         if not stripped_raw or stripped_raw.startswith("#"):
             continue
         line = _MARKDOWN_PREFIX_RE.sub("", raw_line).strip()
-        if not line or line.endswith(":") or line.endswith("："):
+        if not line or line.endswith((":", "：")):
             continue
         if line.startswith("**") and line.endswith(":**") and len(line) < 50:
             continue

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import re
 import unicodedata
 from typing import Any, Protocol
@@ -17,6 +18,8 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from pydantic import BaseModel, Field
 
 from epr_agent.domain.models import DocumentRecord, TaskType
+
+logger = logging.getLogger(__name__)
 
 _WEB_ARTICLE_RE = re.compile(r"\bđiều\s+(\d+[a-zđ]?)\b", re.IGNORECASE)
 _WEB_INSTRUMENT_RE = re.compile(r"\b\d{1,3}/\d{4}/n[dđ]-cp\b", re.IGNORECASE)
@@ -291,8 +294,8 @@ class EvidenceGenerationGateway:
 
         from backend.config import get_settings
         from backend.core.llm_instances import get_llm_smart
-        from langchain_core.prompts import ChatPromptTemplate
         from langchain_core.output_parsers import StrOutputParser
+        from langchain_core.prompts import ChatPromptTemplate
 
         settings = get_settings()
         if not settings.openai_api_key or settings.openai_api_key.startswith("your-"):

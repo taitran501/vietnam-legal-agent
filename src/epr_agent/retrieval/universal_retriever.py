@@ -24,7 +24,7 @@ LEGAL_STOP_WORDS = {
     "xin", "hỏi", "quy", "định", "như_thế_nào", "ra_sao", "bao_nhiêu", "cho_tôi", "làm_sao",
     "tui", "ba", "mẹ", "bố", "miếng", "ở", "từ", "năm", "hết", "giờ", "được_không", "chưa",
     "nhé", "bro", "nha", "vậy", "cho_em_hỏi", "mấy", "mới", "đang", "này", "đó", "kia", "thôi",
-    "ai", "đâu", "nào", "sao", "lại", "đã", "sẽ", "đang", "cũng", "đều", "rồi", "ngay"
+    "ai", "đâu", "sao", "lại", "đã", "sẽ", "cũng", "đều", "rồi", "ngay",
 }
 
 # Domain keyword boosts for Vietnamese law
@@ -192,7 +192,7 @@ class UniversalLegalRetriever:
         if not clean_query:
             return []
 
-        laws, phrases, words = self._extract_components(clean_query)
+        laws, phrases, _words = self._extract_components(clean_query)
         terms = self._extract_search_terms(clean_query)
         if not terms:
             terms = re.findall(r"\b[\w\.]+\b", clean_query)[:4]

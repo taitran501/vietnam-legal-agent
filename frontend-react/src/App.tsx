@@ -9,7 +9,6 @@ import { Header } from '@/components/Layout/Header';
 import { ToastContainer } from '@/components/UI/Toast';
 import { Drawer } from '@/components/UI/Drawer';
 import { Icon } from '@/components/UI/Icon';
-import { WorkflowTimeline } from '@/components/Agent/WorkflowTimeline';
 import { CaseFactsPanel } from '@/components/Case/CaseFactsPanel';
 import { GuidedCaseCard } from '@/components/Case/GuidedCaseCard';
 import { useChatStream } from '@/hooks/useChatStream';
@@ -30,7 +29,7 @@ import {
   rememberReturnTo,
 } from '@/auth/oidc';
 import { getMe } from '@/api/me';
-import { capabilityUnavailableCopy, eprPlainName, previewNotice, taskCopy } from '@/lib/userCopy';
+import { capabilityUnavailableCopy, previewNotice, taskCopy } from '@/lib/userCopy';
 import { downloadPreliminaryReport } from '@/lib/reportExport';
 
 interface OpenSources {
@@ -95,7 +94,6 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
     statusMessage,
     activeSessionId,
     activeCase,
-    workflowSteps,
     error,
     composerDraft,
     sessionLoadStatus,
@@ -116,7 +114,6 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
         : legalReady
           ? 'ready'
           : 'blocked';
-  const lastAssistantStatus = [...messages].reverse().find((message) => message.role === 'assistant')?.status;
 
   const intentLabels: Record<string, string> = {
     legal_lookup: 'Kiểm tra tính hợp pháp & Nghĩa vụ',

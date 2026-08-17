@@ -94,7 +94,6 @@ export function WelcomeScreen({
   onDraftChange,
   intentLabel,
   onClearIntent,
-  onStartCase: _onStartCase,
   guidedTask = null,
   onGuidedSubmit,
   onGuidedDraftChange,

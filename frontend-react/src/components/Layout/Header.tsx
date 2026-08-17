@@ -1,6 +1,5 @@
 import { Icon } from '@/components/UI/Icon';
 import type { MeResponse } from '@/api/me';
-import { eprPlainName } from '@/lib/userCopy';
 
 interface HeaderProps {
   hasActiveCase?: boolean;
