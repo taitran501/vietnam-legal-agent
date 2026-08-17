@@ -136,16 +136,16 @@ def extract_explicit_epr_facts(query: str, *, source: FactSource = FactSource.US
 
     text = _normalise(query)
     found: dict[str, FactValue] = {}
-    if re.search(r"nhà\s*sản\s*xuất|sản\s*xuất", text):
-        found["business_role"] = _fact("manufacturer", source, "nhà sản xuất", turn_id=turn_id)
-    elif re.search(r"nhà\s*nhập\s*khẩu|nhập\s*khẩu", text):
+    if re.search(r"nhà\s*sản\s*xuất|sản\s*xuất|xưởng\s*(?:tôi|em|mình|chúng tôi)?\s*(?:làm|sản xuất|gia công|chế tạo)|nhà\s*máy\s*sản\s*xuất|cơ\s*sở\s*sản\s*xuất|tự\s*làm|tự\s*sản\s*xuất", text):
+        found["business_role"] = _fact("manufacturer", source, "sản xuất", turn_id=turn_id)
+    elif re.search(r"nhà\s*nhập\s*khẩu|nhập\s*khẩu|nhập\s*từ|nhập\s*về|nhập\s*hàng|mua\s*từ\s*nước\s*ngoài", text):
         found["business_role"] = _fact("importer", source, "nhập khẩu", turn_id=turn_id)
 
     if "nguyên liệu" in text:
         found["object_kind"] = _fact("raw_material", source, "nguyên liệu", turn_id=turn_id)
     elif "chất thải" in text or "phát sinh trong quá trình sản xuất" in text:
         found["object_kind"] = _fact("production_waste", source, "chất thải", turn_id=turn_id)
-    elif "bao bì" in text:
+    elif any(p in text for p in ("bao bì", "hộp xốp", "túi ni-lông", "túi nilon", "túi bóng", "chai nhựa", "cốc nhựa", "ly nhựa", "hộp nhựa", "can nhựa", "thùng carton", "hộp giấy", "chai lọ")):
         found["object_kind"] = _fact("commercial_packaging", source, "bao bì", turn_id=turn_id)
         found["product_group"] = _fact("bao_bi", source, "bao bì", turn_id=turn_id)
     else:
@@ -161,16 +161,20 @@ def extract_explicit_epr_facts(query: str, *, source: FactSource = FactSource.US
             break
     if "hàng hóa khác" in text or "nhóm hàng hóa khác" in text:
         found["packaged_goods_category"] = _fact("other", source, "hàng hóa khác", turn_id=turn_id)
-    for marker, material in (("pet", "pet"), ("pe", "pe_pp"), ("pp", "pe_pp"), ("nhựa", "plastic"), ("giấy", "paper"), ("thủy tinh", "glass"), ("kim loại", "metal"), ("cao su", "rubber")):
+    for marker, material in (
+        ("pet", "pet"), ("pe", "pe_pp"), ("pp", "pe_pp"),
+        ("nhựa", "plastic"), ("hộp xốp", "plastic"), ("xốp", "plastic"), ("túi ni-lông", "plastic"), ("túi nilon", "plastic"),
+        ("giấy", "paper"), ("thủy tinh", "glass"), ("kim loại", "metal"), ("cao su", "rubber"),
+    ):
         if marker in text:
             found["material"] = _fact(material, source, marker, turn_id=turn_id)
             break
 
-    if re.search(r"chỉ\s*xuất\s*khẩu|xuất\s*khẩu\s*toàn\s*bộ", text):
+    if re.search(r"chỉ\s*xuất\s*khẩu|xuất\s*khẩu\s*toàn\s*bộ|chỉ\s*bán\s*ra\s*nước\s*ngoài", text):
         found["market_placement"] = _fact("export_only", source, "xuất khẩu", turn_id=turn_id)
     elif "tạm nhập" in text and "tái xuất" in text:
         found["market_placement"] = _fact("temporary_import_reexport", source, "tạm nhập tái xuất", turn_id=turn_id)
-    elif any(marker in text for marker in ("đưa ra thị trường việt nam", "bán tại việt nam", "thị trường việt nam", "thị trường vn")):
+    elif any(marker in text for marker in ("đưa ra thị trường việt nam", "bán tại việt nam", "bán ở việt nam", "bán tại vn", "bán ở vn", "tại việt nam", "ở việt nam", "tại vn", "ở vn", "thị trường việt nam", "thị trường vn", "trong nước", "nội địa", "bán cho các chợ", "bán cho quán", "về vn", "về việt nam")):
         found["market_placement"] = _fact("vietnam_market", source, "thị trường Việt Nam", turn_id=turn_id)
 
     if any(marker in text for marker in ("nghiên cứu", "học tập", "thử nghiệm")):

@@ -202,6 +202,44 @@ def _build_mock_llm_for_case(case: AgentTestCase) -> Any:
         responses = [AIMessage(content="Xin chào! Tôi có thể giúp gì cho bạn?")]
     elif case.category == "out_of_scope":
         responses = [AIMessage(content="Câu hỏi hiện nằm ngoài phạm vi tra cứu EPR của hệ thống.")]
+    elif case.category == "layman_vague":
+        responses = [
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "search_legal_provisions", "args": {"query": "EPR trách nhiệm mở rộng nhà sản xuất Điều 77"}, "id": "call_1"}],
+            ),
+            AIMessage(
+                content="EPR là quy định về trách nhiệm tái chế đối với nhà sản xuất và nhập khẩu theo Điều 77 Luật BVMT [1].",
+            ),
+        ]
+    elif case.category == "layman_misconception":
+        responses = [
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "search_legal_provisions", "args": {"query": "đối tượng chịu trách nhiệm EPR Điều 77"}, "id": "call_1"}],
+            ),
+            AIMessage(
+                content="Chào bạn, bạn là cơ sở bán lẻ sử dụng cốc chứ không phải là nhà sản xuất theo Điều 77 [1], nên bạn không phải nộp phí [1].",
+            ),
+        ]
+    elif case.category == "layman_workshop":
+        responses = [
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "get_case_form_fields", "args": {"task_type": "assess_epr_obligation", "known_facts": case.mock_facts}, "id": "call_1"}],
+            ),
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "evaluate_epr_obligation", "args": {"facts": case.mock_facts}, "id": "call_2"}],
+            ),
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "search_legal_provisions", "args": {"query": "ngưỡng miễn trừ 30 tỷ Điều 54"}, "id": "call_3"}],
+            ),
+            AIMessage(
+                content="Xưởng của bạn có doanh thu 12 tỷ (dưới 30 tỷ/năm) nên thuộc diện được miễn trừ trách nhiệm tái chế theo quy định tại Điều 77 [1].",
+            ),
+        ]
 
     class ProgrammedLLM:
         def __init__(self, message_sequence: list[AIMessage]) -> None:
