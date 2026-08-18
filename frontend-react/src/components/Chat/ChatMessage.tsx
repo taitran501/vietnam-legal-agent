@@ -19,14 +19,6 @@ interface ChatMessageProps {
   webResearchReady: boolean;
 }
 
-const sourceLabels: Record<string, string> = {
-  legal: 'Căn cứ pháp luật',
-  chitchat: 'Hội thoại',
-  web_search: 'Nguồn chính thức bên ngoài kho văn bản',
-  cache: 'Câu trả lời đã xác minh',
-  follow_up: 'Đang làm rõ thông tin',
-};
-
 export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOpenSources, onRegenerate, onResearch, onExport, webResearchReady }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
@@ -104,13 +96,22 @@ export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOp
             onOpen={(documents, citations) => onOpenSources(documents, citations, undefined, message.workflow?.preview)}
           />
 
-          <div className="mt-3 flex min-h-8 flex-wrap items-center justify-between gap-2 border-t border-[#edf0ef] pt-2">
-            <div className="text-[11px] text-[#667085]">
-              {message.source && message.source !== 'error' && (
-                <span>{sourceLabels[message.source] || 'Nguồn tham khảo'}</span>
+          <div className="mt-3 flex min-h-8 items-center justify-between gap-2 border-t border-slate-100 pt-2">
+            <div className="text-[11px] text-slate-500">
+              {message.source === 'web_search' && (
+                <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-600">
+                  <Icon name="search" size={11} />
+                  Nguồn bổ sung từ web
+                </span>
+              )}
+              {message.source === 'cache' && (
+                <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">
+                  <Icon name="check" size={11} />
+                  Câu trả lời đã thẩm định
+                </span>
               )}
             </div>
-            <div className="opacity-100">
+            <div>
               <MessageActions
                 copied={copied}
                 message={message}
