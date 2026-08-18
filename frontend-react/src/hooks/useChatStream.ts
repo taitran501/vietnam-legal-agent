@@ -345,13 +345,34 @@ export function useChatStream() {
     sessionId: string,
     targetMessageId: number,
     operation: Extract<TurnOperation, 'retry' | 'regenerate'>,
+    explicitQuery?: string,
   ) => {
     if (useChatStore.getState().isStreaming) return;
+
+    // Find the original user prompt for this message turn
+    const messages = useChatStore.getState().messages;
+    let queryToReplay = explicitQuery || '';
+    if (!queryToReplay) {
+      const targetIdx = messages.findIndex((m) => m.serverMessageId === targetMessageId);
+      if (targetIdx >= 0) {
+        for (let i = targetIdx - 1; i >= 0; i--) {
+          if (messages[i].role === 'user' && messages[i].content?.trim()) {
+            queryToReplay = messages[i].content.trim();
+            break;
+          }
+        }
+      }
+      if (!queryToReplay) {
+        const lastUser = [...messages].reverse().find((m) => m.role === 'user' && m.content?.trim());
+        queryToReplay = lastUser?.content?.trim() || '';
+      }
+    }
+
     const turnId = crypto.randomUUID();
     const assistant = makeAssistant(turnId);
     useChatStore.getState().addMessage(assistant);
     await runAssistantStream({
-      query: '',
+      query: queryToReplay,
       sessionId,
       mode: 'auto',
       options: {
@@ -364,10 +385,13 @@ export function useChatStream() {
   }, [runAssistantStream]);
 
   const regenerateResponse = useCallback(async (sessionId: string) => {
-    const target = [...useChatStore.getState().messages]
+    const messages = useChatStore.getState().messages;
+    const target = [...messages]
       .reverse()
       .find((message) => message.role === 'assistant' && message.status === 'complete' && message.serverMessageId);
-    if (target?.serverMessageId) await startReplay(sessionId, target.serverMessageId, 'regenerate');
+    if (target?.serverMessageId) {
+      await startReplay(sessionId, target.serverMessageId, 'regenerate');
+    }
   }, [startReplay]);
 
   const retryLastTurn = useCallback(async () => {

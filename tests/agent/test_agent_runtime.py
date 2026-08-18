@@ -150,6 +150,59 @@ async def test_agent_runtime_successful_stream(agent_deps):
 
 
 @pytest.mark.asyncio
+async def test_agent_runtime_regenerate_empty_query_recovery(agent_deps):
+    # Setup history with prior user query
+    class HistoryWithPriorTurn(FakeHistory):
+        async def load(self, user_id: str, conversation_id: str, max_messages: int = 6) -> ContextSnapshot:
+            return ContextSnapshot(
+                history=[{"role": "user", "content": "Thời gian thử việc tối đa là bao lâu?"}],
+                summary="",
+                active_case=None,
+            )
+
+    deps_with_history = WorkflowDependencies(
+        history=HistoryWithPriorTurn(),
+        cache=agent_deps.cache,
+        retrieval=agent_deps.retrieval,
+        evidence=agent_deps.evidence,
+        generation=agent_deps.generation,
+        planner=agent_deps.planner,
+    )
+
+    doc = DocumentRecord(
+        content="Điều 25 Bộ luật Lao động 2019: Thời gian thử việc tối đa 60 ngày đối với công việc có chức danh nghề nghiệp cần trình độ chuyên môn...",
+        document_id="doc-25",
+        metadata={"legal_anchor": "Điều 25", "source": "Bộ luật Lao động 2019"},
+    )
+    result = AgentRunResult(
+        answer="Thời gian thử việc tối đa là 60 ngày theo Điều 25 [1].",
+        termination_reason=TerminationReason.ANSWER_COMPLETE.value,
+        trajectory=[AgentStep(1, "search_legal_provisions", {"query": "thử việc"}, {}, 10.0, True)],
+        evidence=[doc.to_dict()],
+        citations=[{"index": 1, "document_id": "doc-25", "label": "Điều 25"}],
+        source="legal",
+        steps_taken=1,
+        cache_hit=False,
+    )
+    fake_runner = FakeRunner(result)
+    runtime = AgentWorkflowRuntime(deps_with_history, runner=fake_runner)
+
+    # Calling stream with query="" and operation="regenerate"
+    events = []
+    async for e in runtime.stream(
+        query="",
+        user_id="u1",
+        conversation_id="c1",
+        operation="regenerate",
+    ):
+        events.append(e)
+
+    complete = next(e for e in events if e.get("type") == "response_complete")
+    assert complete["termination_reason"] == "answer_complete"
+    assert "Thời gian thử việc" in complete["text"] or "[1]" in complete["text"]
+
+
+@pytest.mark.asyncio
 async def test_get_default_runtime_feature_flag(monkeypatch):
     from backend.config import get_settings
     get_default_runtime.cache_clear()

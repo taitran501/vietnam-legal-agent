@@ -412,10 +412,22 @@ class AgentWorkflowRuntime:
         started_at = time.perf_counter()
         started_wall = datetime.now(UTC)
 
+        operation = str(kwargs.get("operation") or "message")
+        target_assistant_message_id = kwargs.get("target_assistant_message_id")
+
         from backend.config import get_settings
         from epr_agent.tracing.trace_context import get_trace_store
 
         preview = get_settings().corpus_runtime_mode == "preview"
+
+        # ── 1. Context Loading & Query Recovery for Replays ──
+        snapshot = await self.deps.history.load(user_id, conversation_id, max_messages=6)
+        if not query and operation in {"retry", "regenerate"}:
+            for msg in reversed(snapshot.history):
+                if msg.get("role") == "user" and str(msg.get("content") or "").strip():
+                    query = str(msg["content"]).strip()
+                    break
+
         trace_session = get_trace_store().create_trace(
             trace_id=trace_id,
             conversation_id=conversation_id,
@@ -423,7 +435,7 @@ class AgentWorkflowRuntime:
             query=query,
         )
 
-        # ── 1. Input Validation Guardrail ──
+        # ── 2. Input Validation Guardrail ──
         s_val = trace_session.start_span("validate_input")
         yield {"type": "status", "message": "Đang kiểm tra câu hỏi…", "stage": "validate_input"}
         is_valid, _input_reason = self._guardrails.check_input(query)
@@ -444,12 +456,6 @@ class AgentWorkflowRuntime:
                 "trace_id": trace_id,
             }
             return
-
-        # ── 2. Context Loading ──
-        s_ctx = trace_session.start_span("load_context")
-        yield {"type": "status", "message": "Đang nạp ngữ cảnh cuộc trò chuyện…", "stage": "load_context"}
-        snapshot = await self.deps.history.load(user_id, conversation_id, max_messages=6)
-        s_ctx.close(extra_attrs={"history_len": len(snapshot.history)})
 
         # ── 3. Fast Bypass for Chitchat & Out of Scope ──
         from epr_agent.domain.tasks import classify_route
