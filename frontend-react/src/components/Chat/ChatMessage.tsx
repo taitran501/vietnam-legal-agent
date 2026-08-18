@@ -4,6 +4,7 @@ import { formatTimestamp } from '@/lib/formatters';
 import { MarkdownRenderer } from '@/utils/markdown';
 import { MessageActions } from './MessageActions';
 import { SourceDocuments } from './SourceDocuments';
+import { ReasoningBlock } from './ReasoningBlock';
 import { WorkflowResultCard } from '@/components/Agent/WorkflowResultCard';
 import { Icon } from '@/components/UI/Icon';
 
@@ -65,6 +66,15 @@ export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOp
               Đã dừng theo yêu cầu · nội dung chưa hoàn chỉnh
             </div>
           )}
+
+          {message.workflow?.steps && message.workflow.steps.length > 0 && (
+            <ReasoningBlock
+              defaultExpanded={false}
+              isStreaming={false}
+              steps={message.workflow.steps}
+            />
+          )}
+
           <div className="legal-prose max-w-none text-[15px] leading-7 text-[#262d2c] sm:text-base">
             <MarkdownRenderer
               content={message.content}

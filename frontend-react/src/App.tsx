@@ -9,7 +9,6 @@ import { Header } from '@/components/Layout/Header';
 import { ToastContainer } from '@/components/UI/Toast';
 import { Drawer } from '@/components/UI/Drawer';
 import { Icon } from '@/components/UI/Icon';
-import { WorkflowTimeline } from '@/components/Agent/WorkflowTimeline';
 import { CaseFactsPanel } from '@/components/Case/CaseFactsPanel';
 import { GuidedCaseCard } from '@/components/Case/GuidedCaseCard';
 import { useChatStream } from '@/hooks/useChatStream';
@@ -116,7 +115,6 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
         : legalReady
           ? 'ready'
           : 'blocked';
-  const lastAssistantStatus = [...messages].reverse().find((message) => message.role === 'assistant')?.status;
 
   const intentLabels: Record<string, string> = {
     legal_lookup: 'Kiểm tra tính hợp pháp & Nghĩa vụ',
@@ -409,6 +407,7 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
         onRetry={() => void retryLastTurn()}
         statusMessage={statusMessage}
         streamingContent={streamingContent}
+        workflowSteps={workflowSteps}
       />
       {guidedTask && guidedDraft?.formState && error && !isStreaming && (
         <div className="shrink-0 border-t border-[#d9e1df] bg-[#fcfcfa] px-3 py-3 sm:px-6">
@@ -424,14 +423,7 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
         </div>
       )}
       <div className="shrink-0 border-t border-[#d9e1df] bg-[#fcfcfa]/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:px-6">
-        <WorkflowTimeline
-          isStreaming={isStreaming}
-          statusMessage={statusMessage}
-          steps={workflowSteps}
-          streamingContent={streamingContent}
-          turnStatus={lastAssistantStatus}
-        />
-        <div className="mx-auto flex max-w-[820px] justify-center mt-2">
+        <div className="mx-auto flex max-w-[820px] justify-center">
           <ChatInput
             disabled={!legalReady}
             isStreaming={isStreaming}

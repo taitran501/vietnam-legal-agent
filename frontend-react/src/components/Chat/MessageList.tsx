@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { CaseState, ChatMessage, SourceDocument, StreamError } from '@/types';
+import type { CaseState, ChatMessage, SourceDocument, StreamError, WorkflowStep } from '@/types';
 import { ChatMessageComponent } from './ChatMessage';
 import { TypingIndicator } from './TypingIndicator';
 import { useAutoScroll } from '@/hooks/useAutoScroll';
@@ -20,6 +20,7 @@ interface MessageListProps {
   statusMessage?: string;
   streamingContent: string;
   webResearchReady: boolean;
+  workflowSteps?: WorkflowStep[];
 }
 
 export function MessageList({
@@ -36,6 +37,7 @@ export function MessageList({
   statusMessage,
   streamingContent,
   webResearchReady,
+  workflowSteps = [],
 }: MessageListProps) {
   const [retryCountdown, setRetryCountdown] = useState(0);
   const { containerRef, scrollToBottom, isAtBottom } = useAutoScroll({ enabled: true });
@@ -99,14 +101,23 @@ export function MessageList({
                   </span>
                   <p className="text-sm font-semibold text-[#005c55]">Trợ lý pháp lý</p>
                 </div>
-                <div data-testid="streaming-answer" className="ml-0 mt-3 whitespace-pre-wrap break-words text-[15px] leading-7 text-[#262d2c] typing-cursor sm:ml-[42px] sm:text-base">
-                  {streamingContent}
+                <div className="ml-0 mt-3 sm:ml-[42px]">
+                  {workflowSteps.length > 0 && (
+                    <div className="mb-3">
+                      <TypingIndicator message={statusMessage} steps={workflowSteps} />
+                    </div>
+                  )}
+                  <div data-testid="streaming-answer" className="whitespace-pre-wrap break-words text-[15px] leading-7 text-[#262d2c] typing-cursor sm:text-base">
+                    {streamingContent}
+                  </div>
                 </div>
               </div>
             </article>
           )}
 
-          {isStreaming && !streamingContent && <TypingIndicator message={statusMessage || 'Đang hiểu yêu cầu…'} />}
+          {isStreaming && !streamingContent && (
+            <TypingIndicator message={statusMessage || 'Đang hiểu yêu cầu…'} steps={workflowSteps} />
+          )}
 
           {error && (
             <div className="px-4 py-5 sm:px-6">

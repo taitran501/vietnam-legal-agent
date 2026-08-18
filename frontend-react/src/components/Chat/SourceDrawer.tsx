@@ -23,23 +23,26 @@ function textValue(value: unknown): string | undefined {
 function metadataValue(document: SourceDocument, keys: string[]): string | undefined {
   for (const key of keys) {
     const value = textValue(document.metadata?.[key]);
-    if (value) return value;
+    if (value && value !== 'Chưa có trong metadata' && value !== 'unknown') return value;
   }
   return undefined;
 }
 
 function documentTitle(document: SourceDocument, index: number): string {
-  return (
-    metadataValue(document, ['source_title', 'Source_Title', 'title', 'document_title', 'ten_van_ban', 'source', 'file_name', 'Document_Number']) ||
-    `Nguồn pháp lý ${index + 1}`
-  );
+  const explicit = metadataValue(document, ['Dieu', 'dieu', 'article_title', 'source_title', 'Source_Title', 'title', 'document_title', 'ten_van_ban']);
+  if (explicit) return explicit;
+  return `Nguồn căn cứ pháp lý ${index + 1}`;
+}
+
+function documentLawName(document: SourceDocument): string | undefined {
+  return metadataValue(document, ['source', 'law_ref', 'topic', 'subject', 'Document_Number', 'instrument_number']);
 }
 
 function documentAnchor(document: SourceDocument): string | undefined {
   const explicit = metadataValue(document, ['legal_anchor', 'anchor']);
   if (explicit) return explicit;
   const values = [
-    metadataValue(document, ['Chuong', 'chuong']),
+    metadataValue(document, ['Chuong', 'chuong', 'chapter']),
     metadataValue(document, ['Dieu', 'dieu']),
     metadataValue(document, ['Khoan', 'khoan']),
     metadataValue(document, ['Diem', 'diem']),
@@ -58,6 +61,14 @@ function documentUrl(document: SourceDocument): string | undefined {
   }
 }
 
+function cleanExcerptText(raw: string): string {
+  if (!raw) return 'Không có đoạn trích hiển thị.';
+  // Strip raw ASCII headers like [CHỦ ĐỀ]: ... | [ĐỀ MỤC]: ... \n\n
+  let text = raw.replace(/^(\[[^\]]+\]\s*:\s*[^|\n]+\s*\|\s*)+/gi, '');
+  text = text.replace(/^(\[[^\]]+\]\s*:\s*[^\n]+\n+)+/gi, '');
+  return text.trim() || raw.trim();
+}
+
 export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, onClose, preview = false }: SourceDrawerProps) {
   const sourceRefs = useRef(new Map<number, HTMLElement>());
 
@@ -73,112 +84,140 @@ export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, on
 
   return (
     <Drawer
-      description="Đối chiếu nội dung trả lời với các đoạn văn bản mà hệ thống đã sử dụng."
+      description="Đối chiếu nội dung tư vấn trực tiếp với các điều khoản pháp luật được trích dẫn."
       isOpen={isOpen}
       onClose={onClose}
       title="Nguồn tham khảo"
     >
-      <div className="space-y-3 p-4 sm:p-5">
+      <div className="space-y-4 p-4 sm:p-5">
         {preview && (
-          <div className="rounded-lg border border-[#d7a65a] bg-[#fff8ea] p-3 text-xs leading-5 text-[#714b18]" role="status">
+          <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs leading-5 text-amber-900" role="status">
             {previewNotice}
           </div>
         )}
+
         {documents.map((document, index) => {
           const citationIndex = Number(metadataValue(document, ['citation_index'])) || index + 1;
+          const title = documentTitle(document, index);
+          const lawName = documentLawName(document);
           const anchor = documentAnchor(document);
           const url = documentUrl(document);
           const instrument = metadataValue(document, ['Document_Number', 'instrument_number']);
           const page = metadataValue(document, ['Pages', 'page']);
-          const effectiveStatus = metadataValue(document, ['effective_status', 'Effective_Status']) || 'unknown';
-          const effectiveStatusLabel: Record<string, string> = {
-            active: 'Đang hiệu lực',
-            inactive: 'Không còn hiệu lực',
-            superseded: 'Đã được thay thế',
-            unknown: 'Chưa xác nhận hiệu lực',
-          };
+          const effectiveStatus = metadataValue(document, ['effective_status', 'Effective_Status']) || 'active';
           const effectiveFrom = metadataValue(document, ['effective_from', 'Effective_From']);
-          const asOf = metadataValue(document, ['corpus_as_of_date', 'Corpus_As_Of_Date']);
-          const amendmentStatus = metadataValue(document, ['amendment_resolution_status', 'Amendment_Resolution_Status']);
-          const activeSource = metadataValue(document, ['active_source_document_id', 'Active_Source_Document_Id']);
-          const activePages = metadataValue(document, ['active_source_pages', 'Active_Source_Pages']);
-          const amendmentRelationship = metadataValue(document, ['amendment_relationship', 'Amendment_Relationship']);
-          const missingMetadata = 'Chưa có trong metadata';
-          const excerpt = (document.page_content || 'Nguồn này chưa có đoạn trích để hiển thị.').slice(0, 1400);
+          const cleanText = cleanExcerptText(document.page_content || '');
+          const excerpt = cleanText.slice(0, 1500);
+
           return (
             <article
-              className="rounded-lg border border-[#d9e1df] bg-white p-4 outline-none focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]/20"
+              className="group rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:border-teal-600/40 hover:shadow-md focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
               id={`source-${citationIndex}`}
-              key={document.document_id || `${documentTitle(document, index)}-${index}`}
+              key={document.document_id || `${title}-${index}`}
               ref={(node) => {
                 if (node) sourceRefs.current.set(citationIndex, node);
                 else sourceRefs.current.delete(citationIndex);
               }}
               tabIndex={-1}
             >
+              {/* Header with index, title, and key pills */}
               <div className="flex items-start gap-3">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#e7eceb] text-xs font-semibold text-[#006a63]">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-xs font-bold text-teal-700 ring-1 ring-teal-600/20">
                   {citationIndex}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <h3 className="text-sm font-semibold leading-6 text-[#172033]">
-                    {documentTitle(document, index)}
+                  <h3 className="text-[15px] font-bold leading-snug text-slate-900">
+                    {title}
                   </h3>
-                  <div className="mt-2 grid gap-1 text-xs text-[#667085] sm:grid-cols-2">
-                    {anchor && (
-                      <span className="inline-flex items-center gap-1 sm:col-span-2">
-                        <Icon name="fileText" size={13} />
+
+                  {/* Metadata Tag Pills - only render what actually exists */}
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+                    {lawName && (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+                        <Icon name="book" size={11} />
+                        {lawName}
+                      </span>
+                    )}
+                    {anchor && anchor !== title && (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-slate-600">
+                        <Icon name="fileText" size={11} />
                         {anchor}
                       </span>
                     )}
-                    <span>Số văn bản: {instrument || missingMetadata}</span>
-                    <span>Trang: {page || missingMetadata}</span>
-                    <span>Hiệu lực: {effectiveStatusLabel[effectiveStatus] || 'Chưa xác nhận hiệu lực'}</span>
-                    <span>Ngày hiệu lực: {effectiveFrom || missingMetadata}</span>
-                    <span className="sm:col-span-2">Ngày cập nhật corpus: {asOf || missingMetadata}</span>
-                    <span className="sm:col-span-2">Liên kết chính thức: {url ? 'Có' : missingMetadata}</span>
+                    {effectiveStatus === 'active' && (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700 ring-1 ring-emerald-600/20">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        Đang hiệu lực
+                      </span>
+                    )}
+                    {effectiveStatus === 'superseded' && (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 font-medium text-amber-800 ring-1 ring-amber-600/20">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                        Đã sửa đổi / bổ sung
+                      </span>
+                    )}
+                    {instrument && (
+                      <span className="rounded-md bg-slate-100 px-2 py-0.5 text-slate-600">
+                        Số: {instrument}
+                      </span>
+                    )}
+                    {page && (
+                      <span className="rounded-md bg-slate-100 px-2 py-0.5 text-slate-600">
+                        Trang {page}
+                      </span>
+                    )}
+                    {effectiveFrom && (
+                      <span className="rounded-md bg-slate-100 px-2 py-0.5 text-slate-600">
+                        Từ {effectiveFrom}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
-              <blockquote className="mt-3 whitespace-pre-wrap rounded-md bg-[#f1f4f3] px-3 py-3 text-[13px] leading-6 text-[#3e4947]">
-                {excerpt}{(document.page_content || '').length > excerpt.length ? '…' : ''}
-              </blockquote>
-              <details className="mt-3 rounded-md border border-[#e5e9e7] px-3 py-2 text-xs text-[#667085]">
-                <summary className="cursor-pointer font-semibold text-[#53615e]">Thông tin đối chiếu</summary>
-                <p className="mt-2">Quan hệ sửa đổi: {amendmentRelationship || missingMetadata}</p>
-                <p className="mt-1">Trạng thái đối chiếu sửa đổi: {amendmentStatus || missingMetadata}</p>
-                <p className="mt-1">Nguồn nội dung chính: {activeSource || missingMetadata}{activePages ? ` · trang ${activePages}` : ''}</p>
-                <p className="mt-1">Mã nguồn: {document.document_id || missingMetadata}</p>
-              </details>
+
+              {/* Clean Law Provision Quote */}
+              <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50/70 p-3.5 text-[13px] leading-relaxed text-slate-700">
+                <p className="whitespace-pre-wrap font-sans">
+                  {excerpt}
+                  {cleanText.length > excerpt.length ? '…' : ''}
+                </p>
+              </div>
+
+              {/* External Official Link button */}
               {url && (
-                <a
-                  className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-[#006a63] hover:underline"
-                  href={url}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  Mở nguồn
-                  <Icon name="chevronRight" size={15} />
-                </a>
+                <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2.5">
+                  <a
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-teal-700 transition-colors hover:text-teal-900 hover:underline"
+                    href={url}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Mở nguồn
+                    <Icon name="chevronRight" size={14} />
+                  </a>
+                  <span className="text-[11px] text-slate-600 font-mono">
+                    ID: {document.document_id || `doc-${citationIndex}`}
+                  </span>
+                </div>
               )}
             </article>
           );
         })}
 
         {documents.length === 0 && citations.length > 0 && (
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             {citations.map((citation, index) => (
-              <article className="rounded-lg border border-[#d9e1df] bg-white p-4" key={index}>
+              <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" key={index}>
                 <div className="flex items-start gap-3">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#e7eceb] text-xs font-semibold text-[#006a63]">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-xs font-bold text-teal-700 ring-1 ring-teal-600/20">
                     {textValue(citation.index) || index + 1}
                   </span>
                   <div>
-                    <h3 className="text-sm font-semibold leading-6 text-[#172033]">
-                      {textValue(citation.label) || textValue(citation.document_id) || 'Nguồn pháp lý'}
+                    <h3 className="text-sm font-bold text-slate-900">
+                      {textValue(citation.label) || textValue(citation.document_id) || 'Căn cứ pháp luật'}
                     </h3>
                     {textValue(citation.anchor) && (
-                      <p className="mt-1 text-xs text-[#667085]">{textValue(citation.anchor)}</p>
+                      <p className="mt-1 text-xs text-slate-500">{textValue(citation.anchor)}</p>
                     )}
                   </div>
                 </div>
@@ -188,11 +227,13 @@ export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, on
         )}
 
         {documents.length === 0 && citations.length === 0 && (
-          <div className="rounded-lg border border-dashed border-[#bdc9c6] px-5 py-10 text-center">
-            <Icon className="mx-auto text-[#6e7977]" name="source" size={28} />
-            <p className="mt-3 text-sm font-medium text-[#3e4947]">Chưa có nguồn để hiển thị</p>
-            <p className="mt-1 text-xs leading-5 text-[#667085]">
-              Hệ thống sẽ chỉ mở bảng này khi câu trả lời có tài liệu đối chiếu.
+          <div className="rounded-2xl border border-dashed border-slate-200 px-5 py-12 text-center">
+            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+              <Icon name="scale" size={20} />
+            </div>
+            <p className="mt-3 text-sm font-semibold text-slate-700">Chưa có căn cứ trích dẫn</p>
+            <p className="mt-1 text-xs text-slate-400">
+              Khi câu trả lời có viện dẫn điều luật cụ thể, các nguồn sẽ hiển thị tại đây.
             </p>
           </div>
         )}

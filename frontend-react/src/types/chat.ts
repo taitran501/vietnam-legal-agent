@@ -95,6 +95,7 @@ export interface WorkflowMetadata {
   citation_error?: string;
   safe_stop_reason?: string;
   preview?: boolean;
+  steps?: WorkflowStep[];
 }
 
 export interface SourceSnapshot {
@@ -196,6 +197,7 @@ export interface WorkflowStep {
   trace_id?: string;
   pipeline_version?: string;
   sequence?: number;
+  details?: unknown;
 }
 
 export interface Conversation {
