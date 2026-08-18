@@ -1,4 +1,4 @@
-"""Alembic environment for the unified EPR persistence schema."""
+"""Alembic environment for the unified legal-agent persistence schema."""
 
 from __future__ import annotations
 

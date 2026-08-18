@@ -1,1 +1,1 @@
-"""Domain models for EPR tasks, evidence and workflow state."""
+"""Domain models for legal tasks, evidence and workflow state."""

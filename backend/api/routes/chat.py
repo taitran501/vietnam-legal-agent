@@ -38,7 +38,7 @@ _SSE_HEADERS = {
 
 @router.post("/chat", tags=["chat"])
 async def chat(request: Request, body: ChatRequest):
-    """Stream chatbot responses as Server-Sent Events."""
+    """Stream Vietnam Legal Agent responses as Server-Sent Events."""
     # Canonical identifier moving forward: conversation_id.
     # Backward compatibility: accept legacy session_id if conversation_id is missing.
     conversation_id = body.conversation_id or body.session_id or str(uuid.uuid4())

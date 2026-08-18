@@ -1,14 +1,14 @@
 """
-Query routing — 2-way classification: "epr_query" | "chitchat"
+Query routing — compatibility 2-way classification: "epr_query" | "chitchat"
 
 Design principle:
-  This is an EPR-domain chatbot. The router's only job is to separate
-  conversational noise (chitchat) from anything that should hit the corpus.
+  This compatibility router separates conversational noise (chitchat) from
+  substantive legal questions that should hit the corpus.
   "Out of domain" is NOT a router concern — it is a corpus concern:
     - If Qdrant finds relevant docs → legal answer
-    - If Qdrant finds nothing (score too low) → EPR-scoped web fallback
-      (Tavily searches within EPR/recycling/environmental law context)
-  This keeps the router cheap, fast, and domain-biased.
+    - If Qdrant finds nothing (score too low) → the configured official-source
+      fallback may handle the request.
+  The legacy `epr_query` label is retained for API and test compatibility.
 
 Uses gpt-4o-mini with Structured Outputs (strict schema).
 NOTE: gpt-3.5-turbo only supports JSON mode — not strict Structured Outputs.
@@ -34,8 +34,8 @@ class _QueryRoute(BaseModel):
     datasource: Literal["epr_query", "chitchat"] = Field(
         ...,
         description=(
-            "'epr_query' for any substantive question (EPR-related OR not — "
-            "will be handled by corpus then web fallback). "
+            "'epr_query' for any substantive legal question (the legacy label "
+            "is retained while the corpus and web fallback handle the domain). "
             "'chitchat' ONLY for pure social interaction: greetings, thanks, "
             "farewells, identity questions, gibberish."
         ),
@@ -156,7 +156,7 @@ def _get_router():
 
 
 def route_query(question: str) -> Literal["epr_query", "chitchat"]:
-    """2-way router: chitchat | epr_query. Web fallback is corpus-driven, not router-driven."""
+    """Route chitchat versus substantive legal work using the legacy label."""
     fast_route = _fast_route_query(question)
     if fast_route:
         return fast_route

@@ -1,12 +1,11 @@
 # Current acceptance status
 
-**Checked:** 2026-08-15
-**Workspace:** `fix/priority-user-journeys` after production hardening and
-Appendix corpus-identity remediation
+**Checked:** 2026-08-18
+**Workspace:** `agent/legal-repo-cleanup`
 
-This file is the status of the working tree after the review remediation. It is
-not a replacement for the commit-scoped historical reports. Production/legal
-approval remains a separate gate.
+This file records checks against the current checkout. It is not a replacement
+for the commit-scoped historical reports, and production/legal approval remains
+a separate gate.
 
 ## Local checks
 
@@ -15,18 +14,14 @@ The following checks were run in the repository acceptance environment
 
 | Check | Result |
 | --- | --- |
-| `pytest -q` | **412 passed, 3 skipped** (415 collected) |
+| `pytest -q` | **455 passed, 3 skipped** (458 collected) |
 | `python -m tests.eval.run_eval --suite all` | **exit 0**; deterministic route matrix 60/60 |
 | `ruff check src/epr_agent backend scripts tests` | **pass** |
-| `mypy src/epr_agent backend` | **pass**, 62 source files |
-| `python -m scripts.sync_corpus_metadata --check` | **pass**, no issues; corpus SHA `9c7fe73b…` |
-| `docker compose config --quiet` | **pass** with an explicit `POSTGRES_PASSWORD` validation value |
-| `docker compose up -d --build` | **pass**; indexer exit 0, 1,324 canonical chunks, backend healthy |
-| Live `GET /api/v1/ready` | **pass**; preview-ready, 1,324 points, database/Qdrant/Redis/OpenAI healthy |
-| Live case-form + chat SSE smoke | **pass**; chat completed with an explicit `insufficient_evidence` safe-stop |
+| `mypy src/epr_agent backend` | **pass**, 68 source files |
+| `python -m scripts.sync_corpus_metadata --check` | **pass**, no issues; corpus SHA `9c7fe73bd6215a1e794432815d34a8a3cf8671dab7f1581d9c3d0abdf2756a45` |
 | `git diff --check` | **pass**; only Git line-ending warnings |
 | Frontend Vitest | **42 passed** in 14 test files |
-| Frontend lint | **pass** |
+| Frontend lint | **pass**; 3 existing Fast Refresh warnings, no errors |
 | Frontend production build | **pass**; Vite reports a non-blocking >500 kB bundle warning |
 | Playwright browser acceptance | **27 passed** |
 
@@ -40,6 +35,11 @@ interpreting a test result.
 - The backend CI path now runs corpus synchronization, unit/integration tests,
   deterministic evaluation, Ruff, and the complete backend mypy boundary.
 - CI also installs Chromium and runs the browser journey suite.
+- The public product language is now **Vietnam Legal Agent**; EPR remains a
+  supported rule-pack and corpus domain rather than the product identity.
+- The compatibility package namespace (`epr_agent`) and EPR corpus/rule-pack
+  identifiers remain stable so existing imports, data manifests, and API
+  clients do not break during the product rename.
 - Redis rate limiting is fail-closed by default; an unavailable Redis produces
   a temporary 503 rather than silently disabling request protection.
 - Retrieval relevance and web-result synthesis fail closed when the provider or
@@ -69,13 +69,14 @@ These are deliberate release gates, not claims that local tests can satisfy:
 - a production deployment has healthy PostgreSQL/Qdrant/Redis/OpenAI/OIDC
   integrations, real authentication, monitoring, backups, and measured p95
   latency;
-- a production deployment has not been approved or measured; the live evidence
-  above is an isolated local **preview** stack with `REQUIRE_AUTH=false`;
-- GitHub repository description, homepage, topics, and visibility have been
-  configured by an authenticated repository administrator;
-- upload/OCR, historical-law snapshots, and multi-domain legal support exist.
-  They remain outside the current EPR-only evidence model and must not be
-  implied by the preliminary export.
+- a production deployment has not been approved or measured; the current
+  browser suite uses deterministic in-memory adapters and does not prove live
+  PostgreSQL/Qdrant/Redis/OpenAI/OIDC integration;
+- GitHub repository metadata beyond the canonical name (`vietnam-legal-agent`)
+  has been configured by an authenticated repository administrator;
+- upload/OCR and historical-law snapshots are not implemented, and legal
+  coverage remains limited to the explicitly supported domains. They must not
+  be implied by the preliminary export.
 
 The historical V4 acceptance report remains valid only for the commit and
 environment named inside that report. Its live local-stack result is useful

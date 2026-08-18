@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-BASE_DIR = Path(__file__).resolve().parent.parent  # epr_chatbot/
+BASE_DIR = Path(__file__).resolve().parent.parent  # vietnam-legal-agent/
 
 
 class Settings(BaseSettings):

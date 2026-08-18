@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "legal-epr"
+name = "vietnam-legal-agent"
 version = "0.2.0"
-description = "Bounded agentic workflow for Vietnamese EPR legal assistance"
+description = "Bounded agentic workflow for Vietnamese legal research and preliminary case analysis"
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "fastapi==0.115.0",

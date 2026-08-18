@@ -1,4 +1,4 @@
-"""LangGraph implementation of the bounded EPR workflow."""
+"""LangGraph implementation of the bounded legal workflow."""
 
 from __future__ import annotations
 

@@ -1,5 +1,5 @@
 """
-Prometheus metrics for monitoring the EPR chatbot.
+Prometheus metrics for monitoring the Vietnam Legal Agent backend.
 
 Provides:
 - Request latency histograms

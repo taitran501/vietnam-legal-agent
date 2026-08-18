@@ -3,8 +3,10 @@ import type { ReactNode, SVGProps } from 'react';
 export type IconName =
   | 'alert'
   | 'book'
+  | 'building'
   | 'case'
   | 'check'
+  | 'checklist'
   | 'chevronDown'
   | 'chevronRight'
   | 'close'
@@ -46,6 +48,18 @@ const paths: Record<IconName, ReactNode> = {
       <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" />
     </>
   ),
+  building: (
+    <>
+      <path d="M3 21h18" />
+      <path d="M6 21V3h12v18" />
+      <path d="M9 7h1" />
+      <path d="M14 7h1" />
+      <path d="M9 11h1" />
+      <path d="M14 11h1" />
+      <path d="M9 15h1" />
+      <path d="M14 15h1" />
+    </>
+  ),
   case: (
     <>
       <rect width="18" height="14" x="3" y="7" rx="2" />
@@ -57,6 +71,16 @@ const paths: Record<IconName, ReactNode> = {
   check: (
     <>
       <path d="M20 6 9 17l-5-5" />
+    </>
+  ),
+  checklist: (
+    <>
+      <path d="m3 5 1.5 1.5L7 4" />
+      <path d="M9 5h12" />
+      <path d="m3 12 1.5 1.5L7 11" />
+      <path d="M9 12h12" />
+      <path d="m3 19 1.5 1.5L7 18" />
+      <path d="M9 19h12" />
     </>
   ),
   chevronDown: <path d="m6 9 6 6 6-6" />,

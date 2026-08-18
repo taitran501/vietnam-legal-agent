@@ -1,7 +1,7 @@
 """
 EDA for data/law.json — character & token distributions for chunking plans.
 
-Run from repo root (epr_chatbot/):
+Run from the repository root (vietnam-legal-agent/):
     python -m scripts.eda_law
     python -m scripts.eda_law --model gpt-4o
     python -m scripts.eda_law --bins 256 512 1024 2048 4096

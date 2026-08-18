@@ -63,7 +63,8 @@ test('durable feedback is restored after a browser reload', async ({ page }) => 
   await input.press('Enter');
 
   const helpful = page.getByRole('button', { name: 'Câu trả lời hữu ích' });
-  await expect(helpful).toBeVisible();
+  // The deterministic backend streams a complete legal answer in multiple chunks.
+  await expect(helpful).toBeVisible({ timeout: 20000 });
   await helpful.click();
   await expect(helpful).toHaveAttribute('title', 'Đã lưu');
 

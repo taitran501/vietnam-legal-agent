@@ -116,7 +116,7 @@ async def lifespan(app: FastAPI):
     
     settings = get_settings()
     validate_production_settings(settings)
-    logger.info("Starting EPR Chatbot backend…")
+    logger.info("Starting Vietnam Legal Agent backend…")
 
     # 1. Verify Redis is reachable
     try:
@@ -154,7 +154,7 @@ async def lifespan(app: FastAPI):
         await close_persistence_stores()
     except Exception as exc:  # noqa: BLE001 - shutdown must close remaining resources
         logger.warning("Persistence store close failed: %s", exc)
-    logger.info("EPR Chatbot backend stopped")
+    logger.info("Vietnam Legal Agent backend stopped")
 
 
 async def _warmup_retrieval_indexes_task() -> None:
@@ -174,8 +174,8 @@ async def _warmup_retrieval_indexes_task() -> None:
 # ---------------------------------------------------------------------------
 
 app = FastAPI(
-    title="EPR Chatbot API",
-    description="Vietnamese EPR legal Q&A chatbot with RAG + streaming",
+    title="Vietnam Legal Agent API",
+    description="Vietnamese legal research and preliminary case-analysis agent with RAG and streaming",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -244,7 +244,7 @@ app.include_router(me_router, prefix="/api/v1")
 
 @app.get("/", tags=["root"])
 async def root():
-    return {"message": "EPR Chatbot API is running. See /docs for the API reference."}
+    return {"message": "Vietnam Legal Agent API is running. See /docs for the API reference."}
 
 
 @app.get("/internal/metrics", tags=["metrics"])

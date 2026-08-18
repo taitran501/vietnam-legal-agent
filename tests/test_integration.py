@@ -1,5 +1,5 @@
 """
-Comprehensive integration test script for EPR Chatbot.
+Comprehensive integration test script for the Vietnam Legal Agent backend.
 
 This script tests the full application stack including:
 - Backend startup and lifespan events
@@ -344,7 +344,7 @@ def test_input_sanitization():
         from backend.memory.session_store import _sanitize_user_input
 
         # Test normal input unchanged
-        assert _sanitize_user_input("What is EPR?") == "What is EPR?"
+        assert _sanitize_user_input("What is the legal obligation?") == "What is the legal obligation?"
         results.pass_test("Normal input unchanged")
 
         # Test empty input
@@ -375,7 +375,7 @@ def test_input_sanitization():
 def run_all_tests():
     """Run all integration tests."""
     print("="*60)
-    print("EPR CHATBOT INTEGRATION TESTS")
+    print("VIETNAM LEGAL AGENT INTEGRATION TESTS")
     print("="*60)
 
     test_imports()

@@ -1,5 +1,5 @@
 """
-LLM-as-judge evaluators for EPR Chatbot quality assessment.
+LLM-as-judge evaluators for Vietnam Legal Agent quality assessment.
 
 Three dimensions (each scored 0–5 by gpt-4o-mini):
   - Faithfulness  : every claim in the answer is grounded in the retrieved documents
@@ -66,7 +66,7 @@ Thang điểm FAITHFULNESS (0–5):
 Tài liệu tham khảo:
 {documents}
 
-Câu trả lời của chatbot:
+Câu trả lời của legal agent:
 {answer}
 
 Hãy chấm điểm FAITHFULNESS.""",
@@ -100,7 +100,7 @@ def eval_faithfulness(
 _RELEVANCE_PROMPT = ChatPromptTemplate.from_messages([
     (
         "system",
-        """Bạn là chuyên gia đánh giá chất lượng câu trả lời chatbot.
+        """Bạn là chuyên gia đánh giá chất lượng câu trả lời của legal agent.
 
 Nhiệm vụ: Đánh giá mức độ LIÊN QUAN — câu trả lời có đúng trọng tâm câu hỏi không?
 

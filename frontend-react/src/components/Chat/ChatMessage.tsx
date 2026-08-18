@@ -100,7 +100,7 @@ export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOp
                 <span>{sourceLabels[message.source] || 'Nguồn tham khảo'}</span>
               )}
             </div>
-            <div className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+            <div className="opacity-100">
               <MessageActions
                 copied={copied}
                 message={message}
