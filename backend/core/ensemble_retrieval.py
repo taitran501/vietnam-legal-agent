@@ -769,6 +769,13 @@ def _score_breakdown(query: str, doc: Document, is_explicit_match: bool = False)
     if is_explicit_match:
         final_score = min(1.0, final_score * 1.3)
 
+    # Penalize superseded or unresolved law provisions
+    current_support = doc.metadata.get("Current_Law_Support")
+    is_unsupported = current_support is not None and str(current_support).strip().casefold() in {"false", "0", "no", "pending", "unresolved"}
+    is_superseded_status = (doc.metadata.get("Effective_Status") or "").strip().lower() in {"superseded", "expired", "invalid", "het_hieu_luc", "bi_bai_bo"}
+    if is_unsupported or is_superseded_status:
+        final_score *= 0.5
+
     return {
         "overlap": round(overlap, 4),
         "metadata": round(metadata_score, 4),

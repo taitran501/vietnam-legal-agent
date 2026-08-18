@@ -549,18 +549,22 @@ class AgentWorkflowRuntime:
             and source not in {"error", "follow_up"}
             and not result.cache_hit
         ):
-            yield {"type": "status", "message": "Đang xác minh căn cứ pháp lý và trích dẫn…", "stage": "verify"}
-            passed, _reason, safe_fallback, checked_citations = await self._guardrails.check_output(
+            yield {"type": "status", "message": "Đang xác minh căn cứ pháp lý và thẩm định phản biện…", "stage": "verify"}
+            passed, _reason, verified_or_fallback, checked_citations = await self._guardrails.check_output(
                 final_answer,
                 evidence,
+                query=query,
                 claim_verifier=self.deps.claim_verifier,
+                critic_reviewer=getattr(self.deps, "critic_reviewer", None),
             )
             citations = checked_citations
             if not passed:
-                final_answer = safe_fallback
+                final_answer = verified_or_fallback
                 termination_reason = TerminationReason.CITATION_VERIFICATION_FAILED.value
                 source = "error"
                 evidence = []
+            elif verified_or_fallback:
+                final_answer = verified_or_fallback
 
         # ── 6. Stream Answer Delivery ──
         if final_answer:

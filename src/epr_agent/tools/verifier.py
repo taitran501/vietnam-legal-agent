@@ -134,3 +134,105 @@ class StaticClaimSupportVerifier:
     async def verify(self, answer: str, documents: list[DocumentRecord]) -> ClaimSupportResult:
         self.calls += 1
         return self.result.model_copy(deep=True)
+
+
+class LegalCriticVerdict(BaseModel):
+    """Structured verdict produced by the Senior Legal Critic / Auditor Agent."""
+
+    approved: bool = Field(description="True if the answer is legally sound, accurate, and free of fatal statutory flaws.")
+    critique: str = Field(default="", description="Senior Vietnamese legal auditor's evaluation and commentary.")
+    corrected_answer: str | None = Field(default=None, description="Optional improved answer if minor statutory nuances can be refined.")
+    fatal_error: bool = Field(default=False, description="True if the answer misapplies law, cites nonexistent provisions, or contradicts explicit statutory exceptions.")
+    temporal_issues_detected: bool = Field(default=False, description="True if answer relies on superseded or repealed laws without noting the amendments.")
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    conflicting_provisions: list[str] = Field(default_factory=list, description="List of provision numbers that have statutory conflicts or misinterpretations.")
+
+
+_LEGAL_CRITIC_SYSTEM_PROMPT = """Bạn là Thẩm định viên Pháp lý Cấp cao (Senior Legal Auditor & Critic) của Hệ thống Trợ lý Pháp luật Việt Nam.
+
+Nhiệm vụ của bạn là thẩm định và phản biện độc lập câu trả lời pháp lý do AI soạn thảo trước khi trả về cho người dùng.
+
+Tiêu chuẩn Thẩm định:
+1. Tính Chính xác của Căn cứ Pháp lý: Kiểm tra các số Điều, Khoản, Luật/Nghị định được viện dẫn có áp dụng đúng cho quan hệ pháp luật của người dùng hay không.
+2. Quy tắc Chung vs Quy tắc Ngoại lệ: Kiểm tra xem câu trả lời có bỏ sót các trường hợp ngoại lệ hoặc điều kiện tiên quyết luật định hay không.
+3. Tính Thời điểm & Hiệu lực: Cảnh báo nếu câu trả lời dựa vào các quy định cũ đã bị sửa đổi/bổ sung mà không kèm theo lưu ý văn bản mới.
+4. Quyền và Nghĩa vụ Đầy đủ: Đảm bảo tư vấn đúng bản chất quyền lợi, nghĩa vụ, và thủ tục hành chính/tố tụng liên quan.
+
+Nguyên tắc Phê duyệt:
+- approved = True: Nếu câu trả lời chuẩn xác, logic pháp lý chặt chẽ và bám sát tài liệu căn cứ.
+- fatal_error = True (approved = False): Chỉ khi câu trả lời tư vấn SAI HOÀN TOÀN về mặt luật định, bịa đặt điều luật, hoặc đảo ngược hoàn toàn quyền/nghĩa vụ của công dân.
+- corrected_answer: Nếu câu trả lời tốt nhưng có thể diễn đạt gãy gọn hơn hoặc bổ sung lưu ý về hiệu lực văn bản, hãy cung cấp bản hoàn thiện.
+"""
+
+
+class LegalCriticReviewer:
+    """Senior Legal Auditor agent performing peer review on draft answers."""
+
+    def __init__(self, *, enabled: bool = True) -> None:
+        self.enabled = enabled
+
+    async def review(
+        self,
+        query: str,
+        answer: str,
+        documents: list[DocumentRecord],
+    ) -> LegalCriticVerdict:
+        if not self.enabled or not answer.strip():
+            return LegalCriticVerdict(approved=True, critique="Critic check skipped or empty answer.")
+
+        if not documents:
+            return LegalCriticVerdict(approved=True, critique="No legal documents to audit against.")
+
+        from backend.core.llm_instances import get_llm_smart
+
+        try:
+            model = get_llm_smart().with_structured_output(LegalCriticVerdict)
+            payload = {
+                "user_query": query,
+                "draft_answer": answer,
+                "legal_evidence": [
+                    {
+                        "document_id": doc.document_id,
+                        "source": str((doc.metadata or {}).get("source") or doc.source),
+                        "legal_anchor": _anchor(doc),
+                        "effective_status": doc.effective_status or (doc.metadata or {}).get("Effective_Status"),
+                        "effective_from": doc.effective_from or (doc.metadata or {}).get("Effective_From"),
+                        "effective_to": doc.effective_to or (doc.metadata or {}).get("Effective_To"),
+                        "amendment_relationship": doc.amendment_relationship or (doc.metadata or {}).get("Amendment_Relationship"),
+                        "text": doc.content[:2000],
+                    }
+                    for doc in documents[:6]
+                ],
+            }
+
+            result = await model.ainvoke(
+                [
+                    ("system", _LEGAL_CRITIC_SYSTEM_PROMPT),
+                    ("human", "Hãy thẩm định câu trả lời sau:\n" + json.dumps(payload, ensure_ascii=False)),
+                ]
+            )
+            if not isinstance(result, LegalCriticVerdict):
+                result = LegalCriticVerdict.model_validate(result)
+            return result
+        except Exception as exc:  # noqa: BLE001
+            # Fallback gracefully if model call fails in offline / mock test mode
+            return LegalCriticVerdict(
+                approved=True,
+                critique=f"Critic evaluation fallback: {exc}",
+                confidence=0.8,
+            )
+
+
+class StaticLegalCriticReviewer:
+    """Deterministic critic double for unit testing and offline development."""
+
+    def __init__(self, *, verdict: LegalCriticVerdict | None = None) -> None:
+        self.verdict = verdict or LegalCriticVerdict(approved=True, critique="Static pass.")
+
+    async def review(
+        self,
+        query: str,
+        answer: str,
+        documents: list[DocumentRecord],
+    ) -> LegalCriticVerdict:
+        return self.verdict

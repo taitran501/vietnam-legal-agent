@@ -650,16 +650,21 @@ def upsert_to_qdrant(chunks) -> None:
         except Exception as exc:  # noqa: BLE001 - local Qdrant may not support runtime HNSW updates
             logger.debug("HNSW config update skipped (collection may not support runtime updates): %s", exc)
 
-    # Ensure payload indexes for filtered queries (Dieu, Chuong, Muc stored at root level)
+    # Ensure payload indexes for filtered queries (Dieu, Chuong, Muc, and Temporal fields stored at root level)
     try:
         from qdrant_client.models import PayloadSchemaType
-        for field_name in ("Dieu", "Chuong", "Muc"):
+        for field_name in ("Dieu", "Chuong", "Muc", "Effective_Status", "Effective_From"):
             client.create_payload_index(
                 collection_name=collection,
                 field_name=field_name,
                 field_schema=PayloadSchemaType.KEYWORD,
             )
-        logger.info("Payload indexes ensured for Dieu, Chuong, Muc")
+        client.create_payload_index(
+            collection_name=collection,
+            field_name="Current_Law_Support",
+            field_schema=PayloadSchemaType.BOOL,
+        )
+        logger.info("Payload indexes ensured for Dieu, Chuong, Muc, Current_Law_Support, Effective_Status, Effective_From")
     except Exception as exc:  # noqa: BLE001 - payload indexes are an optional optimization
         logger.debug("Payload index creation skipped: %s", exc)
 

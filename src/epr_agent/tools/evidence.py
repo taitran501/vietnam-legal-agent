@@ -7,6 +7,7 @@ from collections.abc import Callable
 
 from epr_agent.domain.legal import LegalAnchor
 from epr_agent.domain.models import Citation, DocumentRecord, EvidenceAssessment, TaskType
+from epr_agent.tools.temporal_guard import get_temporal_warning, is_document_superseded
 
 
 class EvidenceEvaluator:
@@ -46,8 +47,25 @@ class EvidenceEvaluator:
         ):
             return EvidenceAssessment(False, "explicit_anchor_not_found", len(documents), total_chars, has_metadata)
 
+        temporal_warnings: list[str] = []
+        has_superseded = False
+        for doc in documents:
+            if is_unresolved_current_law_source(doc) or is_document_superseded(doc):
+                has_superseded = True
+            w = get_temporal_warning(doc)
+            if w and w not in temporal_warnings:
+                temporal_warnings.append(w)
+
         if any(is_unresolved_current_law_source(document) for document in documents):
-            return EvidenceAssessment(False, "superseded_or_unresolved_source", len(documents), total_chars, has_metadata)
+            return EvidenceAssessment(
+                False,
+                "superseded_or_unresolved_source",
+                len(documents),
+                total_chars,
+                has_metadata,
+                has_superseded_sources=True,
+                temporal_warnings=temporal_warnings,
+            )
 
         if self.relevance_checker is not None:
             try:
@@ -55,11 +73,29 @@ class EvidenceEvaluator:
             except Exception:  # noqa: BLE001 - a failed optional checker is a failed evidence check
                 relevant = False
             if not relevant:
-                return EvidenceAssessment(False, "relevance_check_failed", len(documents), total_chars, has_metadata, True)
+                return EvidenceAssessment(
+                    False,
+                    "relevance_check_failed",
+                    len(documents),
+                    total_chars,
+                    has_metadata,
+                    True,
+                    has_superseded_sources=has_superseded,
+                    temporal_warnings=temporal_warnings,
+                )
 
         # For an assessment/checklist, evidence is still necessary but the
         # decision is made from explicit facts, never from a document score alone.
-        return EvidenceAssessment(True, "ok", len(documents), total_chars, has_metadata, self.relevance_checker is not None)
+        return EvidenceAssessment(
+            True,
+            "ok",
+            len(documents),
+            total_chars,
+            has_metadata,
+            self.relevance_checker is not None,
+            has_superseded_sources=has_superseded,
+            temporal_warnings=temporal_warnings,
+        )
 
     @staticmethod
     def _has_source_metadata(document: DocumentRecord) -> bool:

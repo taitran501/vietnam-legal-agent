@@ -45,7 +45,11 @@ from epr_agent.tools.evidence import (
 from epr_agent.tools.generation import EvidenceGenerationGateway, GenerationGateway
 from epr_agent.tools.history import HistoryGateway, UnifiedHistoryGateway
 from epr_agent.tools.retrieval import QdrantLegalRetrievalGateway, RetrievalGateway
-from epr_agent.tools.verifier import ClaimSupportVerifier, StructuredClaimSupportVerifier
+from epr_agent.tools.verifier import (
+    ClaimSupportVerifier,
+    LegalCriticReviewer,
+    StructuredClaimSupportVerifier,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +66,7 @@ class WorkflowDependencies:
     understanding: TaskUnderstandingGateway | None = None
     corpus: CorpusDescriptor | None = None
     claim_verifier: ClaimSupportVerifier | None = None
+    critic_reviewer: LegalCriticReviewer | None = None
 
 
 def default_dependencies() -> WorkflowDependencies:
@@ -109,6 +114,7 @@ def default_dependencies() -> WorkflowDependencies:
         max_history_messages=max(2, int(getattr(settings, "history_context_messages", 6))),
         understanding=StructuredTaskUnderstandingGateway(),
         claim_verifier=StructuredClaimSupportVerifier(),
+        critic_reviewer=LegalCriticReviewer(),
         corpus=epr_corpus(
             collection_alias=str(getattr(settings, "law_collection", "law_collection")),
             corpus_version=str(getattr(settings, "corpus_version", "epr-corpus-v1")),

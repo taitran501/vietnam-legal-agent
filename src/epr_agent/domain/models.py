@@ -70,18 +70,29 @@ class DocumentRecord:
     document_id: str = ""
     score: float | None = None
     source: str = "legal"
+    effective_from: str | None = None
+    effective_to: str | None = None
+    effective_status: str | None = None
+    current_law_support: bool | None = None
+    amendment_relationship: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> DocumentRecord:
+        meta = dict(value.get("metadata") or {})
         return cls(
             content=str(value.get("content", value.get("page_content", ""))),
-            metadata=dict(value.get("metadata") or {}),
+            metadata=meta,
             document_id=str(value.get("document_id", value.get("id", ""))),
             score=value.get("score"),
             source=str(value.get("source", "legal")),
+            effective_from=value.get("effective_from") or meta.get("Effective_From") or meta.get("effective_from"),
+            effective_to=value.get("effective_to") or meta.get("Effective_To") or meta.get("effective_to"),
+            effective_status=value.get("effective_status") or meta.get("Effective_Status") or meta.get("effective_status"),
+            current_law_support=value.get("current_law_support") if value.get("current_law_support") is not None else meta.get("Current_Law_Support") if meta.get("Current_Law_Support") is not None else meta.get("current_law_support"),
+            amendment_relationship=list(value.get("amendment_relationship") or meta.get("Amendment_Relationship") or meta.get("amendment_relationship") or []),
         )
 
 
@@ -104,6 +115,8 @@ class EvidenceAssessment:
     total_chars: int = 0
     has_legal_metadata: bool = False
     relevance_checked: bool = False
+    has_superseded_sources: bool = False
+    temporal_warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

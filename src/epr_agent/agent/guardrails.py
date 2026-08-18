@@ -11,7 +11,7 @@ from typing import Any
 
 from epr_agent.domain.models import DocumentRecord, TaskType
 from epr_agent.tools.evidence import verify_citations
-from epr_agent.tools.verifier import ClaimSupportVerifier
+from epr_agent.tools.verifier import ClaimSupportVerifier, LegalCriticReviewer
 
 logger = logging.getLogger(__name__)
 
@@ -38,12 +38,14 @@ class AgentGuardrails:
         answer: str,
         evidence: list[dict[str, Any] | DocumentRecord],
         *,
+        query: str = "",
         claim_verifier: ClaimSupportVerifier | None = None,
+        critic_reviewer: LegalCriticReviewer | None = None,
     ) -> tuple[bool, str, str, list[dict[str, Any]]]:
         """Verify that claims in the generated answer are grounded in retrieved evidence.
 
         Returns:
-            (is_valid, reason_code, safe_fallback_message, citations_list)
+            (is_valid, reason_code, safe_fallback_or_corrected_answer, citations_list)
         """
         if not answer.strip():
             return False, "empty_answer", "Không thể tạo câu trả lời.", []
@@ -95,4 +97,22 @@ class AgentGuardrails:
                     citations_dicts,
                 )
 
-        return True, "ok", "", citations_dicts
+        # 3. Legal Critic Reviewer audit (Peer reviewer agent)
+        final_answer = answer
+        if critic_reviewer is not None and docs:
+            try:
+                critic_verdict = await critic_reviewer.review(query, answer, docs)
+                if critic_verdict.fatal_error or not critic_verdict.approved:
+                    logger.warning("Critic reviewer rejected answer: %s", critic_verdict.critique)
+                    return (
+                        False,
+                        "critic_legal_flaw_rejected",
+                        "Câu trả lời chưa đạt tiêu chuẩn thẩm định tính chính xác của căn cứ pháp lý.",
+                        citations_dicts,
+                    )
+                if critic_verdict.corrected_answer and critic_verdict.corrected_answer.strip():
+                    final_answer = critic_verdict.corrected_answer
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Critic reviewer encountered exception: %s", exc)
+
+        return True, "ok", final_answer, citations_dicts
