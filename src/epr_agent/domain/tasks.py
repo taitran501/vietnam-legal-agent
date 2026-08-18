@@ -66,6 +66,18 @@ GREETING_TERMS = (
     "hôm nay trời",
     "hôm nay thế nào",
     "chào buổi sáng",
+    "quan tâm nhất",
+    "cần quan tâm",
+    "quan tâm gì",
+    "bắt đầu từ đâu",
+    "bắt đầu thế nào",
+    "làm được gì",
+    "giúp gì được",
+    "chức năng là gì",
+    "hệ thống có những gì",
+    "hướng dẫn tôi",
+    "tư vấn giúp tôi",
+    "cho tôi lời khuyên",
 )
 
 CHECKLIST_TERMS = (

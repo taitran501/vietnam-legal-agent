@@ -11,6 +11,7 @@ evidence and citation gates.
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from functools import lru_cache
 from typing import TYPE_CHECKING
@@ -19,6 +20,8 @@ import tiktoken
 from langchain_core.documents import Document
 
 from backend.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from langchain_qdrant import QdrantVectorStore

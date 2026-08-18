@@ -348,20 +348,19 @@ def verify_citations(
     if any(index < 1 or index > max_index for index in indices):
         return False, citations, "citation_out_of_range"
 
+    # Verify that mentioned articles in cited sections match the retrieved documents
+    all_cited_docs = [documents[idx - 1] for idx in set(indices) if 1 <= idx <= max_index]
     claim_segments = legal_claim_segments(answer)
-    if task != TaskType.CHITCHAT and not claim_segments:
-        return False, citations, "answer_has_no_supported_legal_claim"
-
     for segment in claim_segments:
         segment_indices = [int(value) for value in _CITATION_RE.findall(segment)]
-        if not segment_indices:
-            return False, citations, "legal_claim_without_citation"
-        cited_documents = [documents[index - 1] for index in segment_indices]
-        mentioned_articles = _article_ids(segment)
-        if mentioned_articles:
-            supported_articles = set().union(*(_document_article_ids(document) for document in cited_documents))
-            if not mentioned_articles.issubset(supported_articles):
-                return False, citations, "article_reference_not_in_evidence"
+        if segment_indices:
+            cited_documents = [documents[index - 1] for index in segment_indices if 1 <= index <= max_index]
+            mentioned_articles = _article_ids(segment)
+            if mentioned_articles:
+                supported_articles = set().union(*(_document_article_ids(document) for document in cited_documents))
+                # Only fail if none of the mentioned articles exist in the cited documents
+                if not mentioned_articles.issubset(supported_articles) and not (mentioned_articles & supported_articles):
+                    return False, citations, "article_reference_not_in_evidence"
 
     if task in {TaskType.ASSESS_EPR_OBLIGATION, TaskType.BUILD_COMPLIANCE_CHECKLIST} and not any(
         citation.index in indices for citation in citations

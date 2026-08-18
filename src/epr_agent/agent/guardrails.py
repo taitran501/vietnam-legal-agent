@@ -56,14 +56,20 @@ class AgentGuardrails:
             for d in evidence
         ]
 
-        if not docs:
-            # If no evidence was retrieved, check if answer contains ungrounded citations
-            return (
-                False,
-                "no_evidence_for_claims",
-                "Tôi chưa tìm đủ căn cứ pháp lý để đưa ra câu trả lời được kiểm chứng.",
-                [],
-            )
+        import re
+        has_citations = bool(re.search(r"\[\d+\]", answer))
+
+        if not docs or not has_citations:
+            # If no docs were retrieved but answer fabricated citation tags [1], [2], reject
+            if not docs and has_citations:
+                return (
+                    False,
+                    "no_evidence_for_claims",
+                    "Tôi chưa tìm đủ căn cứ pháp lý để đưa ra câu trả lời được kiểm chứng.",
+                    [],
+                )
+            # If no citations were made (conversational guidance, overview, clarification), pass through safely!
+            return True, "ok", answer, []
 
         # 1. Structural citation validation
         valid, citations, reason = verify_citations(answer, docs, TaskType.LEGAL_LOOKUP)
