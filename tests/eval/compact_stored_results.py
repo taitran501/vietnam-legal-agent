@@ -6,7 +6,7 @@ fields so repo stays small. Re-run full eval anytime via:
 
     python -m tests.eval.run_eval --output tests/eval/results_e2e.json
 
-Usage (from repo root epr_chatbot/):
+Usage (from the repository root vietnam-legal-agent/):
 
     python -m tests.eval.compact_stored_results
 """

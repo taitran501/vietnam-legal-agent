@@ -348,7 +348,7 @@ dependencies = WorkflowDependencies(
 )
 case_form_resolver = CaseFormResolver()
 
-app = FastAPI(title="EPR deterministic browser acceptance")
+app = FastAPI(title="Vietnam Legal Agent deterministic browser acceptance")
 app.state.workflow_runtime = V4WorkflowRuntime(
     dependencies,
     answer_chunk_size=90,

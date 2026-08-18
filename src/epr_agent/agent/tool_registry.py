@@ -1,6 +1,6 @@
-"""Tool Registry for Autonomous EPR Legal Agent.
+"""Tool registry for the autonomous Vietnamese legal agent.
 
-Defines the 7 tools available for the LLM to call during its cognitive loop.
+Defines the 9 tools available for the LLM to call during its cognitive loop.
 Each tool wraps existing domain gateways and rule engines, returning structured
 observations with error isolation and follow-up guidance.
 """
@@ -92,12 +92,12 @@ def _suggest_followup(query: str, assessment: EvidenceAssessment) -> str | None:
     if assessment.reason == "content_too_short":
         return f"Thử mở rộng từ khóa hoặc thêm tên văn bản (ví dụ: '{query} Nghị định 08')"
     if assessment.reason == "not_enough_docs":
-        return "Thử tìm bằng các thuật ngữ đồng nghĩa của EPR hoặc tên đối tượng liên quan."
+        return "Thử tìm bằng thuật ngữ pháp lý cụ thể hơn hoặc tên đối tượng liên quan."
     return None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 7 AGENT TOOL FUNCTIONS
+# 9 AGENT TOOL FUNCTIONS
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -108,7 +108,7 @@ async def search_legal_provisions(
 ) -> dict[str, Any]:
     """Tìm kiếm các điều khoản pháp luật trong kho văn bản pháp luật chính thức (Qdrant).
 
-    Sử dụng khi: Cần tra cứu quy định, điều khoản, ngưỡng doanh thu, tỷ lệ đóng góp EPR.
+    Sử dụng khi: Cần tra cứu quy định, điều khoản, ngưỡng, nghĩa vụ, hoặc chế tài pháp lý.
     Không sử dụng khi: Câu hỏi xã giao (chitchat) hoặc đã có đầy đủ bằng chứng cần thiết.
 
     Args:

@@ -1,8 +1,9 @@
-# EPR Compliance Copilot UI
+# Vietnam Legal Agent UI
 
-React is the primary Vietnamese workspace for the bounded EPR workflow. It is
+React is the primary Vietnamese workspace for the bounded legal workflow. It is
 not a generic chat shell: the UI surfaces agent progress, an editable case,
-evidence, citations, preliminary assessments, checklists, and safe-stop states.
+evidence, citations, preliminary assessments, legal/compliance checklists, and
+safe-stop states.
 
 ## Main capabilities
 

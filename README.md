@@ -1,16 +1,16 @@
-# EPR Compliance Copilot
+# Vietnam Legal Agent
 
-[![CI](https://github.com/taitran501/legal_epr/actions/workflows/ci.yml/badge.svg)](https://github.com/taitran501/legal_epr/actions/workflows/ci.yml)
+[![CI](https://github.com/taitran501/vietnam-legal-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/taitran501/vietnam-legal-agent/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Vietnamese-first software for preliminary Extended Producer Responsibility
-(EPR) research and compliance preparation.
+Vietnamese-first software for preliminary legal research, case analysis, and
+compliance preparation across selected legal domains.
 
-EPR Compliance Copilot helps a user look up a provision, assess a business
-situation, or prepare an evidence-linked checklist. It is deliberately
-bounded: answers are checked against the active repository-managed corpus,
-user-provided facts remain labelled as unverified, and the workflow can stop
-when evidence or a required dependency is missing.
+Vietnam Legal Agent helps a user look up a provision, assess a legal situation,
+or prepare an evidence-linked checklist. It is deliberately bounded: answers
+are checked against the active repository-managed corpus, user-provided facts
+remain labelled as unverified, and the workflow can stop when evidence or a
+required dependency is missing.
 
 > **Important:** This project provides preliminary information. It is not
 > legal advice, a formal legal opinion, or a substitute for the official
@@ -31,7 +31,7 @@ when evidence or a required dependency is missing.
 | --- | --- |
 | Legal lookup | A streamed answer with source citations and a source drawer for comparison. |
 | Case assessment | A guided form that asks for the facts required by the selected task and returns a preliminary assessment. |
-| Compliance checklist | A guided list of preparation actions linked to the available evidence. |
+| Legal/compliance checklist | A guided list of preparation actions linked to the available evidence. |
 | Autonomous Agent | Dynamic multi-step reasoning (ReAct loop) with tool calling, budget control ($\le 5$ steps), and layman-friendly query handling. |
 | Follow-up and recovery | Continue an active case, stop a turn, retry a failed turn, or regenerate a persisted answer. |
 | Explicit web research | Search configured official domains only when the user selects the research workflow. |
@@ -57,15 +57,16 @@ confident-looking answer:
 
 ## Scope and limitations
 
-The current product focuses on Vietnamese EPR law and the instruments tracked
-by the repository corpus. It does not currently provide:
+The current product focuses on Vietnamese legal research across selected
+domains, including civil/contracts, labor, corporate, land, traffic, and EPR.
+It does not currently provide:
 
 - document upload or OCR;
 - historical-law date selection;
 - broad web search outside configured official domains;
 - long-term user-profile memory;
 - a formal legal or compliance report (the export is explicitly preliminary);
-- legal coverage outside the EPR domain.
+- complete coverage or authoritative conclusions for every legal domain.
 
 ## Quick start: Docker Compose
 
@@ -80,8 +81,8 @@ PostgreSQL, Redis, Qdrant, and the one-shot corpus indexer.
 ### Start an isolated local preview
 
 ```bash
-git clone https://github.com/taitran501/legal_epr.git
-cd legal_epr
+git clone https://github.com/taitran501/vietnam-legal-agent.git
+cd vietnam-legal-agent
 cp .env.example .env
 ```
 

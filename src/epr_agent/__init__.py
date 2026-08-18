@@ -1,4 +1,4 @@
-"""Bounded agentic workflow for the EPR legal assistant.
+"""Bounded agentic workflow for the Vietnamese legal assistant.
 
 The legacy ``backend`` package remains available while this package becomes the
 new application boundary.  The workflow is deliberately bounded: it can choose

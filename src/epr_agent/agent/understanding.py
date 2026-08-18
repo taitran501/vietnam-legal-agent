@@ -1,4 +1,4 @@
-"""Structured task understanding for the closed EPR workflow.
+"""Structured task understanding for the closed legal workflow.
 
 The model may classify and extract explicit facts, but it cannot select a tool
 or create a new task.  The graph recomputes required facts and the bounded

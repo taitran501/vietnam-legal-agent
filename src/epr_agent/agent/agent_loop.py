@@ -1,4 +1,4 @@
-"""Autonomous Agent Cognitive Loop for EPR Legal Assistant.
+"""Autonomous agent cognitive loop for Vietnamese legal assistance.
 
 Implements the ReAct-style dynamic tool-calling loop (Reason -> Act -> Observe)
 with explicit step budgets, loop detection, and structured trajectory logging.
@@ -10,9 +10,9 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from epr_agent.agent.agent_prompt import SYSTEM_PROMPT
 from epr_agent.agent.planner import AgentBudgetController
@@ -77,18 +77,23 @@ class AgentRunConfig:
     enable_cache: bool = True
 
 
+ToolCallable = Callable[..., Awaitable[dict[str, Any]]]
+
+
 class EprAgentRunner:
-    """Autonomous ReAct runner for Vietnamese EPR legal analysis."""
+    """Autonomous ReAct runner for supported Vietnamese legal analysis."""
 
     def __init__(
         self,
         config: AgentRunConfig | None = None,
         llm: Any | None = None,
-        tools: list[Any] | None = None,
+        tools: list[ToolCallable] | None = None,
     ) -> None:
         self.config = config or AgentRunConfig()
-        self.tools = tools or ALL_AGENT_TOOLS
-        self._tools_map = {t.__name__: t for t in self.tools}
+        self.tools: list[ToolCallable] = tools if tools is not None else cast(list[ToolCallable], ALL_AGENT_TOOLS)
+        self._tools_map: dict[str, ToolCallable] = {
+            getattr(tool, "__name__", ""): tool for tool in self.tools
+        }
 
         if llm is not None:
             self._llm = llm

@@ -104,7 +104,7 @@ _jwks_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 def _fetch_json(url: str) -> dict[str, Any]:
-    request = URLRequest(url, headers={"Accept": "application/json", "User-Agent": "epr-chatbot/1.0"})
+    request = URLRequest(url, headers={"Accept": "application/json", "User-Agent": "vietnam-legal-agent/1.0"})
     with urlopen(request, timeout=5) as response:
         payload = json.loads(response.read().decode("utf-8"))
     if not isinstance(payload, dict):

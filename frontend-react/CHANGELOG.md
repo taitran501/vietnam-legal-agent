@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the EPR Chatbot Frontend will be documented in this file.
+All notable changes to the Vietnam Legal Agent frontend are documented in this file.
 
 ## [1.0.0] - 2025-04-04
 
@@ -8,7 +8,7 @@ All notable changes to the EPR Chatbot Frontend will be documented in this file.
 
 #### ✨ Features
 - **Real-time SSE Streaming** - Token-by-token response streaming with abort control
-- **Session Management** - Create, load, delete, rename conversations with Redis sync
+- **Session Management** - Create, load, delete, and rename conversations through the backend persistence API
 - **Markdown Rendering** - Full GFM support with syntax highlighting for code blocks
 - **Auto-Scroll** - Intelligent scroll behavior with scroll-to-bottom button
 - **Keyboard Shortcuts** - Enter to send, Escape to stop generation
@@ -90,19 +90,12 @@ npm run format    # Format code with Prettier
 - Fixed package versions (vite 5.x, plugin-react 4.x)
 
 #### ✅ Testing
-- Manual testing of all core features
-- SSE streaming verified with backend
-- Session CRUD operations tested
-- Dark mode toggle verified
-- Keyboard shortcuts tested
+- Vitest coverage for frontend utilities, state, rendering, and API contracts
+- Playwright coverage for the deterministic browser journeys
+- SSE streaming, session persistence, feedback, and safe-stop flows exercised by the test suite
 
-### 📋 Known Limitations
-- PDF/TXT export not yet implemented (Phase 4)
-- Mobile responsive design needs polish (Phase 5)
-- No E2E tests yet (Phase 5)
-- PWA support not implemented (Phase 5)
+### 📋 Current boundary
 
-### 🔜 Upcoming
-- Phase 3: Full session search and filtering
-- Phase 4: Export functionality, message actions
-- Phase 5: Mobile polish, accessibility, testing
+This entry records the initial frontend implementation. Current behavior and
+supported capabilities are defined by the React source, the browser contract,
+and the validation commands in the repository README; it is not a roadmap.

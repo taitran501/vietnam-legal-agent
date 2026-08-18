@@ -2,10 +2,10 @@
 
 ## Mục tiêu và ranh giới
 
-Ứng dụng giúp doanh nghiệp Việt Nam:
+Ứng dụng giúp người dùng Việt Nam:
 
-1. tra cứu một quy định EPR và mở văn bản gốc;
-2. cung cấp thông tin doanh nghiệp để nhận một đánh giá sơ bộ có căn cứ;
+1. tra cứu một quy định pháp luật và mở văn bản gốc;
+2. cung cấp thông tin tình huống để nhận một đánh giá sơ bộ có căn cứ;
 3. tạo danh sách việc cần làm từ cùng một bộ thông tin.
 
 Luồng legal lookup và luồng case dùng chung lịch sử, identity, SSE và source
@@ -22,7 +22,7 @@ flowchart LR
     API --> W["V4 workflow runtime"]
     API --> P["Persistence and session store"]
     W --> R["CaseFormResolver"]
-    W --> RP["Versioned EPR rule pack"]
+    W --> RP["Versioned domain rule packs, including EPR"]
     W --> L["Legal retrieval"]
     L --> Q["Qdrant index"]
     L --> O["Official legal sources"]

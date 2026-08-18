@@ -61,7 +61,7 @@ class QdrantLegalRetrievalGateway:
         settings = get_settings()
         records = [_to_record(document, source="legal", index=i) for i, document in enumerate(documents)]
         for record in records:
-            record.metadata.setdefault("source", str(getattr(settings, "law_citation_label", "EPR legal corpus")))
+            record.metadata.setdefault("source", str(getattr(settings, "law_citation_label", "Vietnamese legal corpus")))
             record.metadata.setdefault("Corpus_Version", str(getattr(settings, "corpus_version", "epr-corpus-v1")))
             record.metadata.setdefault("document_id", record.document_id)
             if request is not None:

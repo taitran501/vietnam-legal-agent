@@ -1,8 +1,8 @@
-"""Bounded transition policy for the EPR workflow.
+"""Bounded transition policy for the legal workflow.
 
 There is no free-form tool call here.  The planner returns one member of
 ``Action`` and the graph owns the actual transition.  This is the important
-boundary between an agentic workflow and an unconstrained chatbot loop.
+boundary between an agentic workflow and an unconstrained legal-agent loop.
 """
 
 from __future__ import annotations

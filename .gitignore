@@ -52,6 +52,7 @@ artifacts/
 output/
 .playwright-cli/
 .codex_tmp/
+.codegraph/
 tests/eval/results_*.json
 tests/eval/*_report.json
 data/eval/

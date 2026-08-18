@@ -24,6 +24,9 @@ export default defineConfig({
     {
       command: `${python} -m uvicorn tests.e2e_backend:app --host 127.0.0.1 --port 8010`,
       cwd: '..',
+      // Deterministic browser acceptance must not upload traces or depend on
+      // a developer's optional LangSmith credentials.
+      env: { LANGCHAIN_TRACING_V2: 'false' },
       url: 'http://127.0.0.1:8010/api/v1/health',
       reuseExistingServer: reuseLocalServer,
     },
