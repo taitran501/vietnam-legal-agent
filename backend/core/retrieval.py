@@ -69,7 +69,11 @@ def _get_qdrant_client() -> QdrantClient:
         elif settings.qdrant_url:
             _qdrant_client = QdrantClient(url=settings.qdrant_url, timeout=10)
         else:
-            _qdrant_client = QdrantClient(path=settings.qdrant_local_path, timeout=10)
+            try:
+                _qdrant_client = QdrantClient(path=settings.qdrant_local_path, timeout=10)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Local Qdrant path initialization failed (%s); fallback to memory client", exc)
+                _qdrant_client = QdrantClient(":memory:", timeout=10)
         return _qdrant_client
 
 

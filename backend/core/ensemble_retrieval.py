@@ -988,12 +988,20 @@ class _EnsembleRetriever:
         # Step 1: Run semantic + lexical retrieval in parallel.
         def _timed_semantic() -> tuple[list[Document], float]:
             stage_started = time.perf_counter()
-            docs = self._retrieve_semantic(retrieval_query, k=self.semantic_k)
+            try:
+                docs = self._retrieve_semantic(retrieval_query, k=self.semantic_k)
+            except Exception as exc:  # noqa: BLE001 - safe fallback to lexical/sqlite if Qdrant is unavailable
+                logger.warning("Semantic retrieval failed: %s", exc)
+                docs = []
             return docs, (time.perf_counter() - stage_started) * 1000
 
         def _timed_lexical() -> tuple[list[Document], float]:
             stage_started = time.perf_counter()
-            docs = self._retrieve_lexical(retrieval_query, k=self.lexical_k)
+            try:
+                docs = self._retrieve_lexical(retrieval_query, k=self.lexical_k)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Lexical retrieval failed: %s", exc)
+                docs = []
             return docs, (time.perf_counter() - stage_started) * 1000
 
         stage_started = time.perf_counter()

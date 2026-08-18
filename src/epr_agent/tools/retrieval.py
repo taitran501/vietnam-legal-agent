@@ -52,12 +52,16 @@ class QdrantLegalRetrievalGateway:
         from backend.core.retrieval import retrieve_legal_async
 
         request = query if isinstance(query, RetrievalRequest) else None
-        documents = await retrieve_legal_async(
-            retrieval_query(query),
-            required_anchors=request.required_anchors if request else None,
-            metadata_filters=request.metadata_filters if request else None,
-            top_k=request.top_k if request else 10,
-        )
+        documents = []
+        try:
+            documents = await retrieve_legal_async(
+                retrieval_query(query),
+                required_anchors=request.required_anchors if request else None,
+                metadata_filters=request.metadata_filters if request else None,
+                top_k=request.top_k if request else 10,
+            )
+        except Exception as exc:  # noqa: BLE001 - fallback to Universal Legal Retriever
+            logger.warning("Primary Qdrant legal retrieval failed or unavailable (%s), falling back to universal legal corpus", exc)
         settings = get_settings()
         records = [_to_record(document, source="legal", index=i) for i, document in enumerate(documents)]
         for record in records:

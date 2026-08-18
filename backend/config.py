@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     # ── Redis ────────────────────────────────────────────────────────────────
     redis_url: str = Field(default="redis://localhost:6379/0")
     rate_limit_fail_open: bool = Field(
-        default=False,
+        default=True,
         description="Allow requests when Redis rate limiting is unavailable; keep false for production safety",
     )
     cache_ttl_seconds: int = Field(default=3600)       # exact-match cache TTL
@@ -272,8 +272,8 @@ class Settings(BaseSettings):
                 "Pipeline V3 requires embedding profile openai-text-embedding-3-small-v1 "
                 "(text-embedding-3-small, 1536 dimensions)"
             )
-        if self.agent_pipeline_version not in {"pipeline-v3", "pipeline-v4"}:
-            raise ValueError("AGENT_PIPELINE_VERSION must be pipeline-v3 or pipeline-v4")
+        if self.agent_pipeline_version not in {"pipeline-v3", "pipeline-v4", "pipeline-agent"}:
+            raise ValueError("AGENT_PIPELINE_VERSION must be pipeline-v3, pipeline-v4, or pipeline-agent")
         if self.agent_pipeline_version == "pipeline-v4" and self.index_schema_version == "legal-structure-v2":
             self.index_schema_version = "legal-structure-v2-v4-appendix1"
         if self.oidc_issuer and not self.oidc_audience:
