@@ -9,6 +9,7 @@ import { WorkflowResultCard } from '@/components/Agent/WorkflowResultCard';
 import { ContractRedlineCard, type ContractRedlineReportData } from '@/components/Case/ContractRedlineCard';
 import { LegalCalculatorCard, type CalculatorData } from '@/components/Case/LegalCalculatorCard';
 import { DocumentDraftCard, type DocumentDraftData } from '@/components/Case/DocumentDraftCard';
+import { TraceTimelineDrawer } from './TraceTimelineDrawer';
 import { Icon } from '@/components/UI/Icon';
 
 interface ChatMessageProps {
@@ -25,6 +26,7 @@ interface ChatMessageProps {
 export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOpenSources, onRegenerate, onResearch, onExport, webResearchReady }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
+  const [isTraceOpen, setIsTraceOpen] = useState(false);
 
   if (isUser) {
     return (
@@ -126,7 +128,18 @@ export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOp
                 </span>
               )}
             </div>
-            <div>
+            <div className="flex items-center gap-2">
+              {message.workflow?.trace_id && (
+                <button
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-teal-700"
+                  onClick={() => setIsTraceOpen(true)}
+                  title="Xem chi tiết Waterfall Timeline & Hiệu năng lượt này"
+                  type="button"
+                >
+                  <Icon name="history" size={11} />
+                  Trace
+                </button>
+              )}
               <MessageActions
                 copied={copied}
                 message={message}
@@ -138,6 +151,12 @@ export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOp
               />
             </div>
           </div>
+
+          <TraceTimelineDrawer
+            isOpen={isTraceOpen}
+            onClose={() => setIsTraceOpen(false)}
+            traceId={message.workflow?.trace_id}
+          />
         </div>
       </div>
     </article>

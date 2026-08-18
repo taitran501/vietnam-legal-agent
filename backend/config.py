@@ -57,6 +57,14 @@ class Settings(BaseSettings):
     )
     corpus_id: str = Field(default="epr")
     index_schema_version: str = Field(default="legal-structure-v2")
+    embedding_provider: str = Field(
+        default="auto",
+        description="Embedding provider: openai | local | auto",
+    )
+    local_embedding_model: str = Field(
+        default="darklethelong/vnlegal-lal",
+        description="HuggingFace / SentenceTransformers model ID for local legal embeddings",
+    )
     embedding_profile: str = Field(default="openai-text-embedding-3-small-v1")
     embedding_model: str = Field(default="text-embedding-3-small")
     embedding_dimensions: int = Field(default=1536, ge=1)
@@ -263,14 +271,27 @@ class Settings(BaseSettings):
             raise ValueError(
                 "USE_QDRANT_CLOUD=true requires both QDRANT_CLOUD_URL and QDRANT_API_KEY"
             )
-        if (
+        # Validate supported embedding profiles
+        _valid_profiles = {
+            "openai-text-embedding-3-small-v1": (1536, "text-embedding-3-small"),
+            "vnlegal-lal-v1": (1024, "darklethelong/vnlegal-lal"),
+            "vietnamese-legal-embedding-v1": (768, "bqbbao6/vietnamese-legal-embedding"),
+            "bge-m3-v1": (1024, "BAAI/bge-m3"),
+        }
+        if self.embedding_profile in _valid_profiles:
+            expected_dim, _ = _valid_profiles[self.embedding_profile]
+            if self.embedding_dimensions != expected_dim:
+                self.embedding_dimensions = expected_dim
+        elif self.embedding_provider in {"local", "sentence_transformers"}:
+            pass  # Custom local model
+        elif (
             self.embedding_profile != "openai-text-embedding-3-small-v1"
-            or self.embedding_model != "text-embedding-3-small"
-            or self.embedding_dimensions != 1536
+            and self.embedding_dimensions != 1536
+            and self.embedding_provider == "openai"
         ):
             raise ValueError(
-                "Pipeline V3 requires embedding profile openai-text-embedding-3-small-v1 "
-                "(text-embedding-3-small, 1536 dimensions)"
+                f"Unsupported embedding profile: {self.embedding_profile}. "
+                f"Supported: {list(_valid_profiles.keys())}"
             )
         if self.agent_pipeline_version not in {"pipeline-v3", "pipeline-v4", "pipeline-agent"}:
             raise ValueError("AGENT_PIPELINE_VERSION must be pipeline-v3, pipeline-v4, or pipeline-agent")

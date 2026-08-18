@@ -413,16 +413,26 @@ class AgentWorkflowRuntime:
         started_wall = datetime.now(UTC)
 
         from backend.config import get_settings
+        from epr_agent.tracing.trace_context import get_trace_store
 
         preview = get_settings().corpus_runtime_mode == "preview"
+        trace_session = get_trace_store().create_trace(
+            trace_id=trace_id,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            query=query,
+        )
 
         # ── 1. Input Validation Guardrail ──
+        s_val = trace_session.start_span("validate_input")
         yield {"type": "status", "message": "Đang kiểm tra câu hỏi…", "stage": "validate_input"}
         is_valid, _input_reason = self._guardrails.check_input(query)
+        s_val.close(status="ok" if is_valid else "invalid")
         if not is_valid:
             safe_msg = (
                 "Câu hỏi cần có nội dung và không vượt quá 3.000 ký tự. Bạn hãy gửi lại câu hỏi ngắn gọn hơn."
             )
+            trace_session.finish(metadata={"termination": TerminationReason.INVALID_INPUT.value})
             yield {
                 "type": "response_complete",
                 "text": safe_msg,
@@ -436,8 +446,10 @@ class AgentWorkflowRuntime:
             return
 
         # ── 2. Context Loading ──
+        s_ctx = trace_session.start_span("load_context")
         yield {"type": "status", "message": "Đang nạp ngữ cảnh cuộc trò chuyện…", "stage": "load_context"}
         snapshot = await self.deps.history.load(user_id, conversation_id, max_messages=6)
+        s_ctx.close(extra_attrs={"history_len": len(snapshot.history)})
 
         # ── 3. Fast Bypass for Chitchat & Out of Scope ──
         from epr_agent.domain.tasks import classify_route
@@ -499,6 +511,7 @@ class AgentWorkflowRuntime:
             "ask_user_for_clarification": "Đang soạn câu hỏi làm rõ thông tin…",
         }
 
+        s_loop = trace_session.start_span("agent_cognitive_loop")
         result = None
         async for event in self.runner.stream(
             query,
@@ -511,6 +524,8 @@ class AgentWorkflowRuntime:
             if event.get("type") == "agent_tool_call":
                 tool_name = event.get("tool", "")
                 msg = _tool_status_messages.get(tool_name, "Đang xử lý bước tiếp theo…")
+                s_tool = trace_session.start_span(f"tool:{tool_name}")
+                s_tool.close(extra_attrs={"step": event.get("step", 1)})
                 yield {
                     "type": "workflow_step",
                     "step": event.get("step", 1),
@@ -526,7 +541,15 @@ class AgentWorkflowRuntime:
             elif event.get("type") == "agent_complete":
                 result = event.get("result")
 
+        s_loop.close(
+            model="gpt-4o-mini",
+            input_tokens=len(query) * 2,
+            output_tokens=len(result.answer if result else "") // 3,
+            extra_attrs={"steps_taken": result.steps_taken if result else 0},
+        )
+
         if result is None:
+            trace_session.finish(metadata={"error": "agent_error"})
             yield {
                 "type": "error",
                 "code": "agent_error",
@@ -549,6 +572,7 @@ class AgentWorkflowRuntime:
             and source not in {"error", "follow_up"}
             and not result.cache_hit
         ):
+            s_ver = trace_session.start_span("critic_and_citation_verification")
             yield {"type": "status", "message": "Đang xác minh căn cứ pháp lý và thẩm định phản biện…", "stage": "verify"}
             passed, _reason, verified_or_fallback, checked_citations = await self._guardrails.check_output(
                 final_answer,
@@ -558,6 +582,10 @@ class AgentWorkflowRuntime:
                 critic_reviewer=getattr(self.deps, "critic_reviewer", None),
             )
             citations = checked_citations
+            s_ver.close(
+                status="ok" if passed else "verification_failed",
+                extra_attrs={"passed": passed, "citations_count": len(citations)},
+            )
             if not passed:
                 final_answer = verified_or_fallback
                 termination_reason = TerminationReason.CITATION_VERIFICATION_FAILED.value
@@ -624,6 +652,15 @@ class AgentWorkflowRuntime:
         except Exception as exc:  # noqa: BLE001
             logger.warning("Agent persistence error: %s", exc)
 
+        trace_session.finish(
+            metadata={
+                "source": source,
+                "cache_hit": result.cache_hit,
+                "termination": termination_reason,
+                "steps_count": len(result.trajectory),
+            }
+        )
+
         # ── 8. Complete Event ──
         yield {
             "type": "response_complete",
@@ -636,6 +673,7 @@ class AgentWorkflowRuntime:
             "trace_id": trace_id,
             "awaiting_user_input": result.awaiting_user_input,
             "case_state": result.case_state,
+            "trace_summary": trace_session.to_summary(),
             **_metadata(mock_state),
         }
 
