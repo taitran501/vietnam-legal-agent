@@ -227,6 +227,7 @@ app.add_middleware(metrics_module.MetricsMiddleware)
 # Register routers
 from backend.api.routes.case_form import router as case_form_router
 from backend.api.routes.chat import router as chat_router
+from backend.api.routes.documents import router as documents_router
 from backend.api.routes.feedback import router as feedback_router
 from backend.api.routes.health import router as health_router
 from backend.api.routes.me import router as me_router
@@ -234,6 +235,7 @@ from backend.api.routes.sessions import router as sessions_router
 from backend.api.routes.traces import router as traces_router
 
 app.include_router(chat_router, prefix="/api/v1")
+app.include_router(documents_router, prefix="/api/v1")
 app.include_router(case_form_router, prefix="/api/v1")
 app.include_router(health_router, prefix="/api/v1")
 app.include_router(sessions_router, prefix="/api/v1")

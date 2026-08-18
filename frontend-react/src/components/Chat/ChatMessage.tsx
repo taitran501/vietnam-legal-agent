@@ -6,6 +6,9 @@ import { MessageActions } from './MessageActions';
 import { SourceDocuments } from './SourceDocuments';
 import { ReasoningBlock } from './ReasoningBlock';
 import { WorkflowResultCard } from '@/components/Agent/WorkflowResultCard';
+import { ContractRedlineCard, type ContractRedlineReportData } from '@/components/Case/ContractRedlineCard';
+import { LegalCalculatorCard, type CalculatorData } from '@/components/Case/LegalCalculatorCard';
+import { DocumentDraftCard, type DocumentDraftData } from '@/components/Case/DocumentDraftCard';
 import { Icon } from '@/components/UI/Icon';
 
 interface ChatMessageProps {
@@ -80,6 +83,18 @@ export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOp
               }}
             />
           </div>
+
+          {message.workflow?.redline_report && (
+            <ContractRedlineCard report={message.workflow.redline_report as unknown as ContractRedlineReportData} />
+          )}
+
+          {message.workflow?.calculator_result && (
+            <LegalCalculatorCard data={message.workflow.calculator_result as unknown as CalculatorData} />
+          )}
+
+          {message.workflow?.document_draft && (
+            <DocumentDraftCard draft={message.workflow.document_draft as unknown as DocumentDraftData} />
+          )}
 
           <WorkflowResultCard
             onContinueCase={onContinueCase}

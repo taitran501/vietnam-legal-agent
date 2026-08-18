@@ -4,6 +4,7 @@ export type IconName =
   | 'alert'
   | 'book'
   | 'building'
+  | 'calculator'
   | 'case'
   | 'check'
   | 'checklist'
@@ -13,9 +14,11 @@ export type IconName =
   | 'close'
   | 'collapse'
   | 'copy'
+  | 'download'
   | 'edit'
   | 'expand'
   | 'externalLink'
+  | 'fileCheck'
   | 'fileText'
   | 'help'
   | 'history'
@@ -24,6 +27,7 @@ export type IconName =
   | 'menu'
   | 'message'
   | 'more'
+  | 'paperclip'
   | 'plus'
   | 'scale'
   | 'search'
@@ -62,19 +66,25 @@ const paths: Record<IconName, ReactNode> = {
       <path d="M14 15h1" />
     </>
   ),
+  calculator: (
+    <>
+      <rect height="18" rx="2" width="16" x="4" y="3" />
+      <line x1="8" x2="16" y1="7" y2="7" />
+      <line x1="8" x2="8.01" y1="11" y2="11" />
+      <line x1="12" x2="12.01" y1="11" y2="11" />
+      <line x1="16" x2="16.01" y1="11" y2="11" />
+      <line x1="8" x2="8.01" y1="15" y2="15" />
+      <line x1="12" x2="12.01" y1="15" y2="15" />
+      <line x1="16" x2="16.01" y1="15" y2="15" />
+    </>
+  ),
   case: (
     <>
-      <rect width="18" height="14" x="3" y="7" rx="2" />
-      <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-      <path d="M12 12v.01" />
-      <path d="M3 13a20 20 0 0 0 18 0" />
+      <rect height="14" rx="2" width="20" x="2" y="7" />
+      <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
     </>
   ),
-  check: (
-    <>
-      <path d="M20 6 9 17l-5-5" />
-    </>
-  ),
+  check: <path d="M20 6 9 17l-5-5" />,
   checklist: (
     <>
       <path d="m3 5 1.5 1.5L7 4" />
@@ -106,6 +116,13 @@ const paths: Record<IconName, ReactNode> = {
       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
     </>
   ),
+  download: (
+    <>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" x2="12" y1="15" y2="3" />
+    </>
+  ),
   edit: (
     <>
       <path d="M12 20h9" />
@@ -118,6 +135,13 @@ const paths: Record<IconName, ReactNode> = {
       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
       <polyline points="15 3 21 3 21 9" />
       <line x1="10" x2="21" y1="14" y2="3" />
+    </>
+  ),
+  fileCheck: (
+    <>
+      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z" />
+      <polyline points="14 2 14 8 20 8" />
+      <path d="m9 15 2 2 4-4" />
     </>
   ),
   fileText: (
@@ -139,7 +163,7 @@ const paths: Record<IconName, ReactNode> = {
     <>
       <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
       <path d="M3 3v5h5" />
-      <path d="M12 7v5l3 2" />
+      <path d="M12 7v5l4 2" />
     </>
   ),
   info: (
@@ -151,28 +175,33 @@ const paths: Record<IconName, ReactNode> = {
   ),
   logout: (
     <>
-      <path d="M10 17l5-5-5-5" />
-      <path d="M15 12H3" />
-      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" x2="9" y1="12" y2="12" />
     </>
   ),
   menu: (
     <>
-      <path d="M4 6h16" />
-      <path d="M4 12h16" />
-      <path d="M4 18h16" />
+      <line x1="4" x2="20" y1="12" y2="12" />
+      <line x1="4" x2="20" y1="6" y2="6" />
+      <line x1="4" x2="20" y1="18" y2="18" />
     </>
   ),
   message: (
     <>
-      <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z" />
+      <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
     </>
   ),
   more: (
     <>
-      <circle cx="12" cy="5" r="1" />
       <circle cx="12" cy="12" r="1" />
-      <circle cx="12" cy="19" r="1" />
+      <circle cx="19" cy="12" r="1" />
+      <circle cx="5" cy="12" r="1" />
+    </>
+  ),
+  paperclip: (
+    <>
+      <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
     </>
   ),
   plus: (

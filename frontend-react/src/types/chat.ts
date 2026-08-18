@@ -96,6 +96,9 @@ export interface WorkflowMetadata {
   safe_stop_reason?: string;
   preview?: boolean;
   steps?: WorkflowStep[];
+  redline_report?: Record<string, unknown>;
+  calculator_result?: Record<string, unknown>;
+  document_draft?: Record<string, unknown>;
 }
 
 export interface SourceSnapshot {
