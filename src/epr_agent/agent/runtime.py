@@ -772,17 +772,16 @@ async def stream_chat(
         "legacy_session_id": legacy_session_id,
         "mode": mode,
     }
-    if selected.__class__.__name__ == "V4WorkflowRuntime":
-        request_kwargs.update(
-            operation=operation,
-            intent_hint=intent_hint,
-            interaction_source=interaction_source,
-            case_patch=case_patch or {},
-            fact_updates=fact_updates or {},
-            replay_metadata=replay_metadata or {},
-            turn_id=turn_id,
-            target_assistant_message_id=target_assistant_message_id,
-        )
+    request_kwargs.update(
+        operation=operation,
+        intent_hint=intent_hint,
+        interaction_source=interaction_source,
+        case_patch=case_patch or {},
+        fact_updates=fact_updates or {},
+        replay_metadata=replay_metadata or {},
+        turn_id=turn_id,
+        target_assistant_message_id=target_assistant_message_id,
+    )
     async for event in selected.stream(**request_kwargs):
         yield event
 
