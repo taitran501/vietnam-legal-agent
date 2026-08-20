@@ -1,0 +1,1614 @@
+{
+  "timestamp": "2026-08-19T06:50:41Z",
+  "collection": "vietnam_legal_collection_v1",
+  "embedding_model": "darklethelong/vnlegal-lal",
+  "sample_size": 50,
+  "total_suite_duration_s": 1079.85,
+  "overall_retrieval_metrics": {
+    "hit_at_1": 0.54,
+    "hit_at_3": 0.66,
+    "hit_at_5": 0.68,
+    "hit_at_10": 0.8,
+    "mrr_at_10": 0.6189,
+    "ndcg_at_3": 0.5596,
+    "ndcg_at_10": 0.6447,
+    "avg_retrieval_latency_ms": 4846.5
+  },
+  "overall_ragas_metrics": {
+    "faithfulness": 0.8352,
+    "answer_relevance": 0.9,
+    "context_precision": 0.2848,
+    "context_recall": 0.52,
+    "statutory_anchor_accuracy": 0.28,
+    "composite_ragas_score": 0.6503,
+    "pass_rate": 0.1,
+    "avg_e2e_latency_s": 8.18
+  },
+  "domain_breakdown": {
+    "labor_and_employment": {
+      "count": 10,
+      "hit_at_3": 0.8,
+      "mrr_at_10": 0.7367,
+      "ndcg_at_10": 0.7869,
+      "faithfulness": 0.9083,
+      "answer_relevance": 0.97,
+      "composite_ragas_score": 0.698,
+      "pass_rate": 0.1
+    },
+    "civil_and_contracts": {
+      "count": 10,
+      "hit_at_3": 0.8,
+      "mrr_at_10": 0.75,
+      "ndcg_at_10": 0.7502,
+      "faithfulness": 0.93,
+      "answer_relevance": 1.0,
+      "composite_ragas_score": 0.707,
+      "pass_rate": 0.1
+    },
+    "land_and_real_estate": {
+      "count": 8,
+      "hit_at_3": 0.375,
+      "mrr_at_10": 0.3637,
+      "ndcg_at_10": 0.4513,
+      "faithfulness": 0.691,
+      "answer_relevance": 0.8,
+      "composite_ragas_score": 0.6323,
+      "pass_rate": 0.25
+    },
+    "corporate_and_commercial": {
+      "count": 8,
+      "hit_at_3": 0.75,
+      "mrr_at_10": 0.6875,
+      "ndcg_at_10": 0.688,
+      "faithfulness": 1.0,
+      "answer_relevance": 1.0,
+      "composite_ragas_score": 0.6912,
+      "pass_rate": 0.0
+    },
+    "marriage_and_family": {
+      "count": 7,
+      "hit_at_3": 0.8571,
+      "mrr_at_10": 0.8095,
+      "ndcg_at_10": 0.8217,
+      "faithfulness": 1.0,
+      "answer_relevance": 1.0,
+      "composite_ragas_score": 0.7457,
+      "pass_rate": 0.1429
+    },
+    "environmental_and_epr": {
+      "count": 7,
+      "hit_at_3": 0.2857,
+      "mrr_at_10": 0.2857,
+      "ndcg_at_10": 0.2857,
+      "faithfulness": 0.4071,
+      "answer_relevance": 0.5571,
+      "composite_ragas_score": 0.3793,
+      "pass_rate": 0.0
+    }
+  },
+  "case_details": [
+    {
+      "id": "VN_LABOR_001",
+      "domain": "labor_and_employment",
+      "query": "Quy định thời gian thử việc tối đa là bao lâu theo Bộ luật Lao động?",
+      "latency_retrieval_ms": 78833.1,
+      "latency_total_s": 85.94,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "hit_at_10": 1,
+        "mrr_10": 0.1667,
+        "ndcg_3": 0.0,
+        "ndcg_10": 0.3562,
+        "ranks": [
+          6
+        ]
+      },
+      "ragas": {
+        "faithfulness": 0.25,
+        "answer_relevance": 0.7,
+        "context_precision": 0.333,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.4,
+        "passed": false
+      },
+      "answer_preview": "Theo quy định tại Điều 24 của Bộ luật Lao động số 45/2019/QH14, không có quy định cụ thể về thời gian thử việc tối đa trong văn bản này. Tuy nhiên, Đi..."
+    },
+    {
+      "id": "VN_LABOR_002",
+      "domain": "labor_and_employment",
+      "query": "Công ty sa thải trái luật thì người lao động được bồi thường những khoản tiền nào?",
+      "latency_retrieval_ms": 2179.3,
+      "latency_total_s": 6.28,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 0.2,
+        "ndcg_3": 0.0,
+        "ndcg_10": 0.3869,
+        "ranks": [
+          5
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.5,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.5,
+        "overall_score": 0.775,
+        "passed": false
+      },
+      "answer_preview": "Theo quy định tại Điều 41 của Bộ luật Lao động số 45/2019/QH14, người lao động bị sa thải trái luật sẽ được bồi thường các khoản tiền sau:  1. **Tiền ..."
+    },
+    {
+      "id": "VN_LABOR_003",
+      "domain": "labor_and_employment",
+      "query": "Mức tiền lương làm thêm giờ vào ngày nghỉ hàng tuần và ngày lễ tết được tính thế nào?",
+      "latency_retrieval_ms": 2254.5,
+      "latency_total_s": 8.55,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 1.0,
+        "ndcg_10": 1.0,
+        "ranks": [
+          1,
+          2,
+          3
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.333,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.7,
+        "passed": false
+      },
+      "answer_preview": "Mức tiền lương làm thêm giờ vào ngày nghỉ hàng tuần và ngày lễ tết được quy định cụ thể tại Điều 20.2.LQ.98 của Bộ luật Lao động số 45/2019/QH14 và Đi..."
+    },
+    {
+      "id": "VN_LABOR_004",
+      "domain": "labor_and_employment",
+      "query": "Người lao động muốn đơn phương chấm dứt hợp đồng lao động không xác định thời hạn phải báo trước bao nhiêu ngày?",
+      "latency_retrieval_ms": 1901.8,
+      "latency_total_s": 3.78,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 0.5,
+        "ndcg_3": 0.5307,
+        "ndcg_10": 0.672,
+        "ranks": [
+          2,
+          3,
+          9
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.167,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.5,
+        "overall_score": 0.725,
+        "passed": false
+      },
+      "answer_preview": "Người lao động muốn đơn phương chấm dứt hợp đồng lao động không xác định thời hạn phải báo trước ít nhất 45 ngày. Căn cứ theo Điều 35, Khoản 1, Điểm a..."
+    },
+    {
+      "id": "VN_LABOR_005",
+      "domain": "labor_and_employment",
+      "query": "Doanh nghiệp có được giữ bản chính văn bằng, chứng chỉ của người lao động khi giao kết HĐLĐ không?",
+      "latency_retrieval_ms": 1872.7,
+      "latency_total_s": 3.52,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 1.0,
+        "ndcg_10": 1.0,
+        "ranks": [
+          1
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.167,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.675,
+        "passed": false
+      },
+      "answer_preview": "Doanh nghiệp không được giữ bản chính văn bằng, chứng chỉ của người lao động khi giao kết hợp đồng lao động. Căn cứ theo Điều 20.2.LQ.17, Khoản 1 của ..."
+    },
+    {
+      "id": "VN_LABOR_006",
+      "domain": "labor_and_employment",
+      "query": "Số ngày nghỉ phép hàng năm tối thiểu của người lao động làm việc trong điều kiện bình thường là bao nhiêu ngày?",
+      "latency_retrieval_ms": 3424.0,
+      "latency_total_s": 5.81,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 0.7654,
+        "ndcg_10": 0.8894,
+        "ranks": [
+          1,
+          2,
+          5,
+          8,
+          10
+        ]
+      },
+      "ragas": {
+        "faithfulness": 0.833,
+        "answer_relevance": 1.0,
+        "context_precision": 0.167,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.5,
+        "overall_score": 0.675,
+        "passed": false
+      },
+      "answer_preview": "Số ngày nghỉ phép hàng năm tối thiểu của người lao động làm việc trong điều kiện bình thường là 12 ngày. Căn cứ theo Điều 113 Bộ luật Lao động số 45/2..."
+    },
+    {
+      "id": "VN_LABOR_007",
+      "domain": "labor_and_employment",
+      "query": "Điều kiện và mức hưởng trợ cấp thôi việc theo Bộ luật Lao động được tính như thế nào?",
+      "latency_retrieval_ms": 2203.6,
+      "latency_total_s": 7.56,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 0.5,
+        "ndcg_3": 0.5307,
+        "ndcg_10": 0.6981,
+        "ranks": [
+          2,
+          3,
+          6,
+          9
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.5,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.725,
+        "passed": false
+      },
+      "answer_preview": "Theo quy định tại Điều 20.2.LQ.46 của Bộ luật Lao động số 45/2019/QH14, điều kiện và mức hưởng trợ cấp thôi việc được quy định như sau:  1. **Điều kiệ..."
+    },
+    {
+      "id": "VN_LABOR_008",
+      "domain": "labor_and_employment",
+      "query": "Thời giờ làm việc bình thường của người lao động tối đa không quá bao nhiêu giờ trong một ngày và một tuần?",
+      "latency_retrieval_ms": 2327.5,
+      "latency_total_s": 4.11,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 1.0,
+        "ndcg_10": 1.0,
+        "ranks": [
+          1
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.167,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.675,
+        "passed": false
+      },
+      "answer_preview": "Thời giờ làm việc bình thường của người lao động tối đa không quá 08 giờ trong 01 ngày và không quá 48 giờ trong 01 tuần.   Căn cứ theo Điều 20.2.LQ.1..."
+    },
+    {
+      "id": "VN_LABOR_009",
+      "domain": "labor_and_employment",
+      "query": "Người sử dụng lao động đơn phương chấm dứt hợp đồng lao động xác định thời hạn từ 12 đến 36 tháng phải báo trước bao nhiêu ngày?",
+      "latency_retrieval_ms": 3798.5,
+      "latency_total_s": 5.0,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 0.7039,
+        "ndcg_10": 0.8665,
+        "ranks": [
+          1,
+          3,
+          4,
+          10
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.2,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.5,
+        "overall_score": 0.73,
+        "passed": false
+      },
+      "answer_preview": "Người sử dụng lao động đơn phương chấm dứt hợp đồng lao động xác định thời hạn từ 12 đến 36 tháng phải báo trước ít nhất 30 ngày.   Căn cứ pháp lý: Đi..."
+    },
+    {
+      "id": "VN_LABOR_010",
+      "domain": "labor_and_employment",
+      "query": "Độ tuổi nghỉ hưu của người lao động trong điều kiện lao động bình thường theo lộ trình Bộ luật Lao động 2019 là bao nhiêu?",
+      "latency_retrieval_ms": 2316.3,
+      "latency_total_s": 4.92,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 1.0,
+        "ndcg_10": 1.0,
+        "ranks": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.333,
+        "context_recall": 1.0,
+        "anchor_accuracy": 1.0,
+        "overall_score": 0.9,
+        "passed": true
+      },
+      "answer_preview": "Độ tuổi nghỉ hưu của người lao động trong điều kiện lao động bình thường theo lộ trình quy định tại Bộ luật Lao động 2019 (Điều 169) và Nghị định số 1..."
+    },
+    {
+      "id": "VN_CIVIL_001",
+      "domain": "civil_and_contracts",
+      "query": "Mức trần lãi suất vay do các bên thỏa thuận theo Bộ luật Dân sự tối đa là bao nhiêu % một năm?",
+      "latency_retrieval_ms": 2295.1,
+      "latency_total_s": 4.4,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 0.7039,
+        "ndcg_10": 0.8711,
+        "ranks": [
+          1,
+          3,
+          6
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.167,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.5,
+        "overall_score": 0.725,
+        "passed": false
+      },
+      "answer_preview": "Mức trần lãi suất vay do các bên thỏa thuận theo Bộ luật Dân sự tối đa là 20% một năm. Căn cứ theo Điều 468, Khoản 1 của Bộ luật Dân sự số 91/2015/QH1..."
+    },
+    {
+      "id": "VN_CIVIL_002",
+      "domain": "civil_and_contracts",
+      "query": "Mức phạt vi phạm tối đa trong hợp đồng thương mại theo Luật Thương mại 2005 là bao nhiêu %?",
+      "latency_retrieval_ms": 2499.7,
+      "latency_total_s": 5.53,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 1.0,
+        "ndcg_10": 1.0,
+        "ranks": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      "ragas": {
+        "faithfulness": 0.75,
+        "answer_relevance": 1.0,
+        "context_precision": 0.167,
+        "context_recall": 1.0,
+        "anchor_accuracy": 0.5,
+        "overall_score": 0.75,
+        "passed": false
+      },
+      "answer_preview": "Căn cứ vào Điều 34.11.LQ.292 của Luật Thương mại 2005 (Luật số 36/2005/QH11), không có quy định cụ thể về mức phạt vi phạm tối đa trong hợp đồng thươn..."
+    },
+    {
+      "id": "VN_CIVIL_003",
+      "domain": "civil_and_contracts",
+      "query": "Bên nhận đặt cọc từ chối giao kết hợp đồng thì phải chịu phạt cọc như thế nào theo quy định pháp luật?",
+      "latency_retrieval_ms": 3021.0,
+      "latency_total_s": 6.58,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 1.0,
+        "ndcg_10": 1.0,
+        "ranks": [
+          1
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.333,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.5,
+        "overall_score": 0.75,
+        "passed": false
+      },
+      "answer_preview": "Theo quy định tại Điều 328 Bộ luật Dân sự số 91/2015/QH13, có hiệu lực thi hành kể từ ngày 01/01/2017, cụ thể là Khoản 2, trường hợp bên nhận đặt cọc ..."
+    },
+    {
+      "id": "VN_CIVIL_004",
+      "domain": "civil_and_contracts",
+      "query": "Thời hiệu khởi kiện yêu cầu Tòa án giải quyết tranh chấp hợp đồng dân sự là bao lâu?",
+      "latency_retrieval_ms": 3374.8,
+      "latency_total_s": 4.95,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 1.0,
+        "ndcg_10": 1.0,
+        "ranks": [
+          1
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.167,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.5,
+        "overall_score": 0.725,
+        "passed": false
+      },
+      "answer_preview": "Thời hiệu khởi kiện yêu cầu Tòa án giải quyết tranh chấp hợp đồng dân sự là 03 năm, kể từ ngày người có quyền yêu cầu biết hoặc phải biết quyền và lợi..."
+    },
+    {
+      "id": "VN_CIVIL_005",
+      "domain": "civil_and_contracts",
+      "query": "Điều kiện nào để một sự kiện được coi là Sự kiện bất khả kháng giải trừ nghĩa vụ dân sự?",
+      "latency_retrieval_ms": 1897.8,
+      "latency_total_s": 5.6,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "hit_at_10": 0,
+        "mrr_10": 0.0,
+        "ndcg_3": 0.0,
+        "ndcg_10": 0.0,
+        "ranks": []
+      },
+      "ragas": {
+        "faithfulness": 0.75,
+        "answer_relevance": 1.0,
+        "context_precision": 0.167,
+        "context_recall": 0.0,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.5,
+        "passed": false
+      },
+      "answer_preview": "Để một sự kiện được coi là sự kiện bất khả kháng giải trừ nghĩa vụ dân sự, cần phải đáp ứng các điều kiện sau:  1. **Tính khách quan**: Sự kiện bất kh..."
+    },
+    {
+      "id": "VN_CIVIL_006",
+      "domain": "civil_and_contracts",
+      "query": "Thời hạn bảo hành nhà chung cư tối thiểu theo quy định của Luật Nhà ở là bao nhiêu tháng?",
+      "latency_retrieval_ms": 2169.4,
+      "latency_total_s": 4.39,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 1.0,
+        "ndcg_10": 1.0,
+        "ranks": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.2,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.68,
+        "passed": false
+      },
+      "answer_preview": "Theo quy định tại Điều 3.3.NĐ.8.38, thời hạn tối thiểu bảo hành sản phẩm của dự án nhà chung cư được quy định như sau:  1. Bảo hành 24 tháng đối với s..."
+    },
+    {
+      "id": "VN_CIVIL_007",
+      "domain": "civil_and_contracts",
+      "query": "Thời hạn chuộc lại tài sản đã bán do các bên thỏa thuận đối với bất động sản tối đa là bao nhiêu năm?",
+      "latency_retrieval_ms": 2231.0,
+      "latency_total_s": 4.43,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "hit_at_10": 0,
+        "mrr_10": 0.0,
+        "ndcg_3": 0.0,
+        "ndcg_10": 0.0,
+        "ranks": []
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.167,
+        "context_recall": 0.0,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.575,
+        "passed": false
+      },
+      "answer_preview": "Thời hạn chuộc lại tài sản đã bán đối với bất động sản tối đa là 05 năm, trừ trường hợp luật liên quan có quy định khác. Căn cứ vào Điều 454 Bộ luật D..."
+    },
+    {
+      "id": "VN_CIVIL_008",
+      "domain": "civil_and_contracts",
+      "query": "Điều kiện có hiệu lực của giao dịch dân sự theo Bộ luật Dân sự 2015 gồm những yếu tố nào?",
+      "latency_retrieval_ms": 3147.4,
+      "latency_total_s": 5.55,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 1.0,
+        "ndcg_10": 1.0,
+        "ranks": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.5,
+        "context_recall": 1.0,
+        "anchor_accuracy": 1.0,
+        "overall_score": 0.925,
+        "passed": true
+      },
+      "answer_preview": "Theo quy định tại Điều 117 của Bộ luật Dân sự 2015 (Bộ luật số 91/2015/QH13), điều kiện có hiệu lực của giao dịch dân sự bao gồm các yếu tố sau:  1. *..."
+    },
+    {
+      "id": "VN_CIVIL_009",
+      "domain": "civil_and_contracts",
+      "query": "Giao dịch dân sự được xác lập do bị lừa dối, đe dọa, cưỡng ép thì xử lý như thế nào?",
+      "latency_retrieval_ms": 1677.3,
+      "latency_total_s": 7.58,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 1.0,
+        "ndcg_10": 1.0,
+        "ranks": [
+          1
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.333,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.5,
+        "overall_score": 0.75,
+        "passed": false
+      },
+      "answer_preview": "Giao dịch dân sự được xác lập do bị lừa dối, đe dọa, cưỡng ép sẽ bị coi là vô hiệu. Căn cứ theo Điều 127 của Bộ luật Dân sự số 91/2015/QH13, có hiệu l..."
+    },
+    {
+      "id": "VN_CIVIL_010",
+      "domain": "civil_and_contracts",
+      "query": "Căn cứ phát sinh trách nhiệm bồi thường thiệt hại ngoài hợp đồng theo Bộ luật Dân sự là gì?",
+      "latency_retrieval_ms": 2480.8,
+      "latency_total_s": 5.74,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 0.5,
+        "ndcg_3": 0.6309,
+        "ndcg_10": 0.6309,
+        "ranks": [
+          2
+        ]
+      },
+      "ragas": {
+        "faithfulness": 0.8,
+        "answer_relevance": 1.0,
+        "context_precision": 0.333,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.5,
+        "overall_score": 0.69,
+        "passed": false
+      },
+      "answer_preview": "Căn cứ phát sinh trách nhiệm bồi thường thiệt hại ngoài hợp đồng theo Bộ luật Dân sự được quy định tại Điều 584 của Bộ luật số 91/2015/QH13, có hiệu l..."
+    },
+    {
+      "id": "VN_LAND_001",
+      "domain": "land_and_real_estate",
+      "query": "Thuế thu nhập cá nhân khi chuyển nhượng bất động sản là bao nhiêu % trên giá chuyển nhượng?",
+      "latency_retrieval_ms": 2269.0,
+      "latency_total_s": 4.65,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "hit_at_10": 1,
+        "mrr_10": 0.1429,
+        "ndcg_3": 0.0,
+        "ndcg_10": 0.3333,
+        "ranks": [
+          7
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.5,
+        "context_recall": 1.0,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.825,
+        "passed": true
+      },
+      "answer_preview": "Theo quy định tại Điều 21 Thông tư số 111/2013/TT-BTC, thuế thu nhập cá nhân đối với thu nhập từ chuyển nhượng bất động sản của cá nhân không cư trú đ..."
+    },
+    {
+      "id": "VN_LAND_002",
+      "domain": "land_and_real_estate",
+      "query": "Trường hợp chuyển nhượng nhà đất giữa những đối tượng nào thì được miễn thuế thu nhập cá nhân và lệ phí trước bạ?",
+      "latency_retrieval_ms": 2588.0,
+      "latency_total_s": 6.37,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 0.5,
+        "ndcg_3": 0.5307,
+        "ndcg_10": 0.7328,
+        "ranks": [
+          2,
+          3,
+          4,
+          8
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.667,
+        "context_recall": 1.0,
+        "anchor_accuracy": 0.5,
+        "overall_score": 0.9,
+        "passed": true
+      },
+      "answer_preview": "Theo quy định tại Điều 4 Nghị định số 65/2013/NĐ-CP và Điều 3 Thông tư số 111/2013/TT-BTC, các trường hợp chuyển nhượng nhà đất giữa những đối tượng s..."
+    },
+    {
+      "id": "VN_LAND_003",
+      "domain": "land_and_real_estate",
+      "query": "Hợp đồng chuyển nhượng quyền sử dụng đất có bắt buộc phải công chứng hoặc chứng thực không?",
+      "latency_retrieval_ms": 4891.0,
+      "latency_total_s": 8.7,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 1.0,
+        "ndcg_10": 1.0,
+        "ranks": [
+          1,
+          2
+        ]
+      },
+      "ragas": {
+        "faithfulness": 0.571,
+        "answer_relevance": 0.9,
+        "context_precision": 0.5,
+        "context_recall": 1.0,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.671,
+        "passed": false
+      },
+      "answer_preview": "Hợp đồng chuyển nhượng quyền sử dụng đất phải được lập thành văn bản và thực hiện theo đúng trình tự, thủ tục quy định của pháp luật về đất đai. Cụ th..."
+    },
+    {
+      "id": "VN_LAND_004",
+      "domain": "land_and_real_estate",
+      "query": "Lệ phí trước bạ khi đăng ký quyền sở hữu nhà, quyền sử dụng đất là bao nhiêu %?",
+      "latency_retrieval_ms": 3359.2,
+      "latency_total_s": 5.54,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "hit_at_10": 0,
+        "mrr_10": 0.0,
+        "ndcg_3": 0.0,
+        "ndcg_10": 0.0,
+        "ranks": []
+      },
+      "ragas": {
+        "faithfulness": 0.5,
+        "answer_relevance": 0.7,
+        "context_precision": 0.5,
+        "context_recall": 1.0,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.6,
+        "passed": false
+      },
+      "answer_preview": "Theo quy định tại Điều 3 Thông tư số 301/2016/TT-BTC, hiện tại không có thông tin cụ thể về tỷ lệ phần trăm lệ phí trước bạ khi đăng ký quyền sở hữu n..."
+    },
+    {
+      "id": "VN_LAND_005",
+      "domain": "land_and_real_estate",
+      "query": "Thời hạn thực hiện thủ tục cấp Giấy chứng nhận quyền sử dụng đất (Sổ đỏ) lần đầu tối đa là bao nhiêu ngày làm việc?",
+      "latency_retrieval_ms": 4065.7,
+      "latency_total_s": 5.87,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "hit_at_10": 0,
+        "mrr_10": 0.0,
+        "ndcg_3": 0.0,
+        "ndcg_10": 0.0,
+        "ranks": []
+      },
+      "ragas": {
+        "faithfulness": 0.0,
+        "answer_relevance": 0.3,
+        "context_precision": 0.167,
+        "context_recall": 0.0,
+        "anchor_accuracy": 0.5,
+        "overall_score": 0.15,
+        "passed": false
+      },
+      "answer_preview": "Hiện tại, trong các tài liệu pháp luật mà tôi có, không có điều khoản nào quy định cụ thể về thời hạn thực hiện thủ tục cấp Giấy chứng nhận quyền sử d..."
+    },
+    {
+      "id": "VN_LAND_006",
+      "domain": "land_and_real_estate",
+      "query": "Điều kiện để người sử dụng đất được thực hiện tách thửa đất ở gồm những gì?",
+      "latency_retrieval_ms": 3526.3,
+      "latency_total_s": 7.41,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "hit_at_10": 1,
+        "mrr_10": 0.1667,
+        "ndcg_3": 0.0,
+        "ndcg_10": 0.4649,
+        "ranks": [
+          6,
+          7,
+          9
+        ]
+      },
+      "ragas": {
+        "faithfulness": 0.857,
+        "answer_relevance": 1.0,
+        "context_precision": 0.167,
+        "context_recall": 1.0,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.732,
+        "passed": false
+      },
+      "answer_preview": "Để thực hiện tách thửa đất ở, người sử dụng đất cần tuân thủ các quy định tại Điều 175 của Bộ luật Dân sự số 91/2015/QH13, có hiệu lực thi hành kể từ ..."
+    },
+    {
+      "id": "VN_LAND_007",
+      "domain": "land_and_real_estate",
+      "query": "Thời hạn giao đất nông nghiệp trồng cây hàng năm cho hộ gia đình, cá nhân trực tiếp sản xuất là bao nhiêu năm?",
+      "latency_retrieval_ms": 4895.5,
+      "latency_total_s": 7.67,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "hit_at_10": 1,
+        "mrr_10": 0.1,
+        "ndcg_3": 0.0,
+        "ndcg_10": 0.2891,
+        "ranks": [
+          10
+        ]
+      },
+      "ragas": {
+        "faithfulness": 0.6,
+        "answer_relevance": 0.6,
+        "context_precision": 0.667,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.53,
+        "passed": false
+      },
+      "answer_preview": "Căn cứ vào Điều 24.6.NĐ.3.11 của Nghị định số 96/2018/NĐ-CP, không có quy định cụ thể về thời hạn giao đất nông nghiệp trồng cây hàng năm cho hộ gia đ..."
+    },
+    {
+      "id": "VN_LAND_008",
+      "domain": "land_and_real_estate",
+      "query": "Khi Nhà nước thu hồi đất vì mục đích quốc phòng, an ninh hoặc phát triển kinh tế - xã hội thì người sử dụng đất được bồi thường theo nguyên tắc nào?",
+      "latency_retrieval_ms": 3486.9,
+      "latency_total_s": 6.26,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 0.6131,
+        "ndcg_10": 0.7904,
+        "ranks": [
+          1,
+          10
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 0.9,
+        "context_precision": 0.167,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.65,
+        "passed": false
+      },
+      "answer_preview": "Khi Nhà nước thu hồi đất vì mục đích quốc phòng, an ninh hoặc phát triển kinh tế - xã hội, người sử dụng đất được bồi thường theo nguyên tắc quy định ..."
+    },
+    {
+      "id": "VN_CORP_001",
+      "domain": "corporate_and_commercial",
+      "query": "Cổ đông hoặc nhóm cổ đông sở hữu từ bao nhiêu % cổ phần thì có quyền triệu tập họp Đại hội đồng cổ đông bất thường?",
+      "latency_retrieval_ms": 3152.7,
+      "latency_total_s": 5.02,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "hit_at_10": 1,
+        "mrr_10": 0.1667,
+        "ndcg_3": 0.0,
+        "ndcg_10": 0.3562,
+        "ranks": [
+          6
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.333,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.7,
+        "passed": false
+      },
+      "answer_preview": "Cổ đông hoặc nhóm cổ đông sở hữu từ 5% trở lên tổng số cổ phiếu đang lưu hành có quyền yêu cầu triệu tập họp Đại hội đồng cổ đông bất thường. Căn cứ v..."
+    },
+    {
+      "id": "VN_CORP_002",
+      "domain": "corporate_and_commercial",
+      "query": "Thời hạn góp vốn thành lập công ty TNHH là bao nhiêu ngày kể từ ngày được cấp GCN ĐKDN?",
+      "latency_retrieval_ms": 2715.6,
+      "latency_total_s": 4.81,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 1.0,
+        "ndcg_10": 1.0,
+        "ranks": [
+          1
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.333,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.7,
+        "passed": false
+      },
+      "answer_preview": "Thời hạn góp vốn thành lập công ty TNHH là 90 ngày kể từ ngày được cấp Giấy chứng nhận đăng ký doanh nghiệp. Căn cứ theo Điều 12.1.LQ.47, Khoản 2 của ..."
+    },
+    {
+      "id": "VN_CORP_003",
+      "domain": "corporate_and_commercial",
+      "query": "Số lượng thành viên tối đa trong công ty trách nhiệm hữu hạn hai thành viên trở lên là bao nhiêu?",
+      "latency_retrieval_ms": 3988.3,
+      "latency_total_s": 5.66,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 0.3333,
+        "ndcg_3": 0.5,
+        "ndcg_10": 0.5,
+        "ranks": [
+          3
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.167,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.675,
+        "passed": false
+      },
+      "answer_preview": "Công ty trách nhiệm hữu hạn hai thành viên trở lên có số lượng thành viên tối đa là 50 thành viên. Căn cứ theo Điều 12.1.LQ.46 của Luật số 59/2020/QH1..."
+    },
+    {
+      "id": "VN_CORP_004",
+      "domain": "corporate_and_commercial",
+      "query": "Số lượng cổ đông sáng lập tối thiểu khi thành lập công ty cổ phần theo Luật Doanh nghiệp là bao nhiêu?",
+      "latency_retrieval_ms": 3036.6,
+      "latency_total_s": 4.8,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "hit_at_10": 0,
+        "mrr_10": 0.0,
+        "ndcg_3": 0.0,
+        "ndcg_10": 0.0,
+        "ranks": []
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.2,
+        "context_recall": 0.0,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.58,
+        "passed": false
+      },
+      "answer_preview": "Số lượng cổ đông sáng lập tối thiểu khi thành lập công ty cổ phần theo Luật Doanh nghiệp là 03 cổ đông. Căn cứ vào Điều 120, Khoản 1 của Luật số 59/20..."
+    },
+    {
+      "id": "VN_CORP_005",
+      "domain": "corporate_and_commercial",
+      "query": "Chủ doanh nghiệp tư nhân chịu trách nhiệm về mọi hoạt động kinh doanh bằng tài sản gì?",
+      "latency_retrieval_ms": 2673.2,
+      "latency_total_s": 4.58,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 1.0,
+        "ndcg_10": 1.0,
+        "ranks": [
+          1
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.333,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.5,
+        "overall_score": 0.75,
+        "passed": false
+      },
+      "answer_preview": "Chủ doanh nghiệp tư nhân chịu trách nhiệm bằng toàn bộ tài sản của mình về mọi hoạt động của doanh nghiệp. Căn cứ theo Điều 188, Khoản 1 của Luật số 5..."
+    },
+    {
+      "id": "VN_CORP_006",
+      "domain": "corporate_and_commercial",
+      "query": "Nghị quyết Đại hội đồng cổ đông về việc thay đổi ngành nghề kinh doanh cần tỷ lệ biểu quyết tán thành tối thiểu là bao nhiêu?",
+      "latency_retrieval_ms": 3029.0,
+      "latency_total_s": 6.95,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 1.0,
+        "ndcg_10": 1.0,
+        "ranks": [
+          1
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.167,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.5,
+        "overall_score": 0.725,
+        "passed": false
+      },
+      "answer_preview": "Nghị quyết Đại hội đồng cổ đông về việc thay đổi ngành nghề kinh doanh cần tỷ lệ biểu quyết tán thành tối thiểu là 65% tổng số phiếu biểu quyết của tấ..."
+    },
+    {
+      "id": "VN_CORP_007",
+      "domain": "corporate_and_commercial",
+      "query": "Thành viên công ty TNHH 2 thành viên trở lên muốn chuyển nhượng phần vốn góp cho người ngoài công ty phải thực hiện thủ tục chào bán như thế nào?",
+      "latency_retrieval_ms": 2985.4,
+      "latency_total_s": 7.57,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 0.6131,
+        "ndcg_10": 0.7977,
+        "ranks": [
+          1,
+          9
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.167,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.675,
+        "passed": false
+      },
+      "answer_preview": "Để chuyển nhượng phần vốn góp cho người ngoài công ty, thành viên công ty TNHH hai thành viên trở lên phải thực hiện thủ tục chào bán theo quy định tạ..."
+    },
+    {
+      "id": "VN_CORP_008",
+      "domain": "corporate_and_commercial",
+      "query": "Thời hạn công bố thông tin thay đổi nội dung đăng ký doanh nghiệp trên Cổng thông tin quốc gia là bao nhiêu ngày?",
+      "latency_retrieval_ms": 5085.1,
+      "latency_total_s": 7.65,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 0.6131,
+        "ndcg_10": 0.8503,
+        "ranks": [
+          1,
+          5
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.167,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.5,
+        "overall_score": 0.725,
+        "passed": false
+      },
+      "answer_preview": "Thời hạn công bố thông tin thay đổi nội dung đăng ký doanh nghiệp trên Cổng thông tin quốc gia là 30 ngày kể từ ngày được công khai. Căn cứ vào Điều 1..."
+    },
+    {
+      "id": "VN_MARRIAGE_001",
+      "domain": "marriage_and_family",
+      "query": "Chồng có quyền yêu cầu ly hôn khi vợ đang mang thai hoặc nuôi con dưới 12 tháng tuổi không?",
+      "latency_retrieval_ms": 3279.3,
+      "latency_total_s": 6.04,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 1.0,
+        "ndcg_10": 1.0,
+        "ranks": [
+          1
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.167,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.5,
+        "overall_score": 0.725,
+        "passed": false
+      },
+      "answer_preview": "Chồng không có quyền yêu cầu ly hôn trong trường hợp vợ đang có thai, sinh con hoặc đang nuôi con dưới 12 tháng tuổi. Căn cứ vào Điều 51, Khoản 3 của ..."
+    },
+    {
+      "id": "VN_MARRIAGE_002",
+      "domain": "marriage_and_family",
+      "query": "Con từ bao nhiêu tuổi thì Tòa án phải xem xét nguyện vọng của con khi giải quyết quyền nuôi con khi ly hôn?",
+      "latency_retrieval_ms": 3039.0,
+      "latency_total_s": 4.88,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 0.5,
+        "ndcg_3": 0.6309,
+        "ndcg_10": 0.6309,
+        "ranks": [
+          2
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.333,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.5,
+        "overall_score": 0.75,
+        "passed": false
+      },
+      "answer_preview": "Tòa án phải xem xét nguyện vọng của con từ đủ 07 tuổi trở lên khi giải quyết quyền nuôi con khi ly hôn. Căn cứ pháp lý cho thông tin này được quy định..."
+    },
+    {
+      "id": "VN_MARRIAGE_003",
+      "domain": "marriage_and_family",
+      "query": "Độ tuổi kết hôn hợp pháp đối với nam và nữ theo Luật Hôn nhân và Gia đình 2014 là bao nhiêu tuổi?",
+      "latency_retrieval_ms": 2852.4,
+      "latency_total_s": 4.79,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 1.0,
+        "ndcg_10": 1.0,
+        "ranks": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.167,
+        "context_recall": 1.0,
+        "anchor_accuracy": 0.5,
+        "overall_score": 0.825,
+        "passed": true
+      },
+      "answer_preview": "Theo quy định tại **Điểm a Khoản 1 Điều 8 của Luật Hôn nhân và Gia đình năm 2014 (Luật số 52/2014/QH13)**, độ tuổi kết hôn hợp pháp đối với nam và nữ ..."
+    },
+    {
+      "id": "VN_MARRIAGE_004",
+      "domain": "marriage_and_family",
+      "query": "Nguyên tắc giải quyết tài sản của vợ chồng khi ly hôn theo Luật Hôn nhân và Gia đình là gì?",
+      "latency_retrieval_ms": 4670.8,
+      "latency_total_s": 27.51,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 1.0,
+        "ndcg_10": 0.9668,
+        "ranks": [
+          1,
+          2,
+          3,
+          4,
+          10
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.333,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.5,
+        "overall_score": 0.75,
+        "passed": false
+      },
+      "answer_preview": "Nguyên tắc giải quyết tài sản của vợ chồng khi ly hôn được quy định tại Điều 59 của Luật Hôn nhân và Gia đình (Luật số 52/2014/QH13) và các văn bản hư..."
+    },
+    {
+      "id": "VN_MARRIAGE_005",
+      "domain": "marriage_and_family",
+      "query": "Khi ly hôn, con dưới bao nhiêu tháng tuổi được giao cho mẹ trực tiếp nuôi dưỡng?",
+      "latency_retrieval_ms": 3048.9,
+      "latency_total_s": 4.91,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 1.0,
+        "ndcg_10": 1.0,
+        "ranks": [
+          1
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.167,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.675,
+        "passed": false
+      },
+      "answer_preview": "Theo quy định tại Khoản 3, Điều 8.4.LQ.81 của Luật số 52/2014/QH13, con dưới 36 tháng tuổi được giao cho mẹ trực tiếp nuôi, trừ trường hợp người mẹ kh..."
+    },
+    {
+      "id": "VN_MARRIAGE_006",
+      "domain": "marriage_and_family",
+      "query": "Thỏa thuận xác lập chế độ tài sản của vợ chồng phải được lập vào thời điểm nào và có hình thức gì?",
+      "latency_retrieval_ms": 3353.8,
+      "latency_total_s": 5.34,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 0.6131,
+        "ndcg_10": 0.7977,
+        "ranks": [
+          1,
+          9
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.167,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.5,
+        "overall_score": 0.725,
+        "passed": false
+      },
+      "answer_preview": "Thỏa thuận xác lập chế độ tài sản của vợ chồng phải được lập trước khi kết hôn và phải được thực hiện bằng hình thức văn bản có công chứng hoặc chứng ..."
+    },
+    {
+      "id": "VN_MARRIAGE_007",
+      "domain": "marriage_and_family",
+      "query": "Nghĩa vụ cấp dưỡng của cha hoặc mẹ không trực tiếp nuôi con sau khi ly hôn được quy định thế nào?",
+      "latency_retrieval_ms": 3409.2,
+      "latency_total_s": 5.14,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "hit_at_10": 1,
+        "mrr_10": 0.1667,
+        "ndcg_3": 0.0,
+        "ndcg_10": 0.3562,
+        "ranks": [
+          6
+        ]
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.8,
+        "context_recall": 0.5,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.77,
+        "passed": false
+      },
+      "answer_preview": "Nghĩa vụ cấp dưỡng của cha hoặc mẹ không trực tiếp nuôi con sau khi ly hôn được quy định tại Điều 8.4.LQ.82, cụ thể như sau:  1. Cha, mẹ không trực ti..."
+    },
+    {
+      "id": "VN_EPR_001",
+      "domain": "environmental_and_epr",
+      "query": "Điều 77 Nghị định 08/2022/NĐ-CP quy định đối tượng nào phải thực hiện trách nhiệm tái chế sản phẩm, bao bì?",
+      "latency_retrieval_ms": 11861.2,
+      "latency_total_s": 14.35,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 1.0,
+        "ndcg_10": 1.0,
+        "ranks": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      "ragas": {
+        "faithfulness": 0.25,
+        "answer_relevance": 0.0,
+        "context_precision": 0.167,
+        "context_recall": 1.0,
+        "anchor_accuracy": 1.0,
+        "overall_score": 0.4,
+        "passed": false
+      },
+      "answer_preview": "Căn cứ vào các tài liệu pháp luật mà bạn đã cung cấp, tôi không tìm thấy thông tin cụ thể về Điều 77 Nghị định 08/2022/NĐ-CP và đối tượng phải thực hi..."
+    },
+    {
+      "id": "VN_EPR_002",
+      "domain": "environmental_and_epr",
+      "query": "Doanh nghiệp sản xuất bao bì có doanh thu bán hàng dưới bao nhiêu thì được miễn trừ trách nhiệm tái chế EPR?",
+      "latency_retrieval_ms": 5579.1,
+      "latency_total_s": 7.9,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "hit_at_10": 0,
+        "mrr_10": 0.0,
+        "ndcg_3": 0.0,
+        "ndcg_10": 0.0,
+        "ranks": []
+      },
+      "ragas": {
+        "faithfulness": 0.25,
+        "answer_relevance": 0.5,
+        "context_precision": 0.167,
+        "context_recall": 0.0,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.225,
+        "passed": false
+      },
+      "answer_preview": "Căn cứ vào các quy định hiện hành, không có thông tin cụ thể nào trong các tài liệu đã cung cấp liên quan đến mức doanh thu cụ thể mà doanh nghiệp sản..."
+    },
+    {
+      "id": "VN_EPR_003",
+      "domain": "environmental_and_epr",
+      "query": "Nhà sản xuất, nhập khẩu có thể lựa chọn những hình thức nào để thực hiện trách nhiệm tái chế sản phẩm, bao bì?",
+      "latency_retrieval_ms": 8940.0,
+      "latency_total_s": 12.44,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "hit_at_10": 0,
+        "mrr_10": 0.0,
+        "ndcg_3": 0.0,
+        "ndcg_10": 0.0,
+        "ranks": []
+      },
+      "ragas": {
+        "faithfulness": 1.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.333,
+        "context_recall": 0.0,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.6,
+        "passed": false
+      },
+      "answer_preview": "Nhà sản xuất, nhập khẩu có thể lựa chọn các hình thức sau để thực hiện trách nhiệm tái chế sản phẩm, bao bì:  1. **Tái chế hàng hóa**: Theo quy định t..."
+    },
+    {
+      "id": "VN_EPR_004",
+      "domain": "environmental_and_epr",
+      "query": "Thời hạn gửi đăng ký kế hoạch tái chế và báo cáo kết quả tái chế hàng năm của nhà sản xuất, nhập khẩu là ngày nào?",
+      "latency_retrieval_ms": 2533.9,
+      "latency_total_s": 5.87,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "hit_at_10": 0,
+        "mrr_10": 0.0,
+        "ndcg_3": 0.0,
+        "ndcg_10": 0.0,
+        "ranks": []
+      },
+      "ragas": {
+        "faithfulness": 0.6,
+        "answer_relevance": 0.6,
+        "context_precision": 0.167,
+        "context_recall": 0.0,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.355,
+        "passed": false
+      },
+      "answer_preview": "Căn cứ vào các văn bản pháp luật hiện hành, không có quy định cụ thể nào nêu rõ thời hạn gửi đăng ký kế hoạch tái chế và báo cáo kết quả tái chế hàng ..."
+    },
+    {
+      "id": "VN_EPR_005",
+      "domain": "environmental_and_epr",
+      "query": "Công thức tính số tiền đóng góp tài chính vào Quỹ Bảo vệ môi trường Việt Nam (F) được quy định như thế nào?",
+      "latency_retrieval_ms": 2084.3,
+      "latency_total_s": 4.38,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "hit_at_10": 0,
+        "mrr_10": 0.0,
+        "ndcg_3": 0.0,
+        "ndcg_10": 0.0,
+        "ranks": []
+      },
+      "ragas": {
+        "faithfulness": 0.5,
+        "answer_relevance": 0.4,
+        "context_precision": 0.167,
+        "context_recall": 0.0,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.275,
+        "passed": false
+      },
+      "answer_preview": "Hiện tại, trong các tài liệu pháp luật mà tôi có, không có quy định cụ thể nào về công thức tính số tiền đóng góp tài chính vào Quỹ Bảo vệ môi trường ..."
+    },
+    {
+      "id": "VN_EPR_006",
+      "domain": "environmental_and_epr",
+      "query": "Lộ trình thực hiện trách nhiệm tái chế đối với săm lốp, pin ắc quy, dầu nhớt và bao bì bắt đầu áp dụng từ thời điểm nào?",
+      "latency_retrieval_ms": 2539.6,
+      "latency_total_s": 5.84,
+      "retrieval": {
+        "hit_at_1": 0,
+        "hit_at_3": 0,
+        "hit_at_5": 0,
+        "hit_at_10": 0,
+        "mrr_10": 0.0,
+        "ndcg_3": 0.0,
+        "ndcg_10": 0.0,
+        "ranks": []
+      },
+      "ragas": {
+        "faithfulness": 0.25,
+        "answer_relevance": 0.4,
+        "context_precision": 0.333,
+        "context_recall": 0.0,
+        "anchor_accuracy": 0.0,
+        "overall_score": 0.225,
+        "passed": false
+      },
+      "answer_preview": "Căn cứ vào các văn bản pháp luật hiện hành, hiện tại không có quy định cụ thể nào về lộ trình thực hiện trách nhiệm tái chế đối với săm lốp, pin ắc qu..."
+    },
+    {
+      "id": "VN_EPR_007",
+      "domain": "environmental_and_epr",
+      "query": "Những nhóm sản phẩm, bao bì chứa chất độc hại khó thu gom tái chế nào phải thực hiện trách nhiệm đóng góp tài chính xử lý chất thải theo Điều 83 Nghị định 08/2022/NĐ-CP?",
+      "latency_retrieval_ms": 3482.1,
+      "latency_total_s": 9.99,
+      "retrieval": {
+        "hit_at_1": 1,
+        "hit_at_3": 1,
+        "hit_at_5": 1,
+        "hit_at_10": 1,
+        "mrr_10": 1.0,
+        "ndcg_3": 1.0,
+        "ndcg_10": 1.0,
+        "ranks": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      "ragas": {
+        "faithfulness": 0.0,
+        "answer_relevance": 1.0,
+        "context_precision": 0.167,
+        "context_recall": 1.0,
+        "anchor_accuracy": 1.0,
+        "overall_score": 0.575,
+        "passed": false
+      },
+      "answer_preview": "Căn cứ vào Điều 83 Nghị định 08/2022/NĐ-CP, các nhóm sản phẩm, bao bì chứa chất độc hại khó thu gom tái chế phải thực hiện trách nhiệm đóng góp tài ch..."
+    }
+  ]
+}

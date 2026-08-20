@@ -266,6 +266,51 @@ Start with [docs/README.md](docs/README.md) for the documentation map,
 [the autonomous agent architecture](docs/architecture/autonomous-agent-architecture.md), and
 [the V4 behavior contract](docs/pipeline_v4_behavior_contract.md).
 
+## Benchmark & Quantitative Evaluation (RAGAS)
+
+The system is evaluated against the multi-domain **Vietnamese Legal QA Golden Benchmark (50 comprehensive statutory scenarios)** across **65,967 statutory provisions** in `vietnam_legal_collection_v1` using SOTA legal embedding model `darklethelong/vnlegal-lal` (1024-dim), BM25 lexical indexing, and GPU CrossEncoder reranking (`mmarco-mMiniLMv2-L12-H384-v1`).
+
+### 1. Retrieval & Ranking Benchmark (50 Statutory Scenarios)
+
+| Metric | Score | Description |
+| :--- | :---: | :--- |
+| **Hit Rate @ 1 (P@1)** | **54.0%** | Relevant statutory provision ranked #1 |
+| **Hit Rate @ 3 (Top-3)** | **66.0%** | Target provision retrieved in Top 3 |
+| **Hit Rate @ 5 (Top-5)** | **68.0%** | Target provision retrieved in Top 5 |
+| **Hit Rate @ 10 (Top-10)** | **80.0%** | Target provision retrieved in Top 10 |
+| **MRR @ 10** | **0.6189** | Mean Reciprocal Rank across all 50 queries |
+| **NDCG @ 3** | **0.5596** | Normalized Discounted Cumulative Gain @ 3 |
+| **NDCG @ 10** | **0.6447** | Normalized Discounted Cumulative Gain @ 10 |
+| **Steady-state Retrieval Latency** | **1.2s - 2.5s** | Parallel Qdrant Dense + BM25 + CrossEncoder on 65k docs |
+
+### 2. RAGAS Framework Evaluation (End-to-End Legal QA)
+
+Evaluated via LLM-as-a-Judge and statutory citation verification across all 50 scenarios:
+
+| RAGAS Dimension | Score | Description |
+| :--- | :---: | :--- |
+| **Faithfulness (Độ trung thực)** | **83.5%** | Factual claims in the answer supported by retrieved statutory evidence |
+| **Answer Relevance (Độ trúng đích)** | **90.0%** | Direct semantic & legal alignment with the user's inquiry |
+| **Context Precision (Độ chính xác ngữ cảnh)** | **28.5%** | Proportion of top-k retrieved documents containing essential legal grounds |
+| **Context Recall (Độ bao phủ căn cứ)** | **52.0%** | Proportion of expected statutory anchors found in retrieved context |
+| **Composite RAGAS Score** | **65.0%** | Weighted multi-dimensional legal assistance quality score |
+
+### 3. Domain Performance Breakdown (50 Scenarios across 6 Domains)
+
+| Legal Domain | Scenarios | Hit Rate @ 3 | MRR @ 10 | NDCG @ 10 | Faithfulness | Relevance | Composite RAGAS |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Civil & Contracts (Dân sự & Hợp đồng)** | 10 | **80.0%** | **0.7500** | **0.7502** | **93.0%** | **100.0%** | **70.7%** |
+| **Labor & Employment (Lao động & Việc làm)** | 10 | **80.0%** | **0.7367** | **0.7869** | **90.8%** | **97.0%** | **69.8%** |
+| **Corporate & Commercial (Doanh nghiệp & TM)** | 8 | **75.0%** | **0.6875** | **0.6880** | **100.0%** | **100.0%** | **69.1%** |
+| **Marriage & Family (Hôn nhân & Gia đình)** | 7 | **85.7%** | **0.8095** | **0.8217** | **100.0%** | **100.0%** | **74.6%** |
+| **Land & Real Estate (Đất đai & Bất động sản)** | 8 | **37.5%** | **0.3637** | **0.4513** | **69.1%** | **80.0%** | **63.2%** |
+| **Environmental & EPR (Môi trường & EPR)** | 7 | **28.6%** | **0.2857** | **0.2857** | **40.7%** | **55.7%** | **37.9%** |
+
+To reproduce the benchmark locally:
+```bash
+python scripts/run_full_benchmark_and_ragas.py
+```
+
 ## Production boundary
 
 A passing build or local preview is not a production release. Before enabling

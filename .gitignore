@@ -7,6 +7,7 @@ venv/
 env/
 ENV/
 qdrant_db/
+qdrant_db_backup/
 .vscode/
 .idea/
 *.swp
@@ -55,7 +56,9 @@ output/
 .codegraph/
 tests/eval/results_*.json
 tests/eval/*_report.json
-data/eval/
+data/eval/*
+!data/eval/golden_legal_benchmark.json
+!data/eval/ragas_benchmark_results.json
 
 # Local scratch and exported design/experiment files
 tmp/

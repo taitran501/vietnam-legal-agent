@@ -149,6 +149,11 @@ async def lifespan(app: FastAPI):
             pass
     await close_redis()
     try:
+        from backend.core.retrieval import close_qdrant_client
+        close_qdrant_client()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Qdrant close failed: %s", exc)
+    try:
         from epr_agent.infra.persistence import close_persistence_stores
 
         await close_persistence_stores()

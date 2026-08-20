@@ -182,7 +182,7 @@ def _build_article_index():
             def _scroll_article_index(current_offset: QdrantOffset = offset):
                 return client.scroll(
                     collection_name=vs.collection_name,
-                    limit=500,
+                    limit=10000,
                     offset=current_offset,
                     with_payload=True,
                     with_vectors=False,
@@ -306,7 +306,7 @@ def _build_lexical_index() -> None:
             def _scroll_lexical_index(current_offset: QdrantOffset = offset):
                 return client.scroll(
                     collection_name=vs.collection_name,
-                    limit=500,
+                    limit=10000,
                     offset=current_offset,
                     with_payload=True,
                     with_vectors=False,
@@ -329,9 +329,12 @@ def _build_lexical_index() -> None:
             payload = record.payload or {}
             full_text = str(payload.get("lexical_text") or " ".join(
                 str(part) for part in (
+                    payload.get("article_title", ""),
+                    payload.get("document_title", ""),
                     payload.get("Dieu", ""),
                     payload.get("Chuong", ""),
                     payload.get("Muc", ""),
+                    payload.get("text", ""),
                     payload.get("Text", ""),
                 ) if part
             ))
@@ -1283,16 +1286,21 @@ class _EnsembleRetriever:
                 metadata = {
                     key: value
                     for key, value in payload.items()
-                    if key != "Text"
+                    if key not in ("Text", "text")
                 }
                 metadata.setdefault("filter_matched", False)
                 metadata.setdefault("explicit_match", False)
+                metadata.setdefault("Dieu", payload.get("article_title") or payload.get("Dieu") or "")
+                metadata.setdefault("source", payload.get("document_title") or payload.get("source") or "")
+                metadata.setdefault("article_title", payload.get("article_title") or payload.get("Dieu") or "")
+                metadata.setdefault("document_title", payload.get("document_title") or payload.get("source") or "")
                 metadata["semantic_score"] = _normalize_semantic_score(getattr(point, "score", 0.0))
                 metadata["retrieval_source"] = "semantic"
                 metadata["_id"] = point.id
+                content = str(payload.get("text") or payload.get("Text") or payload.get("content") or "")
                 docs.append(
                     Document(
-                        page_content=str(payload.get("Text", "")),
+                        page_content=content,
                         metadata=metadata,
                     )
                 )

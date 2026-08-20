@@ -77,6 +77,9 @@ class LocalSentenceTransformerEmbeddings(Embeddings):
                 from sentence_transformers import SentenceTransformer
                 dev = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
                 self._model = SentenceTransformer(self.model_name, device=dev)
+                if hasattr(self._model, "to"):
+                    self._model.to(dtype=torch.float32)
+                self._model.eval()
             except Exception as exc:
                 raise RuntimeError(
                     f"Failed to load local embedding model '{self.model_name}': {exc}. "
@@ -86,12 +89,12 @@ class LocalSentenceTransformerEmbeddings(Embeddings):
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         model = self._get_model()
-        embs = model.encode(texts, batch_size=32, show_progress_bar=False, normalize_embeddings=True)
+        embs = model.encode(texts, batch_size=32, show_progress_bar=False, normalize_embeddings=True, precision="float32")
         return [e.tolist() for e in embs]
 
     def embed_query(self, text: str) -> list[float]:
         model = self._get_model()
-        emb = model.encode(text, show_progress_bar=False, normalize_embeddings=True)
+        emb = model.encode(text, show_progress_bar=False, normalize_embeddings=True, precision="float32")
         return emb.tolist()
 
 

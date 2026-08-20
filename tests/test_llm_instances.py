@@ -101,10 +101,11 @@ class TestLLMInstances:
         assert llm.streaming is True
 
     def test_embeddings_model(self):
-        """embeddings should use text-embedding-3-small."""
+        """embeddings should use configured provider model."""
         get_embeddings.cache_clear()
         embeddings = get_embeddings()
-        assert embeddings.model == "text-embedding-3-small"
+        model_name = getattr(embeddings, "model_name", getattr(embeddings, "model", ""))
+        assert model_name in ["darklethelong/vnlegal-lal", "text-embedding-3-small", "bkai-foundation-models/vietnamese-bi-encoder"]
 
     def test_all_llm_instances_have_timeout(self):
         """All 4 LLM instances should have request_timeout=30."""

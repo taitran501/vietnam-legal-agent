@@ -1,0 +1,415 @@
+{
+  "benchmark_name": "Vietnamese Legal QA Golden Benchmark v2.0",
+  "version": "2.0.0",
+  "description": "50 high-precision statutory QA benchmark scenarios spanning 6 core domains of Vietnamese Law.",
+  "domains": [
+    "labor_and_employment",
+    "civil_and_contracts",
+    "land_and_real_estate",
+    "corporate_and_commercial",
+    "marriage_and_family",
+    "environmental_and_epr"
+  ],
+  "cases": [
+    {
+      "id": "VN_LABOR_001",
+      "domain": "labor_and_employment",
+      "query": "Quy định thời gian thử việc tối đa là bao lâu theo Bộ luật Lao động?",
+      "expected_anchors": ["Điều 25", "Bộ luật Lao động 2019"],
+      "ground_truth_summary": "Tối đa 180 ngày với người quản lý doanh nghiệp; 60 ngày với trình độ cao đẳng trở lên; 30 ngày với trung cấp/công nhân kỹ thuật; 06 ngày làm việc với công việc khác.",
+      "key_points": ["Điều 25", "180 ngày", "60 ngày", "30 ngày", "06 ngày làm việc"]
+    },
+    {
+      "id": "VN_LABOR_002",
+      "domain": "labor_and_employment",
+      "query": "Công ty sa thải trái luật thì người lao động được bồi thường những khoản tiền nào?",
+      "expected_anchors": ["Điều 41", "Bộ luật Lao động 2019"],
+      "ground_truth_summary": "Phải nhận lại làm việc; trả tiền lương, BHXH trong những ngày không được làm việc; bồi thường thêm ít nhất 02 tháng tiền lương theo HĐLĐ.",
+      "key_points": ["Điều 41", "nhận lại làm việc", "ít nhất 02 tháng tiền lương", "BHXH"]
+    },
+    {
+      "id": "VN_LABOR_003",
+      "domain": "labor_and_employment",
+      "query": "Mức tiền lương làm thêm giờ vào ngày nghỉ hàng tuần và ngày lễ tết được tính thế nào?",
+      "expected_anchors": ["Điều 98", "Bộ luật Lao động 2019"],
+      "ground_truth_summary": "Ngày thường ít nhất 150%; ngày nghỉ hàng tuần ít nhất 200%; ngày nghỉ lễ, tết, ngày nghỉ có hưởng lương ít nhất 300% chưa kể tiền lương ngày lễ.",
+      "key_points": ["Điều 98", "150%", "200%", "300%"]
+    },
+    {
+      "id": "VN_LABOR_004",
+      "domain": "labor_and_employment",
+      "query": "Người lao động muốn đơn phương chấm dứt hợp đồng lao động không xác định thời hạn phải báo trước bao nhiêu ngày?",
+      "expected_anchors": ["Điều 35", "Bộ luật Lao động 2019"],
+      "ground_truth_summary": "Ít nhất 45 ngày đối với hợp đồng lao động không xác định thời hạn theo Khoản 1 Điều 35.",
+      "key_points": ["Điều 35", "ít nhất 45 ngày", "không xác định thời hạn"]
+    },
+    {
+      "id": "VN_LABOR_005",
+      "domain": "labor_and_employment",
+      "query": "Doanh nghiệp có được giữ bản chính văn bằng, chứng chỉ của người lao động khi giao kết HĐLĐ không?",
+      "expected_anchors": ["Điều 17", "Bộ luật Lao động 2019"],
+      "ground_truth_summary": "Nghiêm cấm người sử dụng lao động giữ bản chính giấy tờ tùy thân, văn bằng, chứng chỉ của người lao động theo Điều 17.",
+      "key_points": ["Điều 17", "nghiêm cấm", "giữ bản chính", "văn bằng chứng chỉ"]
+    },
+    {
+      "id": "VN_LABOR_006",
+      "domain": "labor_and_employment",
+      "query": "Số ngày nghỉ phép hàng năm tối thiểu của người lao động làm việc trong điều kiện bình thường là bao nhiêu ngày?",
+      "expected_anchors": ["Điều 113", "Bộ luật Lao động 2019"],
+      "ground_truth_summary": "Người lao động làm việc đủ 12 tháng cho một người sử dụng lao động thì được nghỉ hằng năm hưởng nguyên lương 12 ngày làm việc.",
+      "key_points": ["Điều 113", "12 ngày làm việc", "nghỉ phép hàng năm"]
+    },
+    {
+      "id": "VN_LABOR_007",
+      "domain": "labor_and_employment",
+      "query": "Điều kiện và mức hưởng trợ cấp thôi việc theo Bộ luật Lao động được tính như thế nào?",
+      "expected_anchors": ["Điều 46", "Bộ luật Lao động 2019"],
+      "ground_truth_summary": "Người lao động làm việc thường xuyên từ đủ 12 tháng trở lên chấm dứt HĐLĐ hợp pháp thì mỗi năm làm việc được trợ cấp một nửa tháng tiền lương.",
+      "key_points": ["Điều 46", "đủ 12 tháng trở lên", "một nửa tháng tiền lương"]
+    },
+    {
+      "id": "VN_LABOR_008",
+      "domain": "labor_and_employment",
+      "query": "Thời giờ làm việc bình thường của người lao động tối đa không quá bao nhiêu giờ trong một ngày và một tuần?",
+      "expected_anchors": ["Điều 105", "Bộ luật Lao động 2019"],
+      "ground_truth_summary": "Thời giờ làm việc bình thường không quá 08 giờ trong 01 ngày và không quá 48 giờ trong 01 tuần.",
+      "key_points": ["Điều 105", "không quá 08 giờ", "không quá 48 giờ"]
+    },
+    {
+      "id": "VN_LABOR_009",
+      "domain": "labor_and_employment",
+      "query": "Người sử dụng lao động đơn phương chấm dứt hợp đồng lao động xác định thời hạn từ 12 đến 36 tháng phải báo trước bao nhiêu ngày?",
+      "expected_anchors": ["Điều 36", "Bộ luật Lao động 2019"],
+      "ground_truth_summary": "Phải báo trước ít nhất 30 ngày đối với hợp đồng lao động xác định thời hạn có thời hạn từ 12 tháng đến 36 tháng.",
+      "key_points": ["Điều 36", "ít nhất 30 ngày", "xác định thời hạn"]
+    },
+    {
+      "id": "VN_LABOR_010",
+      "domain": "labor_and_employment",
+      "query": "Độ tuổi nghỉ hưu của người lao động trong điều kiện lao động bình thường theo lộ trình Bộ luật Lao động 2019 là bao nhiêu?",
+      "expected_anchors": ["Điều 169", "Bộ luật Lao động 2019"],
+      "ground_truth_summary": "Tuổi nghỉ hưu của người lao động trong điều kiện lao động bình thường được điều chỉnh theo lộ trình cho đến khi đủ 62 tuổi đối với lao động nam vào năm 2028 và đủ 60 tuổi đối với lao động nữ vào năm 2035.",
+      "key_points": ["Điều 169", "62 tuổi đối với nam", "60 tuổi đối với nữ", "lộ trình"]
+    },
+    {
+      "id": "VN_CIVIL_001",
+      "domain": "civil_and_contracts",
+      "query": "Mức trần lãi suất vay do các bên thỏa thuận theo Bộ luật Dân sự tối đa là bao nhiêu % một năm?",
+      "expected_anchors": ["Điều 468", "Bộ luật Dân sự 2015"],
+      "ground_truth_summary": "Lãi suất vay do các bên thỏa thuận nhưng không được vượt quá 20%/năm của khoản tiền vay.",
+      "key_points": ["Điều 468", "20%/năm", "vượt quá không có hiệu lực"]
+    },
+    {
+      "id": "VN_CIVIL_002",
+      "domain": "civil_and_contracts",
+      "query": "Mức phạt vi phạm tối đa trong hợp đồng thương mại theo Luật Thương mại 2005 là bao nhiêu %?",
+      "expected_anchors": ["Điều 301", "Luật Thương mại 2005"],
+      "ground_truth_summary": "Mức phạt vi phạm nghĩa vụ hợp đồng do các bên thỏa thuận nhưng không quá 8% giá trị phần nghĩa vụ hợp đồng bị vi phạm.",
+      "key_points": ["Điều 301", "không quá 8%", "phần nghĩa vụ bị vi phạm"]
+    },
+    {
+      "id": "VN_CIVIL_003",
+      "domain": "civil_and_contracts",
+      "query": "Bên nhận đặt cọc từ chối giao kết hợp đồng thì phải chịu phạt cọc như thế nào theo quy định pháp luật?",
+      "expected_anchors": ["Điều 328", "Bộ luật Dân sự 2015"],
+      "ground_truth_summary": "Bên nhận đặt cọc phải trả lại tài sản đặt cọc và trả thêm một khoản tiền tương đương giá trị tài sản đặt cọc (trừ khi có thỏa thuận khác).",
+      "key_points": ["Điều 328", "phạt cọc", "trả lại tiền đặt cọc", "khoản tiền tương đương"]
+    },
+    {
+      "id": "VN_CIVIL_004",
+      "domain": "civil_and_contracts",
+      "query": "Thời hiệu khởi kiện yêu cầu Tòa án giải quyết tranh chấp hợp đồng dân sự là bao lâu?",
+      "expected_anchors": ["Điều 429", "Bộ luật Dân sự 2015"],
+      "ground_truth_summary": "Thời hiệu khởi kiện để yêu cầu Tòa án giải quyết tranh chấp hợp đồng là 03 năm, kể từ ngày người có quyền yêu cầu biết hoặc phải biết quyền của mình bị xâm phạm.",
+      "key_points": ["Điều 429", "03 năm"]
+    },
+    {
+      "id": "VN_CIVIL_005",
+      "domain": "civil_and_contracts",
+      "query": "Điều kiện nào để một sự kiện được coi là Sự kiện bất khả kháng giải trừ nghĩa vụ dân sự?",
+      "expected_anchors": ["Điều 156", "Bộ luật Dân sự 2015"],
+      "ground_truth_summary": "Là sự kiện xảy ra một cách khách quan không thể lường trước được và không thể khắc phục được mặc dù đã áp dụng mọi biện pháp cần thiết và khả năng cho phép.",
+      "key_points": ["Điều 156", "khách quan", "không thể lường trước", "không thể khắc phục"]
+    },
+    {
+      "id": "VN_CIVIL_006",
+      "domain": "civil_and_contracts",
+      "query": "Thời hạn bảo hành nhà chung cư tối thiểu theo quy định của Luật Nhà ở là bao nhiêu tháng?",
+      "expected_anchors": ["Điều 85", "Luật Nhà ở"],
+      "ground_truth_summary": "Nhà ở chung cư được bảo hành tối thiểu 60 tháng kể từ khi hoàn thành xây dựng và nghiệm thu đưa vào sử dụng; nhà ở riêng lẻ tối thiểu 24 tháng.",
+      "key_points": ["Điều 85", "tối thiểu 60 tháng", "nhà chung cư"]
+    },
+    {
+      "id": "VN_CIVIL_007",
+      "domain": "civil_and_contracts",
+      "query": "Thời hạn chuộc lại tài sản đã bán do các bên thỏa thuận đối với bất động sản tối đa là bao nhiêu năm?",
+      "expected_anchors": ["Điều 443", "Bộ luật Dân sự 2015"],
+      "ground_truth_summary": "Thời hạn chuộc lại tài sản do các bên thỏa thuận nhưng không quá 01 năm đối với động sản và không quá 05 năm đối với bất động sản.",
+      "key_points": ["Điều 443", "không quá 05 năm", "bất động sản"]
+    },
+    {
+      "id": "VN_CIVIL_008",
+      "domain": "civil_and_contracts",
+      "query": "Điều kiện có hiệu lực của giao dịch dân sự theo Bộ luật Dân sự 2015 gồm những yếu tố nào?",
+      "expected_anchors": ["Điều 117", "Bộ luật Dân sự 2015"],
+      "ground_truth_summary": "Chủ thể có năng lực pháp luật và năng lực hành vi dân sự phù hợp; hoàn toàn tự nguyện; mục đích và nội dung không vi phạm điều cấm của luật, không trái đạo đức xã hội.",
+      "key_points": ["Điều 117", "năng lực hành vi", "tự nguyện", "không vi phạm điều cấm"]
+    },
+    {
+      "id": "VN_CIVIL_009",
+      "domain": "civil_and_contracts",
+      "query": "Giao dịch dân sự được xác lập do bị lừa dối, đe dọa, cưỡng ép thì xử lý như thế nào?",
+      "expected_anchors": ["Điều 127", "Bộ luật Dân sự 2015"],
+      "ground_truth_summary": "Khi một bên tham gia giao dịch dân sự do bị lừa dối hoặc bị đe dọa, cưỡng ép thì có quyền yêu cầu Tòa án tuyên bố giao dịch dân sự đó là vô hiệu.",
+      "key_points": ["Điều 127", "tuyên bố vô hiệu", "lừa dối", "đe dọa cưỡng ép"]
+    },
+    {
+      "id": "VN_CIVIL_010",
+      "domain": "civil_and_contracts",
+      "query": "Căn cứ phát sinh trách nhiệm bồi thường thiệt hại ngoài hợp đồng theo Bộ luật Dân sự là gì?",
+      "expected_anchors": ["Điều 584", "Bộ luật Dân sự 2015"],
+      "ground_truth_summary": "Người nào có hành vi xâm phạm tính mạng, sức khỏe, danh dự, nhân phẩm, uy tín, tài sản, quyền, lợi ích hợp pháp khác của người khác mà gây thiệt hại thì phải bồi thường.",
+      "key_points": ["Điều 584", "xâm phạm", "gây thiệt hại", "bồi thường"]
+    },
+    {
+      "id": "VN_LAND_001",
+      "domain": "land_and_real_estate",
+      "query": "Thuế thu nhập cá nhân khi chuyển nhượng bất động sản là bao nhiêu % trên giá chuyển nhượng?",
+      "expected_anchors": ["Luật Thuế thu nhập cá nhân"],
+      "ground_truth_summary": "Thuế suất thuế TNCN đối với chuyển nhượng bất động sản là 2% tính trên giá chuyển nhượng từng lần.",
+      "key_points": ["2%", "giá chuyển nhượng", "Thuế TNCN"]
+    },
+    {
+      "id": "VN_LAND_002",
+      "domain": "land_and_real_estate",
+      "query": "Trường hợp chuyển nhượng nhà đất giữa những đối tượng nào thì được miễn thuế thu nhập cá nhân và lệ phí trước bạ?",
+      "expected_anchors": ["Điều 4", "Luật Thuế thu nhập cá nhân"],
+      "ground_truth_summary": "Chuyển nhượng giữa vợ với chồng; cha mẹ với con; ông bà với cháu; anh chị em ruột với nhau được miễn thuế TNCN.",
+      "key_points": ["vợ chồng", "cha mẹ con cái", "ông bà cháu", "miễn thuế"]
+    },
+    {
+      "id": "VN_LAND_003",
+      "domain": "land_and_real_estate",
+      "query": "Hợp đồng chuyển nhượng quyền sử dụng đất có bắt buộc phải công chứng hoặc chứng thực không?",
+      "expected_anchors": ["Luật Đất đai"],
+      "ground_truth_summary": "Hợp đồng chuyển nhượng, tặng cho, thế chấp, góp vốn bằng quyền sử dụng đất phải được công chứng hoặc chứng thực theo quy định.",
+      "key_points": ["bắt buộc công chứng", "chứng thực", "Ủy ban nhân dân"]
+    },
+    {
+      "id": "VN_LAND_004",
+      "domain": "land_and_real_estate",
+      "query": "Lệ phí trước bạ khi đăng ký quyền sở hữu nhà, quyền sử dụng đất là bao nhiêu %?",
+      "expected_anchors": ["Nghị định 10/2022/NĐ-CP"],
+      "ground_truth_summary": "Mức thu lệ phí trước bạ đối với nhà, đất là 0,5% theo quy định tại Nghị định 10/2022/NĐ-CP.",
+      "key_points": ["0,5%", "Lệ phí trước bạ", "nhà đất"]
+    },
+    {
+      "id": "VN_LAND_005",
+      "domain": "land_and_real_estate",
+      "query": "Thời hạn thực hiện thủ tục cấp Giấy chứng nhận quyền sử dụng đất (Sổ đỏ) lần đầu tối đa là bao nhiêu ngày làm việc?",
+      "expected_anchors": ["Luật Đất đai", "Nghị định 43/2014/NĐ-CP"],
+      "ground_truth_summary": "Thời hạn cấp Giấy chứng nhận quyền sử dụng đất, quyền sở hữu nhà ở và tài sản khác gắn liền với đất lần đầu không quá 30 ngày làm việc (không tính ngày nghỉ, lễ).",
+      "key_points": ["không quá 30 ngày làm việc", "cấp Sổ đỏ lần đầu"]
+    },
+    {
+      "id": "VN_LAND_006",
+      "domain": "land_and_real_estate",
+      "query": "Điều kiện để người sử dụng đất được thực hiện tách thửa đất ở gồm những gì?",
+      "expected_anchors": ["Luật Đất đai"],
+      "ground_truth_summary": "Phải có Giấy chứng nhận QSDĐ, đất không có tranh chấp, quyền sử dụng đất không bị kê biên để bảo đảm thi hành án, trong thời hạn sử dụng đất và đáp ứng diện tích, kích thước tối thiểu theo quy định của UBND cấp tỉnh.",
+      "key_points": ["có Sổ đỏ", "không tranh chấp", "diện tích tối thiểu", "UBND cấp tỉnh"]
+    },
+    {
+      "id": "VN_LAND_007",
+      "domain": "land_and_real_estate",
+      "query": "Thời hạn giao đất nông nghiệp trồng cây hàng năm cho hộ gia đình, cá nhân trực tiếp sản xuất là bao nhiêu năm?",
+      "expected_anchors": ["Điều 126", "Luật Đất đai"],
+      "ground_truth_summary": "Thời hạn giao đất, công nhận quyền sử dụng đất nông nghiệp đối với hộ gia đình, cá nhân trực tiếp sản xuất nông nghiệp là 50 năm.",
+      "key_points": ["Điều 126", "50 năm", "đất nông nghiệp"]
+    },
+    {
+      "id": "VN_LAND_008",
+      "domain": "land_and_real_estate",
+      "query": "Khi Nhà nước thu hồi đất vì mục đích quốc phòng, an ninh hoặc phát triển kinh tế - xã hội thì người sử dụng đất được bồi thường theo nguyên tắc nào?",
+      "expected_anchors": ["Điều 74", "Luật Đất đai"],
+      "ground_truth_summary": "Bồi thường bằng việc giao đất có cùng mục đích sử dụng với loại đất thu hồi, nếu không có đất để bồi thường thì được bồi thường bằng tiền theo giá đất cụ thể do UBND cấp tỉnh quyết định.",
+      "key_points": ["Điều 74", "giao đất cùng mục đích", "bồi thường bằng tiền", "giá đất cụ thể"]
+    },
+    {
+      "id": "VN_CORP_001",
+      "domain": "corporate_and_commercial",
+      "query": "Cổ đông hoặc nhóm cổ đông sở hữu từ bao nhiêu % cổ phần thì có quyền triệu tập họp Đại hội đồng cổ đông bất thường?",
+      "expected_anchors": ["Điều 115", "Luật Doanh nghiệp 2020"],
+      "ground_truth_summary": "Cổ đông hoặc nhóm cổ đông sở hữu từ 05% tổng số cổ phần phổ thông trở lên (hoặc tỷ lệ khác nhỏ hơn theo Điều lệ) có quyền yêu cầu triệu tập họp ĐHĐCĐ.",
+      "key_points": ["Điều 115", "05%", "cổ phần phổ thông", "triệu tập họp"]
+    },
+    {
+      "id": "VN_CORP_002",
+      "domain": "corporate_and_commercial",
+      "query": "Thời hạn góp vốn thành lập công ty TNHH là bao nhiêu ngày kể từ ngày được cấp GCN ĐKDN?",
+      "expected_anchors": ["Điều 47", "Luật Doanh nghiệp 2020"],
+      "ground_truth_summary": "Thành viên phải góp vốn cho công ty đủ và đúng loại tài sản đã cam kết trong thời hạn 90 ngày kể từ ngày được cấp GCN đăng ký doanh nghiệp.",
+      "key_points": ["Điều 47", "90 ngày", "góp vốn đủ"]
+    },
+    {
+      "id": "VN_CORP_003",
+      "domain": "corporate_and_commercial",
+      "query": "Số lượng thành viên tối đa trong công ty trách nhiệm hữu hạn hai thành viên trở lên là bao nhiêu?",
+      "expected_anchors": ["Điều 46", "Luật Doanh nghiệp 2020"],
+      "ground_truth_summary": "Công ty trách nhiệm hữu hạn hai thành viên trở lên có số lượng thành viên không vượt quá 50 thành viên.",
+      "key_points": ["Điều 46", "không vượt quá 50 thành viên"]
+    },
+    {
+      "id": "VN_CORP_004",
+      "domain": "corporate_and_commercial",
+      "query": "Số lượng cổ đông sáng lập tối thiểu khi thành lập công ty cổ phần theo Luật Doanh nghiệp là bao nhiêu?",
+      "expected_anchors": ["Điều 110", "Luật Doanh nghiệp 2020"],
+      "ground_truth_summary": "Công ty cổ phần phải có tối thiểu 03 cổ đông và không giới hạn số lượng tối đa.",
+      "key_points": ["Điều 110", "tối thiểu 03 cổ đông", "không giới hạn tối đa"]
+    },
+    {
+      "id": "VN_CORP_005",
+      "domain": "corporate_and_commercial",
+      "query": "Chủ doanh nghiệp tư nhân chịu trách nhiệm về mọi hoạt động kinh doanh bằng tài sản gì?",
+      "expected_anchors": ["Điều 188", "Luật Doanh nghiệp 2020"],
+      "ground_truth_summary": "Chủ doanh nghiệp tư nhân tự chịu trách nhiệm bằng toàn bộ tài sản của mình về mọi hoạt động của doanh nghiệp (trách nhiệm vô hạn).",
+      "key_points": ["Điều 188", "toàn bộ tài sản", "trách nhiệm vô hạn"]
+    },
+    {
+      "id": "VN_CORP_006",
+      "domain": "corporate_and_commercial",
+      "query": "Nghị quyết Đại hội đồng cổ đông về việc thay đổi ngành nghề kinh doanh cần tỷ lệ biểu quyết tán thành tối thiểu là bao nhiêu?",
+      "expected_anchors": ["Điều 148", "Luật Doanh nghiệp 2020"],
+      "ground_truth_summary": "Nghị quyết về thay đổi ngành nghề kinh doanh được thông qua nếu được số cổ đông đại diện từ 65% tổng số phiếu biểu quyết trở lên của tất cả cổ đông tham dự họp tán thành.",
+      "key_points": ["Điều 148", "ít nhất 65%", "tổng số phiếu biểu quyết"]
+    },
+    {
+      "id": "VN_CORP_007",
+      "domain": "corporate_and_commercial",
+      "query": "Thành viên công ty TNHH 2 thành viên trở lên muốn chuyển nhượng phần vốn góp cho người ngoài công ty phải thực hiện thủ tục chào bán như thế nào?",
+      "expected_anchors": ["Điều 52", "Luật Doanh nghiệp 2020"],
+      "ground_truth_summary": "Phải chào bán phần vốn góp đó cho các thành viên còn lại theo tỷ lệ tương ứng với phần vốn góp của họ; chỉ được chuyển nhượng cho người ngoài nếu các thành viên còn lại không mua hoặc không mua hết trong thời hạn 30 ngày.",
+      "key_points": ["Điều 52", "chào bán cho các thành viên còn lại", "thời hạn 30 ngày"]
+    },
+    {
+      "id": "VN_CORP_008",
+      "domain": "corporate_and_commercial",
+      "query": "Thời hạn công bố thông tin thay đổi nội dung đăng ký doanh nghiệp trên Cổng thông tin quốc gia là bao nhiêu ngày?",
+      "expected_anchors": ["Điều 32", "Luật Doanh nghiệp 2020"],
+      "ground_truth_summary": "Doanh nghiệp phải thông báo công khai trên Cổng thông tin quốc gia về đăng ký doanh nghiệp trong thời hạn 30 ngày kể từ ngày có sự thay đổi.",
+      "key_points": ["Điều 32", "thời hạn 30 ngày", "Cổng thông tin quốc gia"]
+    },
+    {
+      "id": "VN_MARRIAGE_001",
+      "domain": "marriage_and_family",
+      "query": "Chồng có quyền yêu cầu ly hôn khi vợ đang mang thai hoặc nuôi con dưới 12 tháng tuổi không?",
+      "expected_anchors": ["Điều 51", "Luật Hôn nhân và Gia đình 2014"],
+      "ground_truth_summary": "Chồng không có quyền yêu cầu ly hôn trong trường hợp vợ đang có thai, sinh con hoặc đang nuôi con dưới 12 tháng tuổi theo Khoản 3 Điều 51.",
+      "key_points": ["Điều 51", "chồng không có quyền ly hôn", "dưới 12 tháng tuổi", "mang thai"]
+    },
+    {
+      "id": "VN_MARRIAGE_002",
+      "domain": "marriage_and_family",
+      "query": "Con từ bao nhiêu tuổi thì Tòa án phải xem xét nguyện vọng của con khi giải quyết quyền nuôi con khi ly hôn?",
+      "expected_anchors": ["Điều 81", "Luật Hôn nhân và Gia đình 2014"],
+      "ground_truth_summary": "Con từ đủ 07 tuổi trở lên thì phải xem xét nguyện vọng của con theo quy định tại Khoản 2 Điều 81.",
+      "key_points": ["Điều 81", "đủ 07 tuổi trở lên", "nguyện vọng của con"]
+    },
+    {
+      "id": "VN_MARRIAGE_003",
+      "domain": "marriage_and_family",
+      "query": "Độ tuổi kết hôn hợp pháp đối với nam và nữ theo Luật Hôn nhân và Gia đình 2014 là bao nhiêu tuổi?",
+      "expected_anchors": ["Điều 8", "Luật Hôn nhân và Gia đình 2014"],
+      "ground_truth_summary": "Nam từ đủ 20 tuổi trở lên, nữ từ đủ 18 tuổi trở lên.",
+      "key_points": ["Điều 8", "nam từ đủ 20 tuổi", "nữ từ đủ 18 tuổi"]
+    },
+    {
+      "id": "VN_MARRIAGE_004",
+      "domain": "marriage_and_family",
+      "query": "Nguyên tắc giải quyết tài sản của vợ chồng khi ly hôn theo Luật Hôn nhân và Gia đình là gì?",
+      "expected_anchors": ["Điều 59", "Luật Hôn nhân và Gia đình 2014"],
+      "ground_truth_summary": "Tài sản chung của vợ chồng được chia đôi nhưng có tính đến hoàn cảnh của gia đình và của vợ, chồng; công sức đóng góp; bảo vệ lợi ích chính đáng của mỗi bên; lỗi của mỗi bên.",
+      "key_points": ["Điều 59", "chia đôi", "công sức đóng góp", "hoàn cảnh gia đình"]
+    },
+    {
+      "id": "VN_MARRIAGE_005",
+      "domain": "marriage_and_family",
+      "query": "Khi ly hôn, con dưới bao nhiêu tháng tuổi được giao cho mẹ trực tiếp nuôi dưỡng?",
+      "expected_anchors": ["Điều 81", "Luật Hôn nhân và Gia đình 2014"],
+      "ground_truth_summary": "Con dưới 36 tháng tuổi được giao cho mẹ trực tiếp nuôi, trừ trường hợp người mẹ không đủ điều kiện để trực tiếp trông nom, chăm sóc, nuôi dưỡng, giáo dục con hoặc cha mẹ có thỏa thuận khác.",
+      "key_points": ["Điều 81", "dưới 36 tháng tuổi", "giao cho mẹ trực tiếp nuôi"]
+    },
+    {
+      "id": "VN_MARRIAGE_006",
+      "domain": "marriage_and_family",
+      "query": "Thỏa thuận xác lập chế độ tài sản của vợ chồng phải được lập vào thời điểm nào và có hình thức gì?",
+      "expected_anchors": ["Điều 47", "Luật Hôn nhân và Gia đình 2014"],
+      "ground_truth_summary": "Thỏa thuận phải được lập trước khi kết hôn, bằng hình thức văn bản có công chứng hoặc chứng thực.",
+      "key_points": ["Điều 47", "trước khi kết hôn", "văn bản có công chứng hoặc chứng thực"]
+    },
+    {
+      "id": "VN_MARRIAGE_007",
+      "domain": "marriage_and_family",
+      "query": "Nghĩa vụ cấp dưỡng của cha hoặc mẹ không trực tiếp nuôi con sau khi ly hôn được quy định thế nào?",
+      "expected_anchors": ["Điều 110", "Luật Hôn nhân và Gia đình 2014"],
+      "ground_truth_summary": "Cha, mẹ không trực tiếp nuôi con có nghĩa vụ cấp dưỡng cho con chưa thành niên, con đã thành niên mất năng lực hành vi dân sự hoặc không có khả năng lao động và không có tài sản để tự nuôi mình.",
+      "key_points": ["Điều 110", "nghĩa vụ cấp dưỡng", "con chưa thành niên"]
+    },
+    {
+      "id": "VN_EPR_001",
+      "domain": "environmental_and_epr",
+      "query": "Điều 77 Nghị định 08/2022/NĐ-CP quy định đối tượng nào phải thực hiện trách nhiệm tái chế sản phẩm, bao bì?",
+      "expected_anchors": ["Điều 77", "Nghị định 08/2022/NĐ-CP"],
+      "ground_truth_summary": "Nhà sản xuất, nhập khẩu sản phẩm, bao bì quy định tại Cột 3 Phụ lục XXII phải thực hiện trách nhiệm tái chế theo lộ trình.",
+      "key_points": ["Điều 77", "nhà sản xuất", "nhà nhập khẩu", "Phụ lục XXII"]
+    },
+    {
+      "id": "VN_EPR_002",
+      "domain": "environmental_and_epr",
+      "query": "Doanh nghiệp sản xuất bao bì có doanh thu bán hàng dưới bao nhiêu thì được miễn trừ trách nhiệm tái chế EPR?",
+      "expected_anchors": ["Điều 77", "Nghị định 08/2022/NĐ-CP"],
+      "ground_truth_summary": "Doanh nghiệp sản xuất có doanh thu bán hàng từ 30 tỷ đồng trở xuống trong năm trước liền kề được miễn trừ trách nhiệm tái chế.",
+      "key_points": ["30 tỷ đồng", "miễn trừ", "doanh thu"]
+    },
+    {
+      "id": "VN_EPR_003",
+      "domain": "environmental_and_epr",
+      "query": "Nhà sản xuất, nhập khẩu có thể lựa chọn những hình thức nào để thực hiện trách nhiệm tái chế sản phẩm, bao bì?",
+      "expected_anchors": ["Điều 79", "Nghị định 08/2022/NĐ-CP"],
+      "ground_truth_summary": "Có 02 hình thức: (1) Tự tổ chức tái chế sản phẩm, bao bì; (2) Đóng góp tài chính vào Quỹ Bảo vệ môi trường Việt Nam để hỗ trợ tái chế.",
+      "key_points": ["Điều 79", "tự tổ chức tái chế", "đóng góp tài chính", "Quỹ Bảo vệ môi trường Việt Nam"]
+    },
+    {
+      "id": "VN_EPR_004",
+      "domain": "environmental_and_epr",
+      "query": "Thời hạn gửi đăng ký kế hoạch tái chế và báo cáo kết quả tái chế hàng năm của nhà sản xuất, nhập khẩu là ngày nào?",
+      "expected_anchors": ["Điều 80", "Nghị định 08/2022/NĐ-CP"],
+      "ground_truth_summary": "Đăng ký kế hoạch tái chế hàng năm gửi trước ngày 31 tháng 3; báo cáo kết quả tái chế của năm trước gửi trước ngày 31 tháng 3 hàng năm qua Cổng thông tin EPR quốc gia.",
+      "key_points": ["Điều 80", "trước ngày 31 tháng 3", "kế hoạch tái chế", "báo cáo kết quả tái chế"]
+    },
+    {
+      "id": "VN_EPR_005",
+      "domain": "environmental_and_epr",
+      "query": "Công thức tính số tiền đóng góp tài chính vào Quỹ Bảo vệ môi trường Việt Nam (F) được quy định như thế nào?",
+      "expected_anchors": ["Điều 81", "Nghị định 08/2022/NĐ-CP"],
+      "ground_truth_summary": "Số tiền đóng góp tài chính F = R x V x Fs (trong đó R là tỷ lệ tái chế bắt buộc, V là khối lượng sản phẩm/bao bì, Fs là định mức chi phí tái chế hợp lý, hợp lệ).",
+      "key_points": ["Điều 81", "F = R x V x Fs", "tỷ lệ tái chế bắt buộc", "định mức chi phí tái chế"]
+    },
+    {
+      "id": "VN_EPR_006",
+      "domain": "environmental_and_epr",
+      "query": "Lộ trình thực hiện trách nhiệm tái chế đối với săm lốp, pin ắc quy, dầu nhớt và bao bì bắt đầu áp dụng từ thời điểm nào?",
+      "expected_anchors": ["Điều 77", "Nghị định 08/2022/NĐ-CP"],
+      "ground_truth_summary": "Trách nhiệm tái chế đối với săm lốp, pin ắc quy, dầu nhớt và các loại bao bì (thương phẩm) bắt đầu thực hiện từ ngày 01 tháng 01 năm 2024.",
+      "key_points": ["Điều 77", "từ ngày 01 tháng 01 năm 2024", "săm lốp", "pin ắc quy", "dầu nhớt", "bao bì"]
+    },
+    {
+      "id": "VN_EPR_007",
+      "domain": "environmental_and_epr",
+      "query": "Những nhóm sản phẩm, bao bì chứa chất độc hại khó thu gom tái chế nào phải thực hiện trách nhiệm đóng góp tài chính xử lý chất thải theo Điều 83 Nghị định 08/2022/NĐ-CP?",
+      "expected_anchors": ["Điều 83", "Nghị định 08/2022/NĐ-CP"],
+      "ground_truth_summary": "Bao gồm thuốc bảo vệ thực vật, pin dùng một lần, tã lót bỉm, kẹo cao su, thuốc lá, và một số sản phẩm nhựa dùng một lần chứa vi nhựa khó phân hủy.",
+      "key_points": ["Điều 83", "thuốc bảo vệ thực vật", "pin dùng một lần", "kẹo cao su", "thuốc lá"]
+    }
+  ]
+}

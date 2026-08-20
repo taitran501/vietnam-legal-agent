@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     qdrant_local_path: str = Field(default="./qdrant_db")
 
     # Collection names
-    law_collection: str = Field(default="law_collection")
+    law_collection: str = Field(default="vietnam_legal_collection_v1")
 
     # ── Redis ────────────────────────────────────────────────────────────────
     redis_url: str = Field(default="redis://localhost:6379/0")
