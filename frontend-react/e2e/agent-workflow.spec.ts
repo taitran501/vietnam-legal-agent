@@ -502,7 +502,7 @@ test('mobile welcome uses a drawer for history and never overflows horizontally'
   await mockBaseApi(page);
   await page.goto('/');
 
-  await expect(page.getByRole('heading', { name: /Hôm nay bạn muốn tìm hiểu/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Trợ lý Pháp luật Việt Nam', exact: true }).last()).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await captureReview(page, 'integrated-welcome-mobile');
 
@@ -595,7 +595,7 @@ test('direct URL, root reset, and browser back follow the URL without stale cont
   await page.goto('/conversations/route-1');
   await expect(page.getByText('Nội dung chỉ thuộc route 1')).toBeVisible();
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: /Hôm nay bạn muốn tìm hiểu/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Trợ lý Pháp luật Việt Nam', exact: true }).last()).toBeVisible();
   await expect(page.getByText('Nội dung chỉ thuộc route 1')).not.toBeVisible();
   await page.goBack();
   await expect(page).toHaveURL(/\/conversations\/route-1$/);
@@ -787,7 +787,7 @@ test('an accepted official-web source keeps its verified outbound link and label
   await page.goto('/');
   await page.getByLabel('Câu hỏi pháp lý').fill('Tìm nguồn chính thức về Điều 78');
   await page.getByLabel('Câu hỏi pháp lý').press('Enter');
-  await expect(page.getByText('Nguồn chính thức bên ngoài kho văn bản', { exact: true })).toBeVisible();
+  await expect(page.getByText('Nguồn bổ sung từ web', { exact: true })).toBeVisible();
   await page.getByRole('link', { name: '[1]' }).click();
   const drawer = page.getByRole('dialog', { name: 'Nguồn tham khảo' });
   const outbound = drawer.getByRole('link', { name: 'Mở nguồn' });
