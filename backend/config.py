@@ -174,29 +174,9 @@ class Settings(BaseSettings):
     max_chat_history_exchanges: int = Field(default=3)
 
     # ── Pipeline feature flags (Option A: small, reversible improvements) ──
-    enable_query_rewrite: bool = Field(
-        default=True,
-        description="Enable contextual query rewriting for follow-up questions",
-    )
-    enable_llm_router_fallback: bool = Field(
-        default=False,
-        description="Allow router to call LLM when deterministic fast-route is inconclusive",
-    )
     enable_relevance_gate: bool = Field(
         default=True,
         description="Run relevance gate before legal generation",
-    )
-    enable_web_fallback: bool = Field(
-        default=False,
-        description="Deprecated. Web research is an explicit route and is never an automatic fallback.",
-    )
-    web_fallback_timeout_seconds: float = Field(
-        default=6.0,
-        description="Hard timeout for web fallback call in seconds",
-    )
-    enable_followup_suggestions: bool = Field(
-        default=False,
-        description="Generate LLM follow-up suggestions after each answer (adds latency)",
     )
     enable_legal_evidence_guardrail: bool = Field(
         default=True,
@@ -226,14 +206,6 @@ class Settings(BaseSettings):
     )
 
     # ── Re-ranking ───────────────────────────────────────────────────────────
-    enable_reranking: bool = Field(
-        default=False,  # DISABLED: LLM re-ranker is incorrectly scoring docs
-        description="Enable LLM-based re-ranking for retrieval results",
-    )
-    rerank_top_k: int = Field(
-        default=3,
-        description="Number of documents to return after re-ranking",
-    )
     enable_cross_encoder_rerank: bool = Field(
         default=True,
         description="Enable cross-encoder reranker execution (shadow/apply modes)",
