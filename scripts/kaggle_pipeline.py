@@ -9,7 +9,6 @@ End-to-End Kaggle Automation Pipeline for Vietnamese Legal Indexing:
 """
 import ast
 import json
-import os
 import shutil
 import sys
 import tarfile
@@ -72,7 +71,7 @@ def step_2_push_kernel(accelerator: str = "NvidiaTeslaT4") -> bool:
         kaggle.api.kernels_push_cli(folder, timeout=None, acc=accelerator)
         print(f"✅ Successfully pushed to https://www.kaggle.com/code/{KERNEL_SLUG}\n", flush=True)
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - Kaggle SDK failures are reported and returned to the CLI caller
         print(f"❌ Push failed: {e}", flush=True)
         return False
 
@@ -93,7 +92,7 @@ def step_3_monitor_execution(max_queue_seconds: int = 120, poll_interval: int = 
         try:
             status_obj = kaggle.api.kernels_status(KERNEL_SLUG)
             status = str(status_obj.status).upper()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - transient Kaggle SDK failures are retried
             print(f"   [Notice] API check retry: {e}", flush=True)
             time.sleep(poll_interval)
             continue
@@ -114,7 +113,7 @@ def step_3_monitor_execution(max_queue_seconds: int = 120, poll_interval: int = 
             return "ERROR"
             
         if "CANCEL" in status:
-            print(f"\n⚠️ Kernel was CANCELLED in queue.", flush=True)
+            print("\n⚠️ Kernel was CANCELLED in queue.", flush=True)
             return "CANCELLED"
             
         print(f"   ⏳ Queue Elapsed: {elapsed_q:02d}s / {max_queue_seconds}s | Status: {status}", flush=True)
@@ -135,7 +134,7 @@ def step_3_monitor_execution(max_queue_seconds: int = 120, poll_interval: int = 
             status_obj = kaggle.api.kernels_status(KERNEL_SLUG)
             status = str(status_obj.status).upper()
             failure_msg = getattr(status_obj, "failure_message", None)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - transient Kaggle SDK failures are retried
             print(f"   [Notice] API check retry: {e}", flush=True)
             time.sleep(poll_interval)
             continue
@@ -173,7 +172,7 @@ def step_4_download_and_verify() -> bool:
     print(f"Downloading output from {KERNEL_SLUG} to {ARTIFACT_DIR} ...", flush=True)
     try:
         kaggle.api.kernels_output_cli(KERNEL_SLUG, path=str(ARTIFACT_DIR))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - Kaggle SDK failures are reported and returned to the CLI caller
         print(f"❌ Download error: {e}", flush=True)
         return False
         
@@ -227,7 +226,7 @@ def main():
     acc = sys.argv[1] if len(sys.argv) > 1 else "NvidiaTeslaT4"
     queue_timeout = int(sys.argv[2]) if len(sys.argv) > 2 else 120
     
-    print(f"🚀 Starting Automated Kaggle Pipeline for VNLegal-LAL Indexer...", flush=True)
+    print("🚀 Starting Automated Kaggle Pipeline for VNLegal-LAL Indexer...", flush=True)
     
     # 1. Local Validate
     if not step_1_validate_notebook():
@@ -251,8 +250,8 @@ def main():
             kaggle.api.kernels_output_cli(KERNEL_SLUG, path=str(ARTIFACT_DIR))
             for f in ARTIFACT_DIR.rglob("*.log"):
                 print(f"\n📋 FAILURE LOG TAIL:\n{f.read_text(encoding='utf-8', errors='ignore')[-3000:]}", flush=True)
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - failure-log collection must not hide the original run failure
+            print(f"Notice: unable to collect Kaggle failure logs: {exc}", flush=True)
         sys.exit(1)
         
     # 4. Download & Verify

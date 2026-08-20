@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Literal
+from collections.abc import Callable
+from typing import Literal, TypedDict
+
 from pydantic import BaseModel, Field
 
 from epr_agent.tools.document_parser import ParsedClause
@@ -53,8 +55,16 @@ class ContractReviewReport(BaseModel):
     negotiation_strategy: list[str] = Field(default_factory=list, description="Chiến lược đàm phán sửa đổi hợp đồng")
 
 
+class HeuristicRule(TypedDict):
+    pattern: re.Pattern[str]
+    check: Callable[[re.Match[str]], bool]
+    conflict: str
+    issue: str
+    redline_hint: str
+
+
 # Statutory heuristic detectors for fast offline / initial filtering
-_HEURISTIC_RULES = [
+_HEURISTIC_RULES: list[HeuristicRule] = [
     {
         "pattern": re.compile(r"phạt\s*(?:vi phạm)?\s*(\d+)\s*%", re.IGNORECASE),
         "check": lambda m: int(m.group(1)) > 8,
@@ -210,6 +220,6 @@ async def review_contract_with_llm(
         if not isinstance(report, ContractReviewReport):
             report = ContractReviewReport.model_validate(report)
         return report
-    except Exception:
+    except Exception:  # noqa: BLE001 - unavailable LLMs use the deterministic heuristic review
         # Graceful fallback to heuristic
         return review_contract_clauses_heuristic(clauses, document_title)

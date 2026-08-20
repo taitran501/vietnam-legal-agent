@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     # ── Redis ────────────────────────────────────────────────────────────────
     redis_url: str = Field(default="redis://localhost:6379/0")
     rate_limit_fail_open: bool = Field(
-        default=True,
+        default=False,
         description="Allow requests when Redis rate limiting is unavailable; keep false for production safety",
     )
     cache_ttl_seconds: int = Field(default=3600)       # exact-match cache TTL

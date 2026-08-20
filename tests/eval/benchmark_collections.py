@@ -25,7 +25,8 @@ sys.path.insert(0, str(ROOT))
 
 from dotenv import load_dotenv
 
-load_dotenv(ROOT / ".env")
+if __name__ == "__main__":
+    load_dotenv(ROOT / ".env")
 
 
 @dataclass(frozen=True)

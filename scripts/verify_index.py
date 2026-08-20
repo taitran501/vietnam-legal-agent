@@ -4,8 +4,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from qdrant_client import QdrantClient
 from backend.core.llm_instances import get_embeddings
+from qdrant_client import QdrantClient
+
 
 def main():
     db_path = Path("qdrant_db")

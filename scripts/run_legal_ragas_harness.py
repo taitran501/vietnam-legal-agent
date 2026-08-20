@@ -18,10 +18,9 @@ import argparse
 import asyncio
 import json
 import logging
-import os
 import sys
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 # Add project root and src to path
@@ -46,8 +45,7 @@ async def run_benchmark(
     if not benchmark_file.exists():
         raise FileNotFoundError(f"Benchmark file not found: {benchmark_file}")
 
-    with open(benchmark_file, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    data = json.loads(await asyncio.to_thread(benchmark_file.read_text, encoding="utf-8"))
 
     cases = data.get("cases", [])
     if limit:
@@ -94,7 +92,7 @@ async def run_benchmark(
                 eval_result.answer_relevance,
                 eval_result.context_recall,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - preserve a failed case in the aggregate report
             logger.error("Error evaluating %s: %s", case_id, exc)
             # Create failed placeholder
             results.append(
@@ -125,7 +123,7 @@ async def run_benchmark(
     pass_rate = (passed_count / total) * 100 if total else 0.0
 
     summary = {
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "total_cases": total,
         "passed_cases": passed_count,
         "pass_rate_pct": round(pass_rate, 2),
@@ -145,9 +143,9 @@ async def run_benchmark(
     # Output reports
     out_dir = output_dir or (_ROOT / "data" / "eval" / "reports")
     out_dir.mkdir(parents=True, exist_ok=True)
-    report_file = out_dir / f"ragas_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    with open(report_file, "w", encoding="utf-8") as f:
-        json.dump(summary, f, ensure_ascii=False, indent=2)
+    report_file = out_dir / f"ragas_report_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}.json"
+    report_text = json.dumps(summary, ensure_ascii=False, indent=2)
+    await asyncio.to_thread(report_file.write_text, report_text, encoding="utf-8")
 
     logger.info("=" * 60)
     logger.info("RAGAS EVALUATION SUMMARY")

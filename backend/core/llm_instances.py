@@ -14,10 +14,10 @@ Models:
 """
 
 from functools import lru_cache
+from typing import Any
 
 from langchain_core.embeddings import Embeddings
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-
 
 from backend.config import get_settings
 
@@ -27,7 +27,7 @@ def get_llm_fast() -> ChatOpenAI:
     """gpt-3.5-turbo — chitchat responses, FAQ answer generation (plain text output only)."""
     settings = get_settings()
     api_key = settings.openai_api_key or "mock-key-for-preview"
-    return ChatOpenAI(model="gpt-3.5-turbo", temperature=0, request_timeout=30, api_key=api_key)  # type: ignore[call-arg]
+    return ChatOpenAI(model="gpt-3.5-turbo", temperature=0, request_timeout=30, api_key=api_key)  # type: ignore[arg-type, call-arg]
 
 
 @lru_cache(maxsize=1)
@@ -35,7 +35,7 @@ def get_llm_router() -> ChatOpenAI:
     """gpt-4o-mini — query routing with Structured Outputs (.with_structured_output())."""
     settings = get_settings()
     api_key = settings.openai_api_key or "mock-key-for-preview"
-    return ChatOpenAI(model="gpt-4o-mini", temperature=0, request_timeout=30, api_key=api_key)  # type: ignore[call-arg]
+    return ChatOpenAI(model="gpt-4o-mini", temperature=0, request_timeout=30, api_key=api_key)  # type: ignore[arg-type, call-arg]
 
 
 @lru_cache(maxsize=1)
@@ -43,7 +43,7 @@ def get_llm_smart() -> ChatOpenAI:
     """gpt-4o-mini — query rewriting, legal generation, LLM-as-judge evaluation."""
     settings = get_settings()
     api_key = settings.openai_api_key or "mock-key-for-preview"
-    return ChatOpenAI(model="gpt-4o-mini", temperature=0, request_timeout=30, api_key=api_key)  # type: ignore[call-arg]
+    return ChatOpenAI(model="gpt-4o-mini", temperature=0, request_timeout=30, api_key=api_key)  # type: ignore[arg-type, call-arg]
 
 
 @lru_cache(maxsize=1)
@@ -56,7 +56,7 @@ def get_llm_stream() -> ChatOpenAI:
         temperature=0,
         streaming=True,
         request_timeout=30,
-        api_key=api_key,
+        api_key=api_key,  # type: ignore[arg-type]
     )
 
 
@@ -68,7 +68,7 @@ class LocalSentenceTransformerEmbeddings(Embeddings):
     def __init__(self, model_name: str = "darklethelong/vnlegal-lal", device: str | None = None) -> None:
         self.model_name = model_name
         self.device = device
-        self._model = None
+        self._model: Any = None
 
     def _get_model(self):
         if self._model is None:

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from typing import Any
-from fastapi import APIRouter, HTTPException, Request
+
+from fastapi import APIRouter, Request
 
 from backend.api.principal import principal_from_request_state
 from epr_agent.tracing.trace_context import get_trace_store

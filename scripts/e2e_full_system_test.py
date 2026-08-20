@@ -18,8 +18,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-from httpx import AsyncClient, ASGITransport
 from backend.main import app, lifespan
+from httpx import ASGITransport, AsyncClient
 
 
 async def run_e2e_system_test():
@@ -113,7 +113,7 @@ async def run_e2e_system_test():
                                 full_answer_1.append(chunk)
                             elif evt_type in ("response_complete", "complete"):
                                 break
-                        except Exception:
+                        except (AttributeError, json.JSONDecodeError, TypeError):
                             pass
                             
             turn1_elapsed = time.time() - t_turn1
@@ -121,7 +121,7 @@ async def run_e2e_system_test():
             print(f"\n   📝 Turn 1 Synthesized Response ({turn1_elapsed:.2f}s):\n", flush=True)
             print(f"   {turn1_text[:350]}...\n", flush=True)
             assert len(turn1_text) > 50, "Turn 1 answer was empty or too short"
-            print(f"   ✅ Test 3 PASSED: Turn 1 legal reasoning & streaming completed successfully.", flush=True)
+            print("   ✅ Test 3 PASSED: Turn 1 legal reasoning & streaming completed successfully.", flush=True)
             
             # ------------------------------------------------------------------
             # TEST 4: Multi-Turn Context Follow-Up (Turn 2 - Labor Law Follow-up)
@@ -161,7 +161,7 @@ async def run_e2e_system_test():
                                 full_answer_2.append(chunk)
                             elif evt_type in ("response_complete", "complete"):
                                 break
-                        except Exception:
+                        except (AttributeError, json.JSONDecodeError, TypeError):
                             pass
                             
             turn2_elapsed = time.time() - t_turn2
@@ -169,7 +169,7 @@ async def run_e2e_system_test():
             print(f"\n   📝 Turn 2 Synthesized Response ({turn2_elapsed:.2f}s):\n", flush=True)
             print(f"   {turn2_text[:350]}...\n", flush=True)
             assert len(turn2_text) > 50, "Turn 2 answer was empty or too short"
-            print(f"   ✅ Test 4 PASSED: Turn 2 context continuation & labor retrieval completed.", flush=True)
+            print("   ✅ Test 4 PASSED: Turn 2 context continuation & labor retrieval completed.", flush=True)
             
             # ------------------------------------------------------------------
             # TEST 5: User Feedback & Telemetry

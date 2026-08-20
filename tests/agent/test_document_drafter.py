@@ -1,4 +1,3 @@
-import pytest
 from epr_agent.tools.document_drafter import (
     CourtPetitionPayload,
     draft_court_petition_form_23,

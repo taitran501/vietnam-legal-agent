@@ -84,6 +84,8 @@ def _get_qdrant_client() -> QdrantClient:
                     logger.warning("Local Qdrant path initialization failed (%s); fallback to memory client", exc)
                     _qdrant_client = QdrantClient(":memory:", timeout=10)
                     break
+        if _qdrant_client is None:
+            raise RuntimeError("Qdrant client could not be initialized")
         return _qdrant_client
 
 

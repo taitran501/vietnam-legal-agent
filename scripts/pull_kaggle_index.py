@@ -8,10 +8,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import os
 import shutil
+import sqlite3
 import subprocess
-import sys
 import tarfile
 from pathlib import Path
 
@@ -58,7 +57,6 @@ def pull_and_unpack(kernel_id: str, dest_dir: Path | None = None) -> bool:
     # Verify collection
     print("\n=== 3. Verifying Qdrant Collection Integrity ===")
     try:
-        import sqlite3
         collection_dir = target_qdrant_dir / "collection" / "vietnam_legal_collection_v1"
         storage_db = collection_dir / "storage.sqlite"
         if storage_db.exists():
@@ -70,7 +68,7 @@ def pull_and_unpack(kernel_id: str, dest_dir: Path | None = None) -> bool:
             print(f"✅ Collection 'vietnam_legal_collection_v1' verified! Total vectors: {count:,}")
         else:
             print(f"Notice: storage.sqlite checked at {storage_db}")
-    except Exception as exc:
+    except (OSError, sqlite3.Error) as exc:
         print(f"Notice during verification: {exc}")
 
     # Clean up temp

@@ -96,12 +96,9 @@ class RateLimiter:
             logger.warning("Rate limiter check failed: %s", exc)
             if self.fail_open:
                 return True, {"X-RateLimit-Mode": "degraded"}
-            # Auto-degrade gracefully if Redis connection is refused
-            if "refused" in str(exc).lower() or "error 22" in str(exc).lower() or "connection" in str(exc).lower():
-                return True, {"X-RateLimit-Mode": "degraded-no-redis"}
             return False, {
                 "Retry-After": "5",
-                "X-RateLimit-Error": "redis_unavailable",
+                "X-RateLimit-Error": "unavailable",
             }
 
 

@@ -1,4 +1,3 @@
-import pytest
 from epr_agent.tools.document_parser import (
     parse_contract_clauses,
     parse_document_file,
@@ -30,7 +29,7 @@ HỢP ĐỒNG MUA BÁN HÀNG HÓA
 
 
 def test_parse_document_file_txt():
-    sample_bytes = "Điều 1. Điều khoản mở đầu\nNội dung điều 1.\n\nĐiều 2. Điều khoản kết\nNội dung điều 2.".encode("utf-8")
+    sample_bytes = "Điều 1. Điều khoản mở đầu\nNội dung điều 1.\n\nĐiều 2. Điều khoản kết\nNội dung điều 2.".encode()
     result = parse_document_file(sample_bytes, filename="hop_dong.txt", mime_type="text/plain")
     assert result.file_type == "txt"
     assert len(result.clauses) == 2

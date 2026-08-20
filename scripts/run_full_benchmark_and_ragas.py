@@ -21,7 +21,6 @@ import asyncio
 import json
 import logging
 import math
-import os
 import sys
 import time
 from pathlib import Path
@@ -34,8 +33,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from backend.config import get_settings
 from backend.core.ensemble_retrieval import retrieve_legal_ensemble
-from backend.core.retrieval import close_qdrant_client
 from backend.core.llm_instances import get_llm_smart
+from backend.core.retrieval import close_qdrant_client
 from src.epr_agent.eval.ragas_evaluator import evaluate_ragas_sample
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(name)s | %(levelname)s | %(message)s")
@@ -106,7 +105,6 @@ async def run_benchmark():
         domain = case.get("domain", "general")
         query = case["query"]
         expected_anchors = case.get("expected_anchors", [])
-        key_points = case.get("key_points", [])
 
         print(f"[{idx:02d}/{len(cases):02d}] Domain: {domain:<25} | Case: {case_id}")
         print(f"   Query: {query}")
@@ -116,7 +114,7 @@ async def run_benchmark():
         # 1. Retrieval
         try:
             raw_docs = await asyncio.to_thread(retrieve_legal_ensemble, query=query, k=10)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - one failed retrieval must not abort the benchmark report
             logger.error(f"Retrieval error on {case_id}: {exc}")
             raw_docs = []
 
@@ -146,9 +144,7 @@ async def run_benchmark():
         ndcg_10 = compute_ndcg(ranks, k=10)
 
         # 2. Generation
-        t_gen_start = time.perf_counter()
         answer = await generate_answer(query, formatted_docs)
-        t_generation = time.perf_counter() - t_gen_start
         t_total = time.perf_counter() - t0
 
         # 3. RAGAS Evaluation

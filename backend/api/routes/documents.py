@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Annotated, Any
+
 from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 
-from epr_agent.tools.document_parser import parse_document_file
 from epr_agent.tools.contract_redliner import review_contract_clauses_heuristic, review_contract_with_llm
 from epr_agent.tools.document_drafter import (
     CourtPetitionPayload,
@@ -15,6 +15,7 @@ from epr_agent.tools.document_drafter import (
     draft_safe_deposit_agreement,
     generate_docx_bytes,
 )
+from epr_agent.tools.document_parser import parse_document_file
 from epr_agent.tools.legal_calculators import (
     calculate_court_fees,
     calculate_illegal_termination_compensation,
@@ -60,8 +61,8 @@ class CalculateLandTaxRequest(BaseModel):
 
 @router.post("/upload")
 async def upload_document(
-    file: UploadFile = File(...),
-    analyze_redline: bool = Form(default=True),
+    file: Annotated[UploadFile, File(...)],
+    analyze_redline: Annotated[bool, Form()] = True,
 ) -> dict[str, Any]:
     """Upload and parse contract or legal instrument (PDF, DOCX, TXT)."""
     try:
@@ -82,7 +83,7 @@ async def upload_document(
                     clauses=parsed.clauses,
                     document_title=file.filename or "Hợp đồng",
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - provider failures use the deterministic fallback
                 logger.warning("LLM redline failed; falling back to heuristic: %s", exc)
                 redline_report = review_contract_clauses_heuristic(
                     clauses=parsed.clauses,
@@ -97,7 +98,7 @@ async def upload_document(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error("Document upload failed: %s", exc, exc_info=True)
+        logger.exception("Document upload failed")
         raise HTTPException(status_code=500, detail=f"Không thể xử lý tài liệu: {exc}") from exc
 
 
@@ -116,7 +117,7 @@ async def export_docx(payload: ExportDocxRequest):
             headers={"Content-Disposition": f'attachment; filename="{clean_name}"'},
         )
     except Exception as exc:
-        logger.error("DOCX export failed: %s", exc, exc_info=True)
+        logger.exception("DOCX export failed")
         raise HTTPException(status_code=500, detail=f"Không thể xuất file Word: {exc}") from exc
 
 

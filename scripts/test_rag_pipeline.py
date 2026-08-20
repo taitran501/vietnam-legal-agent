@@ -10,8 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-from backend.core.retrieval import retrieve_legal, retrieve_legal_async
+from backend.core.retrieval import retrieve_legal_async
+
 from epr_agent.api.routes import stream_chat_events
+
 
 async def test_rag_flow():
     print("="*70)
@@ -64,7 +66,7 @@ async def test_rag_flow():
             chunk = event.get("delta") or event.get("content") or event.get("chunk") or ""
             full_response.append(chunk)
         elif event_type == "response_complete" or event_type == "complete":
-            print(f"   [Agent Complete]: Received final answer metadata.")
+            print("   [Agent Complete]: Received final answer metadata.")
             citations = event.get("citations", [])
             if citations:
                 print(f"   [Citations]: {len(citations)} legal references cited.")

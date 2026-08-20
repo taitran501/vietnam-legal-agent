@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
 from backend.config import get_settings
-from backend.core.retrieval import get_qdrant_client, close_qdrant_client
+from backend.core.retrieval import close_qdrant_client, get_qdrant_client
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger("db_validator")
@@ -40,7 +40,6 @@ def main():
     print("\nScanning database payload records...")
     db_anchors = set()
     db_docs = set()
-    sample_records_by_anchor: dict[str, list[dict]] = {}
 
     offset = None
     scanned_points = 0
@@ -60,7 +59,6 @@ def main():
             p = r.payload or {}
             dieu = str(p.get("Dieu") or p.get("Parent_Dieu") or p.get("article_title") or "").strip()
             doc_title = str(p.get("document_title") or p.get("law_name") or "").strip()
-            text = str(p.get("Text") or p.get("text") or "")
 
             if dieu:
                 db_anchors.add(dieu.lower())
