@@ -41,7 +41,7 @@ test('a user can stop an in-progress SSE response without losing rendered text',
 
   await expect(stop).not.toBeVisible();
   await expect(page.getByTestId('streaming-answer')).not.toBeVisible();
-  await expect(page.getByRole('region', { name: 'Tiến trình xử lý' }).getByRole('button', { name: /Đã dừng theo yêu cầu/ })).toBeVisible();
+  await expect(page.getByText('Đã dừng theo yêu cầu · nội dung chưa hoàn chỉnh', { exact: true })).toBeVisible();
 
   const sessionId = new URL(page.url()).pathname.split('/').pop();
   expect(sessionId).toBeTruthy();
