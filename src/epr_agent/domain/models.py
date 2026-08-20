@@ -174,6 +174,7 @@ class AgentState(TypedDict, total=False):
     required_issues: list[str]
     covered_issues: list[str]
     issue_states: dict[str, Any]
+    assumptions: list[str]
     evidence_bundles: dict[str, list[dict[str, Any]]]
     case_fields: list[dict[str, Any]]
     route: str
