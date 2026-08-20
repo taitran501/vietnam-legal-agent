@@ -154,7 +154,7 @@ def _hydrate_persisted_case(raw: dict[str, Any] | None) -> dict[str, Any] | None
     payload = dict(raw)
     facts = _fact_values(cast(dict[str, Any] | None, raw.get("facts")))
     resolved = _case_form_resolver.resolve(
-        str(raw.get("task_type") or TaskType.ASSESS_EPR_OBLIGATION.value), facts
+        str(raw.get("task_type") or TaskType.CASE_ASSESSMENT.value), facts
     )
     payload["fields"] = [field.model_dump() for field in resolved.fields]
     payload["form_version"] = resolved.form_version
@@ -408,7 +408,7 @@ class V4WorkflowRuntime(WorkflowRuntime):
             state["route"] = route.value
             return state
 
-        task = TaskType.BUILD_COMPLIANCE_CHECKLIST if route == RouteType.COMPLIANCE_CHECKLIST else TaskType.ASSESS_EPR_OBLIGATION
+        task = TaskType.BUILD_COMPLIANCE_CHECKLIST if route == RouteType.COMPLIANCE_CHECKLIST else TaskType.CASE_ASSESSMENT
         state["route"] = route.value
         state["task_type"] = task.value
         state["source_scope"] = "legal_corpus"

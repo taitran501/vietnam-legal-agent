@@ -189,7 +189,7 @@ class EvidenceGenerationGateway:
         task = TaskType(task_type)
         if task == TaskType.CHITCHAT:
             return await self.chitchat(query, [])
-        if task == TaskType.ASSESS_EPR_OBLIGATION:
+        if task == TaskType.CASE_ASSESSMENT:
             return self._compose_assessment(query, facts, documents)
         if task == TaskType.BUILD_COMPLIANCE_CHECKLIST:
             return self._compose_checklist(query, facts, documents)
@@ -439,7 +439,7 @@ class StaticGenerationGateway:
 
     async def answer(self, task_type: str, query: str, documents: list[DocumentRecord], facts: dict[str, str]) -> str:
         self.calls.append(f"answer:{task_type}")
-        if TaskType(task_type) == TaskType.ASSESS_EPR_OBLIGATION:
+        if TaskType(task_type) == TaskType.CASE_ASSESSMENT:
             return EvidenceGenerationGateway._compose_assessment(query, facts, documents)
         if TaskType(task_type) == TaskType.BUILD_COMPLIANCE_CHECKLIST:
             return EvidenceGenerationGateway._compose_checklist(query, facts, documents)

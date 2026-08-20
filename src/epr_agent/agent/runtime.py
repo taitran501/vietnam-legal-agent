@@ -232,7 +232,7 @@ class WorkflowRuntime:
                 if saved_case is not None:
                     state["case_state"] = saved_case
             elif state.get("task_type") in {
-                TaskType.ASSESS_EPR_OBLIGATION.value,
+                TaskType.CASE_ASSESSMENT.value,
                 TaskType.BUILD_COMPLIANCE_CHECKLIST.value,
             }:
                 await self.deps.history.clear_case(user_id, conversation_id)

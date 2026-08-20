@@ -16,7 +16,9 @@ class TaskType(StrEnum):
     """Tasks supported by the first bounded workflow."""
 
     LEGAL_LOOKUP = "legal_lookup"
-    ASSESS_EPR_OBLIGATION = "assess_epr_obligation"
+    # The wire value is a legacy compatibility string; the semantic name is
+    # CASE_ASSESSMENT because the same task covers every legal domain.
+    CASE_ASSESSMENT = "assess_epr_obligation"
     BUILD_COMPLIANCE_CHECKLIST = "build_compliance_checklist"
     CHITCHAT = "chitchat"
 
@@ -193,7 +195,7 @@ class AgentState(TypedDict, total=False):
     missing_facts: list[str]
     case_state: dict[str, Any] | None
     follow_up_question: str
-    is_epr_scope: bool
+    is_legal_scope: bool
 
     cached_answer: str | None
     cached_evidence: list[dict[str, Any]]
