@@ -92,7 +92,7 @@ test('real guided assessment collects dependent facts before one submit', async 
   const form = page.getByRole('region', { name: 'Kiểm tra trường hợp của doanh nghiệp' });
   await form.getByLabel('Vai trò doanh nghiệp').selectOption('manufacturer');
   await form.getByLabel('Loại đối tượng').selectOption('commercial_packaging');
-  await form.getByLabel('Nhóm sản phẩm EPR').selectOption('bao_bi');
+  await form.getByLabel('Nhóm sản phẩm/bao bì').selectOption('bao_bi');
   await form.getByLabel('Phạm vi đưa ra thị trường').selectOption('vietnam_market');
   await form.getByLabel('Mục đích sản xuất hoặc nhập khẩu').selectOption('commercial');
   await form.getByLabel('Nhóm hàng hóa được đóng gói').selectOption('thuc_pham');
@@ -111,7 +111,7 @@ test('guided form explains unresolved reuse branch before submit', async ({ page
   const form = page.getByRole('region', { name: 'Kiểm tra trường hợp của doanh nghiệp' });
   await form.getByLabel('Vai trò doanh nghiệp').selectOption('manufacturer');
   await form.getByLabel('Loại đối tượng').selectOption('commercial_packaging');
-  await form.getByLabel('Nhóm sản phẩm EPR').selectOption('bao_bi');
+  await form.getByLabel('Nhóm sản phẩm/bao bì').selectOption('bao_bi');
   await form.getByLabel('Phạm vi đưa ra thị trường').selectOption('vietnam_market');
   await form.getByLabel('Mục đích sản xuất hoặc nhập khẩu').selectOption('commercial');
   await form.getByLabel('Nhóm hàng hóa được đóng gói').selectOption('thuc_pham');
@@ -130,7 +130,7 @@ test('generic other category is explained instead of opening a doomed turn', asy
   const form = page.getByRole('region', { name: 'Kiểm tra trường hợp của doanh nghiệp' });
   await form.getByLabel('Vai trò doanh nghiệp').selectOption('manufacturer');
   await form.getByLabel('Loại đối tượng').selectOption('commercial_packaging');
-  await form.getByLabel('Nhóm sản phẩm EPR').selectOption('bao_bi');
+  await form.getByLabel('Nhóm sản phẩm/bao bì').selectOption('bao_bi');
   await form.getByLabel('Phạm vi đưa ra thị trường').selectOption('vietnam_market');
   await form.getByLabel('Mục đích sản xuất hoặc nhập khẩu').selectOption('commercial');
   await form.getByLabel('Nhóm hàng hóa được đóng gói').selectOption('other');

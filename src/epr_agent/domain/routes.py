@@ -33,16 +33,13 @@ class RouteSpec:
     source_scope: str = "legal_corpus"
 
 
-EPR_CASE_FACTS = ("business_role", "product_or_packaging", "material", "activity_scope")
-
-
 ROUTE_SPECS: dict[RouteType, RouteSpec] = {
     RouteType.CHITCHAT: RouteSpec(RouteType.CHITCHAT, TaskType.CHITCHAT, 0, False, source_scope="none"),
     RouteType.LEGAL_LOOKUP: RouteSpec(RouteType.LEGAL_LOOKUP, TaskType.LEGAL_LOOKUP, 3, True),
     RouteType.LEGAL_EXPLAIN_COMPARE: RouteSpec(RouteType.LEGAL_EXPLAIN_COMPARE, TaskType.LEGAL_LOOKUP, 6, False),
     RouteType.CASE_ASSESSMENT: RouteSpec(
         RouteType.CASE_ASSESSMENT,
-        TaskType.ASSESS_EPR_OBLIGATION,
+        TaskType.CASE_ASSESSMENT,
         5,
         False,
         requires_case_facts=True,
@@ -64,7 +61,7 @@ def route_spec(value: RouteType | str) -> RouteSpec:
 
 
 def route_for_task(task: TaskType) -> RouteType:
-    if task == TaskType.ASSESS_EPR_OBLIGATION:
+    if task == TaskType.CASE_ASSESSMENT:
         return RouteType.CASE_ASSESSMENT
     if task == TaskType.BUILD_COMPLIANCE_CHECKLIST:
         return RouteType.COMPLIANCE_CHECKLIST

@@ -35,6 +35,11 @@ from epr_agent.domain.epr_rules import (
     follow_up_question,
     legal_issues,
 )
+from epr_agent.domain.legal_rules import (
+    DOMAIN_REQUIRED_FIELDS,
+    UniversalCaseFormResolver,
+    evaluate_universal_case,
+)
 from epr_agent.domain.models import (
     Action,
     AgentState,
@@ -45,15 +50,21 @@ from epr_agent.domain.models import (
     documents_to_dict,
 )
 from epr_agent.domain.routes import RouteType
-from epr_agent.domain.tasks import classify_route, has_explicit_no_evidence_signal
+from epr_agent.domain.tasks import (
+    classify_route,
+    detect_legal_domain,
+    has_explicit_no_evidence_signal,
+)
 from epr_agent.domain.v4 import (
     AssessmentStatus,
+    CaseField,
     CaseStateV4,
     FactConfirmationStatus,
     FactSource,
     FactValue,
     InteractionSource,
     IssueState,
+    LegalIssue,
     ResultType,
     RetrievalRequest,
     TurnOperation,
@@ -153,15 +164,40 @@ def _hydrate_persisted_case(raw: dict[str, Any] | None) -> dict[str, Any] | None
         return raw
     payload = dict(raw)
     facts = _fact_values(cast(dict[str, Any] | None, raw.get("facts")))
-    resolved = _case_form_resolver.resolve(
-        str(raw.get("task_type") or TaskType.ASSESS_EPR_OBLIGATION.value), facts
+    domain = str(raw.get("legal_domain") or "epr")
+    if domain == "epr":
+        resolved = _case_form_resolver.resolve(
+            str(raw.get("task_type") or TaskType.CASE_ASSESSMENT.value), facts
+        )
+        payload["fields"] = [field.model_dump() for field in resolved.fields]
+        payload["form_version"] = resolved.form_version
+        payload["completed_count"] = resolved.completed_count
+        payload["required_count"] = resolved.required_count
+        payload["validation_errors"] = resolved.validation_errors
+        payload["submission_blocked_reason"] = resolved.submission_blocked_reason
+        return payload
+    form_state = UniversalCaseFormResolver().resolve_form_state(
+        legal_domain=domain,
+        known_facts={key: value.value for key, value in facts.items()},
     )
-    payload["fields"] = [field.model_dump() for field in resolved.fields]
-    payload["form_version"] = resolved.form_version
-    payload["completed_count"] = resolved.completed_count
-    payload["required_count"] = resolved.required_count
-    payload["validation_errors"] = resolved.validation_errors
-    payload["submission_blocked_reason"] = resolved.submission_blocked_reason
+    payload["fields"] = [
+        CaseField(
+            key=str(definition["field_name"]),
+            label=str(definition["label"]),
+            display_order=index,
+            kind="text",
+            required=bool(definition.get("required")),
+            importance="required" if bool(definition.get("required")) else "informational",
+            missing=str(definition["field_name"]) in (form_state.get("missing_facts") or []),
+            value=payload.get("facts", {}).get(str(definition["field_name"]), {}).get("value", "") if isinstance(payload.get("facts"), dict) else "",
+        ).model_dump()
+        for index, definition in enumerate(DOMAIN_REQUIRED_FIELDS.get(domain, []))
+    ]
+    payload["form_version"] = "case-form-v1"
+    payload["completed_count"] = int(form_state.get("completed_count") or 0)
+    payload["required_count"] = int(form_state.get("required_count") or 0)
+    payload["validation_errors"] = {}
+    payload["submission_blocked_reason"] = ""
     return payload
 
 
@@ -176,6 +212,7 @@ def _metadata_v4(state: AgentState) -> dict[str, Any]:
             "rule_pack_version": EPR_RULE_PACK_VERSION,
             "rule_id": state.get("rule_id", EPR_RULE_ID),
             "effective_dates": EPR_EFFECTIVE_DATES,
+            "legal_domain": (state.get("case_state") or {}).get("legal_domain", "epr"),
             "case_fields": state.get("case_fields", []),
             "form_version": (state.get("case_state") or {}).get("form_version", "case-form-v1"),
             "completed_count": (state.get("case_state") or {}).get("completed_count", 0),
@@ -224,6 +261,18 @@ def _terminal_safe_stop(
         }
     append_action(state, Action.FINISH)
     return state
+
+
+def _general_decision_status(status: str) -> AssessmentStatus:
+    """Map a multi-domain rule-engine status onto the closed-loop vocabulary."""
+
+    if status == "needs_information":
+        return AssessmentStatus.NEEDS_INFORMATION
+    if "not_met" in status or "out_of_scope" in status:
+        return AssessmentStatus.LIKELY_OUT_OF_SCOPE
+    if status in {"", "evaluated_general"}:
+        return AssessmentStatus.CANNOT_DETERMINE
+    return AssessmentStatus.LIKELY_IN_SCOPE
 
 
 class V4WorkflowRuntime(WorkflowRuntime):
@@ -408,11 +457,35 @@ class V4WorkflowRuntime(WorkflowRuntime):
             state["route"] = route.value
             return state
 
-        task = TaskType.BUILD_COMPLIANCE_CHECKLIST if route == RouteType.COMPLIANCE_CHECKLIST else TaskType.ASSESS_EPR_OBLIGATION
+        task = TaskType.BUILD_COMPLIANCE_CHECKLIST if route == RouteType.COMPLIANCE_CHECKLIST else TaskType.CASE_ASSESSMENT
         state["route"] = route.value
         state["task_type"] = task.value
         state["source_scope"] = "legal_corpus"
         state["standalone_query"] = state.get("query", "") or str(active.get("last_query") or "")
+
+        domain = detect_legal_domain(state["standalone_query"])
+        stored_domain = str(active.get("legal_domain") or "")
+        if stored_domain and stored_domain != "general":
+            domain = stored_domain
+        elif not stored_domain:
+            pending_facts: dict[str, str] = dict(active.get("facts") or {})
+            pending_facts.update(
+                {
+                    str(key): str(value.get("value") or "")
+                    for key, value in dict(state.get("fact_updates") or {}).items()
+                    if isinstance(value, dict)
+                }
+            )
+            pending_facts.update(
+                {str(key): str(value) for key, value in dict(state.get("case_patch") or {}).items()}
+            )
+            if any(
+                key in pending_facts
+                for key in ("object_kind", "product_group", "product_or_packaging", "business_role", "activity_scope")
+            ):
+                domain = "epr"
+        if domain != "epr":
+            return await self._execute_case_general(state, route=route, task=task, domain=domain)
 
         facts = _fact_values(cast(dict[str, Any] | None, active.get("facts")))
         turn_id = state.get("trace_id", "")
@@ -723,6 +796,390 @@ class V4WorkflowRuntime(WorkflowRuntime):
         append_action(state, Action.FINISH)
         return state
 
+    async def _execute_case_general(
+        self,
+        state: AgentState,
+        *,
+        route: RouteType,
+        task: TaskType,
+        domain: str,
+    ) -> AgentState:
+        """Deterministic case path for every domain except EPR.
+
+        Mirrors the EPR closed loop (form resolution, retrieval with required
+        anchors, coverage gate, citation verification) while reusing the
+        multi-domain rule engine from ``legal_rules``.  When the rule engine
+        cannot map the facts to a provision, the path stops safely instead of
+        guessing.
+        """
+        active = cast(dict[str, Any], state.get("active_case") or {})
+        known_facts: dict[str, str] = {
+            key: value.value
+            for key, value in _fact_values(cast(dict[str, Any] | None, active.get("facts"))).items()
+            if value.value.strip()
+        }
+        updates: dict[str, object] = {
+            key: {"value": value, "confirmation_status": FactConfirmationStatus.USER_CONFIRMED.value}
+            for key, value in dict(cast(dict[str, str] | None, state.get("case_patch")) or {}).items()
+        }
+        updates.update(dict(state.get("fact_updates") or {}))
+        for key, raw in updates.items():
+            if isinstance(raw, FactValue):
+                known_facts[str(key)] = raw.value
+            elif isinstance(raw, dict):
+                known_facts[str(key)] = str(raw.get("value") or "")
+            else:
+                known_facts[str(key)] = " ".join(str(raw or "").split())
+        known_facts = {key: value for key, value in known_facts.items() if value.strip()}
+
+        definitions = DOMAIN_REQUIRED_FIELDS.get(domain, [])
+        form_state = UniversalCaseFormResolver().resolve_form_state(
+            legal_domain=domain,
+            known_facts=known_facts,
+        )
+        missing = list(form_state.get("missing_facts") or [])
+        fields = [
+            CaseField(
+                key=str(definition["field_name"]),
+                label=str(definition["label"]),
+                display_order=index,
+                kind="text",
+                required=bool(definition.get("required")),
+                importance="required" if bool(definition.get("required")) else "informational",
+                missing=str(definition["field_name"]) in missing,
+                value=known_facts.get(str(definition["field_name"]), ""),
+            )
+            for index, definition in enumerate(definitions)
+        ]
+        case = CaseStateV4(
+            task_type=task.value,
+            legal_domain=domain,
+            status="collecting" if missing else "ready",
+            facts={
+                key: FactValue(
+                    value=value,
+                    source=FactSource.USER_TURN,
+                    confidence=1.0,
+                    verified=False,
+                    confirmation_status=FactConfirmationStatus.USER_CONFIRMED,
+                )
+                for key, value in known_facts.items()
+            },
+            missing_facts=missing,
+            as_of_date=datetime.now(UTC).date().isoformat(),
+            last_query=state.get("query", "") or str(active.get("last_query") or ""),
+            fields=fields,
+            form_version="case-form-v1",
+            completed_count=sum(1 for field in fields if field.required and not field.missing),
+            required_count=sum(1 for field in fields if field.required),
+        )
+        state["active_case"] = _case_payload(case)
+        state["case_state"] = _case_payload(case)
+        state["facts"] = {key: value.value for key, value in case.facts.items()}
+        state["missing_facts"] = missing
+        state["validation_errors"] = {}
+        state["case_fields"] = list((state["case_state"] or {}).get("fields") or [])
+        state["understanding_confidence"] = 0.7
+        state["trace_events"][-1]["reason_code"] = "route_selected"
+        state["trace_events"][-1]["payload"] = {
+            "route": route.value,
+            "legal_domain": domain,
+            "confidence": state["understanding_confidence"],
+            "missing_facts": missing,
+            "validation_errors": {},
+            "submission_blocked_reason": "",
+            "fact_provenance": {
+                key: {"source": value.source.value, "verified": value.verified}
+                for key, value in case.facts.items()
+            },
+        }
+
+        if missing:
+            append_action(state, Action.ASK_USER)
+            cast(dict[str, Any], state).update(
+                answer=str(form_state.get("suggested_follow_up") or "Bạn vui lòng cung cấp thêm thông tin để trợ lý đánh giá tình huống."),
+                source="follow_up",
+                awaiting_user_input=True,
+                outcome=WorkflowOutcome.NEEDS_INFORMATION.value,
+                result_type=ResultType.NONE.value,
+                termination_reason=TerminationReason.AWAITING_USER_INPUT.value,
+                evidence_status="not_evaluated",
+                assessment={
+                    "status": AssessmentStatus.NEEDS_INFORMATION.value,
+                    "missing_facts": missing,
+                    "conclusion": "Chưa đủ thông tin để đánh giá tình huống.",
+                },
+            )
+            return state
+
+        result = evaluate_universal_case(legal_domain=domain, facts=known_facts)
+        result_status = str(result.get("status") or "")
+        result_missing = [str(value) for value in result.get("missing_facts") or [] if str(value).strip()]
+        if not result.get("ok") or result_status == "evaluated_general":
+            cast(dict[str, Any], state).update(
+                answer=str(result.get("conclusion") or "Trợ lý chưa thể đối chiếu tình huống này với một quy định cụ thể trong kho văn bản hiện có. Bạn có thể chọn tìm nguồn công khai hoặc thử lại khi corpus được cập nhật."),
+                source="error",
+                outcome=WorkflowOutcome.INSUFFICIENT_EVIDENCE.value,
+                result_type=ResultType.NONE.value,
+                termination_reason=TerminationReason.INSUFFICIENT_EVIDENCE.value,
+                evidence_status="insufficient",
+                available_actions=[RouteType.RESEARCH_WEB.value],
+                safe_stop_reason="invalid_or_unresolved_fact",
+                assessment={
+                    "status": AssessmentStatus.CANNOT_DETERMINE.value,
+                    "conclusion": "Không đủ căn cứ để đưa ra kết luận sơ bộ.",
+                    "assumptions": ["Cần đối chiếu căn cứ riêng trước khi có thể đưa ra kết luận."],
+                },
+            )
+            return state
+        if result_missing or result_status == "needs_information":
+            append_action(state, Action.ASK_USER)
+            cast(dict[str, Any], state).update(
+                answer="Bạn vui lòng cung cấp thêm thông tin để trợ lý đánh giá tình huống.",
+                source="follow_up",
+                awaiting_user_input=True,
+                outcome=WorkflowOutcome.NEEDS_INFORMATION.value,
+                result_type=ResultType.NONE.value,
+                termination_reason=TerminationReason.AWAITING_USER_INPUT.value,
+                missing_facts=result_missing,
+                evidence_status="not_evaluated",
+                assessment={
+                    "status": AssessmentStatus.NEEDS_INFORMATION.value,
+                    "missing_facts": result_missing,
+                    "conclusion": "Chưa đủ thông tin để đánh giá tình huống.",
+                },
+            )
+            return state
+
+        if has_explicit_no_evidence_signal(state.get("query", "")):
+            return _terminal_safe_stop(
+                state,
+                route=route,
+                outcome=WorkflowOutcome.INSUFFICIENT_EVIDENCE,
+                termination=TerminationReason.INSUFFICIENT_EVIDENCE,
+                answer="Tôi chưa có tài liệu pháp luật phù hợp để kiểm chứng yêu cầu này. Bạn có thể chọn tìm nguồn công khai.",
+                source_scope="legal_corpus",
+                available_actions=[RouteType.RESEARCH_WEB.value],
+                reason_code="explicit_no_evidence_signal",
+            )
+
+        anchors = [str(value) for value in result.get("applicable_provisions") or [] if str(value).strip()]
+        fact_terms = [value for value in known_facts.values() if value.strip()][:5]
+        label_terms = [str(definition["label"]) for definition in definitions][:2]
+        issues = [
+            LegalIssue(
+                issue_id="domain_case",
+                label=domain,
+                required_facts=list(known_facts),
+                query=" ".join(label_terms + fact_terms + anchors),
+                required_anchors=anchors,
+                required=True,
+            )
+        ]
+        state["required_issues"] = [issue.issue_id for issue in issues]
+        append_action(state, Action.RETRIEVE_LEGAL)
+        started = time.perf_counter()
+        requests = [
+            RetrievalRequest(route=route.value, issue_id=issue.issue_id, query=issue.query, required_anchors=issue.required_anchors)
+            for issue in issues
+        ]
+        state["trace_events"][-1]["reason_code"] = "issue_retrieval_requested"
+        state["trace_events"][-1]["payload"] = {
+            "tool": "issue_legal_retrieval",
+            "legal_domain": domain,
+            "issue_plan": [
+                {"issue_id": request.issue_id, "required_anchors": request.required_anchors}
+                for request in requests
+            ],
+        }
+        semaphore = asyncio.Semaphore(4)
+
+        async def retrieve_issue(request: RetrievalRequest):
+            async with semaphore:
+                return await self.deps.retrieval.legal(request)
+
+        results = await asyncio.gather(*(retrieve_issue(request) for request in requests), return_exceptions=True)
+        bundles: dict[str, list[dict[str, Any]]] = {}
+        all_documents: dict[str, dict[str, Any]] = {}
+        for issue, retrieval_result in zip(issues, results, strict=True):
+            retrieved_documents: list[DocumentRecord] = [] if isinstance(retrieval_result, BaseException) else list(retrieval_result)
+            selected = [
+                document
+                for document in retrieved_documents
+                if not is_unresolved_current_law_source(document)
+            ][:3]
+            serialised = documents_to_dict(selected)
+            bundles[issue.issue_id] = serialised
+            for document in serialised:
+                all_documents.setdefault(str(document.get("document_id") or ""), document)
+        state["evidence_bundles"] = bundles
+        state["evidence"] = list(all_documents.values())[:8]
+        if not state.get("corpus_as_of_date"):
+            for document in state["evidence"]:
+                metadata = document.get("metadata") or {}
+                as_of = metadata.get("corpus_as_of_date") or metadata.get("Corpus_As_Of_Date")
+                if as_of:
+                    state["corpus_as_of_date"] = str(as_of)
+                    break
+        state["source"] = "legal" if state["evidence"] else ""
+        state["retrieval_actions"] = 1
+        state.setdefault("tool_results", []).append({
+            "tool": "issue_legal_retrieval",
+            "ok": bool(state["evidence"]),
+            "latency_ms": round((time.perf_counter() - started) * 1000, 2),
+            "count": len(state["evidence"]),
+            "metadata": {"legal_domain": domain, "issues": [request.issue_id for request in requests]},
+        })
+
+        append_action(state, Action.EVALUATE_EVIDENCE)
+        issue_states: dict[str, dict[str, Any]] = {}
+        evidence_ids: dict[str, list[str]] = {}
+        covered: list[str] = []
+        for issue in issues:
+            bundle_docs = bundles[issue.issue_id]
+            if issue.required_anchors:
+                matches_by_anchor: dict[str, list[dict[str, Any]]] = {}
+                for anchor in issue.required_anchors:
+                    anchor_text = anchor.casefold()
+                    matches_by_anchor[anchor] = [
+                        doc
+                        for doc in bundle_docs
+                        if anchor_text in (
+                            str((doc.get("metadata") or {}).get("legal_anchor") or "")
+                            + " " + str((doc.get("metadata") or {}).get("Dieu") or "")
+                            + " " + str((doc.get("metadata") or {}).get("source_title") or "")
+                            + " " + str(doc.get("content") or "")
+                        ).casefold()
+                    ]
+                matching = [doc for values in matches_by_anchor.values() for doc in values]
+                is_covered = bool(matching) and all(bool(values) for values in matches_by_anchor.values())
+            else:
+                matching = bundle_docs
+                is_covered = bool(matching)
+            ids = list(dict.fromkeys(str(doc.get("document_id") or "") for doc in matching if doc.get("document_id")))
+            evidence_ids[issue.issue_id] = ids
+            issue_states[issue.issue_id] = {
+                "issue_id": issue.issue_id,
+                "status": "supported" if is_covered else "insufficient_evidence",
+                "evidence_ids": ids,
+                "reason": "required_anchors_covered" if is_covered else "required_anchor_missing",
+            }
+            if is_covered:
+                covered.append(issue.issue_id)
+        state["issue_states"] = issue_states
+        state["covered_issues"] = covered
+        state["evidence_assessment"] = {
+            "sufficient": set(state["required_issues"]).issubset(set(covered)),
+            "reason": "all_required_issues_covered" if set(state["required_issues"]).issubset(set(covered)) else "required_issue_evidence_missing",
+            "required_issues": state["required_issues"],
+            "covered_issues": covered,
+        }
+        state["trace_events"][-1]["reason_code"] = state["evidence_assessment"]["reason"]
+        state["trace_events"][-1]["payload"] = {
+            "required_issues": state["required_issues"],
+            "covered_issues": covered,
+            "coverage_reason": state["evidence_assessment"]["reason"],
+            "evidence_status": "sufficient" if state["evidence_assessment"]["sufficient"] else "insufficient",
+        }
+        if not state["evidence_assessment"]["sufficient"]:
+            cast(dict[str, Any], state).update(
+                answer="Tôi chưa có đủ căn cứ pháp lý đã kiểm chứng cho toàn bộ điều kiện cần đánh giá. Bạn có thể dùng chức năng tìm nguồn công khai hoặc thử lại khi corpus được cập nhật.",
+                source="error",
+                outcome=WorkflowOutcome.INSUFFICIENT_EVIDENCE.value,
+                result_type=ResultType.NONE.value,
+                termination_reason=TerminationReason.INSUFFICIENT_EVIDENCE.value,
+                evidence_status="insufficient",
+                available_actions=[RouteType.RESEARCH_WEB.value],
+                safe_stop_reason="incomplete_issue_coverage",
+            )
+            return state
+
+        append_action(state, Action.COMPOSE_ANSWER)
+        decision_status = _general_decision_status(result_status)
+        reasons = []
+        for reason in result.get("reasons") or []:
+            claim = str(reason.get("claim") or "") if isinstance(reason, dict) else str(reason or "")
+            if claim:
+                reasons.append({"claim": claim, "evidence_ids": list(evidence_ids.get("domain_case", []))})
+        next_steps = [str(value) for value in result.get("next_steps") or [] if str(value).strip()]
+        assumptions = [str(value) for value in result.get("assumptions") or [] if str(value).strip()]
+        state["assumptions"] = assumptions
+        state["assessment"] = {
+            "status": decision_status.value,
+            "rule_status": result_status,
+            "conclusion": str(result.get("conclusion") or "Đã ghi nhận tình huống."),
+            "reasons": reasons,
+            "assumptions": assumptions,
+            "next_steps": next_steps,
+            "applicable_provisions": anchors,
+            "legal_domain": domain,
+            "active_evidence_ids": list(dict.fromkeys(item for values in evidence_ids.values() for item in values)),
+            "corpus_version": str(state.get("corpus_version", "")),
+            "corpus_as_of_date": str(state.get("corpus_as_of_date", "")),
+        }
+        citations = build_citations(
+            [
+                type("Doc", (), {"metadata": doc.get("metadata", {}), "document_id": doc.get("document_id", "")})()
+                for doc in state["evidence"]
+            ]
+        )
+        if not citations:
+            cast(dict[str, Any], state).update(
+                answer="Chưa thể hoàn tất vì các nguồn truy xuất chưa tạo được vị trí trích dẫn kiểm chứng.",
+                source="error",
+                outcome=WorkflowOutcome.INSUFFICIENT_EVIDENCE.value,
+                result_type=ResultType.NONE.value,
+                termination_reason=TerminationReason.INSUFFICIENT_EVIDENCE.value,
+                evidence_status="insufficient",
+                available_actions=[RouteType.RESEARCH_WEB.value],
+                citation_valid=False,
+                citation_error="citation_verification_failed",
+                safe_stop_reason="failed_citation_verification",
+            )
+            return state
+        index_by_id = {citation.document_id: citation.index for citation in citations}
+        if task == TaskType.BUILD_COMPLIANCE_CHECKLIST:
+            state["checklist"] = [
+                {
+                    "item": step,
+                    "action": anchors[0] if anchors else "Đối chiếu văn bản quy định liên quan",
+                    "evidence_indices": [
+                        index_by_id[item] for item in evidence_ids.get("domain_case", []) if item in index_by_id
+                    ],
+                }
+                for step in next_steps
+            ] or [
+                {
+                    "item": "Đối chiếu căn cứ pháp lý liên quan",
+                    "action": anchors[0] if anchors else "Kiểm tra văn bản quy định hiện hành",
+                    "evidence_indices": [
+                        index_by_id[item] for item in evidence_ids.get("domain_case", []) if item in index_by_id
+                    ],
+                }
+            ]
+            state["result_type"] = ResultType.CHECKLIST.value
+        else:
+            state["result_type"] = ResultType.ASSESSMENT.value
+        state["answer"] = (
+            "Dưới đây là danh sách việc cần làm dựa trên thông tin bạn đã cung cấp."
+            if task == TaskType.BUILD_COMPLIANCE_CHECKLIST
+            else "Đây là đánh giá sơ bộ dựa trên thông tin bạn đã cung cấp. Mở phần kết quả và căn cứ bên dưới để xem chi tiết."
+        )
+        state["citations"] = [citation.to_dict() for citation in citations]
+        state["citation_valid"] = True
+        state["citation_error"] = "ok"
+        state["outcome"] = WorkflowOutcome.COMPLETED.value
+        state["termination_reason"] = TerminationReason.ANSWER_COMPLETE.value
+        state["evidence_status"] = "sufficient"
+        case.status = "completed"
+        case.decision_status = decision_status
+        case.issue_states = {key: IssueState.model_validate(value) for key, value in issue_states.items()}
+        state["case_state"] = _case_payload(case)
+        state["active_case"] = state["case_state"]
+        append_action(state, Action.VERIFY_CITATIONS)
+        append_action(state, Action.FINISH)
+        return state
+
     async def _execute(self, **kwargs: Any) -> AgentState:
         state = await self._initial(**kwargs)
         hint = str(state.get("intent_hint") or "auto")
@@ -746,7 +1203,7 @@ class V4WorkflowRuntime(WorkflowRuntime):
                 route=route,
                 outcome=WorkflowOutcome.OUT_OF_SCOPE,
                 termination=TerminationReason.OUT_OF_SCOPE,
-                answer="Tôi hiện chỉ hỗ trợ tra cứu và xử lý các vấn đề trong kho pháp luật EPR đã đăng ký.",
+                answer="Tôi chỉ hỗ trợ tra cứu và xử lý các vấn đề pháp luật Việt Nam nằm trong kho văn bản đã đăng ký.",
                 source_scope="outside_registered_corpus",
                 reason_code="outside_registered_corpus",
             )

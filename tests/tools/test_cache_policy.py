@@ -29,7 +29,7 @@ async def test_cache_key_contains_task_query_and_corpus_version():
 async def test_case_tasks_never_read_or_write_answer_cache():
     backend = InMemoryAnswerCache()
     cache = ScopedAnswerCache(backend)
-    value, key = await cache.lookup(TaskType.ASSESS_EPR_OBLIGATION, "case")
+    value, key = await cache.lookup(TaskType.CASE_ASSESSMENT, "case")
     await cache.store(
         TaskType.BUILD_COMPLIANCE_CHECKLIST,
         "case",

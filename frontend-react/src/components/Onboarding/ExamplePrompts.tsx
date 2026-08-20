@@ -10,24 +10,24 @@ interface ExamplePromptsProps {
 export function ExamplePrompts({ onSendPrompt }: ExamplePromptsProps) {
   const prompts = [
     {
-      icon: '📜',
-      title: 'Nghị định 08/2022 là gì?',
-      description: 'Tổng quan về nghị định EPR',
+      icon: '⚖️',
+      title: 'Thử việc tối đa bao lâu?',
+      description: 'Thời gian và lương thử việc theo Bộ luật Lao động',
+    },
+    {
+      icon: '🏠',
+      title: 'Chủ trọ tự ý tăng giá thuê nhà?',
+      description: 'Quy định về thay đổi giá thuê theo Bộ luật Dân sự',
+    },
+    {
+      icon: '🚗',
+      title: 'Mức phạt nồng độ cồn hiện hành?',
+      description: 'Chế tài xử phạt vi phạm giao thông mới nhất',
     },
     {
       icon: '♻️',
-      title: 'Điều 77 quy định gì về tái chế?',
-      description: 'Nghĩa vụ tái chế sản phẩm, bao bì',
-    },
-    {
-      icon: '📊',
-      title: 'Tỷ lệ tái chế bao bì nhựa PE/PP?',
-      description: 'Mức tỷ lệ tái chế bắt buộc',
-    },
-    {
-      icon: '🏭',
-      title: 'Nghĩa vụ của nhà sản xuất khi làm EPR?',
-      description: 'Trách nhiệm của doanh nghiệp',
+      title: 'Doanh nghiệp có nghĩa vụ tái chế không?',
+      description: 'Trách nhiệm tái chế bao bì, sản phẩm theo Luật BVMT',
     },
   ];
 

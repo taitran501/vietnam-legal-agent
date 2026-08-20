@@ -48,7 +48,7 @@ export function WorkflowResultCard({ onOpenCase, onContinueCase, onOpenSources, 
     message: 'Trợ lý đã dừng để tránh đưa ra kết luận không được nguồn hiện có hỗ trợ.',
   };
   const stopGuidance = stopKey === 'out_of_scope'
-    ? 'Bạn có thể thử một câu hỏi về pháp luật EPR.'
+    ? 'Bạn có thể thử một câu hỏi pháp luật khác trong phạm vi hỗ trợ.'
     : stopKey === 'missing_provision'
       ? 'Nếu bạn có tên văn bản hoặc số điều khoản khác, hãy nêu thêm để trợ lý kiểm tra chính xác hơn.'
       : stopKey === 'unavailable_dependencies'
@@ -139,10 +139,10 @@ export function WorkflowResultCard({ onOpenCase, onContinueCase, onOpenSources, 
 
           {/* Compliance Deadlines Callout */}
           <div className="mt-3.5 rounded-md border border-[#c7deda] bg-[#f0faf8] p-3 text-xs text-[#264e4a]">
-            <p className="font-semibold text-[#005c55]">🗓️ Mốc thời hạn tuân thủ EPR hàng năm:</p>
+            <p className="font-semibold text-[#005c55]">🗓️ Lưu ý mốc thời hạn:</p>
             <ul className="mt-1.5 list-disc space-y-1 pl-4 leading-5">
-              <li><span className="font-medium">Trước ngày 31/03:</span> Đăng ký kế hoạch tái chế hoặc kê khai đóng góp tài chính trên Cổng thông tin EPR quốc gia.</li>
-              <li><span className="font-medium">Trước ngày 20/04:</span> Hoàn thành nộp tiền đóng góp tài chính (Quỹ FFC) vào Quỹ Bảo vệ môi trường Việt Nam.</li>
+              <li>Đối chiếu mốc thời hạn thực hiện nghĩa vụ theo văn bản quy định liên quan.</li>
+              <li>Nếu văn bản được sửa đổi, bổ sung, mốc thời hạn có thể thay đổi và cần kiểm tra bản mới nhất.</li>
             </ul>
           </div>
         </div>

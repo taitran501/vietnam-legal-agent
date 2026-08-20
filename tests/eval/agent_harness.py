@@ -135,7 +135,7 @@ def _build_mock_llm_for_case(case: AgentTestCase) -> Any:
             ),
             AIMessage(
                 content="",
-                tool_calls=[{"name": "evaluate_epr_obligation", "args": {"facts": case.mock_facts}, "id": "call_2"}],
+                tool_calls=[{"name": "evaluate_legal_case", "args": {"facts": case.mock_facts}, "id": "call_2"}],
             ),
             AIMessage(
                 content="",
@@ -228,7 +228,7 @@ def _build_mock_llm_for_case(case: AgentTestCase) -> Any:
             ),
             AIMessage(
                 content="",
-                tool_calls=[{"name": "evaluate_epr_obligation", "args": {"facts": case.mock_facts}, "id": "call_2"}],
+                tool_calls=[{"name": "evaluate_legal_case", "args": {"facts": case.mock_facts}, "id": "call_2"}],
             ),
             AIMessage(
                 content="",

@@ -154,6 +154,7 @@ class AssessmentResult(BaseModel):
 class CaseStateV4(BaseModel):
     schema_version: str = "v4"
     task_type: str = "assess_epr_obligation"
+    legal_domain: str = "epr"
     status: Literal["collecting", "ready", "completed"] = "collecting"
     facts: dict[str, FactValue] = Field(default_factory=dict)
     missing_facts: list[str] = Field(default_factory=list)
@@ -191,7 +192,7 @@ CASE_FIELD_LABELS: dict[str, str] = {
     "business_role": "Vai trò doanh nghiệp",
     "quality_label_responsibility": "Trách nhiệm về chất lượng và ghi nhãn",
     "object_kind": "Loại đối tượng",
-    "product_group": "Nhóm sản phẩm EPR",
+    "product_group": "Nhóm sản phẩm/bao bì",
     "packaged_goods_category": "Nhóm hàng hóa được đóng gói",
     "material": "Vật liệu hoặc quy cách",
     "market_placement": "Phạm vi đưa ra thị trường",

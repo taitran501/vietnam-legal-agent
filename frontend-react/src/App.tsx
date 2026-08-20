@@ -497,7 +497,7 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
       />
 
       <Drawer
-        description="Bảng này chỉ xuất hiện khi bạn muốn đánh giá một tình huống pháp lý hoặc tạo danh sách việc cần làm EPR."
+        description="Bảng này chỉ xuất hiện khi bạn muốn đánh giá một tình huống pháp lý hoặc tạo danh sách việc cần làm."
         isOpen={caseDrawerOpen && Boolean(activeCase)}
         onClose={closeCaseDrawer}
         title="Thông tin tình huống"

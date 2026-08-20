@@ -19,26 +19,95 @@ from .routes import RouteType, route_for_task
 EPR_TERMS = (
     "epr",
     "trách nhiệm mở rộng",
-    "nhà sản xuất",
-    "nhập khẩu",
     "tái chế",
     "bao bì",
-    "sản phẩm",
     "mức đóng góp",
     "quỹ bảo vệ môi trường",
     "nghị định 08",
     "nghị định 08/2022",
+    "đóng góp tài chính",
 )
 
-NON_EPR_SCOPE_TERMS = (
-    "chứng khoán",
-    "luật lao động",
-    "hợp đồng lao động",
-    "thuế thu nhập doanh nghiệp",
-    "thuế doanh nghiệp",
-    "luật đất đai",
-    "quyền sử dụng đất",
+# General legal topics used to recognise first-person/company requests as case
+# assessments regardless of domain (labor, land, civil, corporate, traffic,
+# marriage & family, environmental/EPR).
+CASE_TOPIC_TERMS = (
+    "nghĩa vụ",
+    "quyền",
+    "trách nhiệm",
+    "vi phạm",
+    "bồi thường",
+    "phạt",
+    "hợp đồng",
+    "lao động",
+    "thử việc",
+    "thôi việc",
+    "sa thải",
+    "chấm dứt",
+    "lương",
+    "thuê",
+    "đặt cọc",
+    "vay",
+    "ly hôn",
+    "kết hôn",
+    "cổ đông",
+    "cổ phần",
+    "đất",
+    "sổ đỏ",
+    "thu hồi",
+    "giao thông",
+    "nồng độ cồn",
+    "tái chế",
+    "bao bì",
+    "môi trường",
+    "epr",
+    "sản xuất",
+    "nhập khẩu",
+    "thực hiện",
+    "bắt buộc",
+    "đăng ký",
+    "báo cáo",
+    "đóng góp",
+    "mức đóng góp",
 )
+
+LEGAL_DOMAIN_SIGNALS: dict[str, tuple[str, ...]] = {
+    "labor": ("lao động", "thử việc", "thôi việc", "sa thải", "chấm dứt hợp đồng", "lương", "người sử dụng lao động", "người lao động", "bảo hiểm xã hội", "làm thêm giờ", "thai sản"),
+    "civil_contract": ("hợp đồng", "thuê nhà", "đặt cọc", "vay", "mua bán", "tăng giá thuê", "lãi suất", "phạt vi phạm hợp đồng"),
+    "marriage_family": ("ly hôn", "kết hôn", "hôn nhân", "gia đình", "cấp dưỡng", "trích lục kết hôn"),
+    "corporate": ("cổ đông", "cổ phần", "đại hội đồng", "hội đồng quản trị", "điều lệ công ty", "thành lập doanh nghiệp"),
+    "land": ("đất", "đất đai", "sổ đỏ", "sổ hồng", "thu hồi", "thu hồi đất", "bồi thường đất", "quyền sử dụng đất", "tái định cư", "giấy chứng nhận quyền sử dụng"),
+    "traffic": ("giao thông", "nồng độ cồn", "vượt đèn", "quá tốc độ", "bằng lái", "tai nạn", "xử phạt giao thông", "mức phạt"),
+    "epr": EPR_TERMS
+    + (
+        "pin",
+        "ắc quy",
+        "săm lốp",
+        "dầu nhớt",
+        "sản phẩm điện",
+        "điện tử",
+        "tái sử dụng",
+        "thu hồi để tái chế",
+        "môi trường",
+    ),
+}
+
+
+def detect_legal_domain(query: str) -> str:
+    """Choose the most specific legal domain hinted by a query.
+
+    Deterministic best-match over the supported domains.  Returns 'general'
+    when no domain has a clear signal.  Used to pick the case engine for the
+    closed V4 assessment path; it is a hint, not a hard gate.
+    """
+    q = _normalise(query)
+    best = "general"
+    best_hits = 0
+    for domain, signals in LEGAL_DOMAIN_SIGNALS.items():
+        hits = sum(1 for signal in signals if signal in q)
+        if hits > best_hits:
+            best, best_hits = domain, hits
+    return best
 
 NO_EVIDENCE_TERMS = (
     "chưa có trong corpus",
@@ -241,10 +310,6 @@ def is_legal_scope(query: str, history: list[dict[str, Any]] | None = None, acti
     return not any(term in q for term in NON_LEGAL_OUT_OF_SCOPE_TERMS)
 
 
-def is_epr_scope(query: str, history: list[dict[str, Any]] | None = None, active_case: dict[str, Any] | None = None) -> bool:
-    return is_legal_scope(query, history, active_case)
-
-
 def is_known_non_epr_query(query: str) -> bool:
     """Return true only for queries completely outside legal/regulatory scope."""
     q = _normalise(query)
@@ -266,15 +331,17 @@ def classify_task(query: str, history: list[dict[str, Any]] | None = None, activ
     if any(term in q for term in CHECKLIST_TERMS):
         return TaskType.BUILD_COMPLIANCE_CHECKLIST
 
-    # First-person/company-specific language signals a case assessment.  A
-    # general question such as "đối tượng nào phải..." remains legal_lookup.
+    # First-person/company-specific language plus any legal topic signals a
+    # case assessment for that domain.  A general question such as "đối tượng
+    # nào phải..." remains legal_lookup.
     if any(term in q for term in ASSESSMENT_TERMS) or (
-        re.search(r"\btôi\b|\bdoanh nghiệp\b|\bcông ty\b", q) and any(t in q for t in EPR_TERMS)
+        re.search(r"\btôi\b|\bdoanh nghiệp\b|\bcông ty\b|\bngười lao động\b|\bngười sử dụng lao động\b", q)
+        and any(t in q for t in CASE_TOPIC_TERMS)
     ):
-        return TaskType.ASSESS_EPR_OBLIGATION
+        return TaskType.CASE_ASSESSMENT
 
     if active_case and active_case.get("task_type") in {
-        TaskType.ASSESS_EPR_OBLIGATION.value,
+        TaskType.CASE_ASSESSMENT.value,
         TaskType.BUILD_COMPLIANCE_CHECKLIST.value,
     } and len(q) < 100:
         return TaskType(active_case["task_type"])
@@ -344,7 +411,7 @@ def merge_facts(active_case: dict[str, Any] | None, new_facts: dict[str, str]) -
 
 
 def required_facts(task_type: TaskType) -> tuple[str, ...]:
-    if task_type in {TaskType.ASSESS_EPR_OBLIGATION, TaskType.BUILD_COMPLIANCE_CHECKLIST}:
+    if task_type in {TaskType.CASE_ASSESSMENT, TaskType.BUILD_COMPLIANCE_CHECKLIST}:
         return ("business_role", "product_or_packaging", "material", "activity_scope")
     return ()
 

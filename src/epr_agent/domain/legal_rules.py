@@ -227,7 +227,7 @@ def evaluate_universal_case(
         violation = norm_facts.get("violation_act", "").lower()
 
         if "vượt đèn đỏ" in violation or "đèn tín hiệu" in violation or "đèn đỏ" in violation:
-            if "ô tô" in vehicle or "xe hơi" in vehicle:
+            if ("ô tô" in vehicle or "xe hơi" in vehicle) and "mô tô" not in vehicle:
                 return {
                     "domain": "traffic",
                     "status": "traffic_penalty_evaluated",

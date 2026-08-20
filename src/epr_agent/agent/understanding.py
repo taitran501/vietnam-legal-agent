@@ -41,19 +41,18 @@ CRITICAL CLASSIFICATION RULES:
    MUST use legal_lookup, NOT chitchat — even if phrased informally
    (e.g. “m mới mở xưởng, cho bạn thử việc được mấy tháng vậy” → legal_lookup).
 
-2. assess_epr_obligation is ONLY for first-person requests to EVALUATE whether the
-   user’s specific business has an EPR obligation. A general factual question about
-   EPR thresholds, rates, or rules (“ngưỡng doanh thu miễn trừ là bao nhiêu”,
-   “dưới 30 tỷ thì có miễn không”) MUST use legal_lookup, NOT case_assessment.
+2. Case assessment (assess_epr_obligation) is ONLY for first-person requests to
+   EVALUATE whether the user's OWN specific situation, company, or contract
+   creates a legal obligation, right, or exposure — across ANY domain (labor,
+   land, civil/contract, corporate, marriage & family, traffic, environmental/EPR).
+   A general factual question about thresholds, rates, or rules in any domain
+   ("ngưỡng doanh thu miễn trừ là bao nhiêu", "dưới 30 tỷ thì có miễn không",
+   "mức phạt nồng độ cồn là bao nhiêu") MUST use legal_lookup, NOT case_assessment.
 
-3. Labor law questions in colloquial Vietnamese (thử việc, sa thải, lương tối thiểu,
-   bhxh, nghỉ phép, thai sản, kỷ luật, bồi thường) are always legal_lookup.
-
-4. Land law questions (sổ đỏ, cấp sổ, đất đai, qsdđ, thừa kế, hợp đồng thuê)
-   are always legal_lookup.
-
-5. Civil / Contract questions (bồi thường, đặt cọc, tranh chấp, khởi kiện,
-   hợp đồng) are always legal_lookup."""
+3. General factual questions about a specific topic (thử việc, sa thải, lương,
+   bhxh, sổ đỏ, đất đai, đặt cọc, hợp đồng, bồi thường, tranh chấp) are
+   legal_lookup. First-person requests to evaluate their own situation on those
+   same topics are case_assessment per rule 2."""
 
 
 

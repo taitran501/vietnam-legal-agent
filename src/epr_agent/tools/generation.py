@@ -23,14 +23,19 @@ logger = logging.getLogger(__name__)
 
 _WEB_ARTICLE_RE = re.compile(r"\bđiều\s+(\d+[a-zđ]?)\b", re.IGNORECASE)
 _WEB_INSTRUMENT_RE = re.compile(r"\b\d{1,3}/\d{4}/n[dđ]-cp\b", re.IGNORECASE)
-_WEB_EPR_SIGNALS = (
+_WEB_LEGAL_SIGNALS = (
+    "luat",
+    "nghi dinh",
+    "thong tu",
+    "quyet dinh",
+    "dieu le",
+    "chinh phu",
+    "quoc hoi",
+    "thu tuong",
+    "bo tai chinh",
     "epr",
-    "trach nhiem mo rong cua nha san xuat",
     "tai che",
-    "bao bi",
     "bao ve moi truong",
-    "nghi dinh 08/2022",
-    "dong gop tai chinh",
 )
 
 
@@ -79,7 +84,7 @@ def _web_result_matches_query(query: str, title: str, excerpt: str, url: str) ->
     instruments = {_fold_web_text(value) for value in _WEB_INSTRUMENT_RE.findall(folded_query)}
     if instruments and not all(value in folded_result for value in instruments):
         return False
-    return bool(articles or instruments or any(signal in folded_result for signal in _WEB_EPR_SIGNALS))
+    return bool(articles or instruments or any(signal in folded_result for signal in _WEB_LEGAL_SIGNALS))
 
 
 def _clean_web_excerpt(value: str, limit: int) -> str:
@@ -184,7 +189,7 @@ class EvidenceGenerationGateway:
         task = TaskType(task_type)
         if task == TaskType.CHITCHAT:
             return await self.chitchat(query, [])
-        if task == TaskType.ASSESS_EPR_OBLIGATION:
+        if task == TaskType.CASE_ASSESSMENT:
             return self._compose_assessment(query, facts, documents)
         if task == TaskType.BUILD_COMPLIANCE_CHECKLIST:
             return self._compose_checklist(query, facts, documents)
@@ -214,7 +219,7 @@ class EvidenceGenerationGateway:
         domains = _official_domains(settings.web_official_domains)
         if not domains:
             return "", []
-        scoped_query = f"{query} EPR Việt Nam văn bản pháp luật chính thức"
+        scoped_query = f"{query} Việt Nam văn bản pháp luật chính thức"
 
         def _search() -> list[dict[str, Any]]:
             from tavily import TavilyClient  # type: ignore[import-untyped]
@@ -310,7 +315,7 @@ class EvidenceGenerationGateway:
         return (
             "Đánh giá sơ bộ dựa trên thông tin bạn cung cấp: "
             f"{fact_text}. Theo tài liệu được truy xuất {source}, trường hợp này cần "
-            "đối chiếu nghĩa vụ EPR tương ứng với vai trò và nhóm sản phẩm/bao bì. "
+            "đối chiếu quy định pháp luật tương ứng với vai trò và tình huống đã nêu. "
             "Đây là đánh giá hỗ trợ tra cứu, không thay thế việc kiểm tra hồ sơ pháp lý đầy đủ."
         )
 
@@ -430,11 +435,11 @@ class StaticGenerationGateway:
 
     async def chitchat(self, query: str, history: list[dict[str, Any]]) -> str:
         self.calls.append("chitchat")
-        return "Xin chào! Tôi có thể hỗ trợ tra cứu EPR."
+        return "Xin chào! Tôi có thể hỗ trợ tra cứu pháp luật Việt Nam."
 
     async def answer(self, task_type: str, query: str, documents: list[DocumentRecord], facts: dict[str, str]) -> str:
         self.calls.append(f"answer:{task_type}")
-        if TaskType(task_type) == TaskType.ASSESS_EPR_OBLIGATION:
+        if TaskType(task_type) == TaskType.CASE_ASSESSMENT:
             return EvidenceGenerationGateway._compose_assessment(query, facts, documents)
         if TaskType(task_type) == TaskType.BUILD_COMPLIANCE_CHECKLIST:
             return EvidenceGenerationGateway._compose_checklist(query, facts, documents)

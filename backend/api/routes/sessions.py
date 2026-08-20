@@ -343,7 +343,7 @@ async def get_session_case(request: Request, session_id: str):
         return None
     if case_state.get("schema_version") == "v4":
         parsed = {key: FactValue.model_validate(value) for key, value in dict(case_state.get("facts") or {}).items()}
-        resolved = _case_form_resolver.resolve(str(case_state.get("task_type") or TaskType.ASSESS_EPR_OBLIGATION.value), parsed)
+        resolved = _case_form_resolver.resolve(str(case_state.get("task_type") or TaskType.CASE_ASSESSMENT.value), parsed)
         case_state["fields"] = [field.model_dump() for field in resolved.fields]
         case_state["form_version"] = resolved.form_version
         case_state["completed_count"] = resolved.completed_count
@@ -362,9 +362,9 @@ async def update_session_case(request: Request, session_id: str, body: UpdateCas
     if conversation is None:
         raise HTTPException(status_code=404, detail="Session not found")
     current = await get_case_state_persistent(user_id=user_id, conversation_id=session_id)
-    task_value = body.task_type or (current or {}).get("task_type") or TaskType.ASSESS_EPR_OBLIGATION.value
+    task_value = body.task_type or (current or {}).get("task_type") or TaskType.CASE_ASSESSMENT.value
     task = TaskType(task_value)
-    if task not in {TaskType.ASSESS_EPR_OBLIGATION, TaskType.BUILD_COMPLIANCE_CHECKLIST}:
+    if task not in {TaskType.CASE_ASSESSMENT, TaskType.BUILD_COMPLIANCE_CHECKLIST}:
         raise HTTPException(status_code=422, detail="Case workspace supports assessment or checklist only")
     if (current or {}).get("schema_version") == "v4":
         facts = {
@@ -422,7 +422,7 @@ async def update_session_case(request: Request, session_id: str, body: UpdateCas
     saved = await save_case_state_persistent(user_id=user_id, conversation_id=session_id, state=state)
     if saved.get("schema_version") == "v4":
         parsed = {key: FactValue.model_validate(value) for key, value in dict(saved.get("facts") or {}).items()}
-        resolved = _case_form_resolver.resolve(str(saved.get("task_type") or TaskType.ASSESS_EPR_OBLIGATION.value), parsed)
+        resolved = _case_form_resolver.resolve(str(saved.get("task_type") or TaskType.CASE_ASSESSMENT.value), parsed)
         saved["fields"] = [field.model_dump() for field in resolved.fields]
         saved["form_version"] = resolved.form_version
         saved["completed_count"] = resolved.completed_count

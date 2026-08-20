@@ -83,6 +83,25 @@ def runtime(history: MemoryHistory) -> tuple[V4WorkflowRuntime, StaticRetrievalG
     return V4WorkflowRuntime(deps, answer_chunk_delay_s=0), retrieval
 
 
+def general_legal_document(anchor: str, *, title: str) -> DocumentRecord:
+    return DocumentRecord(
+        content=f"{anchor}. Căn cứ quy định pháp luật. " * 6,
+        metadata={
+            "Dieu": anchor,
+            "legal_anchor": anchor,
+            "source": title,
+            "source_title": title,
+            "source_file": "data/corpus.docx",
+            "Corpus_Version": "vietnam-v4-test",
+            "Corpus_SHA256": "b" * 64,
+            "Embedding_Profile": "openai-text-embedding-3-small-v1",
+            "provenance": "data/corpus.docx",
+        },
+        document_id=f"doc-{anchor.replace(' ', '-').replace('ụ', 'u')}",
+        source="legal",
+    )
+
+
 @pytest.mark.asyncio
 async def test_assessment_action_asks_for_missing_facts_before_assessment_card():
     history = MemoryHistory()
@@ -251,3 +270,112 @@ async def test_delegated_legal_lookup_preserves_replay_descriptor(monkeypatch: p
     assert state["case_patch"] == replay["case_patch"]
     assert state["fact_updates"] == replay["fact_updates"]
     assert state["pipeline_version"] == "pipeline-v4"
+
+
+@pytest.mark.asyncio
+async def test_general_domain_case_asks_for_missing_facts_before_assessment():
+    history = MemoryHistory()
+    app, retrieval = runtime(history)
+    state = await app.run(
+        query="Tôi bị công ty sa thải đột ngột, có được bồi thường không?",
+        user_id="v4-user", conversation_id="labor-case", intent_hint="case_assessment",
+    )
+    assert state["route"] == "case_assessment"
+    assert state["case_state"]["legal_domain"] == "labor"
+    assert state["outcome"] == "needs_information"
+    assert state["result_type"] == "none"
+    assert state["assessment"]["status"] == "needs_information"
+    assert "dispute_type" in state["missing_facts"]
+    assert retrieval.requests == []
+    assert history.case and history.case["schema_version"] == "v4"
+
+
+@pytest.mark.asyncio
+async def test_general_domain_completed_assessment_runs_universal_engine():
+    history = MemoryHistory()
+    app, retrieval = runtime(history)
+    retrieval.legal_documents = [
+        general_legal_document("Điều 36 Bộ luật Lao động 2019", title="Bộ luật Lao động 2019"),
+        general_legal_document("Điều 41 Bộ luật Lao động 2019", title="Bộ luật Lao động 2019"),
+    ]
+    state = await app.run(
+        query="Công ty chấm dứt hợp đồng với tôi không có lý do luật định, tôi có được bồi thường không?",
+        user_id="v4-user", conversation_id="labor-case", intent_hint="case_assessment",
+        case_patch={"dispute_type": "đơn phương chấm dứt"},
+    )
+    assert state["route"] == "case_assessment"
+    assert state["case_state"]["legal_domain"] == "labor"
+    assert state["outcome"] == "completed"
+    assert state["result_type"] == "assessment"
+    assert state["assessment"]["status"] in {"likely_in_scope", "likely_out_of_scope"}
+    assert state["assessment"]["rule_status"] == "unlawful_termination"
+    assert "Điều 41" in str(state["assessment"]["conclusion"])
+    assert state["assessment"]["next_steps"]
+    assert state["citations"]
+    assert retrieval.requests
+    assert retrieval.requests[0].required_anchors == ["Điều 36 Bộ luật Lao động 2019", "Điều 41 Bộ luật Lao động 2019"]
+
+
+@pytest.mark.asyncio
+async def test_general_domain_missing_anchor_coverage_is_safe_stop():
+    history = MemoryHistory()
+    app, retrieval = runtime(history)
+    retrieval.legal_documents = [
+        general_legal_document("Điều 36 Bộ luật Lao động 2019", title="Bộ luật Lao động 2019"),
+    ]
+    state = await app.run(
+        query="Công ty chấm dứt hợp đồng với tôi không có lý do luật định, tôi có được bồi thường không?",
+        user_id="v4-user", conversation_id="labor-case", intent_hint="case_assessment",
+        case_patch={"dispute_type": "đơn phương chấm dứt"},
+    )
+    assert state["route"] == "case_assessment"
+    assert state["case_state"]["legal_domain"] == "labor"
+    assert state["outcome"] == "insufficient_evidence"
+    assert state["termination_reason"] == "insufficient_evidence"
+    assert state["safe_stop_reason"] == "incomplete_issue_coverage"
+
+
+@pytest.mark.asyncio
+async def test_general_domain_checklist_builds_from_next_steps():
+    history = MemoryHistory()
+    app, retrieval = runtime(history)
+    retrieval.legal_documents = [
+        general_legal_document("Điều 36 Bộ luật Lao động 2019", title="Bộ luật Lao động 2019"),
+        general_legal_document("Điều 41 Bộ luật Lao động 2019", title="Bộ luật Lao động 2019"),
+    ]
+    state = await app.run(
+        query="Tôi cần làm gì khi bị công ty chấm dứt hợp đồng trái pháp luật?",
+        user_id="v4-user", conversation_id="labor-checklist", intent_hint="compliance_checklist",
+        case_patch={"dispute_type": "đơn phương chấm dứt"},
+    )
+    assert state["route"] == "compliance_checklist"
+    assert state["case_state"]["legal_domain"] == "labor"
+    assert state["outcome"] == "completed"
+    assert state["result_type"] == "checklist"
+    assert state["checklist"]
+    assert state["checklist"][0]["item"] == "Yêu cầu công ty bồi thường thỏa thuận theo Điều 41 BLLĐ 2019."
+
+
+@pytest.mark.asyncio
+async def test_epr_form_facts_via_case_patch_route_to_epr_domain():
+    history = MemoryHistory()
+    app, _retrieval = runtime(history)
+    state = await app.run(
+        query="Hãy kiểm tra trường hợp của doanh nghiệp dựa trên thông tin tôi đã cung cấp.",
+        user_id="v4-user", conversation_id="form-case", intent_hint="case_assessment",
+        interaction_source="guided_form",
+        case_patch={
+            "business_role": "manufacturer",
+            "object_kind": "commercial_packaging",
+            "product_group": "bao_bi",
+            "market_placement": "vietnam_market",
+            "activity_purpose": "commercial",
+            "packaged_goods_category": "thuc_pham",
+            "annual_revenue_vnd": "40000000000",
+            "reused_by_producer": "no",
+        },
+    )
+    assert state["case_state"]["legal_domain"] == "epr"
+    assert state["outcome"] == "completed"
+    assert state["result_type"] == "assessment"
+    assert state["assessment"]["status"] in {"likely_in_scope", "likely_out_of_scope"}

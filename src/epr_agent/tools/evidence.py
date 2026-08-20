@@ -362,7 +362,7 @@ def verify_citations(
             if not mentioned_articles.issubset(supported_articles) and not (mentioned_articles & supported_articles):
                 return False, citations, "article_reference_not_in_evidence"
 
-    if task in {TaskType.ASSESS_EPR_OBLIGATION, TaskType.BUILD_COMPLIANCE_CHECKLIST} and not any(
+    if task in {TaskType.CASE_ASSESSMENT, TaskType.BUILD_COMPLIANCE_CHECKLIST} and not any(
         citation.index in indices for citation in citations
     ):
         return False, citations, "case_answer_not_linked_to_evidence"

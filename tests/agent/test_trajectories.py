@@ -72,7 +72,7 @@ def dependencies(*, history: TrajectoryHistory | None = None, legal: bool = True
 async def test_assessment_with_complete_facts_is_evidence_linked(query: str):
     state = await run_workflow(query, user_id="trajectory", conversation_id="assessment", deps=dependencies())
 
-    assert state["task_type"] == TaskType.ASSESS_EPR_OBLIGATION.value
+    assert state["task_type"] == TaskType.CASE_ASSESSMENT.value
     assert state["termination_reason"] == "answer_complete"
     assert state["missing_facts"] == []
     assert state["assessment"]["status"] == "preliminary"
@@ -107,7 +107,7 @@ async def test_assessment_with_missing_facts_stops_for_exact_follow_up(query: st
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("task_type", [TaskType.ASSESS_EPR_OBLIGATION, TaskType.BUILD_COMPLIANCE_CHECKLIST])
+@pytest.mark.parametrize("task_type", [TaskType.CASE_ASSESSMENT, TaskType.BUILD_COMPLIANCE_CHECKLIST])
 async def test_follow_up_resumes_active_case(task_type: TaskType):
     history = TrajectoryHistory(
         {

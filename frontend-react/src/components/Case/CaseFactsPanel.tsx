@@ -151,7 +151,7 @@ export function CaseFactsPanel({ conversationId, caseState, onCaseChange, onCont
     <section className="flex min-h-full flex-col p-5" aria-label="Thông tin trường hợp">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#006a63]">Phạm vi EPR hiện tại</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#006a63]">Phạm vi hỗ trợ hiện tại</p>
           <h3 className="mt-1 text-base font-semibold text-[#172033]">Thông tin đã xác nhận</h3>
           {requiredFields.length > 0 && (
             <p className="mt-1 text-xs text-[#66736f]">

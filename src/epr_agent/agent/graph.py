@@ -31,7 +31,7 @@ from epr_agent.domain.tasks import (
     build_follow_up_question,
     deterministic_task_understanding,
     extract_facts,
-    is_epr_scope,
+    is_legal_scope,
     merge_facts,
     missing_facts,
 )
@@ -248,7 +248,7 @@ def build_workflow(deps: WorkflowDependencies):
             active_case
             and active_case.get("status", "collecting") != "completed"
             and active_case.get("task_type") in {
-                TaskType.ASSESS_EPR_OBLIGATION.value,
+                TaskType.CASE_ASSESSMENT.value,
                 TaskType.BUILD_COMPLIANCE_CHECKLIST.value,
             }
             and (understanding.is_follow_up or len(state["query"].strip()) < 160)
@@ -263,7 +263,7 @@ def build_workflow(deps: WorkflowDependencies):
         # rule phrases) must always go through corpus retrieval, regardless of
         # the LLM's task classification.
         if _explicit_legal_lookup and task in {
-            TaskType.ASSESS_EPR_OBLIGATION,
+            TaskType.CASE_ASSESSMENT,
             TaskType.BUILD_COMPLIANCE_CHECKLIST,
             TaskType.CHITCHAT,
         }:
@@ -274,7 +274,7 @@ def build_workflow(deps: WorkflowDependencies):
             task = TaskType.LEGAL_LOOKUP
         elif route == RouteType.OUT_OF_SCOPE:
             task = TaskType.LEGAL_LOOKUP
-        elif task in {TaskType.ASSESS_EPR_OBLIGATION, TaskType.BUILD_COMPLIANCE_CHECKLIST, TaskType.CHITCHAT}:
+        elif task in {TaskType.CASE_ASSESSMENT, TaskType.BUILD_COMPLIANCE_CHECKLIST, TaskType.CHITCHAT}:
             route = route_for_task(task)
         elif route in {RouteType.CASE_ASSESSMENT, RouteType.COMPLIANCE_CHECKLIST, RouteType.CHITCHAT}:
             task = route_spec(route).task_type
@@ -304,7 +304,7 @@ def build_workflow(deps: WorkflowDependencies):
         state["missing_facts"] = missing_facts(task, facts)
         if not state.get("clarification_required"):
             state["follow_up_question"] = build_follow_up_question(task, state["missing_facts"])
-        state["is_epr_scope"] = is_epr_scope(state["standalone_query"], history, active_case)
+        state["is_legal_scope"] = is_legal_scope(state["standalone_query"], history, active_case)
         state["explicit_articles"] = [anchor.article for anchor in understanding.explicit_anchors if anchor.article]
         state["explicit_anchor_details"] = [anchor.model_dump() for anchor in understanding.explicit_anchors]
         _trace(
@@ -319,7 +319,7 @@ def build_workflow(deps: WorkflowDependencies):
                 "missing_facts": list(state["missing_facts"]),
             },
         )
-        if task in {TaskType.ASSESS_EPR_OBLIGATION, TaskType.BUILD_COMPLIANCE_CHECKLIST}:
+        if task in {TaskType.CASE_ASSESSMENT, TaskType.BUILD_COMPLIANCE_CHECKLIST}:
             case = build_active_case(task, facts, state["query"])
             state["active_case"] = case
             state["case_state"] = {
@@ -515,7 +515,7 @@ def build_workflow(deps: WorkflowDependencies):
         else:
             answer = await deps.generation.answer(task.value, state["standalone_query"], docs, state.get("facts", {}))
         state["answer"] = answer or ""
-        if task == TaskType.ASSESS_EPR_OBLIGATION:
+        if task == TaskType.CASE_ASSESSMENT:
             state["assessment"] = {
                 "status": "preliminary",
                 "facts": dict(state.get("facts", {})),
@@ -542,7 +542,7 @@ def build_workflow(deps: WorkflowDependencies):
                     "assumption": "Không suy ra ngưỡng khi chưa có số liệu",
                 },
             ]
-        if task in {TaskType.ASSESS_EPR_OBLIGATION, TaskType.BUILD_COMPLIANCE_CHECKLIST}:
+        if task in {TaskType.CASE_ASSESSMENT, TaskType.BUILD_COMPLIANCE_CHECKLIST}:
             state["case_state"] = {
                 **dict(state.get("active_case") or {}),
                 "status": "completed",
@@ -636,7 +636,7 @@ def build_workflow(deps: WorkflowDependencies):
         elif citation_reason and citation_reason != "ok":
             state["answer"] = "Tôi chưa thể xác minh đầy đủ câu trả lời từ tài liệu đã truy xuất."
             state["termination_reason"] = TerminationReason.CITATION_VERIFICATION_FAILED.value
-        elif not state.get("is_epr_scope"):
+        elif not state.get("is_legal_scope"):
             state["answer"] = "Câu hỏi hiện nằm ngoài phạm vi tra cứu pháp luật của hệ thống."
             state["termination_reason"] = TerminationReason.OUT_OF_SCOPE.value
         else:
@@ -645,7 +645,7 @@ def build_workflow(deps: WorkflowDependencies):
         state["source"] = "error"
         state["evidence_status"] = "insufficient"
         if (
-            state.get("is_epr_scope")
+            state.get("is_legal_scope")
             and not citation_reason
             and state.get("route") != RouteType.RESEARCH_WEB.value
         ):

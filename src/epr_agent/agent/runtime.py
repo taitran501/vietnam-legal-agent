@@ -232,7 +232,7 @@ class WorkflowRuntime:
                 if saved_case is not None:
                     state["case_state"] = saved_case
             elif state.get("task_type") in {
-                TaskType.ASSESS_EPR_OBLIGATION.value,
+                TaskType.CASE_ASSESSMENT.value,
                 TaskType.BUILD_COMPLIANCE_CHECKLIST.value,
             }:
                 await self.deps.history.clear_case(user_id, conversation_id)
@@ -528,7 +528,7 @@ class AgentWorkflowRuntime:
             "search_legal_provisions": "Đang tra cứu kho văn bản pháp luật…",
             "search_web_official": "Đang tìm kiếm thông tin từ cổng chính thức…",
             "lookup_answer_cache": "Đang kiểm tra bộ nhớ đệm câu trả lời…",
-            "evaluate_epr_obligation": "Đang đối chiếu quy định và tính toán nghĩa vụ…",
+            "evaluate_legal_case": "Đang đối chiếu quy định và đánh giá tình huống…",
             "get_case_form_fields": "Đang kiểm tra thông tin tình huống…",
             "load_conversation_context": "Đang nạp ngữ cảnh hội thoại…",
             "ask_user_for_clarification": "Đang soạn câu hỏi làm rõ thông tin…",

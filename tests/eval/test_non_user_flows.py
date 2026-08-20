@@ -214,7 +214,7 @@ async def test_non_user_exemption_conclusion_flow():
                 return AIMessage(
                     content="",
                     tool_calls=[{
-                        "name": "evaluate_epr_obligation",
+                        "name": "evaluate_legal_case",
                         "args": {
                             "facts": {
                                 "business_role": "manufacturer",
