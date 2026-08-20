@@ -1213,6 +1213,32 @@ class PersistenceStore:
             )
             return self._run_payload(record, list(result.scalars().all()))
 
+    async def get_trace_for_ops(self, trace_id: str) -> dict[str, Any] | None:
+        """Load one trace for an already-authorized operations principal."""
+
+        async with self.sessions() as session:
+            record = await session.get(AgentRunRecord, trace_id)
+            if record is None:
+                return None
+            result = await session.execute(
+                select(AgentRunEventRecord)
+                .where(AgentRunEventRecord.trace_id == trace_id)
+                .order_by(AgentRunEventRecord.sequence, AgentRunEventRecord.id)
+            )
+            return self._run_payload(record, list(result.scalars().all()))
+
+    async def list_recent_traces(self, user_id: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
+        """List recent redacted traces, optionally restricted to one owner."""
+
+        async with self.sessions() as session:
+            statement = select(AgentRunRecord)
+            if user_id is not None:
+                statement = statement.where(AgentRunRecord.user_id == user_id)
+            result = await session.execute(
+                statement.order_by(AgentRunRecord.started_at.desc()).limit(min(max(1, limit), 100))
+            )
+            return [self._run_payload(record, []) for record in result.scalars().all()]
+
     async def list_traces(self, user_id: str, conversation_id: str, limit: int = 20) -> list[dict[str, Any]]:
         async with self.sessions() as session:
             result = await session.execute(

@@ -2,13 +2,14 @@
 Comprehensive Exploratory Data Analysis (EDA) of the Vietnam Legal Vector Database (Qdrant)
 """
 import base64
-import json
-import os
+import binascii
 import pickle
 import sqlite3
 from collections import Counter
 from pathlib import Path
+
 import numpy as np
+
 
 def run_eda():
     db_sqlite = Path("qdrant_db/collection/vietnam_legal_collection_v1/storage.sqlite")
@@ -51,12 +52,17 @@ def run_eda():
     }
     
     print("⏳ Scanning & aggregating 65,967 payload records...")
+    invalid_records = 0
     for row in cursor:
         raw_point = row[0]
+        payload = None
         try:
             point = pickle.loads(base64.b64decode(raw_point)) if isinstance(raw_point, str) else pickle.loads(raw_point)
             payload = point.payload or {}
-        except Exception:
+        except (AttributeError, binascii.Error, EOFError, IndexError, pickle.PickleError, TypeError, ValueError):
+            invalid_records += 1
+
+        if payload is None:
             continue
             
         topic = payload.get('topic') or 'Chưa phân loại'
@@ -80,6 +86,8 @@ def run_eda():
                 missing_fields[k] += 1
                 
     conn.close()
+    if invalid_records:
+        print(f"⚠️ Skipped {invalid_records:,} invalid payload records.")
     
     char_arr = np.array(char_lengths)
     word_arr = np.array(word_lengths)

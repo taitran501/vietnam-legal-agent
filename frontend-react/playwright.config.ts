@@ -12,6 +12,9 @@ const reuseLocalServer = process.env.CI !== 'true';
 export default defineConfig({
   testDir: './e2e',
   timeout: 30_000,
+  // The deterministic backend is one shared in-memory process; parallel workers
+  // would make independent browser tests mutate each other's conversations.
+  workers: 1,
   fullyParallel: false,
   reporter: 'list',
   use: {

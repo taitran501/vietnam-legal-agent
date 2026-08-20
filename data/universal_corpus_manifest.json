@@ -1,0 +1,77 @@
+{
+  "schema_version": "universal-legal-corpus-lock-v1",
+  "corpus_id": "universal-vietnamese-legal",
+  "corpus_version": "phapdien-moj-gov-vn-main-2026-07-21",
+  "source": {
+    "dataset": "tmquan/phapdien-moj-gov-vn",
+    "revision": "main",
+    "content_lock": "sha256",
+    "dataset_uri": "https://huggingface.co/datasets/tmquan/phapdien-moj-gov-vn",
+    "official_source_uri": "https://phapdien.moj.gov.vn/",
+    "license": "CC-BY-4.0"
+  },
+  "inputs": [
+    {
+      "path": "data/corpus/universal_legal/articles-00000-of-00007.parquet",
+      "download_uri": "https://huggingface.co/datasets/tmquan/phapdien-moj-gov-vn/resolve/main/articles-00000-of-00007.parquet",
+      "size_bytes": 3471677,
+      "sha256": "ff0df90b381217a3a30a29a91c08073671fd0587fc6d406f55792b40b3ccc135",
+      "rows": 10000
+    },
+    {
+      "path": "data/corpus/universal_legal/articles-00001-of-00007.parquet",
+      "download_uri": "https://huggingface.co/datasets/tmquan/phapdien-moj-gov-vn/resolve/main/articles-00001-of-00007.parquet",
+      "size_bytes": 3484746,
+      "sha256": "1b43927919a21aae88a37e4406b66b0bed8c793d1ada1094e34c616a9a09b2bc",
+      "rows": 10000
+    },
+    {
+      "path": "data/corpus/universal_legal/articles-00002-of-00007.parquet",
+      "download_uri": "https://huggingface.co/datasets/tmquan/phapdien-moj-gov-vn/resolve/main/articles-00002-of-00007.parquet",
+      "size_bytes": 3968607,
+      "sha256": "223baf5f93b5885561a606e569ad30a3ed8165628e59c8f39c11531236cbdaad",
+      "rows": 10000
+    },
+    {
+      "path": "data/corpus/universal_legal/articles-00003-of-00007.parquet",
+      "download_uri": "https://huggingface.co/datasets/tmquan/phapdien-moj-gov-vn/resolve/main/articles-00003-of-00007.parquet",
+      "size_bytes": 3877189,
+      "sha256": "dee67c91fe7745f582feae3e2fc43f0ef4788cfe72f2425b2d1b80b9aded0856",
+      "rows": 10000
+    },
+    {
+      "path": "data/corpus/universal_legal/articles-00004-of-00007.parquet",
+      "download_uri": "https://huggingface.co/datasets/tmquan/phapdien-moj-gov-vn/resolve/main/articles-00004-of-00007.parquet",
+      "size_bytes": 4021877,
+      "sha256": "98fa3093430d09d3a5dc1a97aaa9110d654afdf427dfa52223f64f4f68a0ab91",
+      "rows": 10000
+    },
+    {
+      "path": "data/corpus/universal_legal/articles-00005-of-00007.parquet",
+      "download_uri": "https://huggingface.co/datasets/tmquan/phapdien-moj-gov-vn/resolve/main/articles-00005-of-00007.parquet",
+      "size_bytes": 3739975,
+      "sha256": "e7a7f766a17642cbc8ca8becb2aa1c85b568d5dc53a71ede4c33a32794e13de1",
+      "rows": 10000
+    },
+    {
+      "path": "data/corpus/universal_legal/articles-00006-of-00007.parquet",
+      "download_uri": "https://huggingface.co/datasets/tmquan/phapdien-moj-gov-vn/resolve/main/articles-00006-of-00007.parquet",
+      "size_bytes": 2116218,
+      "sha256": "e5659661fe62d51de883eb58639cda2ccba0bc4f2e634ce57d8f9ff31cd74ddd",
+      "rows": 5967
+    },
+    {
+      "path": "kaggle_indexer/uts_vlc_2026_01.parquet",
+      "source": "tracked-repository-input",
+      "size_bytes": 9460623,
+      "sha256": "334f08ef06d09f2ab47827f353936c0b8d47ce994fe143792b9a80840f07e404",
+      "rows": 318
+    }
+  ],
+  "output": {
+    "path": "data/corpus/universal_legal/universal_legal.db",
+    "expected_tables": ["legal_articles", "legal_articles_fts"],
+    "expected_rows": 84938,
+    "build_script": "scripts/build_universal_index.py"
+  }
+}

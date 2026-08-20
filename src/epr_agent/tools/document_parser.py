@@ -11,9 +11,10 @@ from __future__ import annotations
 import io
 import re
 import uuid
-import zipfile
 import xml.etree.ElementTree as ET
+import zipfile
 from typing import Any
+
 from pydantic import BaseModel, Field
 
 _CLAUSE_REGEX = re.compile(
@@ -54,7 +55,7 @@ class DocumentParseResult(BaseModel):
 def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> tuple[str, int, list[dict[str, Any]]]:
     """Extract text and per-page content from PDF bytes using PyMuPDF (fitz)."""
     try:
-        import fitz  # PyMuPDF
+        import fitz  # type: ignore  # PyMuPDF ships without CI stubs in some environments
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         pages_content = []
         full_text_list = []
@@ -65,7 +66,7 @@ def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> tuple[str, int, list[dict[s
             full_text_list.append(page_text)
             pages_content.append({"page": page_idx + 1, "text": page_text})
         return "\n\n".join(full_text_list), total_pages, pages_content
-    except Exception as exc:
+    except Exception:  # noqa: BLE001 - parser falls back to loss-tolerant text decoding
         # Fallback if PyMuPDF has issue
         text = pdf_bytes.decode("utf-8", errors="ignore")
         return text, 1, [{"page": 1, "text": text}]
@@ -86,7 +87,7 @@ def extract_text_from_docx_bytes(docx_bytes: bytes) -> tuple[str, int]:
                     paragraphs.append("".join(texts))
             full_text = "\n\n".join(paragraphs)
             return full_text, max(1, len(paragraphs) // 15)
-    except Exception:
+    except Exception:  # noqa: BLE001 - parser falls back to loss-tolerant text decoding
         text = docx_bytes.decode("utf-8", errors="ignore")
         return text, 1
 

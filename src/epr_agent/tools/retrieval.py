@@ -72,8 +72,10 @@ class QdrantLegalRetrievalGateway:
                 record.metadata.setdefault("v4_issue_id", request.issue_id)
                 record.metadata.setdefault("v4_required_anchors", request.required_anchors)
 
-        # Augment with Universal Legal Retriever (84,900+ articles covering Land, Labor, Tax, Corporate, Civil, etc.)
-        if len(records) < 5:
+        # The universal corpus is a separately locked preview supplement. It
+        # must never silently become a production fallback for the approved
+        # Qdrant corpus.
+        if len(records) < 5 and bool(getattr(settings, "enable_universal_retrieval", False)):
             try:
                 from epr_agent.retrieval.universal_retriever import universal_retriever
                 if universal_retriever.is_available:

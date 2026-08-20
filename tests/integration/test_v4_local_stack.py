@@ -77,13 +77,14 @@ async def test_real_trace_is_owner_scoped_and_has_v4_decision_events() -> None:
                         complete = event
         assert complete and complete.get("trace_id")
 
-        trace = await client.get(f"/api/v1/debug/traces/{complete['trace_id']}")
+        trace = await client.get(f"/api/v1/traces/{complete['trace_id']}")
         assert trace.status_code == 200, trace.text
         payload = trace.json()
-        assert payload["pipeline_version"] == "pipeline-v4"
-        assert payload["duration_ms"] >= 0
-        assert payload["events"]
-        assert all("reason_code" in event for event in payload["events"])
+        waterfall = payload["waterfall"]
+        assert waterfall["metadata"]["pipeline_version"] == "pipeline-v4"
+        assert waterfall["total_duration_ms"] >= 0
+        assert waterfall["spans"]
+        assert all("name" in span and "duration_ms" in span for span in waterfall["spans"])
 
         # The API-key owner is the isolation boundary. A different local owner
         # cannot be simulated without auth middleware, so the production path

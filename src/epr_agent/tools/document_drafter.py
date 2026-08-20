@@ -13,10 +13,10 @@ Exports to pure-python OpenXML DOCX adhering to Decree 30/2020/ND-CP formatting 
 from __future__ import annotations
 
 import io
-import time
 import uuid
 import zipfile
-from datetime import datetime
+from datetime import UTC, datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -24,7 +24,7 @@ class CourtPetitionPayload(BaseModel):
     """Data required for Court Petition Form 23-DS."""
 
     court_name: str = Field(default="Tòa án nhân dân có thẩm quyền", description="Tên Tòa án tiếp nhận")
-    filing_date: str = Field(default_factory=lambda: datetime.now().strftime("ngày %d tháng %m năm %Y"))
+    filing_date: str = Field(default_factory=lambda: datetime.now(UTC).strftime("ngày %d tháng %m năm %Y"))
     
     # Người khởi kiện
     plaintiff_name: str = Field(default="........................................", description="Họ và tên người khởi kiện")

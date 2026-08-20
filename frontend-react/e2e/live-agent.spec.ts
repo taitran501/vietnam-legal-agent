@@ -10,8 +10,10 @@ test('React consumes the real FastAPI SSE and opens verified legal evidence', as
 
   await page.getByRole('button', { name: /Xem \d+ nguồn tham khảo/ }).click();
   const drawer = page.getByRole('dialog', { name: 'Nguồn tham khảo' });
-  await expect(drawer.getByRole('heading', { name: 'Nghị định 08/2022/NĐ-CP', exact: true }).first()).toBeVisible();
-  await expect(drawer.getByText('Điều 77', { exact: true })).toBeVisible();
+  const firstSource = drawer.locator('#source-1');
+  await expect(firstSource.getByRole('heading', { name: 'Điều 77', exact: true })).toBeVisible();
+  await expect(firstSource.getByText('Số: 08/2022/NĐ-CP', { exact: true })).toBeVisible();
+  await expect(firstSource.getByText('Điều 77', { exact: true })).toBeVisible();
 });
 
 test('React paints a verified answer progressively before the SSE completes', async ({ page }) => {
@@ -39,7 +41,7 @@ test('a user can stop an in-progress SSE response without losing rendered text',
 
   await expect(stop).not.toBeVisible();
   await expect(page.getByTestId('streaming-answer')).not.toBeVisible();
-  await expect(page.getByRole('region', { name: 'Tiến trình xử lý' }).getByRole('button', { name: /Đã dừng theo yêu cầu/ })).toBeVisible();
+  await expect(page.getByText('Đã dừng theo yêu cầu · nội dung chưa hoàn chỉnh', { exact: true })).toBeVisible();
 
   const sessionId = new URL(page.url()).pathname.split('/').pop();
   expect(sessionId).toBeTruthy();

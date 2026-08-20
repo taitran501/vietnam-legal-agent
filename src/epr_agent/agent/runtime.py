@@ -413,9 +413,9 @@ class AgentWorkflowRuntime:
         started_wall = datetime.now(UTC)
 
         operation = str(kwargs.get("operation") or "message")
-        target_assistant_message_id = kwargs.get("target_assistant_message_id")
 
         from backend.config import get_settings
+
         from epr_agent.tracing.trace_context import get_trace_store
 
         preview = get_settings().corpus_runtime_mode == "preview"
@@ -529,7 +529,7 @@ class AgentWorkflowRuntime:
         ):
             if event.get("type") == "agent_tool_call":
                 tool_name = event.get("tool", "")
-                msg = _tool_status_messages.get(tool_name, "Đang xử lý bước tiếp theo…")
+                status_message = _tool_status_messages.get(tool_name, "Đang xử lý bước tiếp theo…")
                 s_tool = trace_session.start_span(f"tool:{tool_name}")
                 s_tool.close(extra_attrs={"step": event.get("step", 1)})
                 yield {
@@ -541,7 +541,7 @@ class AgentWorkflowRuntime:
                 }
                 yield {
                     "type": "status",
-                    "message": msg,
+                    "message": status_message,
                     "stage": tool_name,
                 }
             elif event.get("type") == "agent_complete":

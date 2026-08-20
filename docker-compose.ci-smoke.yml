@@ -1,0 +1,20 @@
+# Deterministic CI overlay for the real Compose topology.
+# It exercises the gateway, backend, PostgreSQL, Redis, and Qdrant wiring in
+# preview mode without attempting an external OpenAI index build.
+services:
+  indexer:
+    command: ["sh", "-c", "exit 0"]
+
+  backend:
+    environment:
+      CORPUS_RUNTIME_MODE: preview
+      OPENAI_API_KEY: ci-smoke-placeholder
+      REQUIRE_AUTH: "false"
+      RATE_LIMIT_FAIL_OPEN: "true"
+      ENABLE_TRACE_DEBUG_API: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/v1/ready || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s

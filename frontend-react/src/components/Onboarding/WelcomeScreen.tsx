@@ -162,6 +162,7 @@ export function WelcomeScreen({
   onSendPrompt,
   onPrefillPrompt,
   onStop,
+  onStartCase,
   draftText,
   onDraftChange,
   intentLabel,
@@ -257,6 +258,30 @@ export function WelcomeScreen({
                     </button>
                   );
                 })}
+                {onStartCase && (
+                  <>
+                    <button
+                      aria-describedby={caseDisabled ? 'case-capability-message' : undefined}
+                      className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-800 transition-all hover:border-teal-600/50 hover:bg-teal-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={isStreaming || disabled || caseDisabled}
+                      onClick={() => onStartCase('assess_epr_obligation')}
+                      type="button"
+                    >
+                      <Icon name="case" size={14} />
+                      Kiểm tra trường hợp của doanh nghiệp
+                    </button>
+                    <button
+                      aria-describedby={caseDisabled ? 'case-capability-message' : undefined}
+                      className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-800 transition-all hover:border-teal-600/50 hover:bg-teal-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={isStreaming || disabled || caseDisabled}
+                      onClick={() => onStartCase('build_compliance_checklist')}
+                      type="button"
+                    >
+                      <Icon name="checklist" size={14} />
+                      Tạo danh sách việc cần làm
+                    </button>
+                  </>
+                )}
               </div>
 
               {caseDisabled && caseDisabledReason && (

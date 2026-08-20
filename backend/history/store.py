@@ -130,5 +130,13 @@ async def get_trace(user_id: str, trace_id: str) -> dict[str, Any] | None:
     return await (await _store()).get_trace(user_id, trace_id)
 
 
+async def get_trace_for_ops(trace_id: str) -> dict[str, Any] | None:
+    return await (await _store()).get_trace_for_ops(trace_id)
+
+
+async def list_recent_traces(user_id: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
+    return await (await _store()).list_recent_traces(user_id, limit)
+
+
 async def list_traces(user_id: str, conversation_id: str, limit: int = 20) -> list[dict[str, Any]]:
     return await (await _store()).list_traces(user_id, conversation_id, limit)

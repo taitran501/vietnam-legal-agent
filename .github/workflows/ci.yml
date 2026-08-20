@@ -2,8 +2,8 @@ name: CI
 
 on:
   pull_request:
-  push:
-    branches: [main]
+  push: {}
+  workflow_dispatch:
 
 jobs:
   backend:
@@ -15,6 +15,7 @@ jobs:
           python-version: "3.11"
           cache: pip
       - run: python -m pip install -e ".[dev]"
+      - run: python -m pip check
       - run: python -m scripts.sync_corpus_metadata --check
       - run: python -m pytest -q
       - run: python -m tests.eval.run_eval --suite all
@@ -41,6 +42,7 @@ jobs:
   e2e:
     needs: [backend, frontend]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -59,3 +61,37 @@ jobs:
         working-directory: frontend-react
       - run: npm run test:e2e -- --reporter=line
         working-directory: frontend-react
+
+  compose-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create isolated Compose environment
+        run: |
+          cp .env.example .env
+          sed -i 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=ci-smoke-password/' .env
+      - name: Validate Compose configuration
+        run: docker compose -f docker-compose.yml -f docker-compose.ci-smoke.yml config --quiet
+      - name: Build and start the Compose topology
+        run: docker compose -f docker-compose.yml -f docker-compose.ci-smoke.yml up -d --build
+      - name: Verify gateway liveness and preview readiness
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error http://127.0.0.1/api/v1/ready >/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              docker compose -f docker-compose.yml -f docker-compose.ci-smoke.yml ps -a
+              docker compose -f docker-compose.yml -f docker-compose.ci-smoke.yml logs --no-color backend nginx postgres redis qdrant
+              exit 1
+            fi
+            sleep 5
+          done
+          curl --fail --silent --show-error http://127.0.0.1/api/v1/health
+          curl --fail --silent --show-error http://127.0.0.1/api/v1/ready
+          curl --fail --silent --show-error http://127.0.0.1/ | grep -q 'id="root"'
+      - name: Tear down Compose topology
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.ci-smoke.yml down --volumes --remove-orphans

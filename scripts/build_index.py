@@ -35,10 +35,12 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-# Load .env so OPENAI_API_KEY and other vars are available to all libraries
+# Load .env only for direct CLI execution. Importing this module is also part
+# of the unit-test surface and must not mutate the caller's environment.
 from dotenv import load_dotenv
 
-load_dotenv(ROOT / ".env")
+if __name__ == "__main__":
+    load_dotenv(ROOT / ".env")
 
 from backend.config import get_settings
 from backend.core.llm_instances import get_embeddings, get_llm_fast

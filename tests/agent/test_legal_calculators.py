@@ -1,4 +1,3 @@
-import pytest
 from epr_agent.tools.legal_calculators import (
     calculate_court_fees,
     calculate_illegal_termination_compensation,

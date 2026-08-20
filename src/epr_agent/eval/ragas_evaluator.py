@@ -18,7 +18,8 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any
+from typing import Any, cast
+
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -180,7 +181,7 @@ async def evaluate_ragas_sample(
 
         # A. Faithfulness
         faith_chain = judge_llm.with_structured_output(FaithfulnessEvaluation)
-        faith_res: FaithfulnessEvaluation = await faith_chain.ainvoke(
+        faith_res = cast(FaithfulnessEvaluation, await faith_chain.ainvoke(
             [
                 ("system", _FAITHFULNESS_EXTRACTOR_PROMPT),
                 (
@@ -188,11 +189,11 @@ async def evaluate_ragas_sample(
                     f"Câu hỏi: {query}\n\nTÀI LIỆU TRUY XUẤT:\n{doc_text}\n\nCÂU TRẢ LỜI CẦN ĐÁNH GIÁ:\n{answer}",
                 ),
             ]
-        )
+        ))
         if isinstance(faith_res, FaithfulnessEvaluation):
             faithfulness_score = max(0.0, min(1.0, float(faith_res.faithfulness_score)))
             details["faithfulness_details"] = faith_res.model_dump(mode="json")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - scoring falls back to deterministic heuristics
         logger.warning("RAGAS Faithfulness evaluation error: %s", exc)
         # Fallback to heuristic citation count check
         citations_found = len(re.findall(r"\[\d+\]", answer))
@@ -203,7 +204,7 @@ async def evaluate_ragas_sample(
 
         # B. Answer Relevance
         rel_chain = judge_llm.with_structured_output(RelevanceEvaluation)
-        rel_res: RelevanceEvaluation = await rel_chain.ainvoke(
+        rel_res = cast(RelevanceEvaluation, await rel_chain.ainvoke(
             [
                 ("system", _RELEVANCE_EVAL_PROMPT),
                 (
@@ -211,11 +212,11 @@ async def evaluate_ragas_sample(
                     f"CÂU HỎI:\n{query}\n\nCÂU TRẢ LỜI:\n{answer}",
                 ),
             ]
-        )
+        ))
         if isinstance(rel_res, RelevanceEvaluation):
             relevance_score = max(0.0, min(1.0, float(rel_res.relevance_score)))
             details["relevance_details"] = rel_res.model_dump(mode="json")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - scoring falls back to deterministic heuristics
         logger.warning("RAGAS Relevance evaluation error: %s", exc)
         relevance_score = 0.85 if len(answer) > 100 else 0.5
 
@@ -224,7 +225,7 @@ async def evaluate_ragas_sample(
 
         # C. Context Precision
         prec_chain = judge_llm.with_structured_output(ContextPrecisionEvaluation)
-        prec_res: ContextPrecisionEvaluation = await prec_chain.ainvoke(
+        prec_res = cast(ContextPrecisionEvaluation, await prec_chain.ainvoke(
             [
                 ("system", _PRECISION_EVAL_PROMPT),
                 (
@@ -232,11 +233,11 @@ async def evaluate_ragas_sample(
                     f"CÂU HỎI:\n{query}\n\nCÁC TÀI LIỆU ĐƯỢC CẤP:\n{doc_text}",
                 ),
             ]
-        )
+        ))
         if isinstance(prec_res, ContextPrecisionEvaluation):
             precision_score = max(0.0, min(1.0, float(prec_res.precision_score)))
             details["precision_details"] = prec_res.model_dump(mode="json")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - scoring falls back to deterministic heuristics
         logger.warning("RAGAS Precision evaluation error: %s", exc)
         precision_score = 0.80
 

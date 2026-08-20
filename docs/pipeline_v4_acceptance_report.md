@@ -61,6 +61,8 @@ contracts, and this concise report are the reviewable acceptance evidence.
 
 The standard Compose image was rebuilt locally after the evaluated code
 checkpoint. The final `/api/v1/ready` check and main-image SSE smoke passed
-after that restart. No CI/CD workflow was added. Live tests use the configured
-OpenAI embedding/generation services and therefore remain an explicit local
-command, not part of the default unit suite.
+after that restart. The evaluated historical checkpoint predates the current
+CI/CD workflow; this report therefore does not claim current GitHub Actions or
+Compose-smoke evidence. Live tests use the configured OpenAI
+embedding/generation services and remain an explicit local command, not part
+of the default unit suite.

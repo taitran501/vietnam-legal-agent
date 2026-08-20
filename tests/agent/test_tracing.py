@@ -1,5 +1,4 @@
-import pytest
-from epr_agent.tracing.trace_context import Span, TraceSession, TraceStore, get_trace_store
+from epr_agent.tracing.trace_context import Span, TraceSession, TraceStore
 
 
 def test_span_lifecycle():

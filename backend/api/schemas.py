@@ -49,6 +49,8 @@ class ChatRequest(BaseModel):
         self.query = " ".join(self.query.split())
         if self.operation == "message" and not self.query:
             raise ValueError("query is required when operation=message")
+        if self.operation in {"retry", "regenerate"} and self.target_assistant_message_id is None:
+            raise ValueError("target_assistant_message_id is required for retry/regenerate")
         if self.operation not in {"retry", "regenerate"} and self.target_assistant_message_id is not None:
             raise ValueError("target_assistant_message_id is only valid for retry/regenerate")
         self.case_patch = {
