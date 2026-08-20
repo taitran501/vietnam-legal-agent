@@ -82,7 +82,7 @@ ASSESSMENT_COMPLETE_CASES = [
     ),
     _assessment(
         "assessment_phuong_tien",
-        "Tôi là nhà nhập khẩu ô tô, đưa ra thị trường Việt Nam, kinh doanh thương mại.",
+        "Tôi là nhà nhập khẩu ô tô, đưa ra thị trường Việt Nam, kinh doanh thương mại, kiểm tra nghĩa vụ EPR.",
         product_group="phuong_tien",
     ),
     _assessment(
@@ -112,7 +112,7 @@ ASSESSMENT_MISSING_CASES = [
     ),
     _assessment(
         "missing_object",
-        "Tôi là nhà sản xuất, đưa ra thị trường Việt Nam, kinh doanh thương mại.",
+        "Tôi là nhà sản xuất, đưa ra thị trường Việt Nam, kinh doanh thương mại, kiểm tra nghĩa vụ EPR.",
         product_group="unknown",
         missing=["object_kind", "product_group"],
     ),
@@ -150,13 +150,13 @@ ASSESSMENT_MISSING_CASES = [
     ),
     _assessment(
         "missing_followup_1",
-        "Còn trường hợp này thì sao?",
+        "Còn trường hợp nghĩa vụ EPR này thì sao?",
         product_group="unknown",
         missing=["business_role", "object_kind", "product_group", "market_placement", "activity_purpose"],
     ),
     _assessment(
         "missing_followup_2",
-        "Vật liệu là nhựa.",
+        "Vật liệu là nhựa, theo nghĩa vụ EPR.",
         product_group="unknown",
         missing=["business_role", "object_kind", "product_group", "market_placement", "activity_purpose"],
     ),

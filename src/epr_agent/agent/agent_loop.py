@@ -311,7 +311,7 @@ class EprAgentRunner:
                     cache_hit = True
 
                 # Track assessment results
-                if tool_name == "evaluate_epr_obligation" and observation.get("ok"):
+                if tool_name == "evaluate_legal_case" and observation.get("ok"):
                     assessment_payload = observation
 
                 # Handle terminal clarification action

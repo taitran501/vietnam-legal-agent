@@ -9,7 +9,6 @@ from epr_agent.agent.tool_registry import (
     ToolDependencies,
     ask_user_for_clarification,
     calculate_statutory_amounts,
-    evaluate_epr_obligation,
     evaluate_legal_case,
     get_case_form_fields,
     load_conversation_context,
@@ -99,7 +98,7 @@ def inject_test_deps():
 
 
 def test_tool_count():
-    assert len(ALL_AGENT_TOOLS) == 9
+    assert len(ALL_AGENT_TOOLS) == 8
 
 
 @pytest.mark.asyncio
@@ -200,15 +199,15 @@ async def test_lookup_answer_cache_hit():
 
 
 @pytest.mark.asyncio
-async def test_evaluate_epr_obligation_missing_facts():
-    result = await evaluate_epr_obligation({"business_role": "manufacturer"})
+async def test_evaluate_legal_case_missing_facts():
+    result = await evaluate_legal_case("epr", {"business_role": "manufacturer"})
     assert result["ok"] is True
     assert result["status"] == "needs_information"
     assert len(result["missing_facts"]) > 0
 
 
 @pytest.mark.asyncio
-async def test_evaluate_epr_obligation_complete():
+async def test_evaluate_legal_case_complete():
     facts = {
         "business_role": "manufacturer",
         "object_kind": "commercial_packaging",
@@ -220,9 +219,21 @@ async def test_evaluate_epr_obligation_complete():
         "annual_revenue_vnd": "40000000000",
         "reused_by_producer": "no",
     }
-    result = await evaluate_epr_obligation(facts)
+    result = await evaluate_legal_case("epr", facts)
     assert result["ok"] is True
     assert result["status"] in {"likely_in_scope", "likely_out_of_scope", "needs_information", "cannot_determine"}
+
+
+@pytest.mark.asyncio
+async def test_evaluate_legal_case_traffic_domain():
+    result = await evaluate_legal_case(
+        "traffic",
+        {"vehicle_type": "xe mô tô", "violation_act": "vượt đèn đỏ"},
+    )
+    assert result["ok"] is True
+    assert result["domain"] == "traffic"
+    assert "xe mô tô" in str(result.get("conclusion") or "")
+    assert "Điều 6 Nghị định 100/2019/NĐ-CP" in str(result.get("applicable_provisions") or "")
 
 
 @pytest.mark.asyncio

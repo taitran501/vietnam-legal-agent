@@ -77,8 +77,19 @@ LEGAL_DOMAIN_SIGNALS: dict[str, tuple[str, ...]] = {
     "marriage_family": ("ly hôn", "kết hôn", "hôn nhân", "gia đình", "cấp dưỡng", "trích lục kết hôn"),
     "corporate": ("cổ đông", "cổ phần", "đại hội đồng", "hội đồng quản trị", "điều lệ công ty", "thành lập doanh nghiệp"),
     "land": ("đất", "đất đai", "sổ đỏ", "sổ hồng", "thu hồi", "thu hồi đất", "bồi thường đất", "quyền sử dụng đất", "tái định cư", "giấy chứng nhận quyền sử dụng"),
-    "traffic": ("giao thông", "nồng độ cồn", "vượt đèn", "quá tốc độ", "bằng lái", "xe máy", "ô tô", "tai nạn"),
-    "epr": EPR_TERMS,
+    "traffic": ("giao thông", "nồng độ cồn", "vượt đèn", "quá tốc độ", "bằng lái", "tai nạn", "xử phạt giao thông", "mức phạt"),
+    "epr": EPR_TERMS
+    + (
+        "pin",
+        "ắc quy",
+        "săm lốp",
+        "dầu nhớt",
+        "sản phẩm điện",
+        "điện tử",
+        "tái sử dụng",
+        "thu hồi để tái chế",
+        "môi trường",
+    ),
 }
 
 

@@ -62,7 +62,7 @@ test('guided assessment resolves dependent fields and submits one chat turn', as
     const fieldDefinitions = [
       ['business_role', 'Vai trò doanh nghiệp', 'select', true],
       ['object_kind', 'Loại đối tượng', 'select', true],
-      ['product_group', 'Nhóm sản phẩm EPR', 'select', true],
+      ['product_group', 'Nhóm sản phẩm/bao bì', 'select', true],
       ['market_placement', 'Phạm vi đưa ra thị trường', 'select', true],
       ['activity_purpose', 'Mục đích sản xuất hoặc nhập khẩu', 'select', true],
       ...(facts.product_group === 'bao_bi' ? [['packaged_goods_category', 'Nhóm hàng hóa được đóng gói', 'select', true]] : []),
@@ -120,7 +120,7 @@ test('guided assessment resolves dependent fields and submits one chat turn', as
   expect(chatCalls).toBe(0);
   await form.getByLabel('Vai trò doanh nghiệp').selectOption('manufacturer');
   await form.getByLabel('Loại đối tượng').selectOption('commercial_packaging');
-  await form.getByLabel('Nhóm sản phẩm EPR').selectOption('bao_bi');
+  await form.getByLabel('Nhóm sản phẩm/bao bì').selectOption('bao_bi');
   await form.getByLabel('Phạm vi đưa ra thị trường').selectOption('vietnam_market');
   await form.getByLabel('Mục đích sản xuất hoặc nhập khẩu').selectOption('commercial');
   await expect(form.getByText('Còn thiếu 3 thông tin')).toBeVisible();
@@ -308,7 +308,7 @@ test('guided submit failure keeps the draft available for another attempt', asyn
     const definitions = [
       ['business_role', 'Vai trò doanh nghiệp'],
       ['object_kind', 'Loại đối tượng'],
-      ['product_group', 'Nhóm sản phẩm EPR'],
+      ['product_group', 'Nhóm sản phẩm/bao bì'],
       ['market_placement', 'Phạm vi đưa ra thị trường'],
       ['activity_purpose', 'Mục đích sản xuất hoặc nhập khẩu'],
     ];
@@ -362,7 +362,7 @@ test('guided submit failure keeps the draft available for another attempt', asyn
   const form = page.getByRole('region', { name: 'Kiểm tra trường hợp của doanh nghiệp' });
   await form.getByLabel('Vai trò doanh nghiệp').selectOption('manufacturer');
   await form.getByLabel('Loại đối tượng').selectOption('product');
-  await form.getByLabel('Nhóm sản phẩm EPR').selectOption('pin');
+  await form.getByLabel('Nhóm sản phẩm/bao bì').selectOption('pin');
   await form.getByLabel('Phạm vi đưa ra thị trường').selectOption('vietnam_market');
   await form.getByLabel('Mục đích sản xuất hoặc nhập khẩu').selectOption('commercial');
   await form.getByRole('button', { name: 'Kiểm tra trường hợp' }).click();

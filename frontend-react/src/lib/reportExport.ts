@@ -40,7 +40,7 @@ function factText(value: unknown): string {
 
 export function buildPreliminaryReport({ answer, timestamp, workflow, documents }: PreliminaryReportInput): string {
   const lines = [
-    'BÁO CÁO SƠ BỘ EPR',
+    'BÁO CÁO SƠ BỘ',
     '===================',
     'Tài liệu này chỉ hỗ trợ đối chiếu ban đầu, không phải ý kiến tư vấn pháp lý hoặc quyết định tuân thủ cuối cùng.',
     `Thời điểm tạo: ${timestamp}`,

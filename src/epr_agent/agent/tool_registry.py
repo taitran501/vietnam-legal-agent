@@ -243,11 +243,6 @@ async def evaluate_legal_case(
         return {"status": "error", "error": str(exc), "ok": False}
 
 
-async def evaluate_epr_obligation(facts: dict[str, str]) -> dict[str, Any]:
-    """Đánh giá nghĩa vụ EPR của doanh nghiệp (Wrapper cho evaluate_legal_case)."""
-    return await evaluate_legal_case(legal_domain="epr", facts=facts)
-
-
 async def calculate_statutory_amounts(
     calculation_type: str,
     parameters: dict[str, Any],
@@ -370,7 +365,6 @@ ALL_AGENT_TOOLS = [
     search_web_official,
     lookup_answer_cache,
     evaluate_legal_case,
-    evaluate_epr_obligation,
     get_case_form_fields,
     calculate_statutory_amounts,
     load_conversation_context,
