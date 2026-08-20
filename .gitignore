@@ -71,6 +71,9 @@ docs/retrieval/baseline_collection_audit.json
 docs/retrieval/candidate_legal_structure_v1.json
 docs/retrieval/candidate_collection_audit.json
 
+# Local-only Kaggle indexing workspace (kept off GitHub)
+kaggle_indexer/
+
 # Local runtime state and conversation data
 data/*.sqlite3
 data/*.db
