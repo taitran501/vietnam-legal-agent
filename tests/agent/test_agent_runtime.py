@@ -212,3 +212,43 @@ async def test_get_default_runtime_feature_flag(monkeypatch):
     runtime = get_default_runtime()
     assert runtime.__class__.__name__ == "AgentWorkflowRuntime"
     get_default_runtime.cache_clear()
+
+
+def test_cited_evidence_indices_ignores_out_of_range_bracketed_numbers():
+    from epr_agent.agent.runtime import _cited_evidence_indices
+
+    evidence = [{"document_id": "d1"}, {"document_id": "d2"}, {"document_id": "d3"}]
+    # "[2023]" is a year, not a citation; only [2] points at an evidence item.
+    assert _cited_evidence_indices("Nghị định [2023] tại Điều 78 [2].", evidence) == {2}
+    assert _cited_evidence_indices("Không có trích dẫn.", evidence) == set()
+    assert _cited_evidence_indices("", []) == set()
+
+
+def test_documents_for_api_keeps_sources_when_answer_has_non_citation_brackets():
+    from epr_agent.agent.runtime import _documents_for_api
+
+    evidence = [
+        {"document_id": "d1", "content": "Nội dung 1", "metadata": {"legal_anchor": "Điều 77"}},
+        {"document_id": "d2", "content": "Nội dung 2", "metadata": {"legal_anchor": "Điều 78"}},
+    ]
+    state = {
+        "answer": "Theo Nghị định 08/2022/NĐ-CP [2023], quy định tại Điều 78 [2].",
+        "evidence": evidence,
+    }
+    documents = _documents_for_api(state)
+    assert [doc["document_id"] for doc in documents] == ["d2"]
+
+
+def test_source_snapshots_keeps_sources_when_answer_has_non_citation_brackets():
+    from epr_agent.agent.runtime import _source_snapshots
+
+    evidence = [
+        {"document_id": "d1", "content": "Nội dung 1", "metadata": {"legal_anchor": "Điều 77", "Source_Title": "Luật BVMT 2020"}},
+        {"document_id": "d2", "content": "Nội dung 2", "metadata": {"legal_anchor": "Điều 78", "Source_Title": "Nghị định 08/2022/NĐ-CP"}},
+    ]
+    state = {
+        "answer": "Theo Nghị định 08/2022/NĐ-CP [2023], quy định tại Điều 78 [2].",
+        "evidence": evidence,
+    }
+    snapshots = _source_snapshots(state)
+    assert [snapshot["source_id"] for snapshot in snapshots] == ["d2"]
