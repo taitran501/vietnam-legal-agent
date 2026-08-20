@@ -76,6 +76,24 @@ def split_verified_answer_for_stream(answer: str, *, max_chunk_chars: int = 180)
     return chunks
 
 
+def _cited_evidence_indices(answer: str, evidence: list[dict[str, Any]]) -> set[int]:
+    """Return citation indices referenced by an answer, bounded to the evidence range.
+
+    The answer text may contain bracketed numbers that are not citations (for
+    example years like ``[2023]`` or article counts).  Only indices that point
+    at an actual evidence item are treated as citations; anything else would
+    otherwise hide every source from the source drawer.
+    """
+
+    if not evidence:
+        return set()
+    return {
+        int(value)
+        for value in re.findall(r"\[(\d+)\]", answer or "")
+        if 1 <= int(value) <= len(evidence)
+    }
+
+
 def _documents_for_api(state: AgentState) -> list[dict[str, Any]]:
     allowed_metadata = {
         "document_id", "Document_Id", "Document_Number", "source_title", "Source_Title", "title",
@@ -87,7 +105,7 @@ def _documents_for_api(state: AgentState) -> list[dict[str, Any]]:
         "Active_Source_Document_Id", "Active_Source_Pages", "Amendment_Resolution_Status", "Amendment_Operations", "Current_Law_Support",
     }
     documents: list[dict[str, Any]] = []
-    used_indices = {int(value) for value in re.findall(r"\[(\d+)\]", state.get("answer", ""))}
+    used_indices = _cited_evidence_indices(state.get("answer", ""), list(state.get("evidence", [])))
     for citation_index, item in enumerate(state.get("evidence", []), start=1):
         if used_indices and citation_index not in used_indices:
             continue
@@ -112,7 +130,7 @@ def _documents_for_api(state: AgentState) -> list[dict[str, Any]]:
 
 
 def _source_snapshots(state: AgentState) -> list[dict[str, Any]]:
-    used_indices = {int(value) for value in re.findall(r"\[(\d+)\]", state.get("answer", ""))}
+    used_indices = _cited_evidence_indices(state.get("answer", ""), list(state.get("evidence", [])))
     return [
         {
             "citation_index": citation_index,
