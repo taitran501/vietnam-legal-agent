@@ -87,7 +87,7 @@ def _iter_collections(raw: str) -> list[str]:
 async def _run_one(collection: str) -> CollectionScore:
     os.environ["LAW_COLLECTION"] = collection
     # Import after LAW_COLLECTION override so settings picks current collection.
-    from backend.core.retrieval import retrieve_legal_async  # noqa: WPS433
+    from epr_agent.retrieval.retrieval import retrieve_legal_async  # noqa: WPS433
 
     await retrieve_legal_async(GOLDEN_CASES[0].query)
 

@@ -33,14 +33,14 @@ from uuid import UUID
 from langchain_core.documents import Document
 from qdrant_client.grpc import PointId
 
-from backend.api import metrics
-from backend.config import get_settings
-from backend.core.llm_instances import get_embeddings
-from backend.core.retrieval import (
+from epr_agent.config import get_settings
+from epr_agent.domain.legal import LegalAnchor, explicit_anchors, normalise_embedding_text
+from epr_agent.infra import metrics
+from epr_agent.infra.llm_instances import get_embeddings
+from epr_agent.retrieval.retrieval import (
     _get_law_vectorstore,
     _get_qdrant_client,
 )
-from epr_agent.domain.legal import LegalAnchor, explicit_anchors, normalise_embedding_text
 
 logger = logging.getLogger(__name__)
 

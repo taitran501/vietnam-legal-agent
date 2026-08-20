@@ -79,7 +79,7 @@ class StructuredTaskUnderstandingGateway:
     ) -> TaskUnderstanding:
         fallback = deterministic_task_understanding(query, history, active_case)
         try:
-            from backend.core.llm_instances import get_llm_router
+            from epr_agent.infra.llm_instances import get_llm_router
 
             model = get_llm_router().with_structured_output(TaskUnderstanding)
             payload = {

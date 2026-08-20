@@ -131,7 +131,7 @@ class EprAgentRunner:
         if llm is not None:
             self._llm = llm
         else:
-            from backend.core.llm_instances import get_llm_router
+            from epr_agent.infra.llm_instances import get_llm_router
 
             self._llm = get_llm_router().bind_tools(self.tools)
 

@@ -20,7 +20,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from backend.core.retrieval import retrieve_legal
+from epr_agent.retrieval.retrieval import retrieve_legal
 
 
 def _format_doc(doc: Any, rank: int) -> str:

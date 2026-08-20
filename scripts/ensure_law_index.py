@@ -17,8 +17,9 @@ sys.path.insert(0, str(ROOT))
 
 
 def _configure() -> tuple[Any, str, str]:
-    from backend.config import get_settings
     from scripts.canonical_corpus import corpus_sha256, load_document_manifest
+
+    from epr_agent.config import get_settings
 
     base = get_settings()
     corpus_id, corpus_version, _ = load_document_manifest(Path(base.corpus_manifest_path))

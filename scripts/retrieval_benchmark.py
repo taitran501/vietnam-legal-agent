@@ -324,7 +324,7 @@ def select_live_cases(query_budget: int) -> list[dict[str, Any]]:
 
 
 async def run_live_metrics(cases: list[dict[str, Any]]) -> dict[str, float | int | str]:
-    from backend.core.retrieval import retrieve_legal_async
+    from epr_agent.retrieval.retrieval import retrieve_legal_async
 
     rankings: list[tuple[dict[str, Any], list[str]]] = []
     for case in cases:
@@ -372,7 +372,7 @@ def main() -> None:
         try:
             manifest["live_metrics"] = asyncio.run(run_live_metrics(select_live_cases(args.query_budget)))
         finally:
-            from backend.core.retrieval import close_qdrant_client
+            from epr_agent.retrieval.retrieval import close_qdrant_client
 
             close_qdrant_client()
     if args.baseline:

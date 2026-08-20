@@ -20,7 +20,7 @@ from typing import Any
 from langchain_core.embeddings import Embeddings
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-from backend.config import get_settings
+from epr_agent.config import get_settings
 
 
 @lru_cache(maxsize=1)
@@ -103,7 +103,7 @@ class LocalSentenceTransformerEmbeddings(Embeddings):
 def get_embeddings() -> Embeddings:
     """Configured embedding profile (OpenAI or Local VNLegal-LAL) used by legal vector collections."""
 
-    from backend.config import get_settings
+    from epr_agent.config import get_settings
 
     settings = get_settings()
     

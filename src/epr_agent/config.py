@@ -6,6 +6,7 @@ Missing required values raise a clear error at startup.
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -14,7 +15,29 @@ from urllib.parse import urlsplit
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-BASE_DIR = Path(__file__).resolve().parent.parent  # vietnam-legal-agent/
+
+def _resolve_base_dir() -> Path:
+    """Locate the repository root that owns the ``data`` tree.
+
+    The package may be imported from the source tree (local dev, pytest) or
+    from site-packages (container build, where ``backend`` is copied into
+    ``/app``).  Only the checked-out tree contains ``data/``, so prefer an
+    explicit override, then scan upward from the working directory (the
+    container runs with ``WORKDIR /app``), and finally fall back to the
+    source-tree heuristic.
+    """
+
+    override = os.environ.get("EPR_AGENT_BASE_DIR")
+    if override:
+        return Path(override).resolve()
+    cwd = Path.cwd().resolve()
+    for candidate in (cwd, *cwd.parents):
+        if (candidate / "data").is_dir() and (candidate / "pyproject.toml").is_file():
+            return candidate
+    return Path(__file__).resolve().parent.parent.parent  # vietnam-legal-agent/
+
+
+BASE_DIR = _resolve_base_dir()
 
 
 class Settings(BaseSettings):

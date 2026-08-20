@@ -70,7 +70,7 @@ TEST_QUERIES = [
 async def clear_all_caches():
     """Clear only the legal-only answer cache for a clean benchmark run."""
     try:
-        from backend.memory.session_store import get_redis
+        from epr_agent.infra.session_store import get_redis
         r = await get_redis()
         exact_keys = await r.keys("legal:answer:v3:*")
         if exact_keys:

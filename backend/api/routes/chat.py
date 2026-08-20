@@ -19,12 +19,12 @@ import uuid
 from fastapi import APIRouter, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
-from backend.api import metrics
 from backend.api.principal import principal_from_request_state
 from backend.api.routes.health import readiness_payload
 from backend.api.schemas import ChatRequest
 from backend.history import cancel_turn as cancel_turn_persistent
 from epr_agent.api.routes import stream_chat_events as agentic_stream_chat
+from epr_agent.infra import metrics
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

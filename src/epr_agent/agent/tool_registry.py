@@ -44,8 +44,9 @@ def get_tool_dependencies() -> ToolDependencies:
     """Lazy initialization of production tool adapters."""
     global _default_deps
     if _default_deps is None:
-        from backend.config import get_settings
         from scripts.canonical_corpus import corpus_sha256
+
+        from epr_agent.config import get_settings
 
         settings = get_settings()
         appendix_path = (

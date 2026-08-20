@@ -70,7 +70,7 @@ class RedisExactAnswerCache:
     """
 
     async def lookup(self, key: str) -> str | None:
-        from backend.memory.session_store import get_redis
+        from epr_agent.infra.session_store import get_redis
 
         try:
             value = await (await get_redis()).get(key)
@@ -81,8 +81,8 @@ class RedisExactAnswerCache:
         return str(value) if value is not None else None
 
     async def store(self, key: str, answer: str) -> None:
-        from backend.config import get_settings
-        from backend.memory.session_store import get_redis
+        from epr_agent.config import get_settings
+        from epr_agent.infra.session_store import get_redis
 
         try:
             await (await get_redis()).set(key, answer, ex=get_settings().cache_ttl_seconds)

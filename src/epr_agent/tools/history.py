@@ -87,9 +87,12 @@ class UnifiedHistoryGateway:
 
     async def _resolve_store(self) -> PersistenceStore:
         if self._store is None:
-            from backend.history.store import _database_url
+            from epr_agent.config import get_settings
+            from epr_agent.infra.persistence import sqlite_database_url
 
-            self._store = await get_persistence_store(_database_url())
+            configured = getattr(get_settings(), "database_url", None)
+            database_url = str(configured) if configured else sqlite_database_url(str(get_settings().history_db_path))
+            self._store = await get_persistence_store(database_url)
         return self._store
 
     async def initialize(self) -> None:

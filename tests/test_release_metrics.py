@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.api import metrics
+from epr_agent.infra import metrics
 
 
 def test_release_user_journey_metrics_are_exported_with_bounded_labels() -> None:

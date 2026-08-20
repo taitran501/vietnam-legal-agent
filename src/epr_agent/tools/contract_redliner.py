@@ -190,7 +190,7 @@ async def review_contract_with_llm(
     contract_type: str = "Hợp đồng dân sự / thương mại",
 ) -> ContractReviewReport:
     """Analyze contract clauses with structured LLM review and statutory grounding."""
-    from backend.core.llm_instances import get_llm_smart
+    from epr_agent.infra.llm_instances import get_llm_smart
 
     # If small or mock environment, fallback to heuristic
     if not clauses:

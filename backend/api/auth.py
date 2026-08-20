@@ -22,8 +22,8 @@ from backend.api.principal import (
     principal_from_service_token,
     validate_oidc_token,
 )
-from backend.config import get_settings
-from backend.memory.session_store import get_redis
+from epr_agent.config import get_settings
+from epr_agent.infra.session_store import get_redis
 
 logger = logging.getLogger(__name__)
 

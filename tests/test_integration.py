@@ -14,6 +14,7 @@ This script tests the full application stack including:
 # instead of aborting at the first one.
 # ruff: noqa: BLE001
 
+import importlib
 import os
 import sys
 from pathlib import Path
@@ -69,32 +70,27 @@ def test_imports():
     """Test that all modules can be imported."""
     print("\n📦 Testing module imports...")
 
-    try:
-        results.pass_test("backend.config imports successfully")
-    except Exception as e:
-        results.fail_test("backend.config", str(e))
-
-    try:
-        results.pass_test("backend.api.schemas imports successfully")
-    except Exception as e:
-        results.fail_test("backend.api.schemas", str(e))
-
-    try:
-        results.pass_test("backend.core.llm_instances imports successfully")
-    except Exception as e:
-        results.fail_test("backend.core.llm_instances", str(e))
-
-    try:
-        results.pass_test("backend.memory.session_store imports successfully")
-    except Exception as e:
-        results.fail_test("backend.memory.session_store", str(e))
+    for module_name in (
+        "epr_agent.config",
+        "epr_agent.infra.llm_instances",
+        "epr_agent.infra.session_store",
+        "epr_agent.retrieval.retrieval",
+        "epr_agent.retrieval.ensemble_retrieval",
+        "backend.api.schemas",
+        "backend.history.store",
+    ):
+        try:
+            importlib.import_module(module_name)
+            results.pass_test(f"{module_name} imports successfully")
+        except Exception as e:
+            results.fail_test(module_name, str(e))
 
 def test_configuration():
     """Test application configuration."""
     print("\n⚙️  Testing configuration...")
 
     try:
-        from backend.config import get_settings
+        from epr_agent.config import get_settings
         # Clear cache to get fresh settings
         get_settings.cache_clear()
 
@@ -231,7 +227,7 @@ def test_llm_instances():
     print("\n🤖 Testing LLM instances...")
 
     try:
-        from backend.core.llm_instances import (
+        from epr_agent.infra.llm_instances import (
             get_llm_fast,
             get_llm_router,
             get_llm_smart,
@@ -341,7 +337,7 @@ def test_input_sanitization():
     print("\n🛡️  Testing input sanitization...")
 
     try:
-        from backend.memory.session_store import _sanitize_user_input
+        from epr_agent.infra.session_store import _sanitize_user_input
 
         # Test normal input unchanged
         assert _sanitize_user_input("What is the legal obligation?") == "What is the legal obligation?"

@@ -70,7 +70,7 @@ class StructuredClaimSupportVerifier:
                 reason_code="no_answer_or_evidence",
             )
 
-        from backend.core.llm_instances import get_llm_smart
+        from epr_agent.infra.llm_instances import get_llm_smart
 
         claims = legal_claim_segments(answer)
         if not claims:
@@ -184,7 +184,7 @@ class LegalCriticReviewer:
         if not documents:
             return LegalCriticVerdict(approved=True, critique="No legal documents to audit against.")
 
-        from backend.core.llm_instances import get_llm_smart
+        from epr_agent.infra.llm_instances import get_llm_smart
 
         try:
             model = get_llm_smart().with_structured_output(LegalCriticVerdict)

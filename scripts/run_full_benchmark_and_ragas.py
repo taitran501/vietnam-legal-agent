@@ -31,11 +31,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-from backend.config import get_settings
-from backend.core.ensemble_retrieval import retrieve_legal_ensemble
-from backend.core.llm_instances import get_llm_smart
-from backend.core.retrieval import close_qdrant_client
 from src.epr_agent.eval.ragas_evaluator import evaluate_ragas_sample
+
+from epr_agent.config import get_settings
+from epr_agent.infra.llm_instances import get_llm_smart
+from epr_agent.retrieval.ensemble_retrieval import retrieve_legal_ensemble
+from epr_agent.retrieval.retrieval import close_qdrant_client
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(name)s | %(levelname)s | %(message)s")
 logger = logging.getLogger("ragas_benchmark")

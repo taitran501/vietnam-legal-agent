@@ -262,7 +262,7 @@ class V4WorkflowRuntime(WorkflowRuntime):
         }
         replay_defaults.update(dict(kwargs.get("replay_metadata") or {}))
         state["replay_metadata"] = replay_defaults
-        from backend.config import get_settings
+        from epr_agent.config import get_settings
 
         settings = get_settings()
         state["corpus_as_of_date"] = str(settings.corpus_as_of_date or "")

@@ -9,7 +9,7 @@ Tests cover:
 """
 
 
-from backend.core.llm_instances import (
+from epr_agent.infra.llm_instances import (
     get_embeddings,
     get_llm_fast,
     get_llm_router,

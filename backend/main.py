@@ -16,12 +16,12 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from backend.api import metrics as metrics_module
 from backend.api.auth import APIKeyMiddleware, get_valid_api_keys
 from backend.api.middleware import RateLimiter, RateLimitMiddleware
-from backend.config import get_settings, validate_production_settings
 from backend.history import init_history_store
-from backend.memory.session_store import close_redis, get_redis
+from epr_agent.config import get_settings, validate_production_settings
+from epr_agent.infra import metrics as metrics_module
+from epr_agent.infra.session_store import close_redis, get_redis
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +149,7 @@ async def lifespan(app: FastAPI):
             pass
     await close_redis()
     try:
-        from backend.core.retrieval import close_qdrant_client
+        from epr_agent.retrieval.retrieval import close_qdrant_client
         close_qdrant_client()
     except Exception as exc:  # noqa: BLE001
         logger.warning("Qdrant close failed: %s", exc)
@@ -165,7 +165,7 @@ async def lifespan(app: FastAPI):
 async def _warmup_retrieval_indexes_task() -> None:
     """Warm retrieval indexes in background without blocking API availability."""
     try:
-        from backend.core.ensemble_retrieval import warmup_retrieval_indexes
+        from epr_agent.retrieval.ensemble_retrieval import warmup_retrieval_indexes
 
         await asyncio.to_thread(warmup_retrieval_indexes)
     except asyncio.CancelledError:

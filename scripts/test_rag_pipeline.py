@@ -10,9 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-from backend.core.retrieval import retrieve_legal_async
-
 from epr_agent.api.routes import stream_chat_events
+from epr_agent.retrieval.retrieval import retrieve_legal_async
 
 
 async def test_rag_flow():

@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 async def readiness_payload() -> tuple[dict[str, Any], bool]:
     """Return capability-level readiness without exposing connection details."""
 
-    from backend.config import get_settings
-    from backend.memory.session_store import get_redis
+    from epr_agent.config import get_settings
+    from epr_agent.infra.session_store import get_redis
 
     settings = get_settings()
     dependencies = {"database": "ok", "qdrant": "ok", "redis": "ok", "openai": "ok"}
@@ -81,7 +81,7 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
         corpus["corpus_sha"] = expected_sha
         if settings.appendix_xxii_data_path.exists():
             corpus["appendix_sha256"] = hashlib.sha256(settings.appendix_xxii_data_path.read_bytes()).hexdigest()
-        from backend.core.retrieval import _get_qdrant_client
+        from epr_agent.retrieval.retrieval import _get_qdrant_client
 
         client = _get_qdrant_client()
         info = client.get_collection(settings.law_collection)
@@ -159,7 +159,7 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
             "reason": "provider_not_configured" if not settings.tavily_api_key else capabilities["legal_chat"]["reason"],
         }
 
-    from backend.api import metrics
+    from epr_agent.infra import metrics
 
     for capability, state in capabilities.items():
         metrics.track_capability_readiness(capability, state["status"], state["reason"])

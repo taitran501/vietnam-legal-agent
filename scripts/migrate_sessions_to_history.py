@@ -15,7 +15,8 @@ import logging
 from typing import Any
 
 from backend.history import append_exchange, ensure_conversation, init_history_store
-from backend.memory import session_store
+
+from epr_agent.infra import session_store
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

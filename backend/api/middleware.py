@@ -19,8 +19,8 @@ from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from backend.config import get_settings
-from backend.memory.session_store import get_redis
+from epr_agent.config import get_settings
+from epr_agent.infra.session_store import get_redis
 
 logger = logging.getLogger(__name__)
 

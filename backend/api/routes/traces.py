@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from backend.api.principal import Principal, principal_from_request_state
-from backend.config import get_settings
+from epr_agent.config import get_settings
 from epr_agent.tracing.trace_context import get_trace_store
 
 router = APIRouter(prefix="/traces", tags=["traces"])

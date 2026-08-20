@@ -56,16 +56,17 @@ def _settings(mode: str):
 async def test_readiness_separates_preview_legal_gate_and_redis(
     monkeypatch: pytest.MonkeyPatch, mode: str, expected: str
 ) -> None:
-    import backend.config
-    import backend.core.retrieval
     import backend.history.store
-    import backend.memory.session_store
     import scripts.canonical_corpus
 
-    monkeypatch.setattr(backend.config, "get_settings", lambda: _settings(mode))
+    import epr_agent.config
+    import epr_agent.infra.session_store
+    import epr_agent.retrieval.retrieval
+
+    monkeypatch.setattr(epr_agent.config, "get_settings", lambda: _settings(mode))
     monkeypatch.setattr(backend.history.store, "_store", _async_value(_Store()))
-    monkeypatch.setattr(backend.memory.session_store, "get_redis", _async_value(_Redis()))
-    monkeypatch.setattr(backend.core.retrieval, "_get_qdrant_client", lambda: _Qdrant())
+    monkeypatch.setattr(epr_agent.infra.session_store, "get_redis", _async_value(_Redis()))
+    monkeypatch.setattr(epr_agent.retrieval.retrieval, "_get_qdrant_client", lambda: _Qdrant())
     monkeypatch.setattr(scripts.canonical_corpus, "corpus_sha256", lambda **_kwargs: "sha-test")
     monkeypatch.setattr(scripts.canonical_corpus, "corpus_readiness_audit", lambda **_kwargs: {
         "source_errors": [],

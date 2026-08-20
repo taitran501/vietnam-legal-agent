@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from backend.config import Settings, validate_production_settings
+
+from epr_agent.config import Settings, validate_production_settings
 
 
 def _production_settings(**overrides: object) -> Settings:

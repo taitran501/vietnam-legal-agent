@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import backend.config
-import backend.core.retrieval
 import pytest
 
+import epr_agent.config
+import epr_agent.retrieval.retrieval
 from epr_agent.domain.models import DocumentRecord
 from epr_agent.retrieval import universal_retriever as universal_module
 from epr_agent.tools.retrieval import QdrantLegalRetrievalGateway, StaticRetrievalGateway
@@ -27,7 +27,7 @@ async def test_legal_gateway_has_no_faq_surface() -> None:
 @pytest.mark.asyncio
 async def test_universal_retrieval_is_not_an_implicit_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        backend.config,
+        epr_agent.config,
         "get_settings",
         lambda: SimpleNamespace(
             enable_universal_retrieval=False,
@@ -39,7 +39,7 @@ async def test_universal_retrieval_is_not_an_implicit_fallback(monkeypatch: pyte
     async def _empty_retrieval(*_args, **_kwargs):
         return []
 
-    monkeypatch.setattr(backend.core.retrieval, "retrieve_legal_async", _empty_retrieval)
+    monkeypatch.setattr(epr_agent.retrieval.retrieval, "retrieve_legal_async", _empty_retrieval)
 
     class _UniversalPreview:
         is_available = True
