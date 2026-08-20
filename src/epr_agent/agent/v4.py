@@ -746,7 +746,7 @@ class V4WorkflowRuntime(WorkflowRuntime):
                 route=route,
                 outcome=WorkflowOutcome.OUT_OF_SCOPE,
                 termination=TerminationReason.OUT_OF_SCOPE,
-                answer="Tôi hiện chỉ hỗ trợ tra cứu và xử lý các vấn đề trong kho pháp luật EPR đã đăng ký.",
+                answer="Tôi chỉ hỗ trợ tra cứu và xử lý các vấn đề pháp luật Việt Nam nằm trong kho văn bản đã đăng ký.",
                 source_scope="outside_registered_corpus",
                 reason_code="outside_registered_corpus",
             )

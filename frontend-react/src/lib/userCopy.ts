@@ -45,7 +45,7 @@ export const factLabels: Record<string, string> = {
   material: 'vật liệu chính',
   activity_scope: 'phạm vi hoạt động',
   object_kind: 'loại đối tượng',
-  product_group: 'nhóm sản phẩm EPR',
+  product_group: 'nhóm sản phẩm/bao bì',
   packaged_goods_category: 'nhóm hàng hóa được đóng gói',
   market_placement: 'phạm vi đưa ra thị trường',
   activity_purpose: 'mục đích hoạt động',
@@ -68,7 +68,7 @@ const fieldOptions: Record<string, Array<{ value: string; label: string }>> = {
 const fieldDisplayLabels: Record<string, string> = {
   business_role: 'Vai trò doanh nghiệp',
   object_kind: 'Loại đối tượng',
-  product_group: 'Nhóm sản phẩm EPR',
+  product_group: 'Nhóm sản phẩm/bao bì',
   packaged_goods_category: 'Nhóm hàng hóa được đóng gói',
   material: 'Vật liệu hoặc quy cách',
   market_placement: 'Phạm vi đưa ra thị trường',
@@ -137,7 +137,7 @@ export function caseFormErrorMessage(error: unknown): string {
 }
 
 export const safeStopCopy: Record<string, { title: string; message: string }> = {
-  out_of_scope: { title: 'Ngoài phạm vi hỗ trợ', message: 'Yêu cầu này không thuộc phạm vi pháp luật EPR mà trợ lý đang hỗ trợ.' },
+  out_of_scope: { title: 'Ngoài phạm vi hỗ trợ', message: 'Yêu cầu này không thuộc phạm vi pháp luật mà trợ lý đang hỗ trợ.' },
   insufficient_evidence: { title: 'Chưa đủ căn cứ để trả lời chắc chắn', message: 'Chưa tìm thấy căn cứ phù hợp đang có hiệu lực cho một hoặc nhiều vấn đề cần kiểm tra.' },
   missing_provision: { title: 'Chưa tìm thấy điều khoản phù hợp', message: 'Chưa tìm thấy điều khoản phù hợp đang có hiệu lực trong các văn bản hiện có.' },
   incomplete_issue_coverage: { title: 'Chưa đủ căn cứ cho toàn bộ vấn đề', message: 'Chưa tìm thấy căn cứ phù hợp đang có hiệu lực cho một hoặc nhiều vấn đề cần kiểm tra.' },

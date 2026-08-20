@@ -60,7 +60,8 @@ async def test_web_research_keeps_only_official_anchor_matching_results(monkeypa
     assert "Nguồn chính thức ngoài corpus" in answer
     call = _FakeTavilyClient.calls[0]
     assert call["include_domains"] == ["vanban.chinhphu.vn", "vbpl.vn"]
-    assert "EPR Việt Nam" in str(call["query"])
+    assert "Việt Nam văn bản pháp luật chính thức" in str(call["query"])
+    assert "EPR" not in str(call["query"])
 
 
 @pytest.mark.asyncio
