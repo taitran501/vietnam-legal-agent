@@ -80,6 +80,39 @@ class AgentRunConfig:
 ToolCallable = Callable[..., Awaitable[dict[str, Any]]]
 
 
+def _compact_observation_for_agent(tool_name: str, observation: dict[str, Any]) -> dict[str, Any]:
+    """Trim excessive text and verbose metadata from observations to preserve token budget."""
+    if not isinstance(observation, dict):
+        return observation
+
+    # For document retrieval, keep essential statutory identifiers and concise content excerpts
+    if "documents" in observation and isinstance(observation["documents"], list):
+        compacted_docs = []
+        for doc in observation["documents"][:4]:
+            if not isinstance(doc, dict):
+                continue
+            content = str(doc.get("content") or doc.get("page_content") or "")[:700]
+            meta = dict(doc.get("metadata") or {})
+            essential_meta = {
+                k: meta[k]
+                for k in ("Dieu", "Chuong", "Muc", "Document_Number", "Source_Title", "anchor")
+                if k in meta
+            }
+            compacted_docs.append({
+                "content": content,
+                "metadata": essential_meta,
+                "document_id": doc.get("document_id", ""),
+                "score": doc.get("score"),
+            })
+        return {
+            **{k: v for k, v in observation.items() if k != "documents"},
+            "documents": compacted_docs,
+            "total_found": len(observation["documents"]),
+        }
+
+    return observation
+
+
 class EprAgentRunner:
     """Autonomous ReAct runner for supported Vietnamese legal analysis."""
 
@@ -176,6 +209,9 @@ class EprAgentRunner:
             # ── 1. REASON: Call LLM to deliberate and choose action ──
             try:
                 response = await self._llm.ainvoke(messages)
+            except asyncio.CancelledError:
+                logger.info("Agent loop LLM call cancelled by client at step %d", step)
+                raise
             except Exception as exc:  # noqa: BLE001
                 logger.error("LLM call failed at step %d: %s", step, exc)
                 yield {
@@ -302,14 +338,17 @@ class EprAgentRunner:
                     }
                     return
 
+                # Compact observation for message scratchpad to avoid token bloat
+                compacted_obs = _compact_observation_for_agent(tool_name, observation)
+
                 # Append tool observation to message scratchpad
                 messages.append({
                     "role": "tool",
                     "tool_call_id": call_id,
                     "content": (
-                        json.dumps(observation, ensure_ascii=False)
-                        if isinstance(observation, dict)
-                        else str(observation)
+                        json.dumps(compacted_obs, ensure_ascii=False)
+                        if isinstance(compacted_obs, dict)
+                        else str(compacted_obs)
                     ),
                 })
 
@@ -375,6 +414,8 @@ class EprAgentRunner:
         try:
             result = await asyncio.wait_for(tool_func(**args), timeout=self.config.tool_timeout_s)
             return result if isinstance(result, dict) else {"result": result, "ok": True}
+        except asyncio.CancelledError:
+            raise
         except TimeoutError:
             return {"error": f"Tool '{name}' timed out after {self.config.tool_timeout_s}s", "ok": False}
         except Exception as exc:  # noqa: BLE001

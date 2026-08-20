@@ -16,6 +16,8 @@ from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Tex
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from epr_agent.infra.pii_anonymizer import anonymize_payload
+
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
@@ -967,7 +969,8 @@ class PersistenceStore:
     async def save_case(self, user_id: str, conversation_id: str, state: dict[str, Any]) -> dict[str, Any]:
         await self.ensure_conversation(user_id, conversation_id, state.get("last_query") or state.get("query"))
         now = _utcnow()
-        facts = {key: value for key, value in dict(state.get("facts") or {}).items() if value}
+        raw_facts = {key: value for key, value in dict(state.get("facts") or {}).items() if value}
+        facts = anonymize_payload(raw_facts)
         missing = list(state.get("missing_facts") or [])
         status = str(state.get("status") or ("ready" if not missing else "collecting"))
         async with self.sessions() as session:
