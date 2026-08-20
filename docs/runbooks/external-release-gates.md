@@ -12,6 +12,11 @@ domain authority must set and review the approved corpus status and effective
 as-of date before enabling production legal capability. Preview mode is the
 safe default while that field is pending.
 
+The same rule applies to the optional universal corpus: the download lock and
+SQLite row-count checks establish reproducibility, not legal authority. It is
+disabled by default and must not be enabled in production before a separate
+source review is recorded.
+
 ## Production runtime
 
 Run the deployment-specific readiness and smoke checks against the actual

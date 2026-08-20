@@ -1,15 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Drawer } from '@/components/UI/Drawer';
 
-interface TraceEvent {
-  sequence: number;
-  node: string;
+interface TraceSpan {
+  span_id: string;
+  name: string;
   status: string;
-  reason_code?: string;
-  tool_name?: string;
   duration_ms?: number;
-  error_code?: string;
-  payload?: Record<string, unknown>;
+  error_message?: string;
+  attributes?: Record<string, unknown>;
 }
 
 interface RetrievalCandidate {
@@ -25,12 +23,17 @@ interface RetrievalCandidate {
 
 interface Trace {
   trace_id: string;
-  action_sequence: string[];
-  termination_reason?: string;
-  duration_ms?: number;
-  source?: string;
-  route?: string;
-  events: TraceEvent[];
+  conversation_id: string;
+  user_id: string;
+  query: string;
+  total_duration_ms?: number;
+  spans: TraceSpan[];
+}
+
+interface TraceResponse {
+  status: string;
+  waterfall?: Trace;
+  message?: string;
 }
 
 const enabled = import.meta.env.VITE_ENABLE_TRACE_DEBUG === 'true';
@@ -43,10 +46,12 @@ export function TraceDrawer({ traceId }: { traceId?: string }) {
   useEffect(() => {
     if (!open || !traceId || trace) return;
     const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
-    void fetch(`${baseUrl}/api/v1/debug/traces/${encodeURIComponent(traceId)}`)
+    void fetch(`${baseUrl}/api/v1/traces/${encodeURIComponent(traceId)}`)
       .then(async (response) => {
         if (!response.ok) throw new Error(response.status === 404 ? 'Trace debug chưa được bật.' : 'Không tải được trace.');
-        return response.json() as Promise<Trace>;
+        const payload = (await response.json()) as TraceResponse;
+        if (!payload.waterfall) throw new Error(payload.message || 'Không tải được trace.');
+        return payload.waterfall;
       })
       .then(setTrace)
       .catch((reason: Error) => setError(reason.message));
@@ -54,8 +59,8 @@ export function TraceDrawer({ traceId }: { traceId?: string }) {
 
   if (!enabled || !traceId) return null;
   const copy = () => void navigator.clipboard?.writeText(traceId);
-  const candidatesFor = (event: TraceEvent): RetrievalCandidate[] => {
-    const candidates = event.payload?.candidates;
+  const candidatesFor = (span: TraceSpan): RetrievalCandidate[] => {
+    const candidates = span.attributes?.candidates;
     return Array.isArray(candidates) ? candidates as RetrievalCandidate[] : [];
   };
   return (
@@ -68,14 +73,14 @@ export function TraceDrawer({ traceId }: { traceId?: string }) {
         {error && <p className="text-sm text-[#ba1a1a]">{error}</p>}
         {!error && !trace && <p className="text-sm text-[#667085]">Đang tải trace…</p>}
         {trace && <div className="space-y-4 text-sm text-[#3e4947]">
-          <p><strong>Kết thúc:</strong> {trace.termination_reason || '—'} · {Math.round(trace.duration_ms || 0)} ms</p>
-          <p><strong>Route:</strong> {trace.route || '—'} · <strong>Nguồn:</strong> {trace.source || '—'}</p>
+          <p><strong>Truy vấn:</strong> {trace.query || '—'}</p>
+          <p><strong>Thời lượng:</strong> {Math.round(trace.total_duration_ms || 0)} ms · <strong>Số span:</strong> {trace.spans.length}</p>
           <ol className="space-y-3">
-            {trace.events.map((event) => {
-              const candidates = candidatesFor(event);
-              return <li className="rounded-md border border-[#d9e1df] p-3" key={`${event.sequence}-${event.node}`}>
-                <p className="font-semibold">{event.sequence}. {event.node}</p>
-                <p className="mt-1 text-xs text-[#667085]">{event.reason_code || event.status}{event.tool_name ? ` · ${event.tool_name}` : ''}{event.duration_ms != null ? ` · ${Math.round(event.duration_ms)} ms` : ''}</p>
+            {trace.spans.map((span, index) => {
+              const candidates = candidatesFor(span);
+              return <li className="rounded-md border border-[#d9e1df] p-3" key={span.span_id}>
+                <p className="font-semibold">{index + 1}. {span.name}</p>
+                <p className="mt-1 text-xs text-[#667085]">{span.status}{span.duration_ms != null ? ` · ${Math.round(span.duration_ms)} ms` : ''}{span.error_message ? ` · ${span.error_message}` : ''}</p>
                 {candidates.length > 0 && (
                   <div className="mt-3 overflow-x-auto">
                     <p className="mb-1 text-xs font-semibold text-[#3e4947]">Ứng viên truy xuất</p>

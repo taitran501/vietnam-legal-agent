@@ -30,6 +30,7 @@ def test_valid_production_settings_pass() -> None:
         ("require_auth", False, "REQUIRE_AUTH"),
         ("rate_limit_fail_open", True, "RATE_LIMIT_FAIL_OPEN"),
         ("enable_trace_debug_api", True, "ENABLE_TRACE_DEBUG_API"),
+        ("enable_universal_retrieval", True, "ENABLE_UNIVERSAL_RETRIEVAL"),
         ("database_url", None, "DATABASE_URL"),
         ("database_url", "sqlite:///tmp/local.db", "DATABASE_URL"),
         ("openai_api_key", "", "OPENAI_API_KEY"),

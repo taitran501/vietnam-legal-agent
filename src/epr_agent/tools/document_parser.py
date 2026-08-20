@@ -55,7 +55,7 @@ class DocumentParseResult(BaseModel):
 def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> tuple[str, int, list[dict[str, Any]]]:
     """Extract text and per-page content from PDF bytes using PyMuPDF (fitz)."""
     try:
-        import fitz  # type: ignore[import-not-found]  # PyMuPDF is an optional runtime dependency
+        import fitz  # type: ignore  # PyMuPDF ships without CI stubs in some environments
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         pages_content = []
         full_text_list = []

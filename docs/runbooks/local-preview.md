@@ -29,6 +29,11 @@ generation or indexing is required. Compose has no database-password fallback.
 The `REQUIRE_AUTH=false` override above is local-only and must not be reused in
 staging or production.
 
+CI uses `docker-compose.ci-smoke.yml` to boot this same topology with a
+deterministic, successful indexer placeholder. It verifies the gateway, backend
+health, preview readiness, and frontend response without requiring a paid
+provider or treating preview as legal approval.
+
 For deterministic browser work without paid providers, use the local test
 backend and Vite app:
 

@@ -170,11 +170,16 @@ class TraceSession:
 
 
 class TraceStore:
-    """In-memory & SQLite persistent store for trace metrics and telemetry inspection."""
+    """Bounded in-memory compatibility store for local trace inspection.
 
-    def __init__(self, db_path: Path | None = None) -> None:
+    Pipeline V4 persists its redacted trace contract through the unified SQL
+    repository; this store remains for legacy callers and deterministic tests.
+    """
+
+    def __init__(self, db_path: Path | None = None, max_traces: int = 1000) -> None:
         self._memory_traces: dict[str, TraceSession] = {}
         self.db_path = db_path or Path("data/chat_history.sqlite3")
+        self.max_traces = max(1, max_traces)
 
     def create_trace(self, trace_id: str, conversation_id: str, user_id: str, query: str) -> TraceSession:
         trace = TraceSession(
@@ -184,17 +189,28 @@ class TraceStore:
             query=query,
         )
         self._memory_traces[trace_id] = trace
+        while len(self._memory_traces) > self.max_traces:
+            oldest_trace_id = next(iter(self._memory_traces))
+            self._memory_traces.pop(oldest_trace_id, None)
         return trace
 
     def get_trace(self, trace_id: str) -> TraceSession | None:
         return self._memory_traces.get(trace_id)
 
-    def list_recent_traces(self, limit: int = 20) -> list[dict[str, Any]]:
-        traces = list(self._memory_traces.values())[-limit:]
+    def list_recent_traces(self, limit: int = 20, owner_id: str | None = None) -> list[dict[str, Any]]:
+        traces = [
+            trace
+            for trace in self._memory_traces.values()
+            if owner_id is None or trace.user_id == owner_id
+        ][-max(1, min(limit, 100)):]
         return [t.to_summary() for t in reversed(traces)]
 
-    def get_aggregate_metrics(self) -> dict[str, Any]:
-        traces = list(self._memory_traces.values())
+    def get_aggregate_metrics(self, owner_id: str | None = None) -> dict[str, Any]:
+        traces = [
+            trace
+            for trace in self._memory_traces.values()
+            if owner_id is None or trace.user_id == owner_id
+        ]
         if not traces:
             return {
                 "total_turns": 0,

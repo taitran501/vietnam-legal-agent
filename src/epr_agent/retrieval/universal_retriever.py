@@ -10,11 +10,13 @@ import logging
 import os
 import re
 import sqlite3
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_DB_PATH = os.path.join(os.getcwd(), "data", "corpus", "universal_legal", "universal_legal.db")
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "corpus" / "universal_legal" / "universal_legal.db"
 
 # Conversational stop words in Vietnamese QA (colloquial pronouns, particles, fillers)
 LEGAL_STOP_WORDS = {
@@ -129,13 +131,27 @@ SYNONYM_EXPANSIONS: dict[str, list[str]] = {
 
 
 class UniversalLegalRetriever:
-    def __init__(self, db_path: str = DEFAULT_DB_PATH):
-        self.db_path = db_path
-        self._available = os.path.exists(self.db_path)
+    def __init__(self, db_path: str | Path | None = None):
+        configured_path = db_path or os.getenv("UNIVERSAL_CORPUS_DB_PATH") or DEFAULT_DB_PATH
+        self.db_path = Path(configured_path)
 
     @property
     def is_available(self) -> bool:
-        return self._available and os.path.exists(self.db_path)
+        if not self.db_path.is_file():
+            return False
+        connection: sqlite3.Connection | None = None
+        try:
+            connection = sqlite3.connect(f"file:{self.db_path.resolve().as_posix()}?mode=ro", uri=True)
+            tables = {
+                str(row[0])
+                for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+            }
+            return {"legal_articles", "legal_articles_fts"}.issubset(tables)
+        except sqlite3.Error:
+            return False
+        finally:
+            if connection is not None:
+                connection.close()
 
     def _extract_components(self, query: str) -> tuple[list[str], list[str], list[str]]:
         q_lower = query.lower()

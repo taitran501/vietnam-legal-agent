@@ -48,6 +48,7 @@ dev = [
 ]
 observability = ["langsmith>=0.1,<1.0"]
 cross-encoder = ["sentence-transformers>=3.0.0"]
+universal = ["pyarrow>=17,<26"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -34,6 +34,12 @@ The current repository deliberately records technical amendment readiness
 without self-asserting legal approval. If approval is absent, leave runtime in
 `production` and expect `legal_chat` and `case_workflow` to be blocked.
 
+The optional universal Pháp điển SQLite corpus follows a separate boundary. Its
+content lock makes a build reproducible, but it is not automatically included
+in the approved production manifest. Keep `ENABLE_UNIVERSAL_RETRIEVAL=false`
+in production until a domain reviewer approves that source and its effective
+date; production configuration rejects the flag while that gate is pending.
+
 ## Build and promote Qdrant
 
 The index job derives an immutable collection from the corpus hash, audits all

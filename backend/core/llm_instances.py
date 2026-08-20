@@ -13,6 +13,7 @@ Models:
   - embeddings      : text-embedding-3-small
 """
 
+import importlib
 from functools import lru_cache
 from typing import Any
 
@@ -73,7 +74,7 @@ class LocalSentenceTransformerEmbeddings(Embeddings):
     def _get_model(self):
         if self._model is None:
             try:
-                import torch
+                torch: Any = importlib.import_module("torch")
                 from sentence_transformers import SentenceTransformer
                 dev = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
                 self._model = SentenceTransformer(self.model_name, device=dev)

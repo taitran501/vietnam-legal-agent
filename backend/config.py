@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     chunking_profile: str = Field(default="legal-structure-v2")
     auto_index_law: bool = Field(default=False)
     enable_trace_debug_api: bool = Field(default=False)
+    enable_universal_retrieval: bool = Field(
+        default=False,
+        description="Allow the content-locked universal corpus as an explicit preview supplement; never implicit in production.",
+    )
     agent_pipeline_version: str = Field(
         default="pipeline-v4",
         description="Server-selected workflow runtime: pipeline-v3 | pipeline-v4 | pipeline-agent. Clients never choose a pipeline version.",
@@ -352,6 +356,8 @@ def validate_production_settings(settings: Settings) -> None:
         errors.append("RATE_LIMIT_FAIL_OPEN must be false")
     if settings.enable_trace_debug_api:
         errors.append("ENABLE_TRACE_DEBUG_API must be false")
+    if settings.enable_universal_retrieval:
+        errors.append("ENABLE_UNIVERSAL_RETRIEVAL must be false until the universal corpus is legally approved")
     database_url = str(settings.database_url or "")
     if not database_url.startswith(("postgresql://", "postgres://", "postgresql+asyncpg://")):
         errors.append("DATABASE_URL must point to PostgreSQL")

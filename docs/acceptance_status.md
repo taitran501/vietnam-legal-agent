@@ -1,7 +1,7 @@
 # Current acceptance status
 
-**Checked:** 2026-08-18
-**Workspace:** `agent/legal-repo-cleanup`
+**Checked:** 2026-08-20
+**Workspace:** `fix/ci-contract-regressions` in `vietnam-legal-agent`
 
 This file records checks against the current checkout. It is not a replacement
 for the commit-scoped historical reports, and production/legal approval remains
@@ -14,14 +14,16 @@ The following checks were run in the repository acceptance environment
 
 | Check | Result |
 | --- | --- |
-| `pytest -q` | **455 passed, 3 skipped** (458 collected) |
+| `pytest -q` | **493 passed, 3 skipped** (496 collected) |
 | `python -m tests.eval.run_eval --suite all` | **exit 0**; deterministic route matrix 60/60 |
 | `ruff check src/epr_agent backend scripts tests` | **pass** |
-| `mypy src/epr_agent backend` | **pass**, 68 source files |
+| `mypy src/epr_agent backend` | **pass**, 76 source files |
 | `python -m scripts.sync_corpus_metadata --check` | **pass**, no issues; corpus SHA `9c7fe73bd6215a1e794432815d34a8a3cf8671dab7f1581d9c3d0abdf2756a45` |
 | `git diff --check` | **pass**; only Git line-ending warnings |
+| `docker compose ... config --quiet` | **pass** for the base stack plus deterministic CI smoke overlay |
+| Universal corpus verification | **pass** for the local content-locked artifact; generated DB remains ignored |
 | Frontend Vitest | **42 passed** in 14 test files |
-| Frontend lint | **pass**; 3 existing Fast Refresh warnings, no errors |
+| Frontend lint | **pass**; existing Fast Refresh warnings, no errors |
 | Frontend production build | **pass**; Vite reports a non-blocking >500 kB bundle warning |
 | Playwright browser acceptance | **27 passed** |
 
@@ -35,6 +37,9 @@ interpreting a test result.
 - The backend CI path now runs corpus synchronization, unit/integration tests,
   deterministic evaluation, Ruff, and the complete backend mypy boundary.
 - CI also installs Chromium and runs the browser journey suite.
+- CI now runs on pull requests, all branch pushes, and manual dispatch; it
+  also runs `pip check` and a real Docker Compose gateway/backend/dependency
+  smoke overlay in preview mode.
 - The public product language is now **Vietnam Legal Agent**; EPR remains a
   supported rule-pack and corpus domain rather than the product identity.
 - The compatibility package namespace (`epr_agent`) and EPR corpus/rule-pack
@@ -50,6 +55,12 @@ interpreting a test result.
   opinion or compliance filing.
 - Production startup now fails fast on disabled auth, fail-open rate limiting,
   trace-debug exposure, local persistence, missing providers, or unsafe CORS.
+- Trace inspection is explicitly gated, owner-scoped for quality readers,
+  operations-scoped for cross-owner access, bounded in memory, and connected to
+  the durable redacted run store used by Pipeline V4.
+- Universal-corpus augmentation is disabled by default and rejected in
+  production until that separate source receives legal approval; its inputs and
+  generated output are content-locked for reproducible preview builds.
 - Backend/frontend/gateway images run unprivileged; Compose requires a database
   password and no longer pins services to non-scalable container names.
 - Nginx restricts `/metrics`, forwards the HTTPS signal, and targets the
@@ -66,6 +77,9 @@ These are deliberate release gates, not claims that local tests can satisfy:
 
 - the legal owner has approved the corpus, rule pack, amendment map, and an
   effective as-of date;
+- the pushed commit has passed the GitHub Actions Compose smoke job; the local
+  check above validates configuration but does not replace the remote container
+  run;
 - a production deployment has healthy PostgreSQL/Qdrant/Redis/OpenAI/OIDC
   integrations, real authentication, monitoring, backups, and measured p95
   latency;
