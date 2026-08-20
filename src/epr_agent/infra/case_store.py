@@ -59,7 +59,7 @@ class PostgresCaseStore:
 
 
 def default_case_store() -> SQLiteCaseStore | PostgresCaseStore:
-    from backend.config import get_settings
+    from epr_agent.config import get_settings
 
     settings = get_settings()
     database_url = getattr(settings, "database_url", None)

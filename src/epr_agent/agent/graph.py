@@ -72,8 +72,9 @@ class WorkflowDependencies:
 def default_dependencies() -> WorkflowDependencies:
     """Build production adapters lazily; importing the package needs no secrets."""
 
-    from backend.config import get_settings
     from scripts.canonical_corpus import corpus_sha256
+
+    from epr_agent.config import get_settings
 
     settings = get_settings()
     # Pipeline V4 is allowed to operate only on a corpus that includes the

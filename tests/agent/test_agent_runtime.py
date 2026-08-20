@@ -204,7 +204,7 @@ async def test_agent_runtime_regenerate_empty_query_recovery(agent_deps):
 
 @pytest.mark.asyncio
 async def test_get_default_runtime_feature_flag(monkeypatch):
-    from backend.config import get_settings
+    from epr_agent.config import get_settings
     get_default_runtime.cache_clear()
     settings = get_settings()
     monkeypatch.setattr(settings, "agent_pipeline_version", "pipeline-agent")

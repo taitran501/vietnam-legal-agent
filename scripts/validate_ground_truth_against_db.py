@@ -16,8 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-from backend.config import get_settings
-from backend.core.retrieval import close_qdrant_client, get_qdrant_client
+from epr_agent.config import get_settings
+from epr_agent.retrieval.retrieval import close_qdrant_client, get_qdrant_client
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger("db_validator")

@@ -6,7 +6,7 @@ Run from the repository root (vietnam-legal-agent/):
     python -m scripts.eda_law --model gpt-4o
     python -m scripts.eda_law --bins 256 512 1024 2048 4096
 
-Token counts use tiktoken (same stack as backend/core/retrieval.py).
+Token counts use tiktoken (same stack as epr_agent/retrieval/retrieval.py).
 Default model is text-embedding-3-small so token sizes align with embedding limits.
 """
 

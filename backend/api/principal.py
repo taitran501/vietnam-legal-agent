@@ -18,7 +18,7 @@ from typing import Any
 from urllib.request import Request as URLRequest
 from urllib.request import urlopen
 
-from backend.config import get_settings
+from epr_agent.config import get_settings
 
 logger = logging.getLogger(__name__)
 

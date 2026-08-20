@@ -12,7 +12,7 @@ What it does
 4. Embed chunks with the configured embedding profile
 5. Upsert a versioned, citation-ready Qdrant collection
 
-The resulting collection is used at runtime by backend/core/retrieval.py.
+The resulting collection is used at runtime by epr_agent/retrieval/retrieval.py.
 """
 
 from __future__ import annotations
@@ -42,11 +42,11 @@ from dotenv import load_dotenv
 if __name__ == "__main__":
     load_dotenv(ROOT / ".env")
 
-from backend.config import get_settings
-from backend.core.llm_instances import get_embeddings, get_llm_fast
 from scripts.canonical_corpus import canonical_articles, canonical_chunks
 
+from epr_agent.config import get_settings
 from epr_agent.domain.legal import EMBEDDING_DIMENSIONS, normalise_embedding_text
+from epr_agent.infra.llm_instances import get_embeddings, get_llm_fast
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

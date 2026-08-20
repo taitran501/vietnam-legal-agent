@@ -105,7 +105,7 @@ def _scroll_all_points(client: QdrantClient, collection: str) -> list[Any]:
 def _run_retrieval_sanity_check(project_root: Path) -> dict[str, Any]:
     # Lazy import so core audit does not depend on OpenAI access.
     sys.path.insert(0, str(project_root))
-    from backend.core.retrieval import retrieve_legal_async  # noqa: WPS433
+    from epr_agent.retrieval.retrieval import retrieve_legal_async  # noqa: WPS433
 
     testcases = [
         {

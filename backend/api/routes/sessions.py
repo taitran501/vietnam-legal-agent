@@ -16,7 +16,6 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
-from backend.api import metrics
 from backend.api.principal import principal_from_request_state
 from backend.history import (
     archive_conversation as archive_conversation_persistent,
@@ -52,6 +51,7 @@ from epr_agent.domain.epr_rules import CaseFormResolver
 from epr_agent.domain.models import TaskType
 from epr_agent.domain.tasks import missing_facts
 from epr_agent.domain.v4 import CaseStateV4, FactConfirmationStatus, FactValue
+from epr_agent.infra import metrics
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

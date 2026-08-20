@@ -18,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from backend.core.retrieval import retrieve_legal
+from epr_agent.retrieval.retrieval import retrieve_legal
 
 DEFAULT_QUERIES = [
     "giờ tui nhập khẩu hàng hóa có chứa chất ô nhiễm khó phân hủy thì có cần làm thủ tục gì trước khi bán ra thị trường k",

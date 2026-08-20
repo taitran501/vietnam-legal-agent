@@ -22,10 +22,10 @@ from typing import Any
 from urllib.parse import urlparse
 
 from backend.api.principal import oidc_user_id
-from backend.config import get_settings
 from backend.history.store import _database_url
 from sqlalchemy import select, update
 
+from epr_agent.config import get_settings
 from epr_agent.infra.persistence import (
     AgentRunRecord,
     CaseStateRecord,

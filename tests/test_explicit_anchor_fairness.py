@@ -1,5 +1,6 @@
-from backend.core.ensemble_retrieval import _EnsembleRetriever, _round_robin_anchor_ids
 from langchain_core.documents import Document
+
+from epr_agent.retrieval.ensemble_retrieval import _EnsembleRetriever, _round_robin_anchor_ids
 
 
 def test_explicit_anchor_lookup_reserves_capacity_for_every_named_article():

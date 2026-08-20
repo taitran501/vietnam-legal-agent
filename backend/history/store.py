@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from backend.config import get_settings
+from epr_agent.config import get_settings
 from epr_agent.infra.persistence import get_persistence_store, sqlite_database_url
 
 

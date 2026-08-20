@@ -296,7 +296,7 @@ class WorkflowRuntime:
         started_at = time.perf_counter()
         started_wall = datetime.now(UTC)
         state = await run_workflow(deps=self.deps, compiled_workflow=self._compiled_workflow, **kwargs)
-        from backend.config import get_settings
+        from epr_agent.config import get_settings
 
         state["preview"] = get_settings().corpus_runtime_mode == "preview"
         state["run_started_at"] = started_wall.isoformat()
@@ -312,7 +312,7 @@ class WorkflowRuntime:
         trace_id = str(kwargs.get("trace_id") or "")
         try:
             state = await create_initial_state(deps=self.deps, **kwargs)
-            from backend.config import get_settings
+            from epr_agent.config import get_settings
 
             state["preview"] = get_settings().corpus_runtime_mode == "preview"
             trace_id = state.get("trace_id", "")
@@ -432,8 +432,7 @@ class AgentWorkflowRuntime:
 
         operation = str(kwargs.get("operation") or "message")
 
-        from backend.config import get_settings
-
+        from epr_agent.config import get_settings
         from epr_agent.tracing.trace_context import get_trace_store
 
         preview = get_settings().corpus_runtime_mode == "preview"
@@ -719,7 +718,7 @@ class AgentWorkflowRuntime:
             trace_id=trace_id,
         )
 
-        from backend.config import get_settings
+        from epr_agent.config import get_settings
 
         state: AgentState = {
             "trace_id": trace_id,
@@ -751,7 +750,7 @@ class AgentWorkflowRuntime:
 def get_default_runtime() -> WorkflowRuntime:
     # Runtime selection is server-owned. The public request schema has no
     # pipeline field, so a browser cannot force an experimental workflow.
-    from backend.config import get_settings
+    from epr_agent.config import get_settings
 
     version = get_settings().agent_pipeline_version
     if version == "pipeline-agent":

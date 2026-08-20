@@ -1,7 +1,7 @@
 """V3 legal retrieval boundary.
 
 This module owns Qdrant connection/vector-store lifecycle only.  Every runtime
-legal query is delegated to :mod:`backend.core.ensemble_retrieval`, which is
+legal query is delegated to :mod:`epr_agent.retrieval.ensemble_retrieval`, which is
 the one canonical dense + BM25 + RRF + heuristic-rerank implementation.
 Legacy SelfQuery, LLM query construction, counting-answer synthesis, and a
 second reranking path were deliberately removed so they cannot bypass V3
@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 import tiktoken
 from langchain_core.documents import Document
 
-from backend.config import get_settings
+from epr_agent.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +106,7 @@ def _get_law_vectorstore() -> QdrantVectorStore:
 
     from langchain_qdrant import QdrantVectorStore
 
-    from backend.core.llm_instances import get_embeddings
+    from epr_agent.infra.llm_instances import get_embeddings
 
     settings = get_settings()
     return QdrantVectorStore(
@@ -152,7 +152,7 @@ def retrieve_legal(
 ) -> list[Document]:
     """Run the sole V3 hybrid legal retrieval implementation."""
 
-    from backend.core.ensemble_retrieval import retrieve_legal_ensemble
+    from epr_agent.retrieval.ensemble_retrieval import retrieve_legal_ensemble
 
     return retrieve_legal_ensemble(
         query,

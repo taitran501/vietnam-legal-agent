@@ -48,8 +48,8 @@ class QdrantLegalRetrievalGateway:
     """Call the versioned V3 hybrid retriever without leaking Qdrant objects upward."""
 
     async def legal(self, query: str | RetrievalRequest) -> list[DocumentRecord]:
-        from backend.config import get_settings
-        from backend.core.retrieval import retrieve_legal_async
+        from epr_agent.config import get_settings
+        from epr_agent.retrieval.retrieval import retrieve_legal_async
 
         request = query if isinstance(query, RetrievalRequest) else None
         documents = []

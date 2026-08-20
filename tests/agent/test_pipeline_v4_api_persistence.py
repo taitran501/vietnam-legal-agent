@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 from backend.api.schemas import ChatRequest
-from backend.config import get_settings
 from pydantic import ValidationError
 
 from epr_agent.agent.graph import default_dependencies
+from epr_agent.config import get_settings
 from epr_agent.infra.persistence import PersistenceStore, sqlite_database_url
 
 

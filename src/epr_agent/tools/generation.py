@@ -133,10 +133,48 @@ def _as_langchain_documents(documents: list[DocumentRecord]) -> list[Any]:
     return [Document(page_content=doc.content, metadata=doc.metadata) for doc in documents]
 
 
+def chitchat_response(question: str, chat_history: str) -> str:
+    """Non-streaming chitchat (legacy, kept for backward compatibility)."""
+
+    from langchain_core.output_parsers import StrOutputParser
+    from langchain_core.prompts import ChatPromptTemplate
+
+    from epr_agent.infra.llm_instances import get_llm_fast
+
+    _chitchat_system = """Bạn là **Trợ lý Pháp luật Việt Nam** — hệ thống tư vấn và tra cứu pháp luật thông minh, toàn diện.
+
+PHẠM VI NĂNG LỰC & CHỦ ĐỀ CHUYÊN MÔN:
+Bạn hỗ trợ tra cứu, đối chiếu căn cứ và hướng dẫn thủ tục trên toàn bộ hệ thống Pháp luật Việt Nam:
+- 🏡 **Đất đai & Bất động sản**: Cấp sổ đỏ/sổ hồng, đất khai hoang, tranh chấp, chuyển nhượng (Luật Đất đai 2024).
+- 💼 **Lao động & Việc làm**: Hợp đồng lao động, thử việc, tiền lương, kỷ luật, chế độ BHXH/BHYT (Bộ luật Lao động 2019, Luật BHXH).
+- ⚖️ **Dân sự & Hợp đồng**: Đặt cọc thuê nhà/mua bán, bồi thường, hợp đồng dân sự, thừa kế (Bộ luật Dân sự 2015).
+- 🏢 **Doanh nghiệp & Thương mại**: Thành lập công ty, hộ kinh doanh, cổ phần, phạt hợp đồng (Luật Doanh nghiệp, Luật Thương mại).
+- 💰 **Thuế & Tài chính**: Thuế TNCN, giảm trừ gia cảnh, thuế TNDN, thuế GTGT (Luật Quản lý thuế, Luật Thuế TNCN).
+- 🌿 **Môi trường & Tuân thủ EPR**: Trách nhiệm tái chế bao bì/sản phẩm, đóng góp Quỹ BVMT, Nghị định 08/2022/NĐ-CP, Luật BVMT 2020.
+- 🚗 **Giao thông, Hành chính, PCCC, An toàn thực phẩm**: Quy chuẩn VSATP, phòng cháy chữa cháy, khiếu nại quyết định hành chính.
+
+QUY TẮC PHẢN HỒI:
+1. Khi người dùng hỏi "bạn là ai / bạn có thể làm gì / bạn hỗ trợ những gì" → giới thiệu rõ bản thân là **Trợ lý Pháp luật Việt Nam**, tóm tắt các lĩnh vực chính bạn hỗ trợ và gợi ý 2-3 câu hỏi mẫu thực tế.
+2. Với câu hỏi chào hỏi / cảm ơn / tạm biệt → phản hồi thân thiện, lịch sự và sẵn sàng hỗ trợ giải đáp bất kỳ vướng mắc pháp luật nào.
+3. Với câu hỏi định hướng chung (ví dụ: "cái gì cần quan tâm nhất", "tôi nên bắt đầu từ đâu", "cần lưu ý gì", "hướng dẫn tôi") → Giải thích rằng vấn đề cần quan tâm hàng đầu tùy thuộc vào tư cách người hỏi (Cá nhân, Người lao động, Hộ kinh doanh hay Doanh nghiệp). Nêu ngắn gọn 2-3 điểm mấu chốt (ví dụ: Rà soát điều khoản hợp đồng & đặt cọc, Tuân thủ nghĩa vụ thuế & bảo hiểm lao động, hoặc Bảo đảm pháp lý tài sản/đất đai), sau đó chủ động mời người dùng chia sẻ cụ thể ngành nghề hoặc tình huống đang gặp phải.
+4. Luôn đọc kỹ ngữ cảnh lịch sử hội thoại trước khi phản hồi.
+5. Giọng điệu khách quan, chuẩn mực, dễ hiểu và tôn trọng người dân/doanh nghiệp.
+
+Lịch sử hội thoại:
+{chat_history}"""
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", _chitchat_system),
+        ("human", "{question}"),
+    ])
+    chain = prompt | get_llm_fast() | StrOutputParser()
+    return chain.invoke({
+        "question": question,
+        "chat_history": chat_history or "(không có hội thoại trước)",
+    })
+
+
 class EvidenceGenerationGateway:
     async def chitchat(self, query: str, history: list[dict[str, Any]]) -> str:
-        from backend.core.generation import chitchat_response
-
         history_text = "\n".join(
             f"{item.get('role', '')}: {item.get('content', '')}" for item in history[-6:]
         )
@@ -167,7 +205,7 @@ class EvidenceGenerationGateway:
         actual title/URL/snippet so the response can be checked structurally.
         """
 
-        from backend.config import get_settings
+        from epr_agent.config import get_settings
 
         settings = get_settings()
         key = (settings.tavily_api_key or "").strip()
@@ -193,7 +231,7 @@ class EvidenceGenerationGateway:
         try:
             results = await asyncio.to_thread(_search)
         except Exception:
-            from backend.api import metrics
+            from epr_agent.infra import metrics
 
             metrics.track_web_result_rejection("provider_error")
             raise
@@ -205,12 +243,12 @@ class EvidenceGenerationGateway:
                 str(result.get("content") or ""), settings.web_excerpt_max_chars
             )
             if not title or not url or not content:
-                from backend.api import metrics
+                from epr_agent.infra import metrics
 
                 metrics.track_web_result_rejection("invalid_or_untrusted_source")
                 continue
             if not _web_result_matches_query(query, title, content, url):
-                from backend.api import metrics
+                from epr_agent.infra import metrics
 
                 metrics.track_web_result_rejection("relevance_or_anchor_mismatch")
                 continue
@@ -237,7 +275,7 @@ class EvidenceGenerationGateway:
                 )
             )
         if not documents:
-            from backend.api import metrics
+            from epr_agent.infra import metrics
 
             metrics.track_web_result_rejection("no_accepted_results")
             return "", []
@@ -292,10 +330,11 @@ class EvidenceGenerationGateway:
         if not documents:
             return ""
 
-        from backend.config import get_settings
-        from backend.core.llm_instances import get_llm_smart
         from langchain_core.output_parsers import StrOutputParser
         from langchain_core.prompts import ChatPromptTemplate
+
+        from epr_agent.config import get_settings
+        from epr_agent.infra.llm_instances import get_llm_smart
 
         settings = get_settings()
         if not settings.openai_api_key or settings.openai_api_key.startswith("your-"):

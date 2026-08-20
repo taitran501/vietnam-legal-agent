@@ -154,7 +154,7 @@ async def evaluate_ragas_sample(
     pass_threshold: float = 0.80,
 ) -> RagasSampleResult:
     """Run comprehensive RAGAS evaluation on a single legal query-answer pair."""
-    from backend.core.llm_instances import get_llm_smart
+    from epr_agent.infra.llm_instances import get_llm_smart
 
     expected_anchors = expected_anchors or []
 

@@ -20,7 +20,7 @@ from typing import cast
 
 import redis.asyncio as aioredis
 
-from backend.config import get_settings
+from epr_agent.config import get_settings
 
 logger = logging.getLogger(__name__)
 

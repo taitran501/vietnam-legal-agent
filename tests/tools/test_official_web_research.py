@@ -28,7 +28,7 @@ async def test_web_research_keeps_only_official_anchor_matching_results(monkeypa
         web_official_domains="vanban.chinhphu.vn,vbpl.vn",
         web_excerpt_max_chars=220,
     )
-    monkeypatch.setattr("backend.config.get_settings", lambda: settings)
+    monkeypatch.setattr("epr_agent.config.get_settings", lambda: settings)
     monkeypatch.setitem(sys.modules, "tavily", SimpleNamespace(TavilyClient=_FakeTavilyClient))
     _FakeTavilyClient.calls.clear()
     _FakeTavilyClient.results = [
@@ -70,7 +70,7 @@ async def test_web_research_safe_empty_when_instrument_does_not_match(monkeypatc
         web_official_domains="vanban.chinhphu.vn,vbpl.vn",
         web_excerpt_max_chars=1200,
     )
-    monkeypatch.setattr("backend.config.get_settings", lambda: settings)
+    monkeypatch.setattr("epr_agent.config.get_settings", lambda: settings)
     monkeypatch.setitem(sys.modules, "tavily", SimpleNamespace(TavilyClient=_FakeTavilyClient))
     _FakeTavilyClient.results = [
         {

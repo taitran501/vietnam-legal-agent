@@ -8,7 +8,6 @@ import re
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
-from backend.api import metrics
 from backend.api.principal import principal_from_request_state
 from backend.history import (
     feedback_stats as feedback_stats_persistent,
@@ -17,6 +16,7 @@ from backend.history import (
     resolve_assistant_message_id,
     save_feedback,
 )
+from epr_agent.infra import metrics
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

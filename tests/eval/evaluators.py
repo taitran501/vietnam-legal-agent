@@ -37,7 +37,7 @@ class EvalScore(BaseModel):
 
 def _judge_llm():
     """gpt-4o-mini with structured output — used for all judge calls."""
-    from backend.core.llm_instances import get_llm_smart
+    from epr_agent.infra.llm_instances import get_llm_smart
     return get_llm_smart().with_structured_output(EvalScore)
 
 
