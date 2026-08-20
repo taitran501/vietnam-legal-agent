@@ -63,14 +63,10 @@ src = ["src", "tests"]
 
 [tool.mypy]
 python_version = "3.11"
-packages = ["epr_agent"]
-mypy_path = "src"
+packages = ["epr_agent", "backend"]
+mypy_path = "src:."
 check_untyped_defs = true
 warn_unused_ignores = true
-
-[[tool.mypy.overrides]]
-module = ["backend.*"]
-follow_imports = "skip"
 
 [[tool.mypy.overrides]]
 module = ["jwt", "pythonjsonlogger", "sentence_transformers"]
