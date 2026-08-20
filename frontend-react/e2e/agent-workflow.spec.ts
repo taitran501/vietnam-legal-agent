@@ -399,7 +399,8 @@ test('safe-stop trajectory never renders a legal conclusion', async ({ page }) =
   );
 
   await page.goto('/');
-  await page.getByRole('button', { name: 'Tra cứu quy định' }).click();
+  await page.getByRole('button', { name: 'Kiểm tra tính hợp pháp & Nghĩa vụ' }).click();
+  await page.getByLabel('Câu hỏi pháp lý').fill('Hãy kiểm tra căn cứ pháp lý cho tình huống này.');
   await page.getByRole('button', { name: 'Gửi câu hỏi' }).click();
 
   const result = page.getByRole('region', { name: 'Kết quả xử lý' });
@@ -434,7 +435,8 @@ test('degraded web research does not expose an action that cannot run', async ({
   );
 
   await page.goto('/');
-  await page.getByRole('button', { name: 'Tra cứu quy định' }).click();
+  await page.getByRole('button', { name: 'Kiểm tra tính hợp pháp & Nghĩa vụ' }).click();
+  await page.getByLabel('Câu hỏi pháp lý').fill('Hãy kiểm tra căn cứ pháp lý cho tình huống này.');
   await page.getByRole('button', { name: 'Gửi câu hỏi' }).click();
 
   const result = page.getByRole('region', { name: 'Kết quả xử lý' });
@@ -478,7 +480,8 @@ test('completed legal lookup reveals its evidence in a temporary source drawer',
   );
 
   await page.goto('/');
-  await page.getByRole('button', { name: 'Tra cứu quy định' }).click();
+  await page.getByRole('button', { name: 'Kiểm tra tính hợp pháp & Nghĩa vụ' }).click();
+  await page.getByLabel('Câu hỏi pháp lý').fill('Điều 77 Nghị định 08/2022 quy định gì?');
   await page.getByRole('button', { name: 'Gửi câu hỏi' }).click();
   await captureReview(page, 'integrated-completed-answer');
   await page.getByRole('link', { name: '[1]' }).click();
