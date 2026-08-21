@@ -190,7 +190,7 @@ def _metadata(state: AgentState) -> dict[str, Any]:
         "corpus_id": state.get("corpus_id", "epr"),
         "corpus_as_of_date": state.get("corpus_as_of_date", ""),
         "preview": bool(state.get("preview", False)),
-        "pipeline_version": state.get("pipeline_version", "pipeline-v3"),
+        "pipeline_version": state.get("pipeline_version", "pipeline-v4"),
         "termination_reason": state.get("termination_reason", TerminationReason.ERROR.value),
         "outcome": state.get("outcome"),
         "result_type": state.get("result_type"),
@@ -310,6 +310,7 @@ class WorkflowRuntime:
         started_at = time.perf_counter()
         started_wall = datetime.now(UTC)
         trace_id = str(kwargs.get("trace_id") or "")
+        pipeline_version = "pipeline-v4"
         try:
             state = await create_initial_state(deps=self.deps, **kwargs)
             from epr_agent.config import get_settings
@@ -386,7 +387,7 @@ class WorkflowRuntime:
                 "retryable": True,
                 "retry_after_seconds": 2,
                 "trace_id": trace_id,
-                "pipeline_version": "pipeline-v3",
+                "pipeline_version": pipeline_version,
             }
 
 
