@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Annotated, Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
@@ -125,14 +127,21 @@ async def export_docx(payload: ExportDocxRequest):
     """Generate and return authentic .docx file adhering to Decree 30/2020/ND-CP."""
     try:
         docx_bytes = generate_docx_bytes(title=payload.title, content=payload.content)
-        clean_name = payload.title.strip().replace(" ", "_").lower()
+        # Sanitize: keep alphanumeric, Vietnamese chars, spaces, hyphens, dots
+        clean_name = re.sub(r"[^\w\s\-.]", "", payload.title.strip()).strip()
+        clean_name = re.sub(r"\s+", "_", clean_name)
         if not clean_name.endswith(".docx"):
             clean_name = f"{clean_name}.docx"
+
+        # RFC 5987: ASCII fallback + UTF-8 encoded filename for Vietnamese
+        ascii_name = re.sub(r"[^\x20-\x7E]", "_", clean_name)
+        encoded_name = quote(clean_name)
+        disposition = f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{encoded_name}'
 
         return Response(
             content=docx_bytes,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": f'attachment; filename="{clean_name}"'},
+            headers={"Content-Disposition": disposition},
         )
     except Exception as exc:
         logger.exception("DOCX export failed")
