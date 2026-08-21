@@ -23,11 +23,20 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from epr_agent.config import get_settings
 
 
+def _require_api_key(settings: Any) -> str:
+    """Return the OpenAI API key or raise a clear error if not configured."""
+    if not settings.openai_api_key:
+        raise RuntimeError(
+            "OPENAI_API_KEY is not set. Configure it in your .env or environment."
+        )
+    return settings.openai_api_key
+
+
 @lru_cache(maxsize=1)
 def get_llm_fast() -> ChatOpenAI:
     """gpt-3.5-turbo — chitchat responses, FAQ answer generation (plain text output only)."""
     settings = get_settings()
-    api_key = settings.openai_api_key or "mock-key-for-preview"
+    api_key = _require_api_key(settings)
     return ChatOpenAI(model="gpt-3.5-turbo", temperature=0, request_timeout=30, api_key=api_key)  # type: ignore[arg-type, call-arg]
 
 
@@ -35,7 +44,7 @@ def get_llm_fast() -> ChatOpenAI:
 def get_llm_router() -> ChatOpenAI:
     """gpt-4o-mini — query routing with Structured Outputs (.with_structured_output())."""
     settings = get_settings()
-    api_key = settings.openai_api_key or "mock-key-for-preview"
+    api_key = _require_api_key(settings)
     return ChatOpenAI(model="gpt-4o-mini", temperature=0, request_timeout=30, api_key=api_key)  # type: ignore[arg-type, call-arg]
 
 
@@ -43,7 +52,7 @@ def get_llm_router() -> ChatOpenAI:
 def get_llm_smart() -> ChatOpenAI:
     """gpt-4o-mini — query rewriting, legal generation, LLM-as-judge evaluation."""
     settings = get_settings()
-    api_key = settings.openai_api_key or "mock-key-for-preview"
+    api_key = _require_api_key(settings)
     return ChatOpenAI(model="gpt-4o-mini", temperature=0, request_timeout=30, api_key=api_key)  # type: ignore[arg-type, call-arg]
 
 
@@ -51,7 +60,7 @@ def get_llm_smart() -> ChatOpenAI:
 def get_llm_stream() -> ChatOpenAI:
     """gpt-3.5-turbo with streaming enabled — token-by-token answer delivery."""
     settings = get_settings()
-    api_key = settings.openai_api_key or "mock-key-for-preview"
+    api_key = _require_api_key(settings)
     return ChatOpenAI(  # type: ignore[call-arg]
         model="gpt-3.5-turbo",
         temperature=0,
@@ -59,8 +68,6 @@ def get_llm_stream() -> ChatOpenAI:
         request_timeout=30,
         api_key=api_key,  # type: ignore[arg-type]
     )
-
-
 
 
 class LocalSentenceTransformerEmbeddings(Embeddings):
@@ -102,12 +109,9 @@ class LocalSentenceTransformerEmbeddings(Embeddings):
 @lru_cache(maxsize=1)
 def get_embeddings() -> Embeddings:
     """Configured embedding profile (OpenAI or Local VNLegal-LAL) used by legal vector collections."""
-
-    from epr_agent.config import get_settings
-
     settings = get_settings()
-    
-    # Check if local embedding provider requested or OpenAI key is not configured
+
+    # Explicit local provider or auto without OpenAI key -> use local model
     if (
         settings.embedding_provider in {"local", "sentence_transformers"}
         or settings.embedding_profile in {"vnlegal-lal-v1", "vietnamese-legal-embedding-v1", "bge-m3-v1"}
@@ -116,5 +120,11 @@ def get_embeddings() -> Embeddings:
         model_name = settings.local_embedding_model or "darklethelong/vnlegal-lal"
         return LocalSentenceTransformerEmbeddings(model_name=model_name)
 
-    return OpenAIEmbeddings(model=settings.embedding_model, dimensions=settings.embedding_dimensions)
+    # Explicit openai provider requires a key
+    if settings.embedding_provider == "openai" and not settings.openai_api_key:
+        raise RuntimeError(
+            "OPENAI_API_KEY is required for OpenAI embeddings. "
+            "Set embedding_provider='local' or configure OPENAI_API_KEY."
+        )
 
+    return OpenAIEmbeddings(model=settings.embedding_model, dimensions=settings.embedding_dimensions)
