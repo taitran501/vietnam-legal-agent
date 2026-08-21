@@ -26,6 +26,13 @@ from epr_agent.tools.legal_calculators import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/documents", tags=["documents"])
 
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+ALLOWED_MIME_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/plain",
+}
+
 
 class ExportDocxRequest(BaseModel):
     title: str = Field(default="Van_ban_phap_ly", description="Tiêu đề văn bản")
@@ -67,6 +74,17 @@ async def upload_document(
     """Upload and parse contract or legal instrument (PDF, DOCX, TXT)."""
     try:
         content_bytes = await file.read()
+
+        if len(content_bytes) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="File exceeds 10 MB size limit.")
+
+        mime = (file.content_type or "").lower()
+        if mime and mime not in ALLOWED_MIME_TYPES:
+            raise HTTPException(
+                status_code=415,
+                detail=f"Unsupported file type '{mime}'. Allowed: PDF, DOCX, TXT.",
+            )
+
         if not content_bytes:
             raise HTTPException(status_code=400, detail="File tải lên không có dữ liệu (rỗng)")
 
@@ -99,7 +117,7 @@ async def upload_document(
         raise
     except Exception as exc:
         logger.exception("Document upload failed")
-        raise HTTPException(status_code=500, detail=f"Không thể xử lý tài liệu: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Không thể xử lý tài liệu. Vui lòng thử lại.") from exc
 
 
 @router.post("/export-docx")
@@ -118,7 +136,7 @@ async def export_docx(payload: ExportDocxRequest):
         )
     except Exception as exc:
         logger.exception("DOCX export failed")
-        raise HTTPException(status_code=500, detail=f"Không thể xuất file Word: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Không thể xuất file Word. Vui lòng thử lại.") from exc
 
 
 @router.post("/draft/court-petition")
