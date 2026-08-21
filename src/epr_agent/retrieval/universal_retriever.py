@@ -29,6 +29,12 @@ LEGAL_STOP_WORDS = {
     "ai", "đâu", "sao", "lại", "đã", "sẽ", "cũng", "đều", "rồi", "ngay",
 }
 
+
+def _escape_fts5_term(term: str) -> str:
+    """Escape double-quote characters for SQLite FTS5 MATCH syntax."""
+    return term.replace('"', '""')
+
+
 # Domain keyword boosts for Vietnamese law
 KNOWN_LAW_NAMES = [
     ("đất đai", "Luật Đất đai"),
@@ -219,11 +225,11 @@ class UniversalLegalRetriever:
         # Build Tier 1 (Strict Intersection) and Tier 2 (Broad Union) queries
         tier1_query = None
         if laws and phrases:
-            laws_clause = " OR ".join(f'"{t}"' for t in laws)
-            phrases_clause = " OR ".join(f'"{p}"' for p in phrases)
+            laws_clause = " OR ".join(f'"{_escape_fts5_term(t)}"' for t in laws)
+            phrases_clause = " OR ".join(f'"{_escape_fts5_term(p)}"' for p in phrases)
             tier1_query = f"({laws_clause}) AND ({phrases_clause})"
         
-        fts_query = " OR ".join(f'"{t}"' for t in terms)
+        fts_query = " OR ".join(f'"{_escape_fts5_term(t)}"' for t in terms)
 
         try:
             conn = sqlite3.connect(self.db_path)
