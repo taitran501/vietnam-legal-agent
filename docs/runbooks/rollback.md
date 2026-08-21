@@ -1,9 +1,9 @@
-# Release rollback
+# Release Rollback
 
 Rollback is designed to preserve the previous corpus and answer history while
 returning the legal index alias and application code to a known-good release.
 
-## Application rollback
+## Application Rollback
 
 Redeploy the previous verified backend/frontend commit. Do not run a new schema
 destructive migration during rollback. If the failed release added only
@@ -11,7 +11,7 @@ backward-compatible columns, keep the database at the current Alembic head;
 otherwise follow the database backup procedure and obtain an explicit database
 owner decision before restoring.
 
-## Qdrant alias rollback
+## Qdrant Alias Rollback
 
 Use the `rollback_collection` captured by `ensure_law_index` and perform one
 atomic alias update from `law_collection` to that retained immutable collection
@@ -29,7 +29,7 @@ Invoke-RestMethod http://127.0.0.1/api/v1/ready
 Confirm that the response reports the expected corpus and collection metadata,
 then run a legal lookup and source deep-link smoke test.
 
-## Data rollback
+## Data Rollback
 
 For a failed SQLite migration, stop the application and restore the pre-
 migration backup only after confirming the exact database path. For PostgreSQL,

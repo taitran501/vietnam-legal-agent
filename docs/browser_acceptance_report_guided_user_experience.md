@@ -1,8 +1,13 @@
+> **Historical record.** This report captures a guided UX snapshot from
+> 2026-08-14. It is retained for traceability and is not current production
+> approval. For the current status, see
+> [acceptance_status.md](acceptance_status.md).
+
 # Browser acceptance report — Guided User Experience Refactor
 
 **Validation date:** 2026-08-14
 **Application validation commit:** `74e7339` (`test: cover final guided browser journeys`)
-**Scope:** Vietnamese EPR lookup, guided assessment, guided compliance checklist entry, source inspection, error/retry behavior, and responsive layouts.
+**Scope:** Vietnamese legal lookup, guided assessment, guided compliance checklist entry, source inspection, error/retry behavior, and responsive layouts.
 
 This is a new release report. The previous acceptance reports remain historical
 and are not rewritten to describe this refactor as if they had passed it.

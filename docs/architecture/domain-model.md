@@ -36,11 +36,16 @@ classDiagram
     }
     class CaseStateV4 {
         +string schema_version
-        +TaskType task_type
-        +CaseStatus status
+        +string task_type
+        +string legal_domain
+        +string status
         +map facts
         +list missing_facts
+        +map issue_states
+        +AssessmentStatus decision_status
         +list fields
+        +int completed_count
+        +int required_count
     }
     class AssessmentResult {
         +AssessmentStatus status
@@ -75,7 +80,8 @@ classDiagram
 
 The diagram describes data ownership, not React functions as object-oriented
 classes. `CaseFormState` is the resolver response; `CaseStateV4` is the
-persisted case contract; presentation fields are hydrated without a migration.
+persisted case contract (with a `legal_domain` field for domain routing);
+presentation fields are hydrated without a migration.
 
 ## Component responsibility
 
@@ -91,5 +97,15 @@ flowchart LR
 
 `GuidedCaseCard` owns the primary journey. `CaseFactsPanel` owns save-for-later
 editing only. `CaseFieldList` never performs API calls. `useCaseDraft` does not
-write sensitive draft data to local or session storage. `CaseFormResolver` does
-not persist data and never creates a legal conclusion.
+write sensitive draft data to local or session storage.
+
+## CaseFormResolver implementations
+
+There are two resolver implementations:
+
+- **`CaseFormResolver`** (`src/epr_agent/domain/epr_rules.py`): EPR-specific resolver with dedicated EPR field schemas and validation logic.
+- **`UniversalCaseFormResolver`** (`src/epr_agent/domain/legal_rules.py`): Multi-domain resolver used for all other legal domains (labor, civil/contract, marriage & family, corporate, land, traffic, general).
+
+The tool layer routes to the appropriate resolver based on the detected
+`legal_domain`. EPR cases continue to use the legacy `CaseFormResolver` for
+backward compatibility, while all other domains use `UniversalCaseFormResolver`.

@@ -65,6 +65,18 @@ structured LLM batch then checks that each material legal claim is supported by
 the cited evidence. One repair may be attempted. A response with no supported
 legal claim cannot end as `answer_complete`.
 
+## Universal retriever (optional supplement)
+
+The `universal_retriever` module provides an optional supplementary retrieval
+path backed by a local SQLite corpus built from Ministry of Justice snapshots
+and tracked UTS_VLC input. It is disabled by default in production and must
+be enabled explicitly with `ENABLE_UNIVERSAL_RETRIEVAL=true`. When enabled,
+it augments the primary Qdrant-based retrieval with additional candidates
+before final reranking. The universal corpus is described in detail in
+`docs/retrieval/universal-corpus.md`.
+
+## Web research
+
 Web research is a separate `research_web` route. The user selects it through
 `mode=research_web` or the safe-stop CTA; it is never an automatic fallback and
 does not provide missing company facts.

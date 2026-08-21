@@ -1,17 +1,14 @@
 # Stitch UI Selection
 
-## Review scope
+## Review Scope
 
-The exported Stitch design set was used to review 18 HTML screens and reference
-boards. The binary export is intentionally kept outside this repository; this
-file records only the design decisions that were carried into the React
-application.
+The exported Stitch design set was used to review 18 HTML screens and reference boards. The binary export is intentionally kept outside this repository; this file records only the design decisions that were carried into the React application.
 
-The product shell is intentionally generic (`Trợ lý pháp lý`), while the interface states that the currently indexed corpus is EPR. This avoids presenting the current backend as a general Vietnamese-law system before additional corpora are available.
+The product shell is intentionally generic ("Vietnam Legal Agent"), while the interface states that the currently indexed corpora cover multiple legal domains. This avoids presenting the product as a general Vietnamese-law system before all targeted domains are available.
 
-## Adopted screens and patterns
+## Adopted Screens and Patterns
 
-| Stitch screen or board | Adopted behavior |
+| Stitch Screen or Board | Adopted Behavior |
 | --- | --- |
 | Desktop welcome, expanded sidebar | Main navigation, conversation history, centered composer, and restrained welcome hierarchy |
 | Desktop welcome, collapsed sidebar | A real 64 px icon rail rather than removing navigation completely |
@@ -23,25 +20,25 @@ The product shell is intentionally generic (`Trợ lý pháp lý`), while the in
 | History management board | Search, rename, delete confirmation, loading skeleton, and empty history states |
 | Design handoff board and `DESIGN.md` | Be Vietnam Pro, Noto Serif for the welcome heading only, teal accent, warm white canvas, 264/64 px sidebar, and reduced-motion behavior |
 
-## Adapted rather than copied
+## Adapted Rather Than Copied
 
 - The permanent EPR case panel was replaced by a contextual drawer. It appears only for assessment or checklist flows that have an active case.
 - The source drawer does not open while retrieval is running. It opens only after evidence exists and the user selects the source action.
 - Unsupported attachment, voice, model selection, sharing, saved-document, and settings controls were not added.
-- EPR examples remain in the welcome suggestions because they match the current corpus, but the navigation and component model are domain-neutral.
+- Domain-specific examples remain in the welcome suggestions because they match the current corpora, but the navigation and component model are domain-neutral.
 - Tablet uses the 64 px rail and opens history as a drawer. This fixes the clipped tablet export.
 - Workflow progress is compact by default and can be expanded to inspect the bounded action sequence.
 
-## Excluded screens
+## Excluded Screens
 
 - The three-column retrieval screen was excluded because it exposes sources too early and leaves too little room for the answer.
 - The exported tablet welcome screen was excluded because its content is visibly clipped on the left.
 - Duplicate completed-answer and clarification variants were consolidated into one responsive implementation.
 - The component handoff board and state board remain specifications; they are not runtime routes.
 
-## Runtime state mapping
+## Runtime State Mapping
 
-| Agent/UI state | React presentation |
+| Agent/UI State | React Presentation |
 | --- | --- |
 | Empty / ready | Welcome screen with scoped suggestions |
 | Understanding / retrieving / verifying | Compact expandable workflow status |
@@ -53,7 +50,7 @@ The product shell is intentionally generic (`Trợ lý pháp lý`), while the in
 | Offline | Single connection banner; composer disabled |
 | Mobile/tablet navigation | Overlay history drawer or tablet icon rail |
 
-## Validation targets
+## Validation Targets
 
 - Desktop: 1280 px and 1600 px widths.
 - Tablet: 900 × 1024 with the icon rail.

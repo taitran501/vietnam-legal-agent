@@ -1,10 +1,7 @@
-# ADR 0002: Backend là nguồn duy nhất của dependency và validation
+# ADR 0002: Backend is the Single Source for Field Dependencies and Validation
 
 - **Status:** accepted
-- **Context:** frontend và V4 từng có các bản sao khác nhau của required field,
-  revenue limit và conditional packaging fields.
-- **Decision:** `CaseFormResolver` là service thuần, dùng bởi resolve endpoint,
-  session PATCH và V4 runtime. Frontend chỉ render metadata và hiển thị lỗi.
-- **Consequences:** rule thay đổi ở một nơi; UI phụ thuộc vào API contract và
-  phải giữ draft khi resolve lỗi.
-- **Rejected:** frontend tự suy ra field phụ thuộc bằng danh sách hard-code.
+- **Context:** The frontend and V4 previously maintained divergent copies of required-field definitions, revenue limits, and conditional packaging fields.
+- **Decision:** `CaseFormResolver` (`epr_rules.py`) is the pure service used by the resolve endpoint, session PATCH, and V4 runtime for EPR domain cases. All other domains use `UniversalCaseFormResolver` (`legal_rules.py`). The frontend only renders metadata and surfaces validation errors.
+- **Consequences:** Rule changes happen in one place; the UI depends on the API contract and must preserve drafts when resolve errors occur.
+- **Rejected:** Having the frontend infer field dependencies from a hard-coded list.

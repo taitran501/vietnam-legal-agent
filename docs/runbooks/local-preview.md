@@ -1,10 +1,12 @@
-# Local and staging preview
+# Local and Staging Preview
 
-Preview mode exists to exercise the complete user journey before the legal
-corpus has received external approval. It is not a production bypass and must
-remain visibly labelled in the UI and source drawer.
+Preview mode exists to exercise the complete user journey before any legal
+domain corpus has received external approval. It is not a production bypass and
+must remain visibly labelled in the UI and source drawer. Preview supports all
+legal domains served by the Vietnam Legal Agent, using sample or unapproved
+corpus data.
 
-## Start a preview
+## Start a Preview
 
 From the repository root:
 
@@ -50,7 +52,7 @@ FastAPI chat routes, SSE client, React rendering, durable in-memory turn
 contract, source drawer, case drawer, and feedback controls; it is not evidence
 that the production Qdrant or official web provider is available.
 
-## Promotion boundary
+## Promotion Boundary
 
 Do not set preview mode in production. The production readiness gate requires
 the canonical manifest/rule-pack/index hashes, complete source and amendment

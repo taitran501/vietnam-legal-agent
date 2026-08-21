@@ -1,9 +1,19 @@
 # Pipeline V4 behavior contract
 
-Pipeline V4 is a server-selected, bounded workflow for EPR case assessment
-and compliance checklists. It is the default runtime; the browser cannot
-select a runtime. Operators can temporarily roll back with
-`AGENT_PIPELINE_VERSION=pipeline-v3`.
+Pipeline V4 is a server-selected, bounded workflow for Vietnamese legal case
+assessment and compliance checklists. It is the default runtime; the browser
+cannot select a runtime. Two alternative runtimes exist but are not the
+default:
+
+- `pipeline-v3` is the legacy runtime. Operators can temporarily roll back
+  with `AGENT_PIPELINE_VERSION=pipeline-v3`, but V3 is no longer actively
+  developed and should be used only for migration debugging.
+- `pipeline-agent` is an autonomous agent runtime with tool-calling and
+  multi-step reasoning. Select it with `AGENT_PIPELINE_VERSION=pipeline-agent`.
+
+V4 supports assessment across all legal domains handled by the system:
+labor, civil contract, marriage/family, corporate, land, traffic, EPR, and
+general legal lookup.
 
 ## Turn contract
 
@@ -33,6 +43,14 @@ missing key. Incomplete legal coverage yields `insufficient_evidence`. Neither
 state is an answer-complete assessment. Web research is a user-selected action
 and never infers a company fact. PATCH case remains the compatibility/full
 editor path, not a required step before a guided submit.
+
+## Domain routing
+
+V4 delegates to `detect_legal_domain()` to classify incoming queries into one
+of eight domains: LABOR, CIVIL_CONTRACT, MARRIAGE_FAMILY, CORPORATE, LAND,
+TRAFFIC, EPR, or GENERAL. Domain-specific evaluation logic (e.g.,
+`evaluate_universal_case()` for labor/civil/marriage/corporate/land/traffic)
+is applied downstream; EPR assessments delegate to `evaluate_assessment()`.
 
 ## Appendix XXII evidence
 

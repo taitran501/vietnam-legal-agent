@@ -1,7 +1,7 @@
 # Current acceptance status
 
-**Checked:** 2026-08-20
-**Workspace:** `fix/ci-contract-regressions` in `vietnam-legal-agent`
+**Checked:** 2026-08-21
+**Workspace:** `main` in `vietnam-legal-agent`
 
 This file records checks against the current checkout. It is not a replacement
 for the commit-scoped historical reports, and production/legal approval remains
@@ -14,11 +14,11 @@ The following checks were run in the repository acceptance environment
 
 | Check | Result |
 | --- | --- |
-| `pytest -q` | **493 passed, 3 skipped** (496 collected) |
+| `pytest -q` | **490 passed, 3 skipped** |
 | `python -m tests.eval.run_eval --suite all` | **exit 0**; deterministic route matrix 60/60 |
 | `ruff check src/epr_agent backend scripts tests` | **pass** |
-| `mypy src/epr_agent backend` | **pass**, 76 source files |
-| `python -m scripts.sync_corpus_metadata --check` | **pass**, no issues; corpus SHA `9c7fe73bd6215a1e794432815d34a8a3cf8671dab7f1581d9c3d0abdf2756a45` |
+| `mypy src/epr_agent backend` | **pass** (70 source files) |
+| `python -m scripts.sync_corpus_metadata --check` | **pass**, no issues |
 | `git diff --check` | **pass**; only Git line-ending warnings |
 | `docker compose ... config --quiet` | **pass** for the base stack plus deterministic CI smoke overlay |
 | Universal corpus verification | **pass** for the local content-locked artifact; generated DB remains ignored |
@@ -37,10 +37,10 @@ interpreting a test result.
 - The backend CI path now runs corpus synchronization, unit/integration tests,
   deterministic evaluation, Ruff, and the complete backend mypy boundary.
 - CI also installs Chromium and runs the browser journey suite.
-- CI now runs on pull requests, all branch pushes, and manual dispatch; it
+- CI runs on pull requests, all branch pushes, and manual dispatch; it
   also runs `pip check` and a real Docker Compose gateway/backend/dependency
   smoke overlay in preview mode.
-- The public product language is now **Vietnam Legal Agent**; EPR remains a
+- The product language is **Vietnam Legal Agent**. EPR remains a
   supported rule-pack and corpus domain rather than the product identity.
 - The compatibility package namespace (`epr_agent`) and EPR corpus/rule-pack
   identifiers remain stable so existing imports, data manifests, and API
@@ -70,6 +70,12 @@ interpreting a test result.
   while the source hash and extracted row content remain part of identity.
 - Preview Compose promotion now uses the synchronized corpus hash and keeps
   legal review visibly pending instead of treating preview as production.
+- The V4 pipeline routes cases through `detect_legal_domain()` to the
+  appropriate rule engine: EPR uses the deterministic `CaseFormResolver`;
+  all other domains (labor, civil, corporate, marriage, land, traffic)
+  use `UniversalCaseFormResolver` and `evaluate_universal_case()`.
+- The autonomous agent path (`pipeline-agent`) shares the same tool registry
+  and supports all legal domains via `evaluate_legal_case`.
 
 ## Still not proven by local checks
 

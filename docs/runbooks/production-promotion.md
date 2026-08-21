@@ -1,10 +1,10 @@
-# Production corpus promotion
+# Production Corpus Promotion
 
-Production legal chat is intentionally blocked until the corpus has both
-technical integrity and external legal approval. A successful build or a
-preview run is not approval.
+Production legal chat is intentionally blocked until each legal domain corpus
+has both technical integrity and external legal approval. A successful build or
+a preview run is not approval.
 
-## Release gates
+## Release Gates
 
 Before starting a production backend, configure a real PostgreSQL URL, Qdrant
 endpoint, OpenAI key, at least one authentication mechanism (OIDC, service
@@ -34,13 +34,16 @@ The current repository deliberately records technical amendment readiness
 without self-asserting legal approval. If approval is absent, leave runtime in
 `production` and expect `legal_chat` and `case_workflow` to be blocked.
 
-The optional universal Pháp điển SQLite corpus follows a separate boundary. Its
-content lock makes a build reproducible, but it is not automatically included
-in the approved production manifest. Keep `ENABLE_UNIVERSAL_RETRIEVAL=false`
-in production until a domain reviewer approves that source and its effective
-date; production configuration rejects the flag while that gate is pending.
+## Multi-Domain Corpus Promotion
 
-## Build and promote Qdrant
+Each legal domain in the corpus follows its own activation boundary. The primary
+law collection and any supplementary corpuses (e.g., Pháp điển) each require
+an independent domain reviewer to approve their source and effective date before
+production activation. `ENABLE_UNIVERSAL_RETRIEVAL` must remain `false` in
+production until its domain review is recorded; the production configuration
+rejects the flag while that gate is pending.
+
+## Build and Promote Qdrant
 
 The index job derives an immutable collection from the corpus hash, audits all
 points, and only then atomically switches the `law_collection` alias:
@@ -54,7 +57,7 @@ alias target is retained and printed as `rollback_collection`; never delete it
 until the release soak and rollback window expire. A failed technical audit or
 missing approval must leave the active alias unchanged.
 
-## Deploy order
+## Deploy Order
 
 1. Apply database migrations and complete the owner-mapping audit/apply.
 2. Build and audit the immutable Qdrant collection without changing the active

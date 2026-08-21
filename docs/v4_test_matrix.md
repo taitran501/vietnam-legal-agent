@@ -15,10 +15,18 @@ Run from the repository root with the acceptance environment:
 python -m tests.eval.run_eval --suite all --output data/eval/v4-deterministic.json
 ```
 
-The V4 manifest contains 60 query-understanding cases, 60 retrieval cases,
-and 40 assessment/checklist trajectories. The deterministic runner records
-route accuracy, anchor preservation, retrieval metrics, issue coverage,
-citations, cache policy, SSE event types, and p95 latency.
+The test suite comprises:
+
+| Category | Count |
+| --- | --- |
+| Pytest unit/integration tests | 490 |
+| Eval manifest cases | 125 (60 retrieval + 60 query_understanding + 5 manifest) |
+| Agent test cases | 18 |
+| Playwright browser tests | 27 |
+
+The deterministic runner records route accuracy, anchor preservation, retrieval
+metrics, issue coverage, citations, cache policy, SSE event types, and p95
+latency.
 
 ## Frontend checks
 
@@ -47,7 +55,7 @@ Invoke-RestMethod http://127.0.0.1/api/v1/ready
 ```
 
 The backend readiness response must report the active `law_collection` alias,
-EPR corpus SHA, legal schema version, and the
+corpus SHA, legal schema version, and the
 `openai-text-embedding-3-small-v1` profile. The second indexer run should reuse
 the matching versioned collection without requesting embeddings.
 
@@ -58,6 +66,10 @@ $env:EPR_RUN_INTEGRATION="1"
 $env:EPR_API_BASE_URL="http://127.0.0.1"
 .venv_acceptance\Scripts\python.exe -m pytest -q tests/integration
 ```
+
+> **Note:** The `EPR_RUN_INTEGRATION` and `EPR_API_BASE_URL` environment
+> variable names are preserved for backward compatibility. The integration
+> tests now cover all legal domains, not only EPR.
 
 This checks readiness failure behavior, real SSE ordering, citation-bearing
 legal lookup, trace persistence when the debug API is enabled, and the local
@@ -77,8 +89,8 @@ not assert exact generated prose.
 
 ## OpenAI live evaluation
 
-The 40-case live suite is opt-in because it uses the configured OpenAI model
-and the real V4 collection:
+The live suite is opt-in because it uses the configured OpenAI model and the
+real V4 collection:
 
 ```powershell
 Set-Location ..

@@ -1,28 +1,29 @@
 # System overview
 
-## Mục tiêu và ranh giới
+## Purpose and scope
 
-Ứng dụng giúp người dùng Việt Nam:
+The application helps Vietnamese users:
 
-1. tra cứu một quy định pháp luật và mở văn bản gốc;
-2. cung cấp thông tin tình huống để nhận một đánh giá sơ bộ có căn cứ;
-3. tạo danh sách việc cần làm từ cùng một bộ thông tin.
+1. look up a legal provision and open the original source document;
+2. provide situational information to receive a grounded preliminary assessment;
+3. generate a compliance checklist from the same set of facts.
 
-Luồng legal lookup và luồng case dùng chung lịch sử, identity, SSE và source
-snapshot nhưng không dùng chung quyết định nghiệp vụ. Retrieval tìm nguồn;
-rule pack và evidence assessment quyết định liệu có đủ căn cứ để trình bày.
+The legal lookup flow and the case flow share history, identity, SSE, and source
+snapshots but do not share business decisions. Retrieval finds sources; rule
+packs and evidence assessment determine whether there is sufficient basis to
+present a result.
 
 ## Context diagram
 
 ```mermaid
 flowchart LR
-    U["Người dùng doanh nghiệp"] --> B["Browser"]
+    U["Business user"] --> B["Browser"]
     B --> F["React application"]
     F --> API["FastAPI API"]
     API --> W["V4 workflow runtime"]
     API --> P["Persistence and session store"]
     W --> R["CaseFormResolver"]
-    W --> RP["Versioned domain rule packs, including EPR"]
+    W --> RP["Versioned domain rule packs (7 legal domains + general)"]
     W --> L["Legal retrieval"]
     L --> Q["Qdrant index"]
     L --> O["Official legal sources"]
@@ -31,6 +32,11 @@ flowchart LR
     API --> E["SSE stream"]
     E --> F
 ```
+
+An alternative runtime, `pipeline-agent`, replaces the deterministic V4 graph
+with an autonomous ReAct loop (see `autonomous-agent-architecture.md`).
+The two runtimes share the same tool registry, domain rule packs, retrieval
+layer, and persistence.
 
 ## Container and component boundaries
 

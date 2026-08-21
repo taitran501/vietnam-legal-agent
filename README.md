@@ -30,7 +30,7 @@ required dependency is missing.
 | Workflow | User-facing result |
 | --- | --- |
 | Legal lookup | A streamed answer with source citations and a source drawer for comparison. |
-| Case assessment | A guided form that asks for the facts required by the selected task and returns a preliminary assessment. |
+| Case assessment | A guided form that asks for the facts required by the selected task and returns a preliminary assessment. Domain routing via `detect_legal_domain()` sends cases to the appropriate rule engine (7 legal domains + general). |
 | Legal/compliance checklist | A guided list of preparation actions linked to the available evidence. |
 | Autonomous Agent | Dynamic multi-step reasoning (ReAct loop) with tool calling, budget control ($\le 5$ steps), and layman-friendly query handling. |
 | Follow-up and recovery | Continue an active case, stop a turn, retry a failed turn, or regenerate a persisted answer. |
@@ -150,8 +150,6 @@ From the repository root, install the development dependencies in a Python
 python -m pip install -e ".[dev]"
 python -m scripts.sync_corpus_metadata --check
 python -m pytest -q
-python tests/eval/agent_harness.py --suite all
-pytest tests/eval/test_non_user_flows.py -v
 ruff check src/epr_agent backend scripts tests
 mypy src/epr_agent backend
 python -m tests.eval.run_eval --suite all
@@ -260,6 +258,9 @@ data/             Corpus manifests, rule pack, and checked-in fixtures
 docs/             Architecture, behavior contracts, runbooks, and acceptance notes
 tests/            Unit, contract, integration, evaluation harness, and API tests
 ```
+
+The `src/epr_agent/` namespace is retained for backward compatibility; the
+product supports all legal domains, not just EPR.
 
 Start with [docs/README.md](docs/README.md) for the documentation map,
 [the system overview](docs/architecture/system-overview.md),

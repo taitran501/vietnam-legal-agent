@@ -35,6 +35,17 @@ to a verified older collection.
 | Citation support | every legal claim structurally and semantically verified |
 | Readiness | missing/mismatched corpus returns HTTP 503 |
 
+## Current eval counts
+
+The V4 deterministic eval manifest contains 125 cases:
+
+- 60 retrieval cases
+- 60 query-understanding cases
+- 5 manifest cases
+
+The full test suite comprises 490 pytest tests, 18 agent test cases, and 27
+Playwright browser tests.
+
 ## Historical experiments
 
 The earlier 16-query baseline/candidate experiment is retained as historical

@@ -1,11 +1,6 @@
-# ADR 0004: Technical metadata dùng progressive disclosure
+# ADR 0004: Technical Metadata Uses Progressive Disclosure
 
 - **Status:** accepted
-- **Context:** người dùng thường thấy `corpus`, `workflow`, `trace` và các mã nội
-  bộ trong answer, source drawer và timeline.
-- **Decision:** copy mặc định dùng ngôn ngữ nghiệp vụ (“Kho văn bản pháp luật”,
-  “Căn cứ”, “Thông tin doanh nghiệp”, “Chưa thể kết luận”). ID nguồn, amendment
-  metadata, trace ID và version đặt trong phần thông tin đối chiếu/hỗ trợ; trace
-  chỉ hiển thị khi bật debug flag.
-- **Consequences:** developer vẫn có dữ liệu debug khi cần, nhưng người dùng
-  phổ thông không phải hiểu kiến trúc nội bộ để hoàn thành tác vụ.
+- **Context:** Users frequently encountered internal codes such as `corpus`, `workflow`, `trace`, and other system identifiers in answers, the source drawer, and the timeline.
+- **Decision:** Default copy uses business language ("Legal Document Repository", "Legal Basis", "Enterprise Information", "Unable to Conclude"). Source IDs, amendment metadata, trace IDs, and version numbers are placed in a reference/support section; traces are only displayed when a debug flag is enabled.
+- **Consequences:** Developers still have access to debug data when needed, but non-technical users no longer need to understand the internal architecture to complete their tasks.

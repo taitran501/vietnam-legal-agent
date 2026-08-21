@@ -1,3 +1,8 @@
+> **Historical record.** This document captures a V3 pipeline acceptance
+> snapshot. It is retained for traceability and is not current production
+> approval. For the current status, see
+> [acceptance_status.md](acceptance_status.md).
+
 # Pipeline V3 acceptance record
 
 This document separates reproducible local checks from live checks that require

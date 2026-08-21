@@ -1,3 +1,8 @@
+> **Historical record.** This report captures a V4 pipeline acceptance
+> snapshot. It is retained for traceability and is not current production
+> approval. For the current status, see
+> [acceptance_status.md](acceptance_status.md).
+
 # Pipeline V4 local acceptance report
 
 Status: **V4 test matrix accepted locally**. The server-selected runtime is

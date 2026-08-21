@@ -1,9 +1,9 @@
-# Database migration and ownership recovery
+# Database Migration and Ownership Recovery
 
 All migrations are dry-run-first. Take a recoverable backup, inspect the
 report, and only then apply the change.
 
-## Legacy SQLite history
+## Legacy SQLite History
 
 Audit the database without changing it:
 
@@ -29,7 +29,7 @@ schema in a sibling file, stamps the Alembic head, and swaps transactionally.
 Running the command again is idempotent. Keep the backup until the application
 has passed history, feedback, case, and reload checks.
 
-## PostgreSQL startup
+## PostgreSQL Startup
 
 Production startup must run the Alembic head before serving requests. A schema
 mismatch is a readiness failure (`database_schema_mismatch`), not a reason to
@@ -42,7 +42,7 @@ alembic upgrade head
 
 `create_all()` remains suitable only for a brand-new test database.
 
-## Legacy owner hashes
+## Legacy Owner Hashes
 
 Prepare an external mapping file; do not commit it:
 

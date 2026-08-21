@@ -1,3 +1,8 @@
+> **Historical record.** This report captures a browser remediation snapshot
+> from 2026-08-13. It is retained for traceability and is not current
+> production approval. For the current status, see
+> [acceptance_status.md](acceptance_status.md).
+
 # Browser acceptance report
 
 This report records the user-visible acceptance evidence for the browser

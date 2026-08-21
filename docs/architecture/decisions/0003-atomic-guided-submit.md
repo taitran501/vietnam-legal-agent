@@ -1,10 +1,6 @@
-# ADR 0003: Guided submit dùng atomic chat turn
+# ADR 0003: Guided Submit Uses an Atomic Chat Turn
 
 - **Status:** accepted
-- **Context:** flow cũ PATCH hồ sơ rồi mới gửi `continue_case`, tạo thêm request,
-  dễ mất đồng bộ và tạo cảm giác phải lưu nhiều lần.
-- **Decision:** guided form gửi typed `fact_updates` trực tiếp vào `/chat`. Backend
-  validate, merge, persist case và evaluate trong cùng durable turn. PATCH chỉ
-  dành cho full editor/save-for-later và compatibility.
-- **Consequences:** replay descriptor phải giữ nguyên facts và intent; transaction
-  boundary rõ hơn; form cần khóa trong lúc submit.
+- **Context:** The old flow issued a PATCH to update the profile and then sent `continue_case` separately, adding an extra request, risking synchronization issues, and creating the impression that users had to save multiple times.
+- **Decision:** The guided form sends typed `fact_updates` directly to `/chat`. The backend validates, merges, persists the case, and evaluates it all within a single durable turn. PATCH is reserved only for the full editor / save-for-later flow and backward compatibility.
+- **Consequences:** Replay descriptors must preserve facts and intent; the transaction boundary is clearer; the form must be locked during submission.
