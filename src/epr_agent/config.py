@@ -69,6 +69,10 @@ class Settings(BaseSettings):
 
     # ── Redis ────────────────────────────────────────────────────────────────
     redis_url: str = Field(default="redis://localhost:6379/0")
+    redis_password: str = Field(
+        default="",
+        description="Redis AUTH password; included in REDIS_URL by Compose when set",
+    )
     rate_limit_fail_open: bool = Field(
         default=False,
         description="Allow requests when Redis rate limiting is unavailable; keep false for production safety",
@@ -177,6 +181,10 @@ class Settings(BaseSettings):
     require_auth: bool = Field(
         default=True,
         description="Whether to require API key authentication",
+    )
+    legacy_hmac_key: str = Field(
+        default="epr-owner-v2",
+        description="HMAC salt for legacy API key derivation; override in production",
     )
 
     # ── Data paths ───────────────────────────────────────────────────────────

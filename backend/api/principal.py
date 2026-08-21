@@ -95,7 +95,12 @@ def principal_from_service_token(token: str) -> Principal | None:
 
 
 def principal_from_legacy_api_key(api_key: str) -> Principal:
-    digest = hmac.new(b"epr-owner-v2", api_key.encode("utf-8"), hashlib.sha256).hexdigest()
+    settings = get_settings()
+    digest = hmac.new(
+        settings.legacy_hmac_key.encode("utf-8"),
+        api_key.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
     return Principal(id=f"legacy:{digest}", type="legacy_api_key", scopes=frozenset({"chat"}))
 
 
