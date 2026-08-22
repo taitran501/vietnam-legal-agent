@@ -7,6 +7,7 @@ Only tool adapters are deterministic doubles.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 
@@ -20,6 +21,7 @@ from epr_agent.agent.v4 import V4WorkflowRuntime
 from epr_agent.domain.epr_rules import CaseFormResolver
 from epr_agent.domain.models import AgentState, DocumentRecord
 from epr_agent.domain.v4 import CaseStateV4, FactSource, FactValue
+from epr_agent.infra.admission import AdmissionLease
 from epr_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
 from epr_agent.tools.evidence import EvidenceEvaluator
 from epr_agent.tools.generation import EvidenceGenerationGateway
@@ -348,7 +350,19 @@ dependencies = WorkflowDependencies(
 )
 case_form_resolver = CaseFormResolver()
 
+
+class DeterministicAdmissionController:
+    async def acquire(self, scope: str, **_kwargs: object) -> AdmissionLease:
+        return AdmissionLease(scope=scope, token="browser-e2e", ttl_seconds=300)
+
+    async def heartbeat(self, _lease: AdmissionLease, interval_seconds: float) -> None:
+        await asyncio.sleep(interval_seconds)
+
+    async def release(self, _lease: AdmissionLease) -> None:
+        return None
+
 app = FastAPI(title="Vietnam Legal Agent deterministic browser acceptance")
+app.state.admission_controller = DeterministicAdmissionController()
 app.state.workflow_runtime = V4WorkflowRuntime(
     dependencies,
     answer_chunk_size=90,
