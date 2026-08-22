@@ -41,6 +41,57 @@ jobs:
       - run: npm run test
       - run: npm run build
 
+  pilot-load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      REDIS_URL: redis://127.0.0.1:6379/0
+      PILOT_LOAD_HOLD_SECONDS: "4"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - name: Start deterministic two-worker SSE host
+        run: |
+          uvicorn tests.load_backend:app --host 127.0.0.1 --port 8010 --workers 2 > /tmp/pilot-load-server.log 2>&1 &
+          echo $! > /tmp/pilot-load-server.pid
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8010/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/pilot-load-server.log
+          exit 1
+      - name: Enforce 50-turn pilot SLO
+        run: python scripts/run_pilot_load_test.py --report artifacts/pilot-load-report.json
+      - name: Upload load evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pilot-load-report
+          path: artifacts/pilot-load-report.json
+          if-no-files-found: warn
+      - name: Stop deterministic SSE host
+        if: always()
+        run: |
+          if [ -f /tmp/pilot-load-server.pid ]; then
+            kill "$(cat /tmp/pilot-load-server.pid)" || true
+          fi
+
   e2e:
     needs: [backend, frontend]
     runs-on: ubuntu-latest
