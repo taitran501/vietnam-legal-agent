@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from epr_agent.agent.agent_loop import AgentRunResult, AgentStep
@@ -324,6 +326,167 @@ async def test_agent_runtime_storage_failure_is_visible(agent_deps):
 
     assert any(event.get("type") == "error" and event.get("code") == "storage_unavailable" for event in events)
     assert not any(event.get("type") == "response_complete" for event in events)
+
+
+class DurableHistory(FakeHistory):
+    def __init__(self) -> None:
+        super().__init__()
+        self.finished: list[dict] = []
+
+    async def begin_turn(self, *args, **kwargs) -> dict:
+        return {"status": "pending", "assistant_message_id": 1}
+
+    async def is_turn_cancelled(self, *args, **kwargs) -> bool:
+        return False
+
+    async def finish_turn(self, *args, **kwargs) -> dict:
+        self.finished.append(kwargs)
+        return {"status": kwargs["status"], "assistant_message_id": 1}
+
+
+def _deps_with_history(agent_deps, history: FakeHistory) -> WorkflowDependencies:
+    return WorkflowDependencies(
+        history=history,
+        cache=agent_deps.cache,
+        retrieval=agent_deps.retrieval,
+        evidence=agent_deps.evidence,
+        generation=agent_deps.generation,
+        planner=agent_deps.planner,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("query", "termination_reason"),
+    [
+        ("", "invalid_input"),
+        ("Xin chào bạn", "answer_complete"),
+        ("Cách nấu phở bò gia truyền", "out_of_scope"),
+    ],
+)
+async def test_agent_runtime_fast_paths_use_durable_turn_contract(
+    agent_deps, query: str, termination_reason: str
+) -> None:
+    history = DurableHistory()
+    events = [
+        event
+        async for event in AgentWorkflowRuntime(_deps_with_history(agent_deps, history)).stream(
+            query=query,
+            user_id="u1",
+            conversation_id="c1",
+            turn_id=f"turn-{termination_reason}",
+        )
+    ]
+
+    assert any(
+        event.get("type") == "response_complete"
+        and event.get("termination_reason") == termination_reason
+        for event in events
+    )
+    assert history.finished[-1]["status"] == "complete"
+    assert history.exchanges == []
+
+
+@pytest.mark.asyncio
+async def test_agent_runtime_cancellation_storage_failure_is_visible(agent_deps) -> None:
+    class FailingCancelledHistory(DurableHistory):
+        async def is_turn_cancelled(self, *args, **kwargs) -> bool:
+            return True
+
+        async def finish_turn(self, *args, **kwargs) -> dict:
+            raise OSError("storage unavailable")
+
+    result = AgentRunResult(
+        answer="Câu trả lời muộn.",
+        termination_reason="user_cancelled",
+        trajectory=[],
+        evidence=[],
+        citations=[],
+        source="error",
+        steps_taken=0,
+        cache_hit=False,
+    )
+    events = [
+        event
+        async for event in AgentWorkflowRuntime(
+            _deps_with_history(agent_deps, FailingCancelledHistory()),
+            runner=FakeRunner(result),
+        ).stream(
+            query="Điều luật nào áp dụng?",
+            user_id="u1",
+            conversation_id="c1",
+            turn_id="turn-cancelled",
+        )
+    ]
+
+    assert any(
+        event.get("type") == "error" and event.get("code") == "storage_unavailable"
+        for event in events
+    )
+    assert not any(event.get("type") == "response_stopped" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_agent_runtime_disconnect_finalizes_pending_turn(agent_deps) -> None:
+    class BlockingRunner:
+        async def stream(self, query: str, **kwargs):
+            yield {
+                "type": "agent_tool_call",
+                "step": 1,
+                "tool": "search_legal_provisions",
+                "args": {"query": query},
+            }
+            await asyncio.Event().wait()
+
+    history = DurableHistory()
+    stream = AgentWorkflowRuntime(
+        _deps_with_history(agent_deps, history), runner=BlockingRunner()
+    ).stream(
+        query="Điều 77 quy định gì?",
+        user_id="u1",
+        conversation_id="c1",
+        turn_id="turn-disconnect",
+    )
+
+    while True:
+        event = await anext(stream)
+        if event.get("stage") == "search_legal_provisions":
+            break
+    pending = asyncio.create_task(anext(stream))
+    await asyncio.sleep(0)
+    pending.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await pending
+    await stream.aclose()
+
+    assert history.finished[-1]["status"] == "stopped"
+    assert history.finished[-1]["error_code"] == "client_disconnected"
+
+
+@pytest.mark.asyncio
+async def test_agent_runtime_unhandled_failure_finalizes_failed_turn(agent_deps) -> None:
+    class FailingRunner:
+        async def stream(self, query: str, **kwargs):
+            if False:
+                yield {"query": query}
+            raise RuntimeError("runner crashed")
+
+    history = DurableHistory()
+    runtime = AgentWorkflowRuntime(
+        _deps_with_history(agent_deps, history), runner=FailingRunner()
+    )
+
+    with pytest.raises(RuntimeError, match="runner crashed"):
+        async for _event in runtime.stream(
+            query="Điều 77 quy định gì?",
+            user_id="u1",
+            conversation_id="c1",
+            turn_id="turn-failed",
+        ):
+            pass
+
+    assert history.finished[-1]["status"] == "failed"
+    assert history.finished[-1]["error_code"] == "stream_incomplete"
 
 
 def test_cited_evidence_indices_ignores_out_of_range_bracketed_numbers():
