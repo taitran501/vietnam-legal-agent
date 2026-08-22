@@ -78,6 +78,31 @@ class AgentRunConfig:
 
 
 ToolCallable = Callable[..., Awaitable[dict[str, Any]]]
+CancellationCheck = Callable[[], Awaitable[bool]]
+
+
+def _cancelled_result(trajectory: list[AgentStep], evidence: list[dict[str, Any]]) -> AgentRunResult:
+    return AgentRunResult(
+        answer="",
+        termination_reason="user_cancelled",
+        trajectory=trajectory,
+        evidence=evidence,
+        citations=[],
+        source="error",
+        steps_taken=len(trajectory),
+        cache_hit=False,
+    )
+
+
+def _tool_result_status(observation: dict[str, Any]) -> tuple[str, str | None]:
+    error = str(observation.get("error") or "")
+    if observation.get("budget_denied"):
+        return "denied", error or "budget_denied"
+    if "timed out" in error:
+        return "timed_out", "tool_timeout"
+    if observation.get("ok") is False or error:
+        return "failed", error.split(":", 1)[0] or "tool_failed"
+    return "completed", None
 
 
 def _compact_observation_for_agent(tool_name: str, observation: dict[str, Any]) -> dict[str, Any]:
@@ -150,6 +175,7 @@ class EprAgentRunner:
         history_summary: str = "",
         mode: str = "auto",
         trace_id: str = "",
+        is_cancelled: CancellationCheck | None = None,
     ) -> AgentRunResult:
         """Execute the agent loop synchronously and return the complete result."""
         result: AgentRunResult | None = None
@@ -160,6 +186,7 @@ class EprAgentRunner:
             history_summary=history_summary,
             mode=mode,
             trace_id=trace_id,
+            is_cancelled=is_cancelled,
         ):
             if event.get("type") == "agent_complete":
                 result = event["result"]
@@ -186,6 +213,7 @@ class EprAgentRunner:
         history_summary: str = "",
         mode: str = "auto",
         trace_id: str = "",
+        is_cancelled: CancellationCheck | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Execute the agent loop, streaming step status events and final result."""
         trajectory: list[AgentStep] = []
@@ -205,6 +233,9 @@ class EprAgentRunner:
         for step in range(self.config.max_steps):
             if not self._budget.within_step_budget(step):
                 break
+            if is_cancelled is not None and await is_cancelled():
+                yield {"type": "agent_complete", "result": _cancelled_result(trajectory, all_evidence)}
+                return
 
             # ── 1. REASON: Call LLM to deliberate and choose action ──
             try:
@@ -269,6 +300,10 @@ class EprAgentRunner:
                     "trace_id": trace_id,
                 }
 
+                if is_cancelled is not None and await is_cancelled():
+                    yield {"type": "agent_complete", "result": _cancelled_result(trajectory, all_evidence)}
+                    return
+
                 # Budget check & loop detection
                 history_for_budget = [{"tool": s.tool, "args": s.args} for s in trajectory]
                 budget_check = self._budget.check_tool_call(tool_name, tool_args, history_for_budget)
@@ -295,12 +330,46 @@ class EprAgentRunner:
                             deny_reason=budget_check.reason,
                         )
                     )
+                    yield {
+                        "type": "agent_tool_result",
+                        "step": step + 1,
+                        "tool": tool_name,
+                        "status": "denied",
+                        "latency_ms": 0.0,
+                        "error_code": budget_check.reason.split(":", 1)[0],
+                        "trace_id": trace_id,
+                    }
                     continue
 
                 # Execute the tool
                 started = time.perf_counter()
                 observation = await self._execute_tool(tool_name, tool_args)
                 latency_ms = round((time.perf_counter() - started) * 1000, 2)
+                status, error_code = _tool_result_status(observation)
+
+                trajectory.append(
+                    AgentStep(
+                        step=step,
+                        tool=tool_name,
+                        args=tool_args,
+                        observation=observation,
+                        latency_ms=latency_ms,
+                        allowed=True,
+                    )
+                )
+                yield {
+                    "type": "agent_tool_result",
+                    "step": step + 1,
+                    "tool": tool_name,
+                    "status": status,
+                    "latency_ms": latency_ms,
+                    "error_code": error_code,
+                    "trace_id": trace_id,
+                }
+
+                if is_cancelled is not None and await is_cancelled():
+                    yield {"type": "agent_complete", "result": _cancelled_result(trajectory, all_evidence)}
+                    return
 
                 # Track evidence
                 if "documents" in observation and isinstance(observation["documents"], list):
@@ -351,17 +420,6 @@ class EprAgentRunner:
                         else str(compacted_obs)
                     ),
                 })
-
-                trajectory.append(
-                    AgentStep(
-                        step=step,
-                        tool=tool_name,
-                        args=tool_args,
-                        observation=observation,
-                        latency_ms=latency_ms,
-                        allowed=True,
-                    )
-                )
 
         # ── 4. MAX STEPS REACHED: Safe termination fallback ──
         yield {
