@@ -12,6 +12,7 @@ Each SSE event is a JSON object matching the pipeline yield format:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import uuid
@@ -24,7 +25,9 @@ from backend.api.routes.health import readiness_payload
 from backend.api.schemas import ChatRequest
 from backend.history import cancel_turn as cancel_turn_persistent
 from epr_agent.api.routes import stream_chat_events as agentic_stream_chat
+from epr_agent.config import get_settings
 from epr_agent.infra import metrics
+from epr_agent.infra.admission import AdmissionUnavailable, get_admission_controller
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -112,9 +115,57 @@ async def chat(request: Request, body: ChatRequest):
         "fact_updates": typed_fact_updates,
     })
 
+    def _capacity_error(code: str, message: str) -> dict[str, str]:
+        metrics.track_sse_error(code, True)
+        logger.info("sse_error code=%s retryable=true trace_id=%s", code, trace_id)
+        return {
+            "data": json.dumps(
+                {
+                    "type": "error",
+                    "code": code,
+                    "message": message,
+                    "retryable": True,
+                    "retry_after_seconds": 5,
+                    "trace_id": trace_id,
+                    "pipeline_version": "pipeline-v4",
+                },
+                ensure_ascii=False,
+            )
+        }
+
     async def _event_generator():
         replay_result_recorded = False
+        lease = None
+        heartbeat_task: asyncio.Task[None] | None = None
+        admission = None
         try:
+            settings = get_settings()
+            admission = (
+                getattr(request.app.state, "admission_controller", None)
+                or get_admission_controller()
+            )
+            try:
+                lease = await admission.acquire(
+                    "agent_turns",
+                    limit=settings.agent_max_in_flight_turns,
+                    wait_seconds=settings.agent_admission_wait_seconds,
+                    lease_ttl_seconds=settings.agent_lease_ttl_seconds,
+                )
+            except AdmissionUnavailable:
+                yield _capacity_error(
+                    "capacity_unavailable",
+                    "Hệ thống chưa thể kiểm tra năng lực xử lý. Vui lòng thử lại.",
+                )
+                return
+            if lease is None:
+                yield _capacity_error(
+                    "capacity_exceeded",
+                    "Hệ thống đang xử lý nhiều yêu cầu. Vui lòng thử lại sau ít giây.",
+                )
+                return
+            heartbeat_task = asyncio.create_task(
+                admission.heartbeat(lease, settings.agent_lease_heartbeat_seconds)
+            )
             async for event in agentic_stream_chat(
                 query=body.query,
                 user_id=user_id,
@@ -131,6 +182,8 @@ async def chat(request: Request, body: ChatRequest):
                 target_assistant_message_id=body.target_assistant_message_id,
                 runtime=runtime,
             ):
+                if heartbeat_task.done():
+                    heartbeat_task.result()
                 # Readiness is the authoritative runtime gate for this request.
                 event["preview"] = bool(readiness.get("preview"))
                 event_type = str(event.get("type") or "")
@@ -167,6 +220,11 @@ async def chat(request: Request, body: ChatRequest):
             # Client disconnected mid-stream
             logger.info("Stream cancelled for conversation=%s", conversation_id)
             return
+        except AdmissionUnavailable:
+            yield _capacity_error(
+                "capacity_unavailable",
+                "Hệ thống chưa thể duy trì năng lực xử lý. Vui lòng thử lại.",
+            )
         except Exception:
             logger.exception("Pipeline error")
             metrics.track_sse_error("pipeline_error", True)
@@ -183,6 +241,16 @@ async def chat(request: Request, body: ChatRequest):
                     "pipeline_version": "pipeline-v4",
                 })
             }
+        finally:
+            if heartbeat_task is not None:
+                heartbeat_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, AdmissionUnavailable):
+                    await heartbeat_task
+            if lease is not None and admission is not None:
+                try:
+                    await admission.release(lease)
+                except AdmissionUnavailable:
+                    logger.warning("Could not release admission lease trace_id=%s", trace_id)
 
     return EventSourceResponse(
         _event_generator(),

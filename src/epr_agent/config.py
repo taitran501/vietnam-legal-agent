@@ -78,6 +78,10 @@ class Settings(BaseSettings):
         description="Allow requests when Redis rate limiting is unavailable; keep false for production safety",
     )
     cache_ttl_seconds: int = Field(default=3600)       # exact-match cache TTL
+    agent_max_in_flight_turns: int = Field(default=50, ge=1)
+    agent_admission_wait_seconds: float = Field(default=2.0, ge=0.0)
+    agent_lease_ttl_seconds: float = Field(default=300.0, gt=0.0)
+    agent_lease_heartbeat_seconds: float = Field(default=30.0, gt=0.0)
     corpus_version: str = Field(
         default="epr-law-structure-v4-amendment-chain",
         description="Version included in bounded answer-cache keys after corpus changes",
