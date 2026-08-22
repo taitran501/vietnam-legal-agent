@@ -19,6 +19,8 @@ jobs:
       - run: python -m scripts.sync_corpus_metadata --check
       - run: python -m pytest -q
       - run: python -m tests.eval.run_eval --suite all
+      - run: python tests/eval/agent_harness.py --suite all
+      - run: python tests/eval/persona_simulation.py --persona all
       - run: ruff check src/epr_agent backend scripts tests
       - run: mypy src/epr_agent backend
 
