@@ -9,6 +9,7 @@ import re
 import time
 import uuid
 from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Any, cast
@@ -23,6 +24,94 @@ from epr_agent.agent.graph import (
 from epr_agent.domain.models import AgentState, TaskType, TerminationReason
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class _AgentTurnLifecycle:
+    """Own one pipeline-agent durable turn across every stream exit path."""
+
+    history: Any
+    user_id: str
+    conversation_id: str
+    turn_id: str
+    mode: str
+    operation: str
+    replay_metadata: dict[str, Any] = field(default_factory=dict)
+    target_assistant_message_id: Any = None
+    trace_id: str = ""
+    started: bool = False
+    finalized: bool = False
+
+    @property
+    def durable(self) -> bool:
+        return (
+            bool(self.turn_id)
+            and callable(getattr(self.history, "begin_turn", None))
+            and callable(getattr(self.history, "finish_turn", None))
+        )
+
+    async def begin(self, query: str) -> dict[str, Any] | None:
+        if not self.durable:
+            return None
+        handle = await self.history.begin_turn(
+            self.user_id,
+            self.conversation_id,
+            self.turn_id,
+            query,
+            mode=self.mode,
+            operation=self.operation,
+            replay_metadata=self.replay_metadata,
+            target_assistant_message_id=self.target_assistant_message_id,
+        )
+        if not isinstance(handle, dict):
+            return None
+        self.started = True
+        return handle
+
+    async def is_cancelled(self) -> bool:
+        checker = getattr(self.history, "is_turn_cancelled", None)
+        if not self.started or not callable(checker):
+            return False
+        return bool(await checker(self.user_id, self.conversation_id, self.turn_id))
+
+    async def finish(
+        self,
+        *,
+        content: str,
+        status: str,
+        metadata: dict[str, Any],
+        error_code: str | None = None,
+    ) -> dict[str, Any] | None:
+        if not self.started or self.finalized:
+            return None
+        final = await self.history.finish_turn(
+            self.user_id,
+            self.conversation_id,
+            self.turn_id,
+            content=content,
+            metadata=metadata,
+            status=status,
+            error_code=error_code,
+        )
+        if not isinstance(final, dict):
+            raise PermissionError("durable turn is not owned by current user")
+        self.finalized = True
+        return final
+
+    async def finish_interrupted(self, *, status: str, error_code: str) -> None:
+        if not self.started or self.finalized:
+            return
+        await self.finish(
+            content="",
+            status=status,
+            metadata={
+                "turn_status": status,
+                "trace_id": self.trace_id,
+                "pipeline_version": "pipeline-agent",
+                "replay_metadata": self.replay_metadata,
+            },
+            error_code=error_code,
+        )
 
 _ACTION_STATUS = {
     "validate_input": "Đã kiểm tra nội dung câu hỏi.",
@@ -423,6 +512,54 @@ class AgentWorkflowRuntime:
         return self._runner
 
     async def stream(self, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+        trace_id = str(kwargs.get("trace_id") or uuid.uuid4())
+        request_kwargs = {**kwargs, "trace_id": trace_id}
+        lifecycle = _AgentTurnLifecycle(
+            history=self.deps.history,
+            user_id=str(kwargs.get("user_id") or ""),
+            conversation_id=str(kwargs.get("conversation_id") or ""),
+            turn_id=str(kwargs.get("turn_id") or trace_id),
+            mode=str(kwargs.get("mode") or "auto"),
+            operation=str(kwargs.get("operation") or "message"),
+            replay_metadata=dict(kwargs.get("replay_metadata") or {}),
+            target_assistant_message_id=kwargs.get("target_assistant_message_id"),
+            trace_id=trace_id,
+        )
+        fallback_status = "stopped"
+        fallback_error_code = "client_disconnected"
+        try:
+            async for event in self._stream(lifecycle=lifecycle, **request_kwargs):
+                yield event
+        except asyncio.CancelledError:
+            try:
+                await lifecycle.finish_interrupted(
+                    status="stopped", error_code="client_disconnected"
+                )
+            except Exception:
+                logger.exception("Failed to finalize cancelled agent stream", extra={"trace_id": trace_id})
+            raise
+        except Exception:
+            fallback_status = "failed"
+            fallback_error_code = "stream_incomplete"
+            try:
+                await lifecycle.finish_interrupted(
+                    status=fallback_status, error_code=fallback_error_code
+                )
+            except Exception:
+                logger.exception("Failed to finalize failed agent stream", extra={"trace_id": trace_id})
+            raise
+        finally:
+            if lifecycle.started and not lifecycle.finalized:
+                try:
+                    await lifecycle.finish_interrupted(
+                        status=fallback_status, error_code=fallback_error_code
+                    )
+                except Exception:
+                    logger.exception("Failed to finalize interrupted agent stream", extra={"trace_id": trace_id})
+
+    async def _stream(
+        self, *, lifecycle: _AgentTurnLifecycle, **kwargs: Any
+    ) -> AsyncIterator[dict[str, Any]]:
         query = str(kwargs.get("query") or "").strip()
         user_id = str(kwargs.get("user_id") or "")
         conversation_id = str(kwargs.get("conversation_id") or "")
@@ -453,6 +590,101 @@ class AgentWorkflowRuntime:
             query=query,
         )
 
+        try:
+            await lifecycle.begin(query)
+        except Exception as exc:  # noqa: BLE001 - storage is a required agent dependency
+            logger.warning("Agent turn initialization failed: %s", exc)
+            trace_session.finish(metadata={"error": "storage_unavailable"})
+            yield {
+                "type": "error",
+                "code": "storage_unavailable",
+                "message": "Không thể lưu lượt xử lý. Vui lòng thử lại.",
+                "retryable": True,
+                "retry_after_seconds": 2,
+                "trace_id": trace_id,
+                "pipeline_version": "pipeline-agent",
+            }
+            return
+
+        def storage_error_event(message: str) -> dict[str, Any]:
+            return {
+                "type": "error",
+                "code": "storage_unavailable",
+                "message": message,
+                "retryable": True,
+                "retry_after_seconds": 2,
+                "trace_id": trace_id,
+                "pipeline_version": "pipeline-agent",
+            }
+
+        def stopped_event() -> dict[str, Any]:
+            return {
+                "type": "response_stopped",
+                "text": "",
+                "turn_status": "stopped",
+                "termination_reason": "user_cancelled",
+                "trace_id": trace_id,
+                "pipeline_version": "pipeline-agent",
+            }
+
+        async def finish_fast_path(
+            answer: str,
+            *,
+            source: str,
+            termination_reason: str,
+            save_legacy_exchange: bool,
+        ) -> dict[str, Any] | None:
+            metadata = {
+                "pipeline_version": "pipeline-agent",
+                "source": source,
+                "termination_reason": termination_reason,
+                "trace_id": trace_id,
+                "replay_metadata": lifecycle.replay_metadata,
+            }
+            if lifecycle.started:
+                if await lifecycle.is_cancelled():
+                    return await lifecycle.finish(
+                        content="",
+                        status="stopped",
+                        metadata={**metadata, "turn_status": "stopped"},
+                        error_code="user_cancelled",
+                    )
+                final = await lifecycle.finish(
+                    content=answer,
+                    status="complete",
+                    metadata={**metadata, "turn_status": "complete"},
+                )
+                if str((final or {}).get("status") or "failed") not in {"complete", "stopped"}:
+                    raise RuntimeError("durable fast-path finalization did not complete")
+                return final
+            if save_legacy_exchange:
+                await self.deps.history.save_exchange(
+                    user_id, conversation_id, query, answer, metadata
+                )
+            return None
+
+        try:
+            if await lifecycle.is_cancelled():
+                await lifecycle.finish(
+                    content="",
+                    status="stopped",
+                    metadata={
+                        "turn_status": "stopped",
+                        "trace_id": trace_id,
+                        "pipeline_version": "pipeline-agent",
+                        "replay_metadata": lifecycle.replay_metadata,
+                    },
+                    error_code="user_cancelled",
+                )
+                trace_session.finish(metadata={"termination": "user_cancelled"})
+                yield stopped_event()
+                return
+        except Exception as exc:  # noqa: BLE001 - cancellation state is durable storage
+            logger.warning("Agent cancellation check failed: %s", exc)
+            trace_session.finish(metadata={"error": "storage_unavailable"})
+            yield storage_error_event("Không thể kiểm tra trạng thái lượt xử lý. Vui lòng thử lại.")
+            return
+
         # ── 2. Input Validation Guardrail ──
         s_val = trace_session.start_span("validate_input")
         yield {"type": "status", "message": "Đang kiểm tra câu hỏi…", "stage": "validate_input"}
@@ -462,6 +694,21 @@ class AgentWorkflowRuntime:
             safe_msg = (
                 "Câu hỏi cần có nội dung và không vượt quá 3.000 ký tự. Bạn hãy gửi lại câu hỏi ngắn gọn hơn."
             )
+            try:
+                final = await finish_fast_path(
+                    safe_msg,
+                    source="error",
+                    termination_reason=TerminationReason.INVALID_INPUT.value,
+                    save_legacy_exchange=False,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Agent fast-path persistence failed: %s", exc)
+                trace_session.finish(metadata={"error": "storage_unavailable"})
+                yield storage_error_event("Không thể lưu kết quả. Vui lòng thử lại.")
+                return
+            if final and final.get("status") == "stopped":
+                yield stopped_event()
+                return
             trace_session.finish(metadata={"termination": TerminationReason.INVALID_INPUT.value})
             yield {
                 "type": "response_complete",
@@ -491,13 +738,21 @@ class AgentWorkflowRuntime:
                     "chunk_count": len(chunks),
                     "stage": "streaming",
                 }
-            await self.deps.history.save_exchange(
-                user_id,
-                conversation_id,
-                query,
-                answer,
-                {"pipeline_version": "pipeline-agent", "route": "chitchat", "source": "chitchat"},
-            )
+            try:
+                final = await finish_fast_path(
+                    answer,
+                    source="chitchat",
+                    termination_reason=TerminationReason.ANSWER_COMPLETE.value,
+                    save_legacy_exchange=True,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Agent chitchat persistence failed: %s", exc)
+                trace_session.finish(metadata={"error": "storage_unavailable"})
+                yield storage_error_event("Không thể lưu kết quả. Vui lòng thử lại.")
+                return
+            if final and final.get("status") == "stopped":
+                yield stopped_event()
+                return
             yield {
                 "type": "response_complete",
                 "text": answer,
@@ -512,6 +767,21 @@ class AgentWorkflowRuntime:
 
         if route.value == "out_of_scope":
             safe_msg = "Câu hỏi hiện nằm ngoài phạm vi tra cứu pháp luật của hệ thống."
+            try:
+                final = await finish_fast_path(
+                    safe_msg,
+                    source="error",
+                    termination_reason=TerminationReason.OUT_OF_SCOPE.value,
+                    save_legacy_exchange=False,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Agent out-of-scope persistence failed: %s", exc)
+                trace_session.finish(metadata={"error": "storage_unavailable"})
+                yield storage_error_event("Không thể lưu kết quả. Vui lòng thử lại.")
+                return
+            if final and final.get("status") == "stopped":
+                yield stopped_event()
+                return
             yield {
                 "type": "response_complete",
                 "text": safe_msg,
@@ -524,60 +794,18 @@ class AgentWorkflowRuntime:
             }
             return
 
-        # ── 4. Durable Turn & Autonomous Agent Cognitive Loop ──
+        # ── 4. Autonomous Agent Cognitive Loop ──
         turn_id = str(kwargs.get("turn_id") or trace_id)
         replay_metadata = dict(kwargs.get("replay_metadata") or {})
-        begin_turn = getattr(self.deps.history, "begin_turn", None)
-        finish_turn = getattr(self.deps.history, "finish_turn", None)
-        durable_turn = bool(turn_id) and callable(begin_turn) and callable(finish_turn)
-        if durable_turn:
-            try:
-                assert callable(begin_turn)
-                durable_handle = await begin_turn(
-                    user_id,
-                    conversation_id,
-                    turn_id,
-                    query,
-                    mode=mode,
-                    operation=operation,
-                    replay_metadata=replay_metadata,
-                    target_assistant_message_id=kwargs.get("target_assistant_message_id"),
-                )
-                if not isinstance(durable_handle, dict):
-                    durable_turn = False
-            except Exception as exc:  # noqa: BLE001 - storage is a required agent dependency
-                logger.warning("Agent turn initialization failed: %s", exc)
-                yield {
-                    "type": "error",
-                    "code": "storage_unavailable",
-                    "message": "Không thể lưu lượt xử lý. Vui lòng thử lại.",
-                    "retryable": True,
-                    "retry_after_seconds": 2,
-                    "trace_id": trace_id,
-                    "pipeline_version": "pipeline-agent",
-                }
-                return
 
         async def turn_cancelled() -> bool:
-            checker = getattr(self.deps.history, "is_turn_cancelled", None)
-            if not durable_turn or not callable(checker):
-                return False
-            return bool(await checker(user_id, conversation_id, turn_id))
+            return await lifecycle.is_cancelled()
 
         async def finish_durable_turn(
             *, content: str, status: str, metadata: dict[str, Any], error_code: str | None = None
         ) -> dict[str, Any] | None:
-            if not durable_turn:
-                return None
-            assert callable(finish_turn)
-            return await finish_turn(
-                user_id,
-                conversation_id,
-                turn_id,
-                content=content,
-                metadata=metadata,
-                status=status,
-                error_code=error_code,
+            return await lifecycle.finish(
+                content=content, status=status, metadata=metadata, error_code=error_code
             )
 
         _tool_status_messages = {
@@ -641,6 +869,22 @@ class AgentWorkflowRuntime:
         )
 
         if result is None:
+            try:
+                await finish_durable_turn(
+                    content="",
+                    status="failed",
+                    metadata={
+                        "turn_status": "failed",
+                        "trace_id": trace_id,
+                        "pipeline_version": "pipeline-agent",
+                    },
+                    error_code="agent_error",
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Agent error finalization failed: %s", exc)
+                trace_session.finish(metadata={"error": "storage_unavailable"})
+                yield storage_error_event("Không thể lưu trạng thái lỗi. Vui lòng thử lại.")
+                return
             trace_session.finish(metadata={"error": "agent_error"})
             yield {
                 "type": "error",
@@ -665,15 +909,11 @@ class AgentWorkflowRuntime:
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Agent cancellation persistence failed: %s", exc)
+                trace_session.finish(metadata={"error": "storage_unavailable"})
+                yield storage_error_event("Không thể lưu trạng thái dừng. Vui lòng thử lại.")
+                return
             trace_session.finish(metadata={"termination": "user_cancelled"})
-            yield {
-                "type": "response_stopped",
-                "text": "",
-                "turn_status": "stopped",
-                "termination_reason": "user_cancelled",
-                "trace_id": trace_id,
-                "pipeline_version": "pipeline-agent",
-            }
+            yield stopped_event()
             return
 
         # ── 5. Output Verification Guardrail ──
@@ -779,7 +1019,7 @@ class AgentWorkflowRuntime:
                 return
             if result.awaiting_user_input and snapshot.active_case:
                 await self.deps.history.save_case(user_id, conversation_id, snapshot.active_case)
-            if durable_turn:
+            if lifecycle.started:
                 final = await finish_durable_turn(
                     content=final_answer,
                     status="complete",
@@ -799,6 +1039,8 @@ class AgentWorkflowRuntime:
                         "pipeline_version": "pipeline-agent",
                     }
                     return
+                if mock_state["turn_status"] != "complete":
+                    raise RuntimeError("durable agent turn finalization did not complete")
             else:
                 await self.deps.history.save_exchange(
                     user_id,
