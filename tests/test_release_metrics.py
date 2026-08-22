@@ -12,6 +12,9 @@ def test_release_user_journey_metrics_are_exported_with_bounded_labels() -> None
     metrics.track_web_result_rejection("relevance_or_anchor_mismatch")
     metrics.track_feedback_failure("put", "storage_unavailable")
     metrics.track_replay_operation("regenerate", "failed")
+    metrics.track_admission_decision("agent_turns", "capacity_exceeded")
+    metrics.track_workload_duration("agent_turn", "complete", 1.25)
+    metrics.track_turn_time_to_first_event("pipeline-v4", 0.4)
 
     payload = metrics.metrics_endpoint().body.decode("utf-8")
 
@@ -23,3 +26,6 @@ def test_release_user_journey_metrics_are_exported_with_bounded_labels() -> None
     assert 'web_result_rejections_total{reason="relevance_or_anchor_mismatch"}' in payload
     assert 'feedback_failures_total{operation="put",reason="storage_unavailable"}' in payload
     assert 'replay_operations_total{operation="regenerate",result="failed"}' in payload
+    assert 'admission_decisions_total{outcome="capacity_exceeded",scope="agent_turns"}' in payload
+    assert 'pilot_workload_duration_seconds_count{outcome="complete",workload="agent_turn"}' in payload
+    assert 'agent_turn_time_to_first_event_seconds_count{pipeline="pipeline_v4"}' in payload

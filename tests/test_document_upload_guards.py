@@ -20,6 +20,7 @@ from backend.api.upload_validation import (
 from fastapi import FastAPI, HTTPException, Request
 from starlette.testclient import TestClient
 
+from epr_agent.infra import metrics
 from epr_agent.infra.admission import AdmissionLease, AdmissionUnavailable
 from epr_agent.tools.document_parser import DocumentParseResult
 
@@ -343,3 +344,19 @@ async def test_ten_concurrent_uploads_are_admitted_and_eleventh_is_rejected() ->
 def test_nginx_allows_multipart_overhead_above_backend_payload_limit() -> None:
     nginx = Path("nginx.conf").read_text(encoding="utf-8")
     assert "client_max_body_size 11m;" in nginx
+
+
+def test_successful_upload_exports_admission_and_duration_metrics() -> None:
+    response = _client().post(
+        "/api/v1/documents/upload",
+        files={"file": ("contract.txt", io.BytesIO(b"valid contract"), "text/plain")},
+        data={"analyze_redline": "false"},
+    )
+    payload = metrics.metrics_endpoint().body.decode("utf-8")
+
+    assert response.status_code == 200
+    assert 'admission_decisions_total{outcome="acquired",scope="document_uploads"}' in payload
+    assert (
+        'pilot_workload_duration_seconds_count{outcome="success",workload="document_upload"}'
+        in payload
+    )
