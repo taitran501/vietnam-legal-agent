@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 import re
+import time
 from typing import Annotated, Any
 from urllib.parse import quote
 
@@ -18,6 +19,7 @@ from backend.api.upload_validation import (
     validate_upload_format,
 )
 from epr_agent.config import get_settings
+from epr_agent.infra import metrics
 from epr_agent.infra.admission import AdmissionUnavailable, get_admission_controller
 from epr_agent.tools.contract_redliner import review_contract_clauses_heuristic, review_contract_with_llm
 from epr_agent.tools.document_drafter import (
@@ -76,6 +78,8 @@ async def upload_document(
     analyze_redline: Annotated[bool, Form()] = True,
 ) -> dict[str, Any]:
     """Upload and parse contract or legal instrument (PDF, DOCX, TXT)."""
+    started_at = time.perf_counter()
+    outcome = "internal_error"
     settings = get_settings()
     admission = (
         getattr(request.app.state, "admission_controller", None)
@@ -92,6 +96,8 @@ async def upload_document(
                 lease_ttl_seconds=settings.agent_lease_ttl_seconds,
             )
         except AdmissionUnavailable as exc:
+            outcome = "capacity_unavailable"
+            metrics.track_admission_decision("document_uploads", "acquire_unavailable")
             raise HTTPException(
                 status_code=503,
                 detail={
@@ -102,6 +108,8 @@ async def upload_document(
                 },
             ) from exc
         if lease is None:
+            outcome = "capacity_exceeded"
+            metrics.track_admission_decision("document_uploads", "capacity_exceeded")
             raise HTTPException(
                 status_code=503,
                 detail={
@@ -111,6 +119,7 @@ async def upload_document(
                     "retry_after_seconds": 5,
                 },
             )
+        metrics.track_admission_decision("document_uploads", "acquired")
         heartbeat_task = asyncio.create_task(
             admission.heartbeat(lease, settings.agent_lease_heartbeat_seconds)
         )
@@ -147,14 +156,24 @@ async def upload_document(
         if heartbeat_task.done():
             heartbeat_task.result()
 
+        outcome = "success"
         return {
             "status": "success",
             "document": parsed.model_dump(mode="json"),
             "redline_report": redline_report.model_dump(mode="json") if redline_report else None,
         }
-    except HTTPException:
+    except HTTPException as exc:
+        if outcome == "internal_error":
+            detail = exc.detail
+            outcome = (
+                str(detail.get("code"))
+                if isinstance(detail, dict) and detail.get("code")
+                else f"http_{exc.status_code}"
+            )
         raise
     except AdmissionUnavailable as exc:
+        outcome = "capacity_unavailable"
+        metrics.track_admission_decision("document_uploads", "lease_unavailable")
         raise HTTPException(
             status_code=503,
             detail={
@@ -165,9 +184,13 @@ async def upload_document(
             },
         ) from exc
     except Exception as exc:
+        outcome = "internal_error"
         logger.exception("Document upload failed")
         raise HTTPException(status_code=500, detail="Không thể xử lý tài liệu. Vui lòng thử lại.") from exc
     finally:
+        metrics.track_workload_duration(
+            "document_upload", outcome, time.perf_counter() - started_at
+        )
         with contextlib.suppress(Exception):
             await file.close()
         if heartbeat_task is not None:
@@ -178,6 +201,7 @@ async def upload_document(
             try:
                 await admission.release(lease)
             except AdmissionUnavailable:
+                metrics.track_admission_decision("document_uploads", "release_failed")
                 logger.warning("Could not release document admission lease")
 
 
