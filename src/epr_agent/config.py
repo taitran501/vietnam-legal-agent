@@ -82,6 +82,7 @@ class Settings(BaseSettings):
     agent_admission_wait_seconds: float = Field(default=2.0, ge=0.0)
     agent_lease_ttl_seconds: float = Field(default=300.0, gt=0.0)
     agent_lease_heartbeat_seconds: float = Field(default=30.0, gt=0.0)
+    document_max_in_flight_uploads: int = Field(default=10, ge=1)
     corpus_version: str = Field(
         default="epr-law-structure-v4-amendment-chain",
         description="Version included in bounded answer-cache keys after corpus changes",

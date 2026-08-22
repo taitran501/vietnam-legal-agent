@@ -2,14 +2,23 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import re
 from typing import Annotated, Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel, Field
 
+from backend.api.upload_validation import (
+    enforce_extracted_text_limit,
+    read_bounded_upload,
+    validate_upload_format,
+)
+from epr_agent.config import get_settings
+from epr_agent.infra.admission import AdmissionUnavailable, get_admission_controller
 from epr_agent.tools.contract_redliner import review_contract_clauses_heuristic, review_contract_with_llm
 from epr_agent.tools.document_drafter import (
     CourtPetitionPayload,
@@ -27,14 +36,6 @@ from epr_agent.tools.legal_calculators import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/documents", tags=["documents"])
-
-MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
-ALLOWED_MIME_TYPES = {
-    "application/pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "text/plain",
-}
-
 
 class ExportDocxRequest(BaseModel):
     title: str = Field(default="Van_ban_phap_ly", description="Tiêu đề văn bản")
@@ -70,31 +71,64 @@ class CalculateLandTaxRequest(BaseModel):
 
 @router.post("/upload")
 async def upload_document(
+    request: Request,
     file: Annotated[UploadFile, File(...)],
     analyze_redline: Annotated[bool, Form()] = True,
 ) -> dict[str, Any]:
     """Upload and parse contract or legal instrument (PDF, DOCX, TXT)."""
+    settings = get_settings()
+    admission = (
+        getattr(request.app.state, "admission_controller", None)
+        or get_admission_controller()
+    )
+    lease = None
+    heartbeat_task: asyncio.Task[None] | None = None
     try:
-        content_bytes = await file.read()
-
-        if len(content_bytes) > MAX_UPLOAD_BYTES:
-            raise HTTPException(status_code=413, detail="File exceeds 10 MB size limit.")
-
-        mime = (file.content_type or "").lower()
-        if mime and mime not in ALLOWED_MIME_TYPES:
-            raise HTTPException(
-                status_code=415,
-                detail=f"Unsupported file type '{mime}'. Allowed: PDF, DOCX, TXT.",
+        try:
+            lease = await admission.acquire(
+                "document_uploads",
+                limit=settings.document_max_in_flight_uploads,
+                wait_seconds=0,
+                lease_ttl_seconds=settings.agent_lease_ttl_seconds,
             )
+        except AdmissionUnavailable as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "document_capacity_unavailable",
+                    "message": "Document capacity cannot be verified safely.",
+                    "retryable": True,
+                    "retry_after_seconds": 5,
+                },
+            ) from exc
+        if lease is None:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "document_capacity_exceeded",
+                    "message": "Too many documents are currently being processed.",
+                    "retryable": True,
+                    "retry_after_seconds": 5,
+                },
+            )
+        heartbeat_task = asyncio.create_task(
+            admission.heartbeat(lease, settings.agent_lease_heartbeat_seconds)
+        )
+        await asyncio.sleep(0)
+        if heartbeat_task.done():
+            heartbeat_task.result()
 
-        if not content_bytes:
-            raise HTTPException(status_code=400, detail="File tải lên không có dữ liệu (rỗng)")
+        content_bytes = await read_bounded_upload(file)
+        filename = file.filename or ""
+        mime_type = file.content_type or ""
+        validate_upload_format(content=content_bytes, filename=filename, mime_type=mime_type)
 
         parsed = parse_document_file(
             content_bytes=content_bytes,
-            filename=file.filename or "uploaded_document.pdf",
-            mime_type=file.content_type or "application/pdf",
+            filename=filename,
+            mime_type=mime_type,
         )
+        enforce_extracted_text_limit(parsed.total_chars)
 
         redline_report = None
         if analyze_redline and parsed.clauses:
@@ -110,6 +144,9 @@ async def upload_document(
                     document_title=file.filename or "Hợp đồng",
                 )
 
+        if heartbeat_task.done():
+            heartbeat_task.result()
+
         return {
             "status": "success",
             "document": parsed.model_dump(mode="json"),
@@ -117,9 +154,31 @@ async def upload_document(
         }
     except HTTPException:
         raise
+    except AdmissionUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "document_capacity_unavailable",
+                "message": "Document capacity cannot be verified safely.",
+                "retryable": True,
+                "retry_after_seconds": 5,
+            },
+        ) from exc
     except Exception as exc:
         logger.exception("Document upload failed")
         raise HTTPException(status_code=500, detail="Không thể xử lý tài liệu. Vui lòng thử lại.") from exc
+    finally:
+        with contextlib.suppress(Exception):
+            await file.close()
+        if heartbeat_task is not None:
+            heartbeat_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, AdmissionUnavailable):
+                await heartbeat_task
+        if lease is not None:
+            try:
+                await admission.release(lease)
+            except AdmissionUnavailable:
+                logger.warning("Could not release document admission lease")
 
 
 @router.post("/export-docx")
