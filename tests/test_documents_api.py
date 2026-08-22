@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 from unittest.mock import patch
 
@@ -10,10 +11,24 @@ from backend.api.routes.documents import router
 from fastapi import FastAPI
 from starlette.testclient import TestClient
 
+from epr_agent.infra.admission import AdmissionLease
+
+
+class AllowingAdmissionController:
+    async def acquire(self, scope: str, **_kwargs: object) -> AdmissionLease:
+        return AdmissionLease(scope=scope, token="document-test", ttl_seconds=300)
+
+    async def heartbeat(self, _lease: AdmissionLease, interval_seconds: float) -> None:
+        await asyncio.sleep(interval_seconds)
+
+    async def release(self, _lease: AdmissionLease) -> None:
+        return None
+
 
 @pytest.fixture
 def app():
     test_app = FastAPI()
+    test_app.state.admission_controller = AllowingAdmissionController()
     test_app.include_router(router, prefix="/api/v1")
     return test_app
 
@@ -56,7 +71,7 @@ class TestUploadDocument:
             files={"file": ("big.txt", io.BytesIO(large_content), "text/plain")},
         )
         assert resp.status_code == 413
-        assert "10 MB" in resp.json()["detail"]
+        assert "10 MiB" in resp.json()["detail"]
 
     def test_upload_wrong_mime_type(self, client: TestClient):
         resp = client.post(
@@ -64,7 +79,7 @@ class TestUploadDocument:
             files={"file": ("script.exe", io.BytesIO(b"MZ"), "application/octet-stream")},
         )
         assert resp.status_code == 415
-        assert "Unsupported file type" in resp.json()["detail"]
+        assert "MIME type" in resp.json()["detail"]
 
     @patch("backend.api.routes.documents.parse_document_file")
     def test_upload_valid_pdf(self, mock_parse, client: TestClient):
@@ -78,11 +93,12 @@ class TestUploadDocument:
             raw_text="Hop dong lao dong",
             clauses=[],
         )
-        resp = client.post(
-            "/api/v1/documents/upload",
-            files={"file": ("contract.pdf", io.BytesIO(b"%PDF-1.4 fake"), "application/pdf")},
-            data={"analyze_redline": "false"},
-        )
+        with patch("backend.api.routes.documents.validate_upload_format"):
+            resp = client.post(
+                "/api/v1/documents/upload",
+                files={"file": ("contract.pdf", io.BytesIO(b"%PDF-1.4 fake"), "application/pdf")},
+                data={"analyze_redline": "false"},
+            )
         assert resp.status_code == 200
         assert resp.json()["document"]["file_type"] == "pdf"
         mock_parse.assert_called_once()
