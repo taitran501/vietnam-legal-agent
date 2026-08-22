@@ -70,7 +70,7 @@ def _validate_pdf(content: bytes) -> None:
     if not content.startswith(b"%PDF-"):
         raise HTTPException(status_code=415, detail="PDF signature does not match the declared format.")
     try:
-        import fitz  # type: ignore[import-not-found]
+        import fitz  # type: ignore
 
         with fitz.open(stream=content, filetype="pdf") as document:
             page_count = len(document)
