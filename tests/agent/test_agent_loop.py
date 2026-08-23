@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from langchain_core.messages import AIMessage
 
@@ -195,3 +197,58 @@ async def test_agent_clarification_tool():
     assert result.awaiting_user_input is True
     assert "Vật liệu" in result.answer
     assert result.steps_taken == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_emits_tool_result_after_execution():
+    completed = False
+
+    async def probe_tool() -> dict:
+        nonlocal completed
+        await asyncio.sleep(0)
+        completed = True
+        return {"ok": True}
+
+    mock_llm = MockSequenceLLM([
+        AIMessage(content="", tool_calls=[{"name": "probe_tool", "args": {}, "id": "call-1"}]),
+        AIMessage(content="Hoàn tất."),
+    ])
+    runner = EprAgentRunner(llm=mock_llm, tools=[probe_tool])
+    events = []
+    async for event in runner.stream("Kiểm tra"):
+        events.append((event, completed))
+
+    call_index = next(i for i, (event, _) in enumerate(events) if event["type"] == "agent_tool_call")
+    result_index = next(i for i, (event, _) in enumerate(events) if event["type"] == "agent_tool_result")
+    assert call_index < result_index
+    assert events[result_index][1] is True
+    assert events[result_index][0]["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_agent_tool_timeout_has_terminal_result_event():
+    async def slow_tool() -> dict:
+        await asyncio.sleep(0.05)
+        return {"ok": True}
+
+    mock_llm = MockSequenceLLM([
+        AIMessage(content="", tool_calls=[{"name": "slow_tool", "args": {}, "id": "call-1"}]),
+        AIMessage(content="Không thể hoàn tất."),
+    ])
+    runner = EprAgentRunner(config=AgentRunConfig(tool_timeout_s=0.001), llm=mock_llm, tools=[slow_tool])
+    events = [event async for event in runner.stream("Kiểm tra timeout")]
+
+    tool_result = next(event for event in events if event["type"] == "agent_tool_result")
+    assert tool_result["status"] == "timed_out"
+    assert tool_result["error_code"] == "tool_timeout"
+
+
+@pytest.mark.asyncio
+async def test_agent_checks_durable_cancellation_before_llm_call():
+    mock_llm = MockSequenceLLM([AIMessage(content="Không được gọi")])
+    runner = EprAgentRunner(llm=mock_llm)
+
+    result = await runner.run("Kiểm tra dừng", is_cancelled=lambda: asyncio.sleep(0, result=True))
+
+    assert result.termination_reason == "user_cancelled"
+    assert mock_llm.calls == 0

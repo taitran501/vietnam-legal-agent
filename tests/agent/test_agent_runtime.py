@@ -52,6 +52,15 @@ class FakeRunner:
             "trace_id": kwargs.get("trace_id", ""),
         }
         yield {
+            "type": "agent_tool_result",
+            "step": 1,
+            "tool": "search_legal_provisions",
+            "status": "completed",
+            "latency_ms": 10.0,
+            "error_code": None,
+            "trace_id": kwargs.get("trace_id", ""),
+        }
+        yield {
             "type": "agent_complete",
             "result": self.result,
         }
@@ -205,13 +214,116 @@ async def test_agent_runtime_regenerate_empty_query_recovery(agent_deps):
 @pytest.mark.asyncio
 async def test_get_default_runtime_feature_flag(monkeypatch):
     from epr_agent.config import get_settings
+
     get_default_runtime.cache_clear()
     settings = get_settings()
     monkeypatch.setattr(settings, "agent_pipeline_version", "pipeline-agent")
-    
+
     runtime = get_default_runtime()
     assert runtime.__class__.__name__ == "AgentWorkflowRuntime"
     get_default_runtime.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_agent_runtime_reports_tool_completion_after_result(agent_deps):
+    result = AgentRunResult(
+        answer="Không đủ căn cứ.",
+        termination_reason=TerminationReason.INSUFFICIENT_EVIDENCE.value,
+        trajectory=[AgentStep(1, "search_legal_provisions", {}, {}, 12.5, True)],
+        evidence=[],
+        citations=[],
+        source="error",
+        steps_taken=1,
+        cache_hit=False,
+    )
+    events = [
+        event
+        async for event in AgentWorkflowRuntime(agent_deps, runner=FakeRunner(result)).stream(
+            query="Điều luật nào áp dụng?", user_id="u1", conversation_id="c1"
+        )
+    ]
+
+    status_index = next(i for i, event in enumerate(events) if event.get("type") == "status" and event.get("stage") == "search_legal_provisions")
+    step_index = next(i for i, event in enumerate(events) if event.get("type") == "workflow_step")
+    assert status_index < step_index
+    assert events[step_index]["status"] == "completed"
+    assert events[step_index]["latency_ms"] == 10.0
+
+
+@pytest.mark.asyncio
+async def test_agent_runtime_durable_cancellation_wins_over_completion(agent_deps):
+    class CancelledHistory(FakeHistory):
+        def __init__(self) -> None:
+            super().__init__()
+            self.finished: list[dict] = []
+
+        async def begin_turn(self, *args, **kwargs) -> dict:
+            return {"status": "pending", "assistant_message_id": 1}
+
+        async def is_turn_cancelled(self, *args, **kwargs) -> bool:
+            return True
+
+        async def finish_turn(self, *args, **kwargs) -> dict:
+            self.finished.append(kwargs)
+            return {"status": "stopped", "assistant_message_id": 1}
+
+    history = CancelledHistory()
+    deps = WorkflowDependencies(
+        history=history,
+        cache=agent_deps.cache,
+        retrieval=agent_deps.retrieval,
+        evidence=agent_deps.evidence,
+        generation=agent_deps.generation,
+        planner=agent_deps.planner,
+    )
+    result = AgentRunResult(
+        answer="Câu trả lời muộn.",
+        termination_reason="user_cancelled",
+        trajectory=[], evidence=[], citations=[], source="error", steps_taken=0, cache_hit=False,
+    )
+    events = [
+        event
+        async for event in AgentWorkflowRuntime(deps, runner=FakeRunner(result)).stream(
+            query="Điều luật nào áp dụng?",
+            user_id="u1",
+            conversation_id="c1",
+            turn_id="turn-1",
+        )
+    ]
+
+    assert any(event.get("type") == "response_stopped" for event in events)
+    assert not any(event.get("type") == "response_complete" for event in events)
+    assert history.finished[-1]["status"] == "stopped"
+
+
+@pytest.mark.asyncio
+async def test_agent_runtime_storage_failure_is_visible(agent_deps):
+    class FailingHistory(FakeHistory):
+        async def save_exchange(self, *args, **kwargs) -> int:
+            raise OSError("database unavailable")
+
+    deps = WorkflowDependencies(
+        history=FailingHistory(),
+        cache=agent_deps.cache,
+        retrieval=agent_deps.retrieval,
+        evidence=agent_deps.evidence,
+        generation=agent_deps.generation,
+        planner=agent_deps.planner,
+    )
+    result = AgentRunResult(
+        answer="Không đủ căn cứ.",
+        termination_reason=TerminationReason.INSUFFICIENT_EVIDENCE.value,
+        trajectory=[], evidence=[], citations=[], source="error", steps_taken=1, cache_hit=False,
+    )
+    events = [
+        event
+        async for event in AgentWorkflowRuntime(deps, runner=FakeRunner(result)).stream(
+            query="Điều luật nào áp dụng?", user_id="u1", conversation_id="c1"
+        )
+    ]
+
+    assert any(event.get("type") == "error" and event.get("code") == "storage_unavailable" for event in events)
+    assert not any(event.get("type") == "response_complete" for event in events)
 
 
 def test_cited_evidence_indices_ignores_out_of_range_bracketed_numbers():

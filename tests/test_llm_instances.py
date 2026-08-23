@@ -8,7 +8,9 @@ Tests cover:
 - Streaming configuration
 """
 
+import pytest
 
+from epr_agent.config import get_settings
 from epr_agent.infra.llm_instances import (
     get_embeddings,
     get_llm_fast,
@@ -16,6 +18,20 @@ from epr_agent.infra.llm_instances import (
     get_llm_smart,
     get_llm_stream,
 )
+
+
+@pytest.fixture(autouse=True)
+def deterministic_provider_configuration(monkeypatch: pytest.MonkeyPatch):
+    """Construct provider clients without relying on a developer's local .env."""
+    monkeypatch.setenv("OPENAI_API_KEY", "ci-unit-test-placeholder")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+    get_embeddings.cache_clear()
+    get_llm_fast.cache_clear()
+    get_llm_router.cache_clear()
+    get_llm_smart.cache_clear()
+    get_llm_stream.cache_clear()
 
 
 class TestLLMInstances:

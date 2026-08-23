@@ -1,0 +1,52 @@
+name: Live Agent Evaluation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-agent-eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: pilot
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      QDRANT_CLOUD_URL: ${{ secrets.QDRANT_CLOUD_URL }}
+      QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+      USE_QDRANT_CLOUD: "true"
+      LAW_COLLECTION: ${{ vars.PILOT_LAW_COLLECTION }}
+      AGENT_PIPELINE_VERSION: pipeline-agent
+      CORPUS_RUNTIME_MODE: preview
+      REQUIRE_AUTH: "false"
+      HISTORY_DB_PATH: artifacts/live-agent-eval.sqlite3
+      LANGCHAIN_TRACING_V2: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Validate pilot provider configuration
+        run: |
+          test -n "$OPENAI_API_KEY"
+          test -n "$QDRANT_CLOUD_URL"
+          test -n "$QDRANT_API_KEY"
+          test -n "$LAW_COLLECTION"
+      - run: python -m pip install -e ".[dev]"
+      - name: Run 50-case live autonomous runtime gate
+        run: |
+          python -m scripts.run_live_agent_eval \
+            --output artifacts/live-agent-eval.json \
+            --min-pass-rate 0.70 \
+            --min-anchor-accuracy 0.80 \
+            --min-context-recall 0.75
+      - name: Upload evaluation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-agent-eval-${{ github.sha }}
+          path: artifacts/live-agent-eval.json
+          if-no-files-found: error
+          retention-days: 30

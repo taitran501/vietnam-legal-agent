@@ -4,6 +4,15 @@ Production legal chat is intentionally blocked until each legal domain corpus
 has both technical integrity and external legal approval. A successful build or
 a preview run is not approval.
 
+## Autonomous-agent pilot gate
+
+`pipeline-agent` remains feature-flagged until the manually dispatched
+`Live Agent Evaluation` workflow passes against the protected `pilot`
+environment. The workflow runs the checked-in 50-case benchmark through the
+actual autonomous runtime and requires a pass rate of 70%, statutory-anchor
+accuracy of 80%, and context recall of 75%. Its JSON artifact is the promotion
+evidence; deterministic pull-request checks do not replace this live gate.
+
 ## Release Gates
 
 Before starting a production backend, configure a real PostgreSQL URL, Qdrant

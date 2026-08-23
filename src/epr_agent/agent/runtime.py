@@ -524,7 +524,62 @@ class AgentWorkflowRuntime:
             }
             return
 
-        # ── 4. Autonomous Agent Cognitive Loop ──
+        # ── 4. Durable Turn & Autonomous Agent Cognitive Loop ──
+        turn_id = str(kwargs.get("turn_id") or trace_id)
+        replay_metadata = dict(kwargs.get("replay_metadata") or {})
+        begin_turn = getattr(self.deps.history, "begin_turn", None)
+        finish_turn = getattr(self.deps.history, "finish_turn", None)
+        durable_turn = bool(turn_id) and callable(begin_turn) and callable(finish_turn)
+        if durable_turn:
+            try:
+                assert callable(begin_turn)
+                durable_handle = await begin_turn(
+                    user_id,
+                    conversation_id,
+                    turn_id,
+                    query,
+                    mode=mode,
+                    operation=operation,
+                    replay_metadata=replay_metadata,
+                    target_assistant_message_id=kwargs.get("target_assistant_message_id"),
+                )
+                if not isinstance(durable_handle, dict):
+                    durable_turn = False
+            except Exception as exc:  # noqa: BLE001 - storage is a required agent dependency
+                logger.warning("Agent turn initialization failed: %s", exc)
+                yield {
+                    "type": "error",
+                    "code": "storage_unavailable",
+                    "message": "Không thể lưu lượt xử lý. Vui lòng thử lại.",
+                    "retryable": True,
+                    "retry_after_seconds": 2,
+                    "trace_id": trace_id,
+                    "pipeline_version": "pipeline-agent",
+                }
+                return
+
+        async def turn_cancelled() -> bool:
+            checker = getattr(self.deps.history, "is_turn_cancelled", None)
+            if not durable_turn or not callable(checker):
+                return False
+            return bool(await checker(user_id, conversation_id, turn_id))
+
+        async def finish_durable_turn(
+            *, content: str, status: str, metadata: dict[str, Any], error_code: str | None = None
+        ) -> dict[str, Any] | None:
+            if not durable_turn:
+                return None
+            assert callable(finish_turn)
+            return await finish_turn(
+                user_id,
+                conversation_id,
+                turn_id,
+                content=content,
+                metadata=metadata,
+                status=status,
+                error_code=error_code,
+            )
+
         _tool_status_messages = {
             "search_legal_provisions": "Đang tra cứu kho văn bản pháp luật…",
             "search_web_official": "Đang tìm kiếm thông tin từ cổng chính thức…",
@@ -544,23 +599,36 @@ class AgentWorkflowRuntime:
             history_summary=snapshot.summary,
             mode=mode,
             trace_id=trace_id,
+            is_cancelled=turn_cancelled,
         ):
             if event.get("type") == "agent_tool_call":
                 tool_name = event.get("tool", "")
                 status_message = _tool_status_messages.get(tool_name, "Đang xử lý bước tiếp theo…")
-                s_tool = trace_session.start_span(f"tool:{tool_name}")
-                s_tool.close(extra_attrs={"step": event.get("step", 1)})
-                yield {
-                    "type": "workflow_step",
-                    "step": event.get("step", 1),
-                    "action": tool_name,
-                    "status": "completed",
-                    "trace_id": trace_id,
-                }
                 yield {
                     "type": "status",
                     "message": status_message,
                     "stage": tool_name,
+                }
+            elif event.get("type") == "agent_tool_result":
+                tool_name = str(event.get("tool") or "")
+                tool_status = str(event.get("status") or "failed")
+                s_tool = trace_session.start_span(f"tool:{tool_name}")
+                s_tool.close(
+                    status="ok" if tool_status == "completed" else tool_status,
+                    extra_attrs={
+                        "step": event.get("step", 1),
+                        "latency_ms": event.get("latency_ms", 0.0),
+                        "error_code": event.get("error_code"),
+                    },
+                )
+                yield {
+                    "type": "workflow_step",
+                    "step": event.get("step", 1),
+                    "action": tool_name,
+                    "status": tool_status,
+                    "latency_ms": event.get("latency_ms", 0.0),
+                    "error_code": event.get("error_code"),
+                    "trace_id": trace_id,
                 }
             elif event.get("type") == "agent_complete":
                 result = event.get("result")
@@ -579,6 +647,30 @@ class AgentWorkflowRuntime:
                 "code": "agent_error",
                 "message": "Không nhận được phản hồi từ agent.",
                 "retryable": True,
+                "trace_id": trace_id,
+                "pipeline_version": "pipeline-agent",
+            }
+            return
+
+        if result.termination_reason == "user_cancelled" or await turn_cancelled():
+            stopped_metadata = {
+                "turn_status": "stopped",
+                "trace_id": trace_id,
+                "pipeline_version": "pipeline-agent",
+                "replay_metadata": replay_metadata,
+            }
+            try:
+                await finish_durable_turn(
+                    content="", status="stopped", metadata=stopped_metadata, error_code="user_cancelled"
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Agent cancellation persistence failed: %s", exc)
+            trace_session.finish(metadata={"termination": "user_cancelled"})
+            yield {
+                "type": "response_stopped",
+                "text": "",
+                "turn_status": "stopped",
+                "termination_reason": "user_cancelled",
                 "trace_id": trace_id,
                 "pipeline_version": "pipeline-agent",
             }
@@ -642,6 +734,7 @@ class AgentWorkflowRuntime:
             "trace_id": trace_id,
             "user_id": user_id,
             "conversation_id": conversation_id,
+            "turn_id": turn_id,
             "query": query,
             "answer": final_answer,
             "task_type": result.task_type,
@@ -663,18 +756,84 @@ class AgentWorkflowRuntime:
         }
 
         try:
+            if await turn_cancelled():
+                await finish_durable_turn(
+                    content="",
+                    status="stopped",
+                    metadata={
+                        "turn_status": "stopped",
+                        "trace_id": trace_id,
+                        "pipeline_version": "pipeline-agent",
+                        "replay_metadata": replay_metadata,
+                    },
+                    error_code="user_cancelled",
+                )
+                yield {
+                    "type": "response_stopped",
+                    "text": "",
+                    "turn_status": "stopped",
+                    "termination_reason": "user_cancelled",
+                    "trace_id": trace_id,
+                    "pipeline_version": "pipeline-agent",
+                }
+                return
             if result.awaiting_user_input and snapshot.active_case:
                 await self.deps.history.save_case(user_id, conversation_id, snapshot.active_case)
-            await self.deps.history.save_exchange(
-                user_id,
-                conversation_id,
-                query,
-                final_answer,
-                _metadata(mock_state),
-            )
+            if durable_turn:
+                final = await finish_durable_turn(
+                    content=final_answer,
+                    status="complete",
+                    metadata=_metadata(mock_state),
+                )
+                if final is None:
+                    raise PermissionError("durable turn is not owned by current user")
+                mock_state["turn_status"] = str(final.get("status") or "failed")
+                mock_state["assistant_message_id"] = str(final.get("assistant_message_id") or "")
+                if mock_state["turn_status"] == "stopped":
+                    yield {
+                        "type": "response_stopped",
+                        "text": "",
+                        "turn_status": "stopped",
+                        "termination_reason": "user_cancelled",
+                        "trace_id": trace_id,
+                        "pipeline_version": "pipeline-agent",
+                    }
+                    return
+            else:
+                await self.deps.history.save_exchange(
+                    user_id,
+                    conversation_id,
+                    query,
+                    final_answer,
+                    _metadata(mock_state),
+                )
             await self.deps.history.record_run(mock_state, started_at, time.perf_counter())
         except Exception as exc:  # noqa: BLE001
             logger.warning("Agent persistence error: %s", exc)
+            try:
+                await finish_durable_turn(
+                    content="",
+                    status="failed",
+                    metadata={
+                        "turn_status": "failed",
+                        "trace_id": trace_id,
+                        "pipeline_version": "pipeline-agent",
+                    },
+                    error_code="storage_unavailable",
+                )
+            except Exception as finalize_exc:  # noqa: BLE001 - original storage error is authoritative
+                logger.debug("Could not mark failed agent turn: %s", finalize_exc)
+            trace_session.finish(metadata={"error": "storage_unavailable"})
+            yield {
+                "type": "error",
+                "code": "storage_unavailable",
+                "message": "Không thể lưu kết quả. Vui lòng thử lại.",
+                "retryable": True,
+                "retry_after_seconds": 2,
+                "trace_id": trace_id,
+                "pipeline_version": "pipeline-agent",
+            }
+            return
 
         trace_session.finish(
             metadata={
