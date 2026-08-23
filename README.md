@@ -61,7 +61,7 @@ The current product focuses on Vietnamese legal research across selected
 domains, including civil/contracts, labor, corporate, land, traffic, and EPR.
 It does not currently provide:
 
-- document upload or OCR;
+- document upload or OCR in the browser UI;
 - historical-law date selection;
 - broad web search outside configured official domains;
 - long-term user-profile memory;
@@ -215,6 +215,7 @@ Important settings include:
 | `POSTGRES_PASSWORD` | Required by Compose; there is no insecure default. |
 | `QDRANT_URL` / `USE_QDRANT_CLOUD` | Self-hosted or Qdrant Cloud vector storage. |
 | `REDIS_URL` | Cache and request-protection backend. |
+| `DOCUMENT_MAX_IN_FLIGHT_UPLOADS` | Deployment-wide Redis admission limit for the API-only document preview (default `10`). |
 | `RATE_LIMIT_FAIL_OPEN` | Keep `false` outside an explicitly isolated preview. |
 | `OIDC_*`, `SERVICE_TOKEN_DEFINITIONS`, `API_KEYS` | Deployment authentication options. |
 | `ALLOWED_ORIGINS` | HTTPS origins for a cross-origin deployment; empty is suitable for the same-origin Compose gateway. |
@@ -235,9 +236,17 @@ Common API routes are:
 | `GET` | `/api/v1/health` | Process liveness. |
 | `GET` | `/api/v1/ready` | Dependency, corpus, and capability readiness. |
 | `POST` | `/api/v1/chat` | Stream a question or guided-workflow turn over SSE. |
+| `POST` | `/api/v1/documents/upload` | API-only preview for bounded PDF, DOCX, or UTF-8 TXT parsing; no browser upload UI is included. |
 | `GET` | `/api/v1/sessions` | List conversations owned by the current principal. |
 | `GET/PATCH` | `/api/v1/sessions/{id}/case` | Read or save guided case facts. |
 | `PUT` | `/api/v1/conversations/{id}/messages/{message_id}/feedback` | Save answer feedback. |
+
+Document upload is an API-only preview capability. It accepts a maximum file
+payload of 10 MiB (Nginx allows 11 MiB for multipart framing), validates the
+extension, declared MIME type, and file signature, and applies PDF, DOCX ZIP,
+and extracted-text resource limits before analysis. A full admission queue
+returns a retryable HTTP 503 response. This capability is not a production
+document-management system and does not currently include OCR or a browser UI.
 
 The main request path is:
 
