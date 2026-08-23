@@ -159,6 +159,8 @@ const errorCopy: Record<string, { title: string; fallback: string }> = {
   web_provider_unavailable: { title: 'Nguồn bổ sung đang tạm thời không khả dụng', fallback: 'Bạn có thể thử lại sau hoặc tiếp tục với kho văn bản hiện có.' },
   stream_incomplete: { title: 'Câu trả lời bị gián đoạn', fallback: 'Hệ thống chưa nhận đủ nội dung trả lời. Bạn có thể thử lại.' },
   pipeline_unavailable: { title: 'Dịch vụ trả lời đang bận', fallback: 'Hãy thử lại sau ít phút.' },
+  capacity_exceeded: { title: 'Hệ thống đang xử lý nhiều yêu cầu', fallback: 'Vui lòng chờ vài giây rồi thử lại.' },
+  capacity_unavailable: { title: 'Chưa thể kiểm tra năng lực xử lý', fallback: 'Vui lòng thử lại sau ít phút.' },
   pipeline_error: { title: 'Không thể hoàn tất câu trả lời', fallback: 'Hãy thử lại hoặc thu hẹp câu hỏi.' },
 };
 

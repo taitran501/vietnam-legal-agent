@@ -24,6 +24,10 @@ describe('user-facing copy', () => {
       title: 'Không thể hoàn tất câu trả lời',
       message: 'Hãy thử lại hoặc thu hẹp câu hỏi.',
     });
+    expect(errorPresentation({ code: 'capacity_exceeded', message: '', retryable: true })).toEqual({
+      title: 'Hệ thống đang xử lý nhiều yêu cầu',
+      message: 'Vui lòng chờ vài giây rồi thử lại.',
+    });
   });
 
   it('does not expose transport errors beside the guided form', () => {
