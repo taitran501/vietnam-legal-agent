@@ -30,9 +30,11 @@ def _to_record(document: Any, *, source: str, index: int) -> DocumentRecord:
     except (TypeError, ValueError):
         score = None
     document_id = str(
-        metadata.get("document_id")
+        metadata.get("source_document_id")
+        or metadata.get("document_id")
+        or metadata.get("_id")
+        or metadata.get("chunk_id")
         or metadata.get("id")
-        or metadata.get("source")
         or f"{source}-{index + 1}"
     )
     return DocumentRecord(

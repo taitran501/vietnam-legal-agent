@@ -66,4 +66,50 @@ describe('SourceDrawer', () => {
     rerender(<SourceDrawer documents={[]} isOpen onClose={vi.fn()} preview />);
     expect(screen.getByText(/Bản thử nghiệm:/)).toBeInTheDocument();
   });
+
+  it('renders canonical document identity instead of using the article chunk as the title', () => {
+    render(
+      <SourceDrawer
+        documents={[
+          {
+            page_content: '[CHỦ ĐỀ]: Văn bản | [CĂN CỨ VĂN BẢN]: raw\n\nĐiều 1 quy định phạm vi áp dụng.',
+            document_id: 'chunk-1',
+            metadata: {
+              source_id: 'nd-318-2026',
+              chunk_id: 'chunk-1',
+              Source_Title: 'Nghị định số 318/2026/NĐ-CP',
+              Document_Number: '318/2026/NĐ-CP',
+              legal_anchor: 'Điều 1',
+              citation_index: 1,
+              effective_status: 'unknown',
+            },
+          },
+        ]}
+        isOpen
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Nghị định số 318/2026/NĐ-CP' })).toBeInTheDocument();
+    expect(screen.getByText('Điều 1 quy định phạm vi áp dụng.')).toBeInTheDocument();
+    expect(screen.getByText('Trạng thái chưa xác định')).toBeInTheDocument();
+    expect(screen.getByText('Mã nguồn: nd-318-2026')).toBeInTheDocument();
+    expect(screen.queryByText(/\[CHỦ ĐỀ\]/)).not.toBeInTheDocument();
+  });
+
+  it('shows an explicit missing-source state instead of a fabricated source title or link', () => {
+    render(
+      <SourceDrawer
+        documents={[{ page_content: 'Đoạn trích chưa có metadata.', document_id: 'chunk-unknown', metadata: {} }]}
+        isOpen
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Chưa xác định văn bản' })).toBeInTheDocument();
+    expect(screen.getByText(/Chưa có đủ metadata để định danh văn bản/)).toBeInTheDocument();
+    expect(screen.getByText('Chưa có liên kết chính thức')).toBeInTheDocument();
+    expect(screen.getByText('Mã nguồn: chunk-unknown')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Mở nguồn/i })).not.toBeInTheDocument();
+  });
 });

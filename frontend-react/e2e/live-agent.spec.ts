@@ -11,7 +11,7 @@ test('React consumes the real FastAPI SSE and opens verified legal evidence', as
   await page.getByRole('button', { name: /Xem \d+ nguồn tham khảo/ }).click();
   const drawer = page.getByRole('dialog', { name: 'Nguồn tham khảo' });
   const firstSource = drawer.locator('#source-1');
-  await expect(firstSource.getByRole('heading', { name: 'Điều 77', exact: true })).toBeVisible();
+  await expect(firstSource.getByRole('heading', { name: 'Nghị định 08/2022/NĐ-CP', exact: true })).toBeVisible();
   await expect(firstSource.getByText('Số: 08/2022/NĐ-CP', { exact: true })).toBeVisible();
   await expect(firstSource.getByText('Điều 77', { exact: true })).toBeVisible();
 });
