@@ -223,6 +223,29 @@ REPLAY_OPERATIONS = Counter(
     registry=REGISTRY,
 )
 
+ADMISSION_DECISIONS = Counter(
+    "admission_decisions_total",
+    "Capacity admission and lease-maintenance decisions",
+    ["scope", "outcome"],
+    registry=REGISTRY,
+)
+
+WORKLOAD_DURATION = Histogram(
+    "pilot_workload_duration_seconds",
+    "End-to-end duration of bounded pilot workloads",
+    ["workload", "outcome"],
+    buckets=(0.1, 0.25, 0.5, 1, 2, 3, 5, 10, 15, 30, 60, 120, 300),
+    registry=REGISTRY,
+)
+
+TURN_TIME_TO_FIRST_EVENT = Histogram(
+    "agent_turn_time_to_first_event_seconds",
+    "Time from accepted chat request to the first runtime SSE event",
+    ["pipeline"],
+    buckets=(0.05, 0.1, 0.25, 0.5, 1, 2, 3, 5, 10, 30),
+    registry=REGISTRY,
+)
+
 
 # ---------------------------------------------------------------------------
 # Helper functions for metrics
@@ -323,6 +346,24 @@ def track_feedback_failure(operation: str, reason: str) -> None:
 
 def track_replay_operation(operation: str, result: str) -> None:
     REPLAY_OPERATIONS.labels(operation=_label(operation), result=_label(result)).inc()
+
+
+def track_admission_decision(scope: str, outcome: str) -> None:
+    ADMISSION_DECISIONS.labels(scope=_label(scope), outcome=_label(outcome)).inc()
+
+
+def track_workload_duration(workload: str, outcome: str, seconds: float) -> None:
+    if seconds < 0:
+        return
+    WORKLOAD_DURATION.labels(
+        workload=_label(workload), outcome=_label(outcome)
+    ).observe(seconds)
+
+
+def track_turn_time_to_first_event(pipeline: str, seconds: float) -> None:
+    if seconds < 0:
+        return
+    TURN_TIME_TO_FIRST_EVENT.labels(pipeline=_label(pipeline)).observe(seconds)
 
 
 # ---------------------------------------------------------------------------

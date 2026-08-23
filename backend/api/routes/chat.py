@@ -15,6 +15,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import time
 import uuid
 
 from fastapi import APIRouter, HTTPException, Request
@@ -134,6 +135,9 @@ async def chat(request: Request, body: ChatRequest):
         }
 
     async def _event_generator():
+        started_at = time.perf_counter()
+        outcome = "stream_incomplete"
+        first_runtime_event = False
         replay_result_recorded = False
         lease = None
         heartbeat_task: asyncio.Task[None] | None = None
@@ -152,17 +156,22 @@ async def chat(request: Request, body: ChatRequest):
                     lease_ttl_seconds=settings.agent_lease_ttl_seconds,
                 )
             except AdmissionUnavailable:
+                outcome = "capacity_unavailable"
+                metrics.track_admission_decision("agent_turns", "acquire_unavailable")
                 yield _capacity_error(
                     "capacity_unavailable",
                     "Hệ thống chưa thể kiểm tra năng lực xử lý. Vui lòng thử lại.",
                 )
                 return
             if lease is None:
+                outcome = "capacity_exceeded"
+                metrics.track_admission_decision("agent_turns", "capacity_exceeded")
                 yield _capacity_error(
                     "capacity_exceeded",
                     "Hệ thống đang xử lý nhiều yêu cầu. Vui lòng thử lại sau ít giây.",
                 )
                 return
+            metrics.track_admission_decision("agent_turns", "acquired")
             heartbeat_task = asyncio.create_task(
                 admission.heartbeat(lease, settings.agent_lease_heartbeat_seconds)
             )
@@ -189,6 +198,7 @@ async def chat(request: Request, body: ChatRequest):
                 event_type = str(event.get("type") or "")
                 if event_type == "error":
                     code = str(event.get("code") or "pipeline_error")
+                    outcome = code
                     retryable = bool(event.get("retryable"))
                     metrics.track_sse_error(code, retryable)
                     logger.info("sse_error code=%s retryable=%s trace_id=%s", code, retryable, trace_id)
@@ -196,11 +206,13 @@ async def chat(request: Request, body: ChatRequest):
                         metrics.track_replay_operation(body.operation, "failed")
                         replay_result_recorded = True
                 elif event_type == "response_stopped":
+                    outcome = "stopped"
                     metrics.track_turn_termination("stopped", "user_cancelled")
                     if body.operation in {"retry", "regenerate"} and not replay_result_recorded:
                         metrics.track_replay_operation(body.operation, "stopped")
                         replay_result_recorded = True
                 elif event_type == "response_complete":
+                    outcome = str(event.get("turn_status") or "complete")
                     metrics.track_turn_termination(
                         str(event.get("turn_status") or "complete"),
                         str(event.get("safe_stop_reason") or event.get("outcome") or "none"),
@@ -210,22 +222,33 @@ async def chat(request: Request, body: ChatRequest):
                         replay_result_recorded = True
                 # CRITICAL: Check if client disconnected
                 if await request.is_disconnected():
+                    outcome = "client_disconnected"
                     logger.info(
                         "Client disconnected, stopping pipeline for conversation=%s",
                         conversation_id,
                     )
                     return  # Stop immediately, don't waste LLM calls
+                if not first_runtime_event:
+                    first_runtime_event = True
+                    metrics.track_turn_time_to_first_event(
+                        str(event.get("pipeline_version") or settings.agent_pipeline_version),
+                        time.perf_counter() - started_at,
+                    )
                 yield {"data": json.dumps(event, ensure_ascii=False)}
         except asyncio.CancelledError:
             # Client disconnected mid-stream
+            outcome = "client_disconnected"
             logger.info("Stream cancelled for conversation=%s", conversation_id)
             return
         except AdmissionUnavailable:
+            outcome = "capacity_unavailable"
+            metrics.track_admission_decision("agent_turns", "lease_unavailable")
             yield _capacity_error(
                 "capacity_unavailable",
                 "Hệ thống chưa thể duy trì năng lực xử lý. Vui lòng thử lại.",
             )
         except Exception:
+            outcome = "pipeline_error"
             logger.exception("Pipeline error")
             metrics.track_sse_error("pipeline_error", True)
             if body.operation in {"retry", "regenerate"} and not replay_result_recorded:
@@ -242,6 +265,9 @@ async def chat(request: Request, body: ChatRequest):
                 })
             }
         finally:
+            metrics.track_workload_duration(
+                "agent_turn", outcome, time.perf_counter() - started_at
+            )
             if heartbeat_task is not None:
                 heartbeat_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError, AdmissionUnavailable):
@@ -250,6 +276,7 @@ async def chat(request: Request, body: ChatRequest):
                 try:
                     await admission.release(lease)
                 except AdmissionUnavailable:
+                    metrics.track_admission_decision("agent_turns", "release_failed")
                     logger.warning("Could not release admission lease trace_id=%s", trace_id)
 
     return EventSourceResponse(
