@@ -366,7 +366,9 @@ app.state.admission_controller = DeterministicAdmissionController()
 app.state.workflow_runtime = V4WorkflowRuntime(
     dependencies,
     answer_chunk_size=90,
-    answer_chunk_delay_s=0.04,
+    # Keep the deterministic stop-control window wide enough for a real
+    # browser click even when the full Playwright suite is CPU-constrained.
+    answer_chunk_delay_s=0.2,
 )
 app.include_router(chat_router, prefix="/api/v1")
 
