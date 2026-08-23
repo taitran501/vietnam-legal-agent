@@ -73,6 +73,10 @@ function asStreamError(error: unknown): StreamError {
 
 function workflowFromEvent(event: import('@/types').SSEEvent): WorkflowMetadata {
   return {
+    context_loaded: event.context_loaded,
+    history_messages: event.history_messages,
+    is_follow_up: event.is_follow_up,
+    standalone_query: event.standalone_query,
     task_type: event.task_type,
     route: event.route,
     source_scope: event.source_scope,

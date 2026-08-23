@@ -437,6 +437,87 @@ def latest_user_message(history: list[dict[str, Any]] | None) -> str:
     return ""
 
 
+def latest_conversation_turn(
+    history: list[dict[str, Any]] | None,
+) -> tuple[str, str, dict[str, Any]]:
+    """Return the latest user/assistant exchange without trusting its prose.
+
+    Durable history is stored as alternating user and assistant messages.  A
+    follow-up needs both sides: the previous user turn establishes the topic,
+    while the previous assistant metadata identifies which sources were already
+    shown.  The assistant text is only used as quoted retrieval context; it is
+    never treated as legal evidence.
+    """
+
+    items = list(history or [])
+    user_index = next(
+        (index for index in range(len(items) - 1, -1, -1) if items[index].get("role") == "user"),
+        None,
+    )
+    if user_index is None:
+        return "", "", {}
+    previous_user = str(items[user_index].get("content") or "")
+    previous_assistant = ""
+    assistant_metadata: dict[str, Any] = {}
+    for item in items[user_index + 1 :]:
+        if item.get("role") == "user":
+            break
+        if item.get("role") == "assistant":
+            previous_assistant = str(item.get("content") or "")
+            raw_metadata = item.get("metadata")
+            if isinstance(raw_metadata, dict):
+                assistant_metadata = dict(raw_metadata)
+            break
+    return previous_user, previous_assistant, assistant_metadata
+
+
+def is_context_dependent_query(query: str) -> bool:
+    """Detect a terse/elliptical query that cannot stand alone safely."""
+
+    lower = _normalise(query)
+    if not lower:
+        return False
+    # A complete instrument number identifies a retrievable subject by itself.
+    # Keep article-only prompts (for example, "còn Điều 78?") dependent because
+    # the governing document still comes from the preceding turn.  Enumeration
+    # prompts such as "còn Luật số ... nào khác?" remain dependent as well.
+    full_document_anchor = any(anchor.document_number for anchor in explicit_anchors(query)) or bool(
+        re.search(r"\bluật\s+(?:số\s*)?\d+/\d{4}/[a-z0-9đ-]+", lower)
+    )
+    asks_for_more = any(token in lower for token in ("gì", "nào", "nữa", "thêm", "khác"))
+    if lower.startswith("còn") and full_document_anchor and not asks_for_more:
+        return False
+    return len(lower) <= 60 and (
+        lower.startswith(("vậy", "thế", "còn", "nếu vậy", "trường hợp đó"))
+        or any(token in lower for token in ("điều đó", "cái này", "việc này", "nó", "đó thì"))
+    )
+
+
+def _source_context(metadata: dict[str, Any]) -> str:
+    """Extract bounded source identifiers from a prior assistant message."""
+
+    values: list[str] = []
+    raw_sources = metadata.get("sources")
+    if isinstance(raw_sources, list):
+        for item in raw_sources:
+            if not isinstance(item, dict):
+                continue
+            for key in ("instrument_number", "source_id", "title", "anchor", "official_url"):
+                value = " ".join(str(item.get(key) or "").split())
+                if value and value not in values:
+                    values.append(value)
+    raw_citations = metadata.get("citations")
+    if isinstance(raw_citations, list):
+        for item in raw_citations:
+            if not isinstance(item, dict):
+                continue
+            for key in ("label", "document_id"):
+                value = " ".join(str(item.get(key) or "").split())
+                if value and value not in values:
+                    values.append(value)
+    return "; ".join(values[:12])
+
+
 def rewrite_follow_up(query: str, history: list[dict[str, Any]] | None, active_case: dict[str, Any] | None) -> str:
     """Make a dependent follow-up retrievable without pretending to be memory.
 
@@ -454,14 +535,11 @@ def rewrite_follow_up(query: str, history: list[dict[str, Any]] | None, active_c
     q = " ".join((query or "").split())
     if not q:
         return q
-    previous = latest_user_message(history)
+    previous, previous_answer, assistant_metadata = latest_conversation_turn(history)
     lower = _normalise(q)
 
     # --- Classic short-pronoun dependency ---
-    short_dependent = len(lower) <= 60 and (
-        lower.startswith(("vậy", "thế", "còn", "nếu vậy", "trường hợp đó"))
-        or any(token in lower for token in ("điều đó", "cái này", "việc này", "nó", "đó thì"))
-    )
+    short_dependent = is_context_dependent_query(q) and len(lower) <= 60
 
     # --- Implicit reference: numeric or domain-noun anchored follow-up ---
     # Catches queries like "nếu hết 60 ngày mà bạn ấy không đạt..." after
@@ -479,7 +557,7 @@ def rewrite_follow_up(query: str, history: list[dict[str, Any]] | None, active_c
         )
         starts_with_conditional = any(lower.startswith(op) for op in conditional_openers)
         # Check if a key number from bot's last reply appears in this query
-        prev_lower = _normalise(previous)
+        prev_lower = _normalise(f"{previous} {previous_answer}")
         numbers_in_prev = re.findall(r"\b\d+\b", prev_lower)
         query_numbers = re.findall(r"\b\d+\b", lower)
         shares_number = bool(set(numbers_in_prev) & set(query_numbers))
@@ -500,13 +578,45 @@ def rewrite_follow_up(query: str, history: list[dict[str, Any]] | None, active_c
         has_continuity_noun = any(noun in lower for noun in continuity_nouns)
         implicit_dependent = starts_with_conditional and (shares_number or has_continuity_noun)
 
-    dependent = short_dependent or implicit_dependent
+    # A short continuation can omit the usual "còn/vậy" marker, for example
+    # "có nghị định nào không" after a turn about new 2026 laws.  Require a
+    # prior legal/year signal so a standalone question with the same wording
+    # is not forced into clarification.
+    continuation_question = bool(
+        previous
+        and len(lower) <= 120
+        and lower.startswith(("có ", "văn bản ", "luật ", "nghị định "))
+        and any(token in lower for token in ("nào", "không", "nữa"))
+        and (
+            bool(re.search(r"\b(?:19|20)\d{2}\b", _normalise(f"{previous} {previous_answer}")))
+            or any(term in _normalise(f"{previous} {previous_answer}") for term in ("luật", "nghị định", "quy định", "điều"))
+        )
+    )
+
+    dependent = short_dependent or implicit_dependent or continuation_question
     if not previous or not dependent:
         return q
 
     facts = ", ".join(f"{key}={value}" for key, value in (active_case or {}).get("facts", {}).items())
     context = f" Cùng vụ việc hiện tại: {facts}." if facts else ""
-    return preserve_explicit_anchors(q, f"Câu hỏi trước: {previous}. Câu hỏi tiếp theo: {q}.{context}")
+    source_context = _source_context(assistant_metadata)
+    answer_context = " ".join(previous_answer.split())[:720].rstrip(".。!?！？ ")
+    prior_answer = f" Câu trả lời trước (chỉ là ngữ cảnh, phải kiểm tra lại): {answer_context}." if answer_context else ""
+    prior_sources = (
+        f" Các nguồn đã nêu trước đó, không coi là bằng chứng mới: {source_context}."
+        if source_context
+        else ""
+    )
+    additional = (
+        " Hãy tìm các văn bản/quy định khác với những mục đã nêu trước đó."
+        if lower.startswith(("còn", "thêm", "ngoài ra", "hơn nữa"))
+        else ""
+    )
+    rewritten = (
+        f"Chủ đề từ lượt trước: {previous}.{prior_answer}{prior_sources} "
+        f"Yêu cầu tiếp theo: {q}.{additional}{context}"
+    )
+    return preserve_explicit_anchors(q, rewritten)
 
 
 def preserve_explicit_anchors(original_query: str, rewritten_query: str) -> str:
@@ -548,7 +658,7 @@ def deterministic_task_understanding(
     task = classify_task(query, history, active_case)
     standalone = rewrite_follow_up(query, history, active_case)
     facts = merge_facts(active_case, extract_facts(query))
-    is_follow_up = standalone != " ".join((query or "").split())
+    is_follow_up = is_context_dependent_query(query) or standalone != " ".join((query or "").split())
     return TaskUnderstanding(
         task_type=task,
         route=classify_route(query, history, active_case),

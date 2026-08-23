@@ -64,6 +64,10 @@ export interface SSEEvent {
   code?: string;
   retryable?: boolean;
   retry_after_seconds?: number;
+  context_loaded?: boolean;
+  history_messages?: number;
+  is_follow_up?: boolean;
+  standalone_query?: string;
   turn_id?: string;
   user_message_id?: number | string;
   turn_status?: import('./chat').MessageStatus;

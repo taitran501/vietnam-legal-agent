@@ -31,6 +31,7 @@ from epr_agent.domain.tasks import (
     build_follow_up_question,
     deterministic_task_understanding,
     extract_facts,
+    is_context_dependent_query,
     is_legal_scope,
     merge_facts,
     missing_facts,
@@ -208,6 +209,8 @@ def build_workflow(deps: WorkflowDependencies):
         state["history"] = snapshot.history
         state["history_summary"] = snapshot.summary
         state["active_case"] = snapshot.active_case
+        state["context_loaded"] = True
+        state["history_messages"] = len(snapshot.history)
         _trace(state, reason_code="context_loaded", payload={"history_messages": len(snapshot.history), "has_active_case": bool(snapshot.active_case)})
         return state
 
@@ -223,6 +226,21 @@ def build_workflow(deps: WorkflowDependencies):
                 history,
                 state.get("history_summary", ""),
                 active_case,
+            )
+        # Elliptical prompts such as "còn gìk" are not answerable in a new
+        # conversation.  Ask for the missing topic instead of allowing either
+        # a model shortcut or a generic retriever miss to produce an invented
+        # legal answer.  Existing turns continue through the normal rewrite.
+        if (
+            understanding.is_follow_up
+            and not history
+            and not active_case
+            and is_context_dependent_query(state["query"])
+        ):
+            state["clarification_required"] = True
+            state["follow_up_question"] = (
+                "Bạn đang hỏi tiếp về nội dung nào? Hãy nhắc lại tên văn bản, lĩnh vực "
+                "hoặc câu hỏi trước để tôi kiểm tra căn cứ pháp lý chính xác."
             )
         task = understanding.task_type
         route = RouteType(understanding.route)
@@ -810,6 +828,8 @@ async def create_initial_state(
         "evidence_status": "not_evaluated",
         "run_started_at": datetime.now(UTC).isoformat(),
         "history": [],
+        "context_loaded": False,
+        "history_messages": 0,
         "active_case": None,
         "case_state": None,
         "is_follow_up": False,

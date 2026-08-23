@@ -39,6 +39,7 @@ class AgentGuardrails:
         evidence: list[dict[str, Any] | DocumentRecord],
         *,
         query: str = "",
+        require_evidence: bool = False,
         claim_verifier: ClaimSupportVerifier | None = None,
         critic_reviewer: LegalCriticReviewer | None = None,
     ) -> tuple[bool, str, str, list[dict[str, Any]]]:
@@ -61,11 +62,18 @@ class AgentGuardrails:
 
         if not docs or not has_citations:
             # If no docs were retrieved but answer fabricated citation tags [1], [2], reject
-            if not docs and has_citations:
+            if not docs and (has_citations or require_evidence):
                 return (
                     False,
                     "no_evidence_for_claims",
                     "Tôi chưa tìm đủ căn cứ pháp lý để đưa ra câu trả lời được kiểm chứng.",
+                    [],
+                )
+            if require_evidence and not has_citations:
+                return (
+                    False,
+                    "answer_has_no_citation",
+                    "Tôi chưa thể xác minh đầy đủ câu trả lời từ tài liệu đã truy xuất.",
                     [],
                 )
             # If no citations were made (conversational guidance, overview, clarification), pass through safely!

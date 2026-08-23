@@ -59,6 +59,10 @@ export interface SourceDocument {
 }
 
 export interface WorkflowMetadata {
+  context_loaded?: boolean;
+  history_messages?: number;
+  is_follow_up?: boolean;
+  standalone_query?: string;
   task_type?: string;
   route?: string;
   source_scope?: string;
