@@ -4,7 +4,8 @@ import { useSessionStore } from '@/state/sessionStore';
 import { useChatStore } from '@/state/chatStore';
 import * as sessionsApi from '@/api/sessions';
 import { toast } from '@/state/toastStore';
-import type { ChatMessage } from '@/types';
+import type { ChatMessage, SourceSnapshot } from '@/types';
+import { sourceDocumentsFromSnapshots } from '@/lib/sourceProvenance';
 
 const PAGE_SIZE = 30;
 let listController: AbortController | null = null;
@@ -22,37 +23,7 @@ function isNotFound(error: unknown): boolean {
 
 function sourceDocuments(metadata: Record<string, unknown> | undefined) {
   const sources = Array.isArray(metadata?.sources) ? metadata.sources : [];
-  return sources.map((raw) => {
-    const source = raw as Record<string, unknown>;
-    return {
-      page_content: String(source.excerpt || ''),
-      document_id: String(source.source_id || ''),
-      source: source.source_kind === 'official_web' ? 'web' : 'legal',
-      metadata: {
-        citation_index: source.citation_index,
-        Source_Title: source.title,
-        Document_Number: source.instrument_number,
-        legal_anchor: source.anchor,
-        Pages: source.page,
-        Source_Start: source.offset_start,
-        Source_End: source.offset_end,
-        official_url: source.official_url,
-        Source_URI: source.official_url,
-        source_kind: source.source_kind,
-        authority: source.authority,
-        effective_status: source.effective_status,
-        effective_from: source.effective_from,
-        effective_to: source.effective_to,
-        amendment_relationship: source.amendment_relationship,
-        active_source_document_id: source.active_source_document_id,
-        active_source_pages: source.active_source_pages,
-        amendment_resolution_status: source.amendment_resolution_status,
-        amendment_operations: source.amendment_operations,
-        current_law_support: source.current_law_support,
-        corpus_as_of_date: source.corpus_as_of_date,
-      },
-    };
-  });
+  return sourceDocumentsFromSnapshots(sources as SourceSnapshot[]);
 }
 
 export function useSessions({ autoLoad = true }: { autoLoad?: boolean } = {}) {

@@ -295,14 +295,19 @@ class UniversalLegalRetriever:
 
                 formatted_content = " | ".join(header_parts) + "\n\n" + content
 
-                # Clean official URL
-                final_url = src_url.strip() if src_url else "https://vbpl.vn"
-                if not final_url.startswith("http"):
-                    final_url = "https://vbpl.vn"
+                # Keep only a document URL supplied by the corpus.  A generic
+                # catalogue homepage is not a usable citation target.
+                final_url = src_url.strip() if src_url and src_url.strip().startswith(("http://", "https://")) else ""
 
                 # Extract friendly short source label
                 source_label = src_note if src_note else (subject if subject else (topic if topic else "Cơ sở dữ liệu Pháp luật Quốc gia"))
                 source_label = re.sub(r"^\s*\(|\)\s*$", "", source_label)
+                instrument_match = re.search(
+                    r"(?<![\w/])\d{1,5}/\d{4}/[A-ZĐ0-9][A-ZĐ0-9-]*(?![\w/])",
+                    source_label,
+                    flags=re.IGNORECASE,
+                )
+                instrument_number = instrument_match.group(0) if instrument_match else ""
 
                 results.append({
                     "document_id": rec_id,
@@ -310,11 +315,27 @@ class UniversalLegalRetriever:
                     "metadata": {
                         "Dieu": art_title if art_title else "Quy định pháp luật",
                         "source": source_label[:120],
+                        "source_title": source_label[:500],
+                        "Source_Title": source_label[:500],
+                        "document_title": source_label[:500],
+                        "Document_Number": instrument_number,
+                        "instrument_number": instrument_number,
+                        "legal_anchor": art_title if art_title else "",
+                        "law_ref": src_note or "",
                         "official_url": final_url,
+                        "source_uri": final_url,
+                        "source_kind": "legal_corpus",
+                        "authority": "official" if final_url else "unknown",
+                        "source_document_id": (
+                            f"universal:{instrument_number}"
+                            if instrument_number
+                            else final_url or f"universal:{rec_id}"
+                        ),
+                        "chunk_id": rec_id,
                         "topic": topic,
                         "subject": subject,
                         "chapter": chap_title,
-                        "law_ref": src_note
+                        "corpus_source": "universal_legal",
                     },
                     "score": abs(float(rank))
                 })

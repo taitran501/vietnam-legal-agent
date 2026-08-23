@@ -22,6 +22,7 @@ from epr_agent.agent.graph import (
     run_workflow,
 )
 from epr_agent.domain.models import AgentState, TaskType, TerminationReason
+from epr_agent.tools.source_provenance import normalize_source, normalized_document_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -184,35 +185,29 @@ def _cited_evidence_indices(answer: str, evidence: list[dict[str, Any]]) -> set[
 
 
 def _documents_for_api(state: AgentState) -> list[dict[str, Any]]:
-    allowed_metadata = {
-        "document_id", "Document_Id", "Document_Number", "source_title", "Source_Title", "title",
-        "instrument_number", "anchor", "legal_anchor", "Dieu", "Chuong", "Khoan", "Diem",
-        "Pages", "page", "page_start", "page_end", "Source_Start", "Source_End", "offset_start", "offset_end",
-        "source_uri", "Source_URI", "official_url", "url", "authority", "source_kind", "effective_status", "Effective_Status", "amendment_relationship", "Amendment_Relationship",
-        "Effective_From", "Effective_To", "effective_from", "effective_to", "Source_SHA256", "chunk_id",
-        "Corpus_Version", "Corpus_SHA256", "corpus_as_of_date", "rule_id", "source_file", "Source_File",
-        "Active_Source_Document_Id", "Active_Source_Pages", "Amendment_Resolution_Status", "Amendment_Operations", "Current_Law_Support",
-    }
     documents: list[dict[str, Any]] = []
     used_indices = _cited_evidence_indices(state.get("answer", ""), list(state.get("evidence", [])))
     for citation_index, item in enumerate(state.get("evidence", []), start=1):
         if used_indices and citation_index not in used_indices:
             continue
-        metadata = dict(item.get("metadata") or {})
-        safe_metadata = {key: metadata[key] for key in allowed_metadata if key in metadata}
-        safe_metadata.setdefault("document_id", item.get("document_id", ""))
-        safe_metadata["citation_index"] = citation_index
-        if state.get("corpus_as_of_date"):
-            safe_metadata.setdefault("corpus_as_of_date", state.get("corpus_as_of_date"))
         excerpt_limit = 1200 if item.get("source") == "web" else 2000
-        safe_metadata["excerpt"] = str(item.get("content", ""))[:excerpt_limit]
+        snapshot = normalize_source(
+            item,
+            citation_index=citation_index,
+            corpus_as_of_date=str(state.get("corpus_as_of_date") or ""),
+            excerpt_limit=excerpt_limit,
+        )
+        safe_metadata = normalized_document_metadata(snapshot, original=item)
         documents.append(
             {
-                "page_content": str(item.get("content", ""))[:excerpt_limit],
+                "page_content": str(snapshot.get("excerpt") or ""),
                 "metadata": safe_metadata,
-                "document_id": item.get("document_id", ""),
+                # Keep the chunk id in the legacy field so citation indices and
+                # answer verification remain stable.  The canonical parent
+                # document id is available as metadata.source_id.
+                "document_id": snapshot.get("chunk_id") or item.get("document_id", ""),
                 "score": item.get("score"),
-                "source": item.get("source", ""),
+                "source": snapshot.get("source_kind") or item.get("source", ""),
             }
         )
     return documents
@@ -221,30 +216,12 @@ def _documents_for_api(state: AgentState) -> list[dict[str, Any]]:
 def _source_snapshots(state: AgentState) -> list[dict[str, Any]]:
     used_indices = _cited_evidence_indices(state.get("answer", ""), list(state.get("evidence", [])))
     return [
-        {
-            "citation_index": citation_index,
-            "source_id": str((item.get("metadata") or {}).get("chunk_id") or item.get("document_id") or ""),
-            "title": str((item.get("metadata") or {}).get("Source_Title") or (item.get("metadata") or {}).get("source_title") or (item.get("metadata") or {}).get("title") or item.get("source") or ""),
-            "instrument_number": str((item.get("metadata") or {}).get("Document_Number") or (item.get("metadata") or {}).get("instrument_number") or ""),
-            "anchor": str((item.get("metadata") or {}).get("legal_anchor") or (item.get("metadata") or {}).get("anchor") or (item.get("metadata") or {}).get("Dieu") or ""),
-            "page": (item.get("metadata") or {}).get("Pages") or (item.get("metadata") or {}).get("page"),
-            "offset_start": (item.get("metadata") or {}).get("Source_Start") or (item.get("metadata") or {}).get("offset_start"),
-            "offset_end": (item.get("metadata") or {}).get("Source_End") or (item.get("metadata") or {}).get("offset_end"),
-            "official_url": str((item.get("metadata") or {}).get("official_url") or (item.get("metadata") or {}).get("url") or (item.get("metadata") or {}).get("Source_URI") or (item.get("metadata") or {}).get("source_uri") or ""),
-            "source_kind": str((item.get("metadata") or {}).get("source_kind") or item.get("source") or "legal_corpus"),
-            "authority": str((item.get("metadata") or {}).get("authority") or ("official" if item.get("source") == "legal" else "unknown")),
-            "effective_status": str((item.get("metadata") or {}).get("Effective_Status") or (item.get("metadata") or {}).get("effective_status") or "unknown"),
-            "effective_from": (item.get("metadata") or {}).get("Effective_From") or (item.get("metadata") or {}).get("effective_from"),
-            "effective_to": (item.get("metadata") or {}).get("Effective_To") or (item.get("metadata") or {}).get("effective_to"),
-            "amendment_relationship": (item.get("metadata") or {}).get("Amendment_Relationship") or (item.get("metadata") or {}).get("amendment_relationship") or [],
-            "active_source_document_id": str((item.get("metadata") or {}).get("Active_Source_Document_Id") or ""),
-            "active_source_pages": str((item.get("metadata") or {}).get("Active_Source_Pages") or ""),
-            "amendment_resolution_status": str((item.get("metadata") or {}).get("Amendment_Resolution_Status") or ""),
-            "amendment_operations": (item.get("metadata") or {}).get("Amendment_Operations") or [],
-            "current_law_support": bool((item.get("metadata") or {}).get("Current_Law_Support", False)),
-            "corpus_as_of_date": str(state.get("corpus_as_of_date") or ""),
-            "excerpt": str(item.get("content") or "")[:1200 if item.get("source") == "web" else 2000],
-        }
+        normalize_source(
+            item,
+            citation_index=citation_index,
+            corpus_as_of_date=str(state.get("corpus_as_of_date") or ""),
+            excerpt_limit=1200 if item.get("source") == "web" else 2000,
+        )
         for citation_index, item in enumerate(state.get("evidence", []), start=1)
         if not used_indices or citation_index in used_indices
     ]

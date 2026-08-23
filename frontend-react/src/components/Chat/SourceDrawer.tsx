@@ -20,26 +20,52 @@ function textValue(value: unknown): string | undefined {
   return undefined;
 }
 
+const genericSourceLabels = new Set([
+  'legal',
+  'web',
+  'official_web',
+  'cache',
+  'error',
+  'hệ thống văn bản',
+  'pháp điển & luật quốc gia',
+  'cơ sở dữ liệu pháp luật quốc gia',
+  'vietnamese legal corpus',
+]);
+
 function metadataValue(document: SourceDocument, keys: string[]): string | undefined {
   for (const key of keys) {
     const value = textValue(document.metadata?.[key]);
-    if (value && value !== 'Chưa có trong metadata' && value !== 'unknown') return value;
+    if (value && value !== 'Chưa có trong metadata' && value.toLowerCase() !== 'unknown') {
+      return value.replace(/\s*\|\|+\s*/g, ' · ').replace(/\s+/g, ' ').trim();
+    }
   }
   return undefined;
 }
 
-function documentTitle(document: SourceDocument, index: number): string {
-  const explicit = metadataValue(document, ['Dieu', 'dieu', 'article_title', 'source_title', 'Source_Title', 'title', 'document_title', 'ten_van_ban']);
-  if (explicit) return explicit;
-  return `Nguồn căn cứ pháp lý ${index + 1}`;
+function documentTitle(document: SourceDocument): string {
+  const explicit = metadataValue(document, [
+    'Source_Title',
+    'source_title',
+    'document_title',
+    'Document_Title',
+    'title',
+    'ten_van_ban',
+    'law_title',
+  ]);
+  if (explicit && !genericSourceLabels.has(explicit.toLowerCase())) return explicit;
+  const instrument = metadataValue(document, ['Document_Number', 'instrument_number', 'number']);
+  if (instrument) return `Văn bản số ${instrument}`;
+  const legacyLabel = metadataValue(document, ['law_ref', 'source']);
+  if (legacyLabel && !genericSourceLabels.has(legacyLabel.toLowerCase())) return legacyLabel;
+  return 'Chưa xác định văn bản';
 }
 
 function documentLawName(document: SourceDocument): string | undefined {
-  return metadataValue(document, ['source', 'law_ref', 'topic', 'subject', 'Document_Number', 'instrument_number']);
+  return metadataValue(document, ['law_ref', 'source', 'topic', 'subject']);
 }
 
 function documentAnchor(document: SourceDocument): string | undefined {
-  const explicit = metadataValue(document, ['legal_anchor', 'anchor']);
+  const explicit = metadataValue(document, ['legal_anchor', 'anchor', 'article_title', 'article']);
   if (explicit) return explicit;
   const values = [
     metadataValue(document, ['Chuong', 'chuong', 'chapter']),
@@ -98,16 +124,18 @@ export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, on
 
         {documents.map((document, index) => {
           const citationIndex = Number(metadataValue(document, ['citation_index'])) || index + 1;
-          const title = documentTitle(document, index);
+          const title = documentTitle(document);
           const lawName = documentLawName(document);
           const anchor = documentAnchor(document);
           const url = documentUrl(document);
           const instrument = metadataValue(document, ['Document_Number', 'instrument_number']);
           const page = metadataValue(document, ['Pages', 'page']);
-          const effectiveStatus = metadataValue(document, ['effective_status', 'Effective_Status']) || 'active';
+          const effectiveStatus = metadataValue(document, ['effective_status', 'Effective_Status']) || 'unknown';
           const effectiveFrom = metadataValue(document, ['effective_from', 'Effective_From']);
           const cleanText = cleanExcerptText(document.page_content || '');
           const excerpt = cleanText.slice(0, 1500);
+          const sourceId = metadataValue(document, ['source_id', 'Document_Id', 'document_id']) || document.document_id || `doc-${citationIndex}`;
+          const hasCanonicalTitle = title !== 'Chưa xác định văn bản';
 
           return (
             <article
@@ -129,10 +157,15 @@ export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, on
                   <h3 className="text-[15px] font-bold leading-snug text-slate-900">
                     {title}
                   </h3>
+                  {!hasCanonicalTitle && (
+                    <p className="mt-1 text-xs text-amber-700">
+                      Chưa có đủ metadata để định danh văn bản; đoạn trích vẫn được giữ để đối chiếu.
+                    </p>
+                  )}
 
                   {/* Metadata Tag Pills - only render what actually exists */}
                   <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-                    {lawName && (
+                    {lawName && lawName !== title && (
                       <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
                         <Icon name="book" size={11} />
                         {lawName}
@@ -154,6 +187,11 @@ export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, on
                       <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 font-medium text-amber-800 ring-1 ring-amber-600/20">
                         <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
                         Đã sửa đổi / bổ sung
+                      </span>
+                    )}
+                    {effectiveStatus === 'unknown' && (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-slate-600">
+                        Trạng thái chưa xác định
                       </span>
                     )}
                     {instrument && (
@@ -184,8 +222,8 @@ export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, on
               </div>
 
               {/* External Official Link button */}
-              {url && (
-                <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2.5">
+              <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2.5">
+                {url ? (
                   <a
                     className="inline-flex items-center gap-1.5 text-xs font-semibold text-teal-700 transition-colors hover:text-teal-900 hover:underline"
                     href={url}
@@ -195,11 +233,11 @@ export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, on
                     Mở nguồn
                     <Icon name="chevronRight" size={14} />
                   </a>
-                  <span className="text-[11px] text-slate-600 font-mono">
-                    ID: {document.document_id || `doc-${citationIndex}`}
-                  </span>
-                </div>
-              )}
+                ) : <span className="text-[11px] text-slate-500">Chưa có liên kết chính thức</span>}
+                <span className="text-[11px] font-mono text-slate-600">
+                  Mã nguồn: {sourceId}
+                </span>
+              </div>
             </article>
           );
         })}

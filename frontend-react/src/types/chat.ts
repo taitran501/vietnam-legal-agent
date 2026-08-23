@@ -103,7 +103,9 @@ export interface WorkflowMetadata {
 
 export interface SourceSnapshot {
   citation_index?: number;
+  citation_indices?: number[];
   source_id: string;
+  chunk_id?: string;
   title?: string;
   instrument_number?: string;
   anchor?: string;
