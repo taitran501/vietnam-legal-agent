@@ -189,6 +189,8 @@ class AgentState(TypedDict, total=False):
 
     history: list[dict[str, Any]]
     history_summary: str
+    context_loaded: bool
+    history_messages: int
     active_case: dict[str, Any] | None
     task_type: str
     is_follow_up: bool

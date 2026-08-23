@@ -229,6 +229,7 @@ def _source_snapshots(state: AgentState) -> list[dict[str, Any]]:
 
 def _metadata(state: AgentState) -> dict[str, Any]:
     checklist = state.get("checklist", [])
+    history = state.get("history") or []
     assumptions = [item.get("assumption") for item in checklist if item.get("assumption")]
     if state.get("assessment"):
         assumptions.extend(
@@ -239,6 +240,10 @@ def _metadata(state: AgentState) -> dict[str, Any]:
     return {
         "task_type": state.get("task_type", TaskType.LEGAL_LOOKUP.value),
         "route": state.get("route", "legal_lookup"),
+        "context_loaded": bool(state.get("context_loaded", False)),
+        "history_messages": int(state.get("history_messages", len(history))),
+        "is_follow_up": bool(state.get("is_follow_up", False)),
+        "standalone_query": state.get("standalone_query", state.get("query", "")),
         "source_scope": state.get("source_scope", "legal_corpus"),
         "corpus_version": state.get("corpus_version", ""),
         "corpus_sha": state.get("corpus_sha", ""),
@@ -560,11 +565,40 @@ class AgentWorkflowRuntime:
                     query = str(msg["content"]).strip()
                     break
 
+        from epr_agent.domain.tasks import (
+            classify_route,
+            deterministic_task_understanding,
+            is_context_dependent_query,
+        )
+
+        # Resolve terse follow-ups before the autonomous loop.  The ReAct
+        # model still decides which bounded tool to call, but it cannot decide
+        # whether the current turn is allowed to ignore the conversation.
+        understanding = deterministic_task_understanding(
+            query,
+            snapshot.history,
+            snapshot.active_case,
+        )
+        standalone_query = understanding.standalone_query or query
+        is_follow_up = bool(understanding.is_follow_up)
+        context_loaded = True
+        history_messages = len(snapshot.history)
+
         trace_session = get_trace_store().create_trace(
             trace_id=trace_id,
             conversation_id=conversation_id,
             user_id=user_id,
             query=query,
+        )
+        context_span = trace_session.start_span("load_context")
+        context_span.close(
+            status="ok",
+            extra_attrs={
+                "history_messages": history_messages,
+                "context_loaded": context_loaded,
+                "is_follow_up": is_follow_up,
+                "standalone_query_length": len(standalone_query),
+            },
         )
 
         try:
@@ -582,6 +616,18 @@ class AgentWorkflowRuntime:
                 "pipeline_version": "pipeline-agent",
             }
             return
+
+        yield {
+            "type": "status",
+            "message": "Đã nạp lịch sử và kiểm tra ngữ cảnh hội thoại.",
+            "stage": "load_context",
+            "context_loaded": context_loaded,
+            "history_messages": history_messages,
+            "is_follow_up": is_follow_up,
+            "standalone_query": standalone_query,
+            "trace_id": trace_id,
+            "pipeline_version": "pipeline-agent",
+        }
 
         def storage_error_event(message: str) -> dict[str, Any]:
             return {
@@ -616,6 +662,10 @@ class AgentWorkflowRuntime:
                 "source": source,
                 "termination_reason": termination_reason,
                 "trace_id": trace_id,
+                "context_loaded": context_loaded,
+                "history_messages": history_messages,
+                "is_follow_up": is_follow_up,
+                "standalone_query": standalone_query,
                 "replay_metadata": lifecycle.replay_metadata,
             }
             if lifecycle.started:
@@ -699,9 +749,64 @@ class AgentWorkflowRuntime:
             }
             return
 
-        # ── 3. Fast Bypass for Chitchat & Out of Scope ──
-        from epr_agent.domain.tasks import classify_route
+        # A context-dependent query in a brand-new conversation has no safe
+        # subject to retrieve.  Make the ambiguity explicit and persist the
+        # clarification so the next turn can continue the same conversation.
+        if (
+            is_follow_up
+            and is_context_dependent_query(query)
+            and not snapshot.history
+            and not snapshot.active_case
+        ):
+            clarification = (
+                "Bạn đang hỏi tiếp về nội dung nào? Hãy nhắc lại tên văn bản, lĩnh vực "
+                "hoặc câu hỏi trước để tôi kiểm tra căn cứ pháp lý chính xác."
+            )
+            try:
+                final = await finish_fast_path(
+                    clarification,
+                    source="follow_up",
+                    termination_reason=TerminationReason.AWAITING_USER_INPUT.value,
+                    save_legacy_exchange=True,
+                )
+            except Exception as exc:  # noqa: BLE001 - durable clarification is required
+                logger.warning("Agent clarification persistence failed: %s", exc)
+                trace_session.finish(metadata={"error": "storage_unavailable"})
+                yield storage_error_event("Không thể lưu yêu cầu làm rõ. Vui lòng thử lại.")
+                return
+            if final and final.get("status") == "stopped":
+                yield stopped_event()
+                return
+            trace_session.finish(
+                metadata={
+                    "source": "follow_up",
+                    "termination": TerminationReason.AWAITING_USER_INPUT.value,
+                    "context_loaded": context_loaded,
+                    "history_messages": history_messages,
+                    "is_follow_up": is_follow_up,
+                    "steps_count": 0,
+                }
+            )
+            yield {
+                "type": "response_complete",
+                "text": clarification,
+                "documents": [],
+                "source": "follow_up",
+                "stage": "complete",
+                "pipeline_version": "pipeline-agent",
+                "termination_reason": TerminationReason.AWAITING_USER_INPUT.value,
+                "awaiting_user_input": True,
+                "context_loaded": context_loaded,
+                "history_messages": history_messages,
+                "is_follow_up": is_follow_up,
+                "standalone_query": standalone_query,
+                "trace_id": trace_id,
+            }
+            return
 
+        # ── 3. Fast Bypass for Chitchat & Out of Scope ──
+        # Route the user's actual turn; the rewritten query is only a bounded
+        # retrieval/agent context and must not let quoted history change scope.
         route = classify_route(query, snapshot.history, snapshot.active_case)
         if route.value == "chitchat":
             yield {"type": "status", "message": "Đang soạn câu trả lời…", "stage": "compose"}
@@ -798,7 +903,7 @@ class AgentWorkflowRuntime:
         s_loop = trace_session.start_span("agent_cognitive_loop")
         result = None
         async for event in self.runner.stream(
-            query,
+            standalone_query,
             history=snapshot.history,
             active_case=snapshot.active_case,
             history_summary=snapshot.summary,
@@ -873,6 +978,11 @@ class AgentWorkflowRuntime:
             }
             return
 
+        result.context_loaded = context_loaded
+        result.history_messages = history_messages
+        result.is_follow_up = is_follow_up
+        result.standalone_query = standalone_query
+
         if result.termination_reason == "user_cancelled" or await turn_cancelled():
             stopped_metadata = {
                 "turn_status": "stopped",
@@ -899,21 +1009,25 @@ class AgentWorkflowRuntime:
         citations = list(result.citations)
         source = result.source
         evidence = list(result.evidence)
+        verification_error = ""
 
         if (
             termination_reason == TerminationReason.ANSWER_COMPLETE.value
             and source not in {"error", "follow_up"}
             and not result.cache_hit
         ):
+            requires_legal_evidence = route.value in {"legal_lookup", "legal_explain_compare"} and source != "web_search"
             s_ver = trace_session.start_span("critic_and_citation_verification")
             yield {"type": "status", "message": "Đang xác minh căn cứ pháp lý và thẩm định phản biện…", "stage": "verify"}
             passed, _reason, verified_or_fallback, checked_citations = await self._guardrails.check_output(
                 final_answer,
                 evidence,
-                query=query,
+                query=standalone_query,
+                require_evidence=requires_legal_evidence,
                 claim_verifier=self.deps.claim_verifier,
                 critic_reviewer=getattr(self.deps, "critic_reviewer", None),
             )
+            verification_error = _reason
             citations = checked_citations
             s_ver.close(
                 status="ok" if passed else "verification_failed",
@@ -953,6 +1067,10 @@ class AgentWorkflowRuntime:
             "conversation_id": conversation_id,
             "turn_id": turn_id,
             "query": query,
+            "standalone_query": standalone_query,
+            "context_loaded": context_loaded,
+            "history_messages": history_messages,
+            "is_follow_up": is_follow_up,
             "answer": final_answer,
             "task_type": result.task_type,
             "route": result.route,
@@ -970,6 +1088,8 @@ class AgentWorkflowRuntime:
             "run_ended_at": datetime.now(UTC).isoformat(),
             "run_duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
             "preview": preview,
+            "citation_error": verification_error,
+            "safe_stop_reason": "failed_citation_verification" if verification_error and source == "error" else "",
         }
 
         try:
@@ -1060,6 +1180,9 @@ class AgentWorkflowRuntime:
                 "cache_hit": result.cache_hit,
                 "termination": termination_reason,
                 "steps_count": len(result.trajectory),
+                "context_loaded": context_loaded,
+                "history_messages": history_messages,
+                "is_follow_up": is_follow_up,
             }
         )
 
@@ -1089,13 +1212,21 @@ class AgentWorkflowRuntime:
         started_wall = datetime.now(UTC)
 
         snapshot = await self.deps.history.load(user_id, conversation_id, max_messages=6)
+        from epr_agent.domain.tasks import deterministic_task_understanding
+
+        understanding = deterministic_task_understanding(query, snapshot.history, snapshot.active_case)
+        standalone_query = understanding.standalone_query or query
         result = await self.runner.run(
-            query,
+            standalone_query,
             history=snapshot.history,
             active_case=snapshot.active_case,
             history_summary=snapshot.summary,
             trace_id=trace_id,
         )
+        result.context_loaded = True
+        result.history_messages = len(snapshot.history)
+        result.is_follow_up = bool(understanding.is_follow_up)
+        result.standalone_query = standalone_query
 
         from epr_agent.config import get_settings
 

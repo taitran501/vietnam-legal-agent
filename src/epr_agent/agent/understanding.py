@@ -102,6 +102,14 @@ class StructuredTaskUnderstandingGateway:
             # retrievable question into an implicit context-only query.
             if not result.standalone_query:
                 result.standalone_query = fallback.standalone_query
+            # The model may classify a terse query as a standalone legal
+            # lookup even when the deterministic contract detects that it
+            # depends on the preceding turn.  Preserve the safe dependency
+            # signal and canonical rewrite so the planner cannot bypass
+            # context loading or ask the retriever to search for "còn gì".
+            if fallback.is_follow_up:
+                result.is_follow_up = True
+                result.standalone_query = fallback.standalone_query
             result.standalone_query = preserve_explicit_anchors(query, result.standalone_query)
             # Exact anchors are parsed deterministically so a model cannot drop,
             # normalize away, or invent a legal reference.

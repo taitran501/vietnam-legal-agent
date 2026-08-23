@@ -64,6 +64,10 @@ class AgentRunResult:
     assessment: dict[str, Any] | None = None
     task_type: str = "legal_lookup"
     route: str = "legal_lookup"
+    context_loaded: bool = False
+    history_messages: int = 0
+    is_follow_up: bool = False
+    standalone_query: str = ""
 
 
 @dataclass
