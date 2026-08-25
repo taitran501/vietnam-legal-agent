@@ -1,9 +1,8 @@
 # Current acceptance status
 
 **Checked:** 2026-08-25
-**Baseline commit:** `34f1ee8` (`main` in `vietnam-legal-agent`)
-**Stacked refactor branch:** `refactor/remove-legal-review-gates` (based on
-`audit/repo-docs-and-runtime-contracts`; not merged)
+**Acceptance commit:** `6e01c3e` (`main` in `vietnam-legal-agent`)
+**Merged delivery:** PR #48 (`7367575`) followed by PR #49 (`6e01c3e`)
 
 This file records checks against the current checkout. It is not a replacement
 for the commit-scoped historical reports; deployment, provider, and corpus
