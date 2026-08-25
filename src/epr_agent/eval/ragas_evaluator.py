@@ -71,6 +71,7 @@ class RagasSampleResult(BaseModel):
     anchor_accuracy: float = Field(ge=0.0, le=1.0)
     overall_ragas_score: float = Field(ge=0.0, le=1.0)
     passed_gate: bool
+    evaluator_status: str = Field(default="ok", description="ok or evaluation_unavailable")
     details: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -168,9 +169,10 @@ async def evaluate_ragas_sample(
         for i, d in enumerate(retrieved_docs[:6])
     )
 
-    faithfulness_score = 1.0
-    relevance_score = 1.0
-    precision_score = 1.0
+    faithfulness_score = 0.0
+    relevance_score = 0.0
+    precision_score = 0.0
+    evaluator_status = "ok"
     details: dict[str, Any] = {
         "found_anchors": found_anchors,
         "cited_anchors": cited_anchors,
@@ -193,11 +195,10 @@ async def evaluate_ragas_sample(
         if isinstance(faith_res, FaithfulnessEvaluation):
             faithfulness_score = max(0.0, min(1.0, float(faith_res.faithfulness_score)))
             details["faithfulness_details"] = faith_res.model_dump(mode="json")
-    except Exception as exc:  # noqa: BLE001 - scoring falls back to deterministic heuristics
+    except Exception as exc:  # noqa: BLE001 - evaluator health is part of the gate
         logger.warning("RAGAS Faithfulness evaluation error: %s", exc)
-        # Fallback to heuristic citation count check
-        citations_found = len(re.findall(r"\[\d+\]", answer))
-        faithfulness_score = 0.9 if citations_found > 0 else 0.6
+        evaluator_status = "evaluation_unavailable"
+        details["faithfulness_error"] = str(exc)
 
     try:
         judge_llm = get_llm_smart()
@@ -216,9 +217,10 @@ async def evaluate_ragas_sample(
         if isinstance(rel_res, RelevanceEvaluation):
             relevance_score = max(0.0, min(1.0, float(rel_res.relevance_score)))
             details["relevance_details"] = rel_res.model_dump(mode="json")
-    except Exception as exc:  # noqa: BLE001 - scoring falls back to deterministic heuristics
+    except Exception as exc:  # noqa: BLE001 - evaluator health is part of the gate
         logger.warning("RAGAS Relevance evaluation error: %s", exc)
-        relevance_score = 0.85 if len(answer) > 100 else 0.5
+        evaluator_status = "evaluation_unavailable"
+        details["relevance_error"] = str(exc)
 
     try:
         judge_llm = get_llm_smart()
@@ -237,16 +239,24 @@ async def evaluate_ragas_sample(
         if isinstance(prec_res, ContextPrecisionEvaluation):
             precision_score = max(0.0, min(1.0, float(prec_res.precision_score)))
             details["precision_details"] = prec_res.model_dump(mode="json")
-    except Exception as exc:  # noqa: BLE001 - scoring falls back to deterministic heuristics
+    except Exception as exc:  # noqa: BLE001 - evaluator health is part of the gate
         logger.warning("RAGAS Precision evaluation error: %s", exc)
-        precision_score = 0.80
+        evaluator_status = "evaluation_unavailable"
+        details["precision_error"] = str(exc)
 
     # Harmonic mean or weighted composite RAGAS score
     weights = [0.30, 0.25, 0.20, 0.15, 0.10]
     scores = [faithfulness_score, relevance_score, context_recall, precision_score, anchor_accuracy]
-    overall = sum(w * s for w, s in zip(weights, scores))
+    # Do not expose a partially-computed composite as if it were a valid
+    # quality score. Deterministic anchor metrics remain in ``details`` while
+    # an unavailable judge makes the promotion score explicitly unusable.
+    overall = sum(w * s for w, s in zip(weights, scores)) if evaluator_status == "ok" else 0.0
 
-    passed = overall >= pass_threshold and faithfulness_score >= 0.75
+    passed = (
+        evaluator_status == "ok"
+        and overall >= pass_threshold
+        and faithfulness_score >= 0.75
+    )
 
     return RagasSampleResult(
         sample_id=sample_id,
@@ -258,5 +268,6 @@ async def evaluate_ragas_sample(
         anchor_accuracy=round(anchor_accuracy, 3),
         overall_ragas_score=round(overall, 3),
         passed_gate=passed,
+        evaluator_status=evaluator_status,
         details=details,
     )
