@@ -19,7 +19,7 @@ The test suite comprises:
 
 | Category | Count |
 | --- | --- |
-| Pytest unit/integration tests | 490 |
+| Pytest unit/integration tests | 574 passed (3 skipped) |
 | Eval manifest cases | 125 (60 retrieval + 60 query_understanding + 5 manifest) |
 | Agent test cases | 18 |
 | Playwright browser tests | 27 |
