@@ -119,6 +119,33 @@ class FeedbackRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
 
+class QualityFeedbackRecord(Base):
+    """Trace-linked quality triage state derived from user feedback."""
+
+    __tablename__ = "quality_feedback"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    feedback_id: Mapped[int] = mapped_column(
+        ForeignKey("message_feedback.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    message_id: Mapped[int] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    trace_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
+    failure_category: Mapped[str] = mapped_column(String(64), nullable=False, default="unclassified")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="new")
+    evidence_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    reviewer_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dataset_case_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+
 class ConversationSummaryRecord(Base):
     __tablename__ = "conversation_summaries"
 
@@ -224,6 +251,10 @@ _EXPECTED_SCHEMA_COLUMNS: dict[str, set[str]] = {
     },
     "message_feedback": {
         "id", "user_id", "conversation_id", "message_id", "rating", "comment", "created_at", "updated_at",
+    },
+    "quality_feedback": {
+        "id", "feedback_id", "user_id", "conversation_id", "message_id", "trace_id", "failure_category",
+        "status", "evidence_snapshot", "reviewer_id", "review_notes", "dataset_case_id", "created_at", "updated_at",
     },
 }
 
@@ -720,6 +751,87 @@ class PersistenceStore:
             message = messages[message_index]
             return int(message.id) if message.role == "assistant" else None
 
+    @staticmethod
+    def _quality_evidence_snapshot(metadata: dict[str, Any]) -> dict[str, Any]:
+        """Keep trace-linked quality context without persisting raw evidence text."""
+
+        snapshot: dict[str, Any] = {
+            key: metadata.get(key)
+            for key in (
+                "trace_id",
+                "pipeline_version",
+                "corpus_id",
+                "corpus_sha",
+                "corpus_version",
+                "embedding_profile",
+                "route",
+                "source",
+                "outcome",
+                "result_type",
+                "termination_reason",
+                "safe_stop_reason",
+                "evidence_status",
+            )
+            if metadata.get(key) not in (None, "")
+        }
+        sources: list[dict[str, Any]] = []
+        for source in metadata.get("sources") or []:
+            if not isinstance(source, dict):
+                continue
+            sources.append(
+                {
+                    key: source.get(key)
+                    for key in (
+                        "source_id",
+                        "chunk_id",
+                        "title",
+                        "source_title",
+                        "instrument_number",
+                        "anchor",
+                        "legal_anchor",
+                        "official_url",
+                        "source_kind",
+                        "authority",
+                        "effective_status",
+                        "effective_from",
+                        "effective_to",
+                        "corpus_as_of_date",
+                    )
+                    if source.get(key) not in (None, "")
+                }
+            )
+        snapshot["sources"] = sources[:20]
+        return anonymize_payload(snapshot)
+
+    @staticmethod
+    def _quality_payload(
+        quality: QualityFeedbackRecord,
+        feedback: FeedbackRecord,
+        *,
+        query: str = "",
+        answer: str = "",
+    ) -> dict[str, Any]:
+        return {
+            "id": int(quality.id),
+            "feedback_id": int(quality.feedback_id),
+            "user_id": quality.user_id,
+            "conversation_id": quality.conversation_id,
+            "message_id": int(quality.message_id),
+            "trace_id": quality.trace_id,
+            "rating": int(feedback.rating),
+            "comment": anonymize_payload(feedback.comment),
+            "failure_category": quality.failure_category,
+            "status": quality.status,
+            "evidence_snapshot": dict(quality.evidence_snapshot or {}),
+            "reviewer_id": quality.reviewer_id,
+            "review_notes": anonymize_payload(quality.review_notes),
+            "dataset_case_id": quality.dataset_case_id,
+            "query": anonymize_payload(query),
+            "answer": anonymize_payload(answer),
+            "created_at": _timestamp(quality.created_at),
+            "updated_at": _timestamp(quality.updated_at),
+        }
+
     async def save_feedback(
         self,
         user_id: str,
@@ -770,14 +882,140 @@ class PersistenceStore:
             message_metadata = dict(message.message_metadata or {})
             message_metadata["feedback"] = {"rating": rating, "comment": comment}
             message.message_metadata = message_metadata
+            snapshot = self._quality_evidence_snapshot(message_metadata)
+            quality_result = await session.execute(
+                select(QualityFeedbackRecord).where(QualityFeedbackRecord.feedback_id == int(feedback.id))
+            )
+            quality = quality_result.scalar_one_or_none()
+            if quality is None:
+                quality = QualityFeedbackRecord(
+                    feedback_id=int(feedback.id),
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    message_id=message_id,
+                    trace_id=str(snapshot.get("trace_id") or "") or None,
+                    failure_category="unclassified",
+                    status="new",
+                    evidence_snapshot=snapshot,
+                    created_at=now,
+                    updated_at=now,
+                )
+                session.add(quality)
+            else:
+                quality.trace_id = str(snapshot.get("trace_id") or "") or None
+                quality.evidence_snapshot = snapshot
+                quality.updated_at = now
+            await session.flush()
             return {
                 "id": int(feedback.id) if feedback.id else None,
                 "conversation_id": conversation_id,
                 "message_id": message_id,
                 "rating": rating,
                 "comment": comment,
+                "quality_feedback_id": int(quality.id) if quality.id else None,
+                "quality_status": quality.status,
                 "updated_at": _timestamp(now),
             }
+
+    async def list_quality_feedback(
+        self,
+        *,
+        status: str | None = None,
+        failure_category: str | None = None,
+        limit: int = 50,
+        quality_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """List redacted trace-linked feedback for quality-admin workflows."""
+
+        async with self.sessions() as session:
+            query = (
+                select(QualityFeedbackRecord, FeedbackRecord, MessageRecord)
+                .join(FeedbackRecord, FeedbackRecord.id == QualityFeedbackRecord.feedback_id)
+                .join(MessageRecord, MessageRecord.id == QualityFeedbackRecord.message_id)
+                .order_by(QualityFeedbackRecord.created_at.desc())
+                .limit(max(1, min(limit, 100)))
+            )
+            if status:
+                query = query.where(QualityFeedbackRecord.status == status)
+            if failure_category:
+                query = query.where(QualityFeedbackRecord.failure_category == failure_category)
+            if quality_id is not None:
+                query = query.where(QualityFeedbackRecord.id == quality_id)
+            rows = list((await session.execute(query)).all())
+            payloads: list[dict[str, Any]] = []
+            for quality, feedback, message in rows:
+                user_query_result = await session.execute(
+                    select(MessageRecord.content)
+                    .where(
+                        MessageRecord.conversation_id == quality.conversation_id,
+                        MessageRecord.role == "user",
+                        MessageRecord.id < quality.message_id,
+                    )
+                    .order_by(MessageRecord.id.desc())
+                    .limit(1)
+                )
+                user_query = str(user_query_result.scalar_one_or_none() or "")
+                payloads.append(
+                    self._quality_payload(
+                        quality,
+                        feedback,
+                        query=user_query,
+                        answer=message.content,
+                    )
+                )
+            return payloads
+
+    async def update_quality_feedback(
+        self,
+        quality_id: int,
+        *,
+        status: str | None = None,
+        failure_category: str | None = None,
+        reviewer_id: str | None = None,
+        review_notes: str | None = None,
+        dataset_case_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Apply an explicit quality review decision to one triage item."""
+
+        allowed_statuses = {"new", "reproduced", "accepted", "rejected", "deferred"}
+        if status is not None and status not in allowed_statuses:
+            raise ValueError("invalid quality feedback status")
+        async with self.sessions() as session, session.begin():
+            quality = await session.get(QualityFeedbackRecord, quality_id)
+            if quality is None:
+                return None
+            feedback = await session.get(FeedbackRecord, quality.feedback_id)
+            message = await session.get(MessageRecord, quality.message_id)
+            if feedback is None or message is None:
+                return None
+            if status is not None:
+                quality.status = status
+            if failure_category is not None:
+                quality.failure_category = failure_category
+            if reviewer_id is not None:
+                quality.reviewer_id = reviewer_id
+            if review_notes is not None:
+                quality.review_notes = anonymize_payload(review_notes)
+            if dataset_case_id is not None:
+                quality.dataset_case_id = dataset_case_id
+            quality.updated_at = _utcnow()
+            await session.flush()
+            user_query_result = await session.execute(
+                select(MessageRecord.content)
+                .where(
+                    MessageRecord.conversation_id == quality.conversation_id,
+                    MessageRecord.role == "user",
+                    MessageRecord.id < quality.message_id,
+                )
+                .order_by(MessageRecord.id.desc())
+                .limit(1)
+            )
+            return self._quality_payload(
+                quality,
+                feedback,
+                query=str(user_query_result.scalar_one_or_none() or ""),
+                answer=message.content,
+            )
 
     async def feedback_stats(self) -> dict[str, Any]:
         async with self.sessions() as session:

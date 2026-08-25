@@ -15,12 +15,14 @@ from .store import (
     init_history_store,
     list_conversations,
     list_messages,
+    list_quality_feedback,
     list_traces,
     pin_conversation,
     rename_conversation,
     resolve_assistant_message_id,
     save_case_state,
     save_feedback,
+    update_quality_feedback,
 )
 
 __all__ = [
@@ -38,10 +40,12 @@ __all__ = [
     "init_history_store",
     "list_conversations",
     "list_messages",
+    "list_quality_feedback",
     "list_traces",
     "pin_conversation",
     "rename_conversation",
     "resolve_assistant_message_id",
     "save_case_state",
     "save_feedback",
+    "update_quality_feedback",
 ]

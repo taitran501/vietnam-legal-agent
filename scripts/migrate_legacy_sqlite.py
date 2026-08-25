@@ -162,6 +162,7 @@ def _audit(connection: sqlite3.Connection, report: MigrationReport) -> None:
         "case_states": "SELECT COUNT(*) FROM case_states s LEFT JOIN conversations c ON c.id=s.conversation_id WHERE c.id IS NULL",
         "agent_runs": "SELECT COUNT(*) FROM agent_runs r LEFT JOIN conversations c ON c.id=r.conversation_id WHERE c.id IS NULL",
         "message_feedback": "SELECT COUNT(*) FROM message_feedback f LEFT JOIN messages m ON m.id=f.message_id WHERE m.id IS NULL",
+        "quality_feedback": "SELECT COUNT(*) FROM quality_feedback q LEFT JOIN message_feedback f ON f.id=q.feedback_id WHERE f.id IS NULL",
     }
     for table, query in orphan_checks.items():
         if table in tables and "conversations" in tables:
@@ -280,6 +281,25 @@ def _mapped_rows(source: sqlite3.Connection) -> dict[str, list[dict[str, Any]]]:
         }
         for row in _rows(source, "message_feedback")
     ]
+    mapped["quality_feedback"] = [
+        {
+            "id": row["id"],
+            "feedback_id": row["feedback_id"],
+            "user_id": row["user_id"],
+            "conversation_id": row["conversation_id"],
+            "message_id": row["message_id"],
+            "trace_id": row.get("trace_id"),
+            "failure_category": _pick(row, "failure_category", "unclassified"),
+            "status": _pick(row, "status", "new"),
+            "evidence_snapshot": _json_text(_pick(row, "evidence_snapshot", {}), {}),
+            "reviewer_id": row.get("reviewer_id"),
+            "review_notes": row.get("review_notes"),
+            "dataset_case_id": row.get("dataset_case_id"),
+            "created_at": _datetime_text(_pick(row, "created_at", now)),
+            "updated_at": _datetime_text(_pick(row, "updated_at", now)),
+        }
+        for row in _rows(source, "quality_feedback")
+    ]
     return mapped
 
 
@@ -356,7 +376,7 @@ def migrate(database: Path, *, apply: bool = False, backup: Path | None = None) 
             mapped = _mapped_rows(source)
             for table in (
                 "users", "conversations", "messages", "conversation_turns", "conversation_summaries", "case_states",
-                "agent_runs", "agent_run_events", "message_feedback",
+                "agent_runs", "agent_run_events", "message_feedback", "quality_feedback",
             ):
                 _insert_rows(target, table, mapped[table])
             target.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")

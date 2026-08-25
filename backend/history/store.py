@@ -72,6 +72,40 @@ async def feedback_stats() -> dict[str, Any]:
     return await (await _store()).feedback_stats()
 
 
+async def list_quality_feedback(
+    *,
+    status: str | None = None,
+    failure_category: str | None = None,
+    limit: int = 50,
+    quality_id: int | None = None,
+) -> list[dict[str, Any]]:
+    return await (await _store()).list_quality_feedback(
+        status=status,
+        failure_category=failure_category,
+        limit=limit,
+        quality_id=quality_id,
+    )
+
+
+async def update_quality_feedback(
+    quality_id: int,
+    *,
+    status: str | None = None,
+    failure_category: str | None = None,
+    reviewer_id: str | None = None,
+    review_notes: str | None = None,
+    dataset_case_id: str | None = None,
+) -> dict[str, Any] | None:
+    return await (await _store()).update_quality_feedback(
+        quality_id,
+        status=status,
+        failure_category=failure_category,
+        reviewer_id=reviewer_id,
+        review_notes=review_notes,
+        dataset_case_id=dataset_case_id,
+    )
+
+
 async def get_recent_history(user_id: str, conversation_id: str, max_messages: int) -> list[dict[str, Any]]:
     return await (await _store()).get_recent_history(user_id, conversation_id, max_messages)
 
