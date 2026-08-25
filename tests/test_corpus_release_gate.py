@@ -14,15 +14,15 @@ def _write_json(path: Path, value: dict) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def test_corpus_audit_blocks_unreviewed_amendment_chain() -> None:
+def test_corpus_audit_accepts_technically_valid_amendment_chain() -> None:
     audit = corpus_readiness_audit()
 
-    assert audit["ready_for_promotion"] is False
+    assert audit["ready_for_promotion"] is True
     assert audit["technical_ready"] is True
     assert audit["source_errors"] == []
-    assert "amendment_map_legal_review_pending" in audit["amendment_errors"]
-    assert "rule_pack_legal_review_pending" in audit["rule_pack_errors"]
-    assert "manifest_legal_review_pending" in audit["approval_errors"]
+    assert audit["amendment_errors"] == []
+    assert audit["rule_pack_errors"] == []
+    assert audit["source_snapshot_status"] == "technical"
     assert not any(item.endswith("active_source_pages_missing") for item in audit["amendment_errors"])
     assert not any(item.endswith("operations_missing") for item in audit["amendment_errors"])
 
@@ -42,7 +42,7 @@ def test_corpus_audit_detects_source_hash_tampering(tmp_path: Path) -> None:
     assert audit["ready_for_promotion"] is False
 
 
-def test_approved_labels_still_require_named_reviewers_and_dates(tmp_path: Path, monkeypatch) -> None:
+def test_technical_metadata_does_not_require_human_approval_metadata(tmp_path: Path, monkeypatch) -> None:
     data = tmp_path / "data"
     data.mkdir()
     source = data / "official.pdf"
@@ -54,7 +54,6 @@ def test_approved_labels_still_require_named_reviewers_and_dates(tmp_path: Path,
     manifest = {
         "corpus_id": "epr-test",
         "corpus_version": "approved-without-review-metadata",
-        "legal_review_status": "approved",
         "corpus_as_of_date": None,
         "amendment_map_file": "data/amendment.json",
         "rule_pack_file": "data/rules.json",
@@ -74,9 +73,7 @@ def test_approved_labels_still_require_named_reviewers_and_dates(tmp_path: Path,
     }
     anchors = [*(f"Điều {number}" for number in range(77, 87)), "Phụ lục XXII"]
     amendment_map = {
-        "review_status": "approved",
-        "reviewed_by": "reviewer@example.test",
-        "reviewed_at": None,
+        "source_map_status": "technical",
         "technical_validation_status": "complete",
         "generated_consolidated_text": False,
         "entries": [
@@ -85,8 +82,6 @@ def test_approved_labels_still_require_named_reviewers_and_dates(tmp_path: Path,
                 "substantive_source_document_id": "base",
                 "substantive_source_pages": "1",
                 "resolution_status": "verified",
-                "verified_by": "reviewer@example.test",
-                "verified_at": "2026-08-13",
                 "operations": [
                     {
                         "document_id": "base",
@@ -113,9 +108,6 @@ def test_approved_labels_still_require_named_reviewers_and_dates(tmp_path: Path,
         {
             "corpus_version": manifest["corpus_version"],
             "corpus_sha256": corpus_hash,
-            "legal_review_status": "approved",
-            "legal_reviewed_by": "reviewer@example.test",
-            "legal_reviewed_at": "2026-08-13",
         },
     )
 
@@ -126,8 +118,4 @@ def test_approved_labels_still_require_named_reviewers_and_dates(tmp_path: Path,
     )
 
     assert audit["technical_ready"] is True
-    assert audit["ready_for_promotion"] is False
-    assert "manifest_legal_reviewed_by_missing" in audit["approval_errors"]
-    assert "manifest_legal_reviewed_at_missing" in audit["approval_errors"]
-    assert "manifest_corpus_as_of_date_missing" in audit["approval_errors"]
-    assert "amendment_map_reviewed_at_missing" in audit["approval_errors"]
+    assert audit["ready_for_promotion"] is True

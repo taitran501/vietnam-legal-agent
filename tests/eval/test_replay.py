@@ -9,11 +9,11 @@ from typing import Any
 import pytest
 
 from epr_agent.eval.contracts import (
-    AuditedEvalCase,
-    AuditStatus,
     AuthoritativeSource,
     EvalTurn,
+    EvaluationCase,
     EvaluationStatus,
+    EvidenceStatus,
     ExpectedCitation,
     ExpectedClaim,
     ExpectedOutcome,
@@ -58,8 +58,8 @@ class FakeReplayRuntime:
         }
 
 
-def _case() -> AuditedEvalCase:
-    return AuditedEvalCase(
+def _case() -> EvaluationCase:
+    return EvaluationCase(
         case_id="REPLAY-001",
         turns=[EvalTurn(query="Quy định gì?"), EvalTurn(query="Còn gì nữa?")],
         expected_outcome=ExpectedOutcome.ANSWER_COMPLETE,
@@ -81,10 +81,8 @@ def _case() -> AuditedEvalCase:
             )
         ],
         citations=[ExpectedCitation(claim_id="claim-1", source_id="law-1", anchor="Điều 1", citation_index=1)],
-        audit={
-            "status": AuditStatus.AUDITED,
-            "audited_by": "test",
-            "audited_at": "2026-08-25",
+        evidence={
+            "status": EvidenceStatus.READY,
             "corpus_sha": "sha-test",
         },
     )
@@ -106,13 +104,13 @@ async def test_replay_preserves_multi_turn_conversation_and_source_artifacts() -
 
 
 @pytest.mark.asyncio
-async def test_replay_pending_case_is_reported_as_informational() -> None:
+async def test_replay_example_case_is_gate_eligible_as_engineering_evidence() -> None:
     from epr_agent.eval.replay import deterministic_runtime, load_cases
 
-    case = load_cases(Path("data/eval/audited/2026-law-follow-up.json"))[0]
+    case = load_cases(Path("data/eval/examples/legal-follow-up.json"))[0]
     report = await replay_case(deterministic_runtime(case), case, mode="deterministic")
-    assert report["result"]["status"] == EvaluationStatus.INFORMATIONAL.value
-    assert report["result"]["gate_eligible"] is False
+    assert report["result"]["status"] == EvaluationStatus.PASS.value
+    assert report["result"]["gate_eligible"] is True
 
 
 def test_write_report_is_json_serialisable(tmp_path: Path) -> None:

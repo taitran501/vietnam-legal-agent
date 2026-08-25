@@ -1,4 +1,4 @@
-"""Replay audited legal cases through AgentWorkflowRuntime.
+"""Replay engineering evaluation cases through AgentWorkflowRuntime.
 
 Deterministic mode never initializes OpenAI/Qdrant providers. Live mode is
 explicit and intended for the manual pilot workflow only.
@@ -26,7 +26,7 @@ from epr_agent.eval.replay import (
     write_report,
 )
 
-DEFAULT_FIXTURE = ROOT / "data" / "eval" / "audited" / "2026-law-follow-up.json"
+DEFAULT_FIXTURE = ROOT / "data" / "eval" / "examples" / "legal-follow-up.json"
 DEFAULT_OUTPUT = ROOT / "artifacts" / "evaluation-replay.json"
 
 

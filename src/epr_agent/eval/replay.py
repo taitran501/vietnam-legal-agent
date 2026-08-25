@@ -19,12 +19,12 @@ from epr_agent.agent.planner import BoundedPlanner
 from epr_agent.agent.runtime import AgentWorkflowRuntime
 from epr_agent.domain.models import AgentState, DocumentRecord
 from epr_agent.eval.contracts import (
-    AuditedEvalCase,
+    EvaluationCase,
     EvaluationStatus,
     ExpectedOutcome,
     FailureCode,
 )
-from epr_agent.eval.evidence_verifier import verify_audited_case
+from epr_agent.eval.evidence_verifier import verify_evaluation_case
 from epr_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
 from epr_agent.tools.evidence import EvidenceEvaluator
 from epr_agent.tools.generation import EvidenceGenerationGateway
@@ -128,11 +128,12 @@ class DeterministicReplayRunner:
     """Bounded runner double used only when replay is explicitly deterministic.
 
     It creates source-aligned synthetic output from the fixture contract.  It
-    is a plumbing/control-flow check, not legal ground truth; source-audited
-    cases still require the live provider/corpus path for quality promotion.
+    is a plumbing/control-flow check, not a legal opinion.  Live provider runs
+    are optional evidence for latency and integration behavior, not a legal
+    quality gate.
     """
 
-    def __init__(self, case: AuditedEvalCase) -> None:
+    def __init__(self, case: EvaluationCase) -> None:
         self.case = case
 
     def _result(self) -> AgentRunResult:
@@ -162,7 +163,7 @@ class DeterministicReplayRunner:
 
         outcome = self.case.expected_outcome or ExpectedOutcome.SAFE_STOP
         if not answer_lines:
-            answer = "Chưa có đủ căn cứ đã được kiểm toán để trả lời an toàn."
+            answer = "Chưa có đủ dữ liệu nguồn trong bản replay để trả lời an toàn."
             termination = "insufficient_evidence"
             source_name = "error"
         else:
@@ -215,7 +216,7 @@ class DeterministicReplayRunner:
         return self._result()
 
 
-def deterministic_runtime(case: AuditedEvalCase) -> AgentWorkflowRuntime:
+def deterministic_runtime(case: EvaluationCase) -> AgentWorkflowRuntime:
     documents = [
         DocumentRecord(
             content=f"{anchor} {claim.text}".strip(),
@@ -266,7 +267,7 @@ def _terminal(events: list[dict[str, Any]]) -> dict[str, Any]:
 
 async def replay_case(
     runtime: ReplayRuntime,
-    case: AuditedEvalCase,
+    case: EvaluationCase,
     *,
     mode: str,
     user_id: str = "evaluation",
@@ -327,7 +328,7 @@ async def replay_case(
             }
         )
 
-    result = verify_audited_case(
+    result = verify_evaluation_case(
         case,
         answer=str(final_terminal.get("text") or ""),
         documents=final_documents,
@@ -358,7 +359,7 @@ async def replay_case(
     return report
 
 
-def config_hash(*, mode: str, case: AuditedEvalCase) -> str:
+def config_hash(*, mode: str, case: EvaluationCase) -> str:
     payload = {"mode": mode, "case_id": case.case_id, "turn_count": len(case.turns), "pipeline": "pipeline-agent"}
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
 
@@ -372,13 +373,13 @@ def git_commit_sha() -> str:
         return ""
 
 
-def load_cases(path: str | Path) -> list[AuditedEvalCase]:
+def load_cases(path: str | Path) -> list[EvaluationCase]:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     if isinstance(payload, dict) and isinstance(payload.get("cases"), list):
         raw_cases = payload["cases"]
     else:
         raw_cases = [payload]
-    return [AuditedEvalCase.model_validate(item) for item in raw_cases]
+    return [EvaluationCase.model_validate(item) for item in raw_cases]
 
 
 def write_report(path: str | Path, reports: list[dict[str, Any]]) -> None:

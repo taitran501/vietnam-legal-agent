@@ -1,10 +1,9 @@
 # Local and Staging Preview
 
-Preview mode exists to exercise the complete user journey before any legal
-domain corpus has received external approval. It is not a production bypass and
-must remain visibly labelled in the UI and source drawer. Preview supports all
-legal domains served by the Vietnam Legal Agent, using sample or unapproved
-corpus data.
+Preview mode exists to exercise the complete user journey with a deterministic
+source snapshot. It is not a production bypass and must remain visibly labelled
+in the UI and source drawer. Preview supports all legal domains served by the
+Vietnam Legal Agent.
 
 ## Start a Preview
 
@@ -22,7 +21,7 @@ Invoke-RestMethod http://127.0.0.1/api/v1/ready
 
 The readiness response should report `runtime_mode: preview`,
 `corpus.status: preview_ready`, and `legal_chat.reason:
-preview_unapproved_corpus`. A technically invalid corpus, an index mismatch,
+preview_snapshot`. A technically invalid corpus, an index mismatch,
 or a database schema mismatch still blocks the relevant capability.
 
 Before starting Compose, copy `.env.example` to `.env`, set
@@ -34,7 +33,7 @@ staging or production.
 CI uses `docker-compose.ci-smoke.yml` to boot this same topology with a
 deterministic, successful indexer placeholder. It verifies the gateway, backend
 health, preview readiness, and frontend response without requiring a paid
-provider or treating preview as legal approval.
+provider or making a legal-ground-truth claim.
 
 For deterministic browser work without paid providers, use the local test
 backend and Vite app:
@@ -55,9 +54,9 @@ that the production Qdrant or official web provider is available.
 ## Promotion Boundary
 
 Do not set preview mode in production. The production readiness gate requires
-the canonical manifest/rule-pack/index hashes, complete source and amendment
-technical checks, and `legal_review_status: approved` with an approved as-of
-date. The canonical sync command never changes that approval field:
+the canonical manifest/rule-pack/index hashes and complete source and amendment
+technical checks. The canonical sync command only refreshes deterministic
+source metadata:
 
 ```powershell
 python -m scripts.sync_corpus_metadata --check

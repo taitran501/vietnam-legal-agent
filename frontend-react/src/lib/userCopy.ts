@@ -32,7 +32,7 @@ export function capabilityUnavailableCopy(reason = '', offline = false): string 
   if (offline) return 'Không thể kết nối tới máy chủ. Bạn có thể thử lại sau ít phút.';
   const messages: Record<string, string> = {
     database_schema_mismatch: 'Chức năng này đang tạm khóa vì lịch sử chưa sẵn sàng. Hãy thử lại sau ít phút.',
-    corpus_promotion_blocked: 'Chức năng này đang tạm khóa trong lúc văn bản pháp luật được kiểm tra.',
+    corpus_promotion_blocked: 'Chức năng này đang tạm khóa vì dữ liệu pháp luật chưa sẵn sàng.',
     corpus_not_ready: 'Chức năng này đang tạm khóa vì dữ liệu pháp luật đang được kiểm tra.',
     qdrant_unavailable: 'Chức năng này đang tạm khóa vì kho tìm kiếm pháp luật tạm thời không khả dụng.',
     provider_not_configured: 'Nguồn bổ sung hiện chưa được cấu hình. Bạn vẫn có thể dùng các chức năng khác.',
@@ -156,7 +156,7 @@ const errorCopy: Record<string, { title: string; fallback: string }> = {
   rate_limited: { title: 'Bạn đang gửi yêu cầu hơi nhanh', fallback: 'Vui lòng chờ một chút rồi thử lại.' },
   rate_limit_exceeded: { title: 'Bạn đang gửi yêu cầu hơi nhanh', fallback: 'Vui lòng chờ một chút rồi thử lại.' },
   corpus_not_ready: { title: 'Văn bản pháp luật chưa sẵn sàng', fallback: 'Tra cứu pháp luật tạm thời chưa thể sử dụng. Lịch sử trò chuyện vẫn được giữ nguyên.' },
-  corpus_promotion_blocked: { title: 'Văn bản pháp luật chưa được kiểm tra', fallback: 'Kết luận pháp lý tạm thời chưa thể sử dụng cho đến khi dữ liệu được kiểm tra.' },
+  corpus_promotion_blocked: { title: 'Dữ liệu pháp luật chưa sẵn sàng', fallback: 'Chức năng sẽ khả dụng sau khi kiểm tra kỹ thuật dữ liệu hoàn tất.' },
   database_unavailable: { title: 'Lịch sử tạm thời không khả dụng', fallback: 'Hãy thử lại sau ít phút.' },
   persistence_failed: { title: 'Không thể lưu lượt trao đổi', fallback: 'Nội dung chưa được ghi nhận đầy đủ. Hãy thử lại.' },
   web_provider_unavailable: { title: 'Nguồn bổ sung đang tạm thời không khả dụng', fallback: 'Bạn có thể thử lại sau hoặc tiếp tục với kho văn bản hiện có.' },

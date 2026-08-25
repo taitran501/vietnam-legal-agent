@@ -1,0 +1,27 @@
+{
+  "case_id": "LEGAL_FOLLOWUP_REPLAY_EXAMPLE",
+  "domain": "legal",
+  "turns": [
+    {
+      "query": "Tôi cần biết hồ sơ cần chuẩn bị cho thủ tục này.",
+      "expected_outcome": "safe_stop",
+      "expected_behavior": "Replay the conversation and preserve trace, context, and terminal-event ordering."
+    },
+    {
+      "query": "Còn gì nữa?",
+      "expected_outcome": "safe_stop",
+      "expected_behavior": "Exercise terse follow-up handling without requiring a manually authored legal answer."
+    }
+  ],
+  "expected_outcome": "clarification",
+  "claims": [],
+  "sources": [],
+  "citations": [],
+  "allowed_omissions": [],
+  "forbidden_claims": [],
+  "follow_up_expected_behavior": ["safe_stop", "clarification"],
+  "evidence": {
+    "status": "informational",
+    "notes": "Engineering replay fixture for SSE, trace, context, and failure-artifact checks. It is not legal ground truth."
+  }
+}

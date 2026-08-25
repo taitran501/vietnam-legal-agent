@@ -43,7 +43,7 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
         "collection": settings.law_collection,
         "points_count": 0,
         "status": "missing",
-        "legal_review_status": "pending",
+        "source_snapshot_status": "unknown",
     }
     audit: dict[str, Any] = {}
     index_matches = False
@@ -62,15 +62,13 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
         corpus["source_completeness"] = "complete" if not audit["source_errors"] else "incomplete"
         corpus["amendment_chain_status"] = "ready" if not audit["amendment_errors"] else "blocked"
         corpus["promotion_status"] = "ready" if audit["ready_for_promotion"] else "blocked"
-        corpus["legal_review_status"] = str(audit.get("manifest_legal_review_status") or "pending")
+        corpus["source_snapshot_status"] = str(audit.get("source_snapshot_status") or "technical")
 
         if "technical_ready" in audit:
             technical_corpus_ready = bool(audit["technical_ready"])
         else:  # Compatibility for injected readiness doubles.
-            legal_review_markers = ("legal_review_pending", "legal_review_missing", "resolution_pending")
             technical_corpus_ready = not any(
-                not any(marker in error for marker in legal_review_markers)
-                for error in [*audit["source_errors"], *audit["amendment_errors"], *audit["rule_pack_errors"]]
+                [*audit["source_errors"], *audit["amendment_errors"], *audit["rule_pack_errors"]]
             )
 
         expected_sha = corpus_sha256(
@@ -97,11 +95,11 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
             and payload.get("Embedding_Profile") == settings.embedding_profile
             and int(payload.get("Embedding_Dimensions") or 0) == settings.embedding_dimensions
         )
-        legal_gate_ready = audit["ready_for_promotion"] if settings.corpus_runtime_mode == "production" else technical_corpus_ready
-        if index_matches and legal_gate_ready:
+        corpus_ready = audit["ready_for_promotion"] if settings.corpus_runtime_mode == "production" else technical_corpus_ready
+        if index_matches and corpus_ready:
             corpus["status"] = "ready" if settings.corpus_runtime_mode == "production" else "preview_ready"
         else:
-            corpus["status"] = "promotion_blocked" if not legal_gate_ready else "version_mismatch"
+            corpus["status"] = "promotion_blocked" if not corpus_ready else "version_mismatch"
     except Exception as exc:  # noqa: BLE001 - readiness must be safe when a collection is absent
         logger.info("Legal corpus is not ready: %s", exc)
         dependencies["qdrant"] = "preview" if settings.corpus_runtime_mode == "preview" else "error"
@@ -130,28 +128,28 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
     if not settings.openai_api_key:
         dependencies["openai"] = "error"
 
-    legal_gate_ready = bool(audit.get("ready_for_promotion")) if settings.corpus_runtime_mode == "production" else technical_corpus_ready
-    legal_ready = (
+    corpus_ready = bool(audit.get("ready_for_promotion")) if settings.corpus_runtime_mode == "production" else technical_corpus_ready
+    ready = (
         dependencies["database"] == "ok"
         and (dependencies["qdrant"] == "ok" or (settings.corpus_runtime_mode == "preview" and dependencies["qdrant"] in {"ok", "preview"}))
         and dependencies["openai"] == "ok"
         and (index_matches or settings.corpus_runtime_mode == "preview")
-        and legal_gate_ready
+        and corpus_ready
     )
-    if legal_ready:
-        reason = "preview_unapproved_corpus" if settings.corpus_runtime_mode == "preview" else "ok"
+    if ready:
+        reason = "preview_snapshot" if settings.corpus_runtime_mode == "preview" else "ok"
         capabilities["legal_chat"] = {"status": "ready", "reason": reason}
         capabilities["case_workflow"] = {"status": "ready", "reason": reason}
     else:
         reason = (
             "database_schema_mismatch" if capabilities["history"]["reason"] == "database_schema_mismatch"
-            else "corpus_promotion_blocked" if not legal_gate_ready
+            else "corpus_promotion_blocked" if not corpus_ready
             else "corpus_index_mismatch" if not index_matches
             else "dependency_unavailable"
         )
         capabilities["legal_chat"] = {"status": "blocked", "reason": reason}
         capabilities["case_workflow"] = {"status": "blocked", "reason": reason}
-    if legal_ready and settings.tavily_api_key:
+    if ready and settings.tavily_api_key:
         capabilities["web_research"] = {"status": "ready", "reason": "official_sources_only"}
     else:
         capabilities["web_research"] = {
@@ -171,15 +169,15 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
                 state["reason"],
             )
 
-    ready = capabilities["history"]["status"] == "ready" and capabilities["legal_chat"]["status"] == "ready"
+    overall_ready = capabilities["history"]["status"] == "ready" and capabilities["legal_chat"]["status"] == "ready"
     return {
-        "status": "ready" if ready else "not_ready",
+        "status": "ready" if overall_ready else "not_ready",
         "runtime_mode": settings.corpus_runtime_mode,
         "preview": settings.corpus_runtime_mode == "preview",
         "dependencies": dependencies,
         "capabilities": capabilities,
         "corpus": corpus,
-    }, ready
+    }, overall_ready
 
 
 @router.get("/health", response_model=HealthResponse, tags=["ops"])

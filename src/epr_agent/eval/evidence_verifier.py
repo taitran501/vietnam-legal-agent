@@ -1,9 +1,9 @@
 """Deterministic claim/source verification for replay reports.
 
 This verifier intentionally performs conservative matching.  It does not try
-to decide legal semantics from generated prose; it checks that reviewer-defined
-claims and citations are backed by the canonical source records emitted by the
-runtime.  Cases that have not completed legal audit are informational only.
+to decide legal semantics from generated prose; it checks that declared claims
+and citations are backed by the source records emitted by the runtime.  The
+result is engineering evidence, not a legal approval decision.
 """
 
 from __future__ import annotations
@@ -14,9 +14,8 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from epr_agent.eval.contracts import (
-    AuditedEvalCase,
-    AuditStatus,
     ClaimVerification,
+    EvaluationCase,
     EvaluationResult,
     EvaluationStatus,
     ExpectedOutcome,
@@ -86,24 +85,15 @@ def _citation_indexes(answer: str) -> set[int]:
     return {int(value) for value in _CITATION_RE.findall(answer)}
 
 
-def verify_audited_case(
-    case: AuditedEvalCase,
+def verify_evaluation_case(
+    case: EvaluationCase,
     *,
     answer: str,
     documents: list[Mapping[str, Any]],
     source_drawer_documents: list[Mapping[str, Any]] | None = None,
     observed_outcome: ExpectedOutcome | str | None = None,
 ) -> EvaluationResult:
-    """Verify one observed answer against an audited case contract."""
-
-    if case.audit.status != AuditStatus.AUDITED:
-        return EvaluationResult(
-            case_id=case.case_id,
-            status=EvaluationStatus.INFORMATIONAL,
-            gate_eligible=False,
-            observed_outcome=_coerce_outcome(observed_outcome),
-            metadata={"reason": "audit_pending", "audit_status": case.audit.status.value},
-        )
+    """Verify one observed answer against a replay contract."""
 
     snapshots = [_snapshot(document) for document in documents]
     drawer_snapshots = [_snapshot(document) for document in (source_drawer_documents or documents)]
@@ -207,7 +197,6 @@ def verify_audited_case(
         source_results=source_results,
         metadata={"document_count": len(documents), "citation_indexes": sorted(citations)},
     )
-
 
 def _coerce_outcome(value: ExpectedOutcome | str | None) -> ExpectedOutcome | None:
     if value is None:

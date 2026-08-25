@@ -1,7 +1,7 @@
 """Synchronize deterministic corpus, rule-pack, source, and index metadata.
 
 Use ``--check`` in CI.  ``--write`` is an explicit maintainer operation and
-never changes legal-review or promotion status fields.
+only refreshes deterministic source, corpus, and index metadata.
 """
 
 from __future__ import annotations
@@ -146,7 +146,7 @@ def desired_state(
         "corpus_version": desired_manifest.get("corpus_version"),
         "corpus_sha256": corpus_sha,
         "corpus_as_of_date": desired_manifest.get("corpus_as_of_date"),
-        "legal_review_status": desired_manifest.get("legal_review_status"),
+        "source_snapshot_status": "technical",
         "manifest_file": manifest_path.relative_to(root).as_posix(),
         "manifest_sha256": _json_sha256(desired_manifest),
         "amendment_map_file": amendment_reference,

@@ -46,8 +46,8 @@ async def _deterministic_ready() -> tuple[dict[str, object], bool]:
             "dependencies": {},
             "capabilities": {
                 "history": {"status": "ready", "reason": "ok"},
-                "legal_chat": {"status": "ready", "reason": "preview_unapproved_corpus"},
-                "case_workflow": {"status": "ready", "reason": "preview_unapproved_corpus"},
+                "legal_chat": {"status": "ready", "reason": "preview_snapshot"},
+                "case_workflow": {"status": "ready", "reason": "preview_snapshot"},
                 "feedback": {"status": "ready", "reason": "ok"},
                 "web_research": {"status": "degraded", "reason": "provider_not_configured"},
             },

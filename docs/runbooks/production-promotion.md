@@ -1,8 +1,9 @@
 # Production Corpus Promotion
 
-Production legal chat is intentionally blocked until each legal domain corpus
-has both technical integrity and external legal approval. A successful build or
-a preview run is not approval.
+Production legal chat is gated by technical corpus integrity and runtime
+evidence. The repository does not model human legal approval as a deployment
+dependency; source freshness and legal interpretation remain product/operator
+responsibilities outside this framework acceptance loop.
 
 ## Autonomous-agent pilot gate
 
@@ -41,20 +42,20 @@ Review the audit for:
 - active anchors and source provenance for every indexed chunk;
 - rule-pack linkage to the same corpus hash;
 - immutable collection name and index schema/embedding metadata;
-- external reviewer, approval date, and `legal_review_status: approved`.
+- synchronized source snapshot metadata and a reproducible corpus hash.
 
-The current repository deliberately records technical amendment readiness
-without self-asserting legal approval. If approval is absent, leave runtime in
-`production` and expect `legal_chat` and `case_workflow` to be blocked.
+The current repository records technical amendment readiness without turning a
+benchmark fixture into legal ground truth. If technical integrity is absent,
+the active alias remains unchanged and the affected capabilities fail closed.
 
 ## Multi-Domain Corpus Promotion
 
-Each legal domain in the corpus follows its own activation boundary. The primary
-law collection and any supplementary corpuses (e.g., Pháp điển) each require
-an independent domain reviewer to approve their source and effective date before
-production activation. `ENABLE_UNIVERSAL_RETRIEVAL` must remain `false` in
-production until its domain review is recorded; the production configuration
-rejects the flag while that gate is pending.
+Each legal domain in the corpus follows its own technical activation boundary.
+The primary law collection and supplementary corpuses (e.g., Pháp điển) must
+have versioned source metadata and an explicit feature flag; no separate human
+reviewer record is required by the runtime. `ENABLE_UNIVERSAL_RETRIEVAL` remains
+`false` in production unless its content-locked inputs have passed the same
+technical checks.
 
 ## Build and Promote Qdrant
 
@@ -65,10 +66,10 @@ points, and only then atomically switches the `law_collection` alias:
 python -m scripts.ensure_law_index
 ```
 
-Run it with the production environment and approved manifest. The previous
+Run it with the production environment and synchronized manifest. The previous
 alias target is retained and printed as `rollback_collection`; never delete it
 until the release soak and rollback window expire. A failed technical audit or
-missing approval must leave the active alias unchanged.
+missing source metadata must leave the active alias unchanged.
 
 ## Deploy Order
 

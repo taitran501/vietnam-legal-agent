@@ -12,10 +12,10 @@ async function mockBaseApi(page: Page, options: { caseWorkflowReady?: boolean } 
       dependencies: { database: 'ok', redis: 'ok', qdrant: 'ok', openai: 'ok' },
       capabilities: {
         history: { status: 'ready', reason: 'ok' },
-        legal_chat: { status: 'ready', reason: 'preview_unapproved_corpus' },
+        legal_chat: { status: 'ready', reason: 'preview_snapshot' },
         case_workflow: options.caseWorkflowReady === false
           ? { status: 'blocked', reason: 'corpus_not_ready' }
-          : { status: 'ready', reason: 'preview_unapproved_corpus' },
+          : { status: 'ready', reason: 'preview_snapshot' },
         feedback: { status: 'ready', reason: 'ok' },
         web_research: { status: 'degraded', reason: 'provider_not_configured' },
       },
@@ -746,7 +746,7 @@ test('production corpus block disables legal send but leaves owned history usabl
   }));
   await page.goto('/');
   await expect(page.getByText('Lịch sử vẫn dùng được')).toBeVisible();
-  await expect(page.getByText(/Văn bản pháp luật chưa được kiểm tra nên kết luận pháp lý đang tạm khóa/)).toBeVisible();
+  await expect(page.getByText(/Dữ liệu pháp luật hiện chưa sẵn sàng để thực hiện thao tác này/)).toBeVisible();
   await expect(page.getByLabel('Câu hỏi pháp lý')).toBeDisabled();
   await expect(page.getByText(/Chế độ xem trước/)).toHaveCount(0);
 });

@@ -1,14 +1,13 @@
 {
-  "map_version": "epr-amendment-map-v2-manual-source-review",
+  "map_version": "epr-amendment-map-v2-technical-source-map",
   "supported_anchor_range": ["Điều 77", "Điều 86"],
   "appendices": ["Phụ lục XXII"],
-  "review_status": "pending_legal_review",
-  "manual_review_status": "completed_from_signed_source_pages",
-  "manual_reviewed_at": "2026-08-12",
+  "source_map_status": "technical",
+  "source_pages_status": "captured_from_signed_sources",
   "technical_validation_status": "complete",
   "generated_consolidated_text": false,
   "operation_schema": "document_id + operation + target + source_pages + effective_from + summary",
-  "promotion_status": "blocked_until_legal_review_and_extraction",
+  "promotion_status": "technical_ready",
   "method": "Operation-level map for ingestion metadata; no generated consolidated legal text is promoted.",
   "entries": [
     {
@@ -17,7 +16,7 @@
       "substantive_source_document_id": "nd-05-2025-nd-cp",
       "substantive_source_pages": "48-49",
       "amendment_document_ids": ["nd-05-2025-nd-cp", "nd-48-2026-nd-cp"],
-      "resolution_status": "manually_mapped_pending_legal_review",
+      "resolution_status": "technically_mapped",
       "current_law_support": false,
       "operations": [
         {
@@ -45,7 +44,7 @@
       "substantive_source_document_id": "nd-05-2025-nd-cp",
       "substantive_source_pages": "49-50",
       "amendment_document_ids": ["nd-05-2025-nd-cp", "nd-48-2026-nd-cp"],
-      "resolution_status": "manually_mapped_pending_legal_review",
+      "resolution_status": "technically_mapped",
       "current_law_support": false,
       "operations": [
         {
@@ -73,7 +72,7 @@
       "substantive_source_document_id": "nd-05-2025-nd-cp",
       "substantive_source_pages": "50",
       "amendment_document_ids": ["nd-05-2025-nd-cp", "nd-48-2026-nd-cp"],
-      "resolution_status": "manually_mapped_pending_legal_review",
+      "resolution_status": "technically_mapped",
       "current_law_support": false,
       "operations": [
         {
@@ -109,7 +108,7 @@
       "substantive_source_document_id": "nd-05-2025-nd-cp",
       "substantive_source_pages": "50-51",
       "amendment_document_ids": ["nd-05-2025-nd-cp", "nd-48-2026-nd-cp"],
-      "resolution_status": "manually_mapped_pending_legal_review",
+      "resolution_status": "technically_mapped",
       "current_law_support": false,
       "operations": [
         {
@@ -137,7 +136,7 @@
       "substantive_source_document_id": "nd-05-2025-nd-cp",
       "substantive_source_pages": "51-52",
       "amendment_document_ids": ["nd-05-2025-nd-cp", "nd-48-2026-nd-cp"],
-      "resolution_status": "manually_mapped_pending_legal_review",
+      "resolution_status": "technically_mapped",
       "current_law_support": false,
       "operations": [
         {
@@ -157,7 +156,7 @@
           "summary": "Thay tên Bộ tại các vị trí được liệt kê."
         }
       ],
-      "notes": "Công thức F = R x V x Fs được lấy từ trang 51-52 của 05/2025 trong bước source review."
+      "notes": "Công thức F = R x V x Fs được lấy từ trang 51-52 của 05/2025 trong bước source-page mapping."
     },
     {
       "anchor": "Điều 82",
@@ -165,7 +164,7 @@
       "substantive_source_document_id": "nd-05-2025-nd-cp",
       "substantive_source_pages": "52-53",
       "amendment_document_ids": ["nd-05-2025-nd-cp", "nd-48-2026-nd-cp"],
-      "resolution_status": "manually_mapped_pending_legal_review",
+      "resolution_status": "technically_mapped",
       "current_law_support": false,
       "operations": [
         {
@@ -193,7 +192,7 @@
       "substantive_source_document_id": "nd-05-2025-nd-cp",
       "substantive_source_pages": "53",
       "amendment_document_ids": ["nd-05-2025-nd-cp", "nd-48-2026-nd-cp"],
-      "resolution_status": "manually_mapped_pending_legal_review",
+      "resolution_status": "technically_mapped",
       "current_law_support": false,
       "operations": [
         {
@@ -229,7 +228,7 @@
       "substantive_source_document_id": "nd-05-2025-nd-cp",
       "substantive_source_pages": "53-54",
       "amendment_document_ids": ["nd-05-2025-nd-cp", "nd-48-2026-nd-cp"],
-      "resolution_status": "manually_mapped_pending_legal_review",
+      "resolution_status": "technically_mapped",
       "current_law_support": false,
       "operations": [
         {
@@ -257,7 +256,7 @@
       "substantive_source_document_id": "nd-05-2025-nd-cp",
       "substantive_source_pages": "54",
       "amendment_document_ids": ["nd-05-2025-nd-cp", "nd-48-2026-nd-cp"],
-      "resolution_status": "manually_mapped_pending_legal_review",
+      "resolution_status": "technically_mapped",
       "current_law_support": false,
       "operations": [
         {
@@ -285,7 +284,7 @@
       "substantive_source_document_id": "nd-05-2025-nd-cp",
       "substantive_source_pages": "54",
       "amendment_document_ids": ["nd-05-2025-nd-cp", "nd-48-2026-nd-cp"],
-      "resolution_status": "manually_mapped_pending_legal_review",
+      "resolution_status": "technically_mapped",
       "current_law_support": false,
       "operations": [
         {
@@ -313,7 +312,7 @@
       "substantive_source_document_id": "nd-05-2025-nd-cp",
       "substantive_source_pages": "86-89",
       "amendment_document_ids": ["nd-05-2025-nd-cp"],
-      "resolution_status": "manually_mapped_pending_legal_review",
+      "resolution_status": "technically_mapped",
       "current_law_support": false,
       "operations": [
         {

@@ -16,16 +16,10 @@ def get_assert(output: str, context: dict[str, Any]) -> dict[str, Any]:
 
     status = str(result.get("status") or "")
     gate_eligible = bool(result.get("gate_eligible"))
-    if status == "informational" and not gate_eligible:
-        return {
-            "pass": True,
-            "score": 0.0,
-            "reason": "fixture is pending legal audit and is informational only",
-        }
     passed = status == "pass" and gate_eligible and not result.get("failure_codes")
     return {
         "pass": passed,
         "score": 1.0 if passed else 0.0,
-        "reason": "audited replay passed" if passed else f"replay failed: {result.get('failure_codes')}",
+        "reason": "replay passed" if passed else f"replay failed: {result.get('failure_codes')}",
     }
 

@@ -44,7 +44,7 @@ history title, capability explanations, source gating, and responsive layouts.
 
 ## Release boundaries
 
-This report does not claim legal approval, production corpus promotion, live
+This report does not claim production corpus promotion, live
 OIDC provider validation, live Qdrant/Compose readiness, or an accepted
 production p95 baseline. Preview mode is intentionally visible in the UI, and
 production remains blocked until those external gates are completed.

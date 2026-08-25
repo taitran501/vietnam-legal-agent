@@ -60,7 +60,7 @@ remain listed below.
 The following are not inferred from deterministic browser success and must be
 recorded separately before production promotion:
 
-- external legal approval and approved corpus-as-of date;
+- synchronized source/corpus hashes and immutable collection audit;
 - live Qdrant immutable collection audit and alias promotion;
 - live official-web provider smoke;
 - Compose readiness with the deployment's real PostgreSQL/Redis/Qdrant/OIDC

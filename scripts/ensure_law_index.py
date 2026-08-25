@@ -188,7 +188,6 @@ def main() -> None:
                         *readiness["source_errors"],
                         *readiness["amendment_errors"],
                         *readiness["rule_pack_errors"],
-                        *readiness["approval_errors"],
                     ]
                 )
             )

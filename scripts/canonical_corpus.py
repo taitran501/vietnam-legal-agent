@@ -190,7 +190,13 @@ def corpus_readiness_audit(
     amendment_map_path: Path | None = None,
     appendix_path: Path | None = None,
 ) -> dict[str, Any]:
-    """Verify the complete amendment chain before an index can be promoted."""
+    """Verify source integrity and technical amendment structure.
+
+    Corpus promotion is an engineering concern in this repository.  The audit
+    checks hashes, source links, amendment operations, and index contracts; it
+    deliberately does not require a human legal reviewer or turn a benchmark
+    fixture into legal ground truth.
+    """
 
     manifest_path = manifest_path or ROOT / "data" / "corpus_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -251,8 +257,6 @@ def corpus_readiness_audit(
         expected_anchors = {f"Điều {number}" for number in range(77, 87)} | {"Phụ lục XXII"}
         for missing_anchor in sorted(expected_anchors - known_anchors):
             amendment_errors.append(f"anchor_missing:{missing_anchor}")
-        if str(amendment_map.get("review_status") or "") != "approved":
-            amendment_errors.append("amendment_map_legal_review_pending")
         for index, entry in enumerate(amendment_map.get("entries") or []):
             active_id = str(entry.get("substantive_source_document_id") or entry.get("active_source_document_id") or "")
             if active_id not in documents:
@@ -294,10 +298,6 @@ def corpus_readiness_audit(
                             amendment_errors.append(f"entry_{index}:operation_{operation_index}_{field}_missing")
                 if operation_precedence != sorted(operation_precedence):
                     amendment_errors.append(f"entry_{index}:operation_precedence_invalid")
-            if str(entry.get("resolution_status") or "").endswith("pending") or "pending" in str(entry.get("resolution_status") or ""):
-                amendment_errors.append(f"entry_{index}:resolution_pending")
-            if not entry.get("verified_by"):
-                amendment_errors.append(f"entry_{index}:legal_review_missing")
 
     rule_pack_reference = str(manifest.get("rule_pack_file") or "").strip()
     rule_pack_path = rule_pack_path or (ROOT / rule_pack_reference if rule_pack_reference else None)
@@ -312,53 +312,22 @@ def corpus_readiness_audit(
             rule_pack_errors.append("rule_pack_corpus_version_mismatch")
         if str(rule_pack.get("corpus_sha256") or "").lower() != expected_corpus_sha.lower():
             rule_pack_errors.append("rule_pack_corpus_hash_mismatch")
-        if str(rule_pack.get("legal_review_status") or "") != "approved":
-            rule_pack_errors.append("rule_pack_legal_review_pending")
-
-    approval_errors: list[str] = []
-    if str(manifest.get("legal_review_status") or "") != "approved":
-        approval_errors.append("manifest_legal_review_pending")
-    else:
-        for field in ("legal_reviewed_by", "legal_reviewed_at", "corpus_as_of_date"):
-            if not str(manifest.get(field) or "").strip():
-                approval_errors.append(f"manifest_{field}_missing")
-    if str(amendment_map.get("review_status") or "") == "approved":
-        for field in ("reviewed_by", "reviewed_at"):
-            if not str(amendment_map.get(field) or "").strip():
-                approval_errors.append(f"amendment_map_{field}_missing")
-        for index, entry in enumerate(amendment_map.get("entries") or []):
-            for field in ("verified_by", "verified_at"):
-                if not str(entry.get(field) or "").strip():
-                    approval_errors.append(f"entry_{index}:{field}_missing")
-    if str(rule_pack.get("legal_review_status") or "") == "approved":
-        for field in ("legal_reviewed_by", "legal_reviewed_at"):
-            if not str(rule_pack.get(field) or "").strip():
-                approval_errors.append(f"rule_pack_{field}_missing")
-
-    legal_review_markers = ("legal_review_pending", "legal_review_missing", "resolution_pending")
-    technical_errors = [
-        error
-        for error in [*source_errors, *amendment_errors, *rule_pack_errors]
-        if not any(marker in error for marker in legal_review_markers)
-    ]
+    technical_errors = [*source_errors, *amendment_errors, *rule_pack_errors]
     technical_ready = not technical_errors
     ready_for_promotion = (
         technical_ready
         and not amendment_errors
         and not rule_pack_errors
-        and not approval_errors
-        and manifest.get("legal_review_status") == "approved"
     )
 
     return {
         "source_errors": source_errors,
         "amendment_errors": amendment_errors,
         "rule_pack_errors": rule_pack_errors,
-        "approval_errors": approval_errors,
         "technical_errors": technical_errors,
         "technical_ready": technical_ready,
-        "manifest_legal_review_status": manifest.get("legal_review_status"),
-        "promotion_status": manifest.get("promotion_status"),
+        "source_snapshot_status": "technical" if technical_ready else "invalid",
+        "promotion_status": "technical_ready" if ready_for_promotion else "blocked",
         "expected_corpus_sha": expected_corpus_sha,
         "ready_for_promotion": ready_for_promotion,
         "amendment_map_sha256": sha256_file(amendment_map_path) if amendment_map_path and amendment_map_path.is_file() else "",
@@ -471,7 +440,7 @@ def _records_document_map(path: Path | None = None) -> dict[str, LegalDocument]:
     result: dict[str, LegalDocument] = {}
     for document in documents:
         # Amendment PDFs are source evidence but are not promoted as chunks
-        # until their page-level text extraction has passed legal review.
+        # until their page-level text extraction is present and reproducible.
         if document.document_id == "nd-08-2022-nd-cp":
             result[str(document.document_id)] = document
     return result

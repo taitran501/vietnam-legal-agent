@@ -18,8 +18,8 @@ python -m scripts.build_universal_index --download
 ```
 
 The builder verifies each input size and SHA-256 before indexing. If an
-upstream file changes, the build fails; update the lock only after reviewing
-the new source snapshot and its legal/provenance implications.
+upstream file changes, the build fails; update the lock only after checking the
+new source snapshot and its provenance implications.
 
 To verify an existing artifact without rebuilding:
 
@@ -38,7 +38,8 @@ The generated corpus is not part of the approved production manifest. Runtime
 augmentation is disabled by default and production configuration rejects
 `ENABLE_UNIVERSAL_RETRIEVAL=true`. Use it only in an explicitly isolated
 preview after setting that flag and documenting the preview source; the
-content lock proves reproducibility, not legal approval.
+content lock proves reproducibility; enabling it remains an explicit product
+and deployment decision.
 
 When enabled, the universal retriever supplements the primary Qdrant-based
 retrieval pipeline by providing additional candidate chunks before final

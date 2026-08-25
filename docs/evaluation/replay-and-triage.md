@@ -2,14 +2,14 @@
 
 The evaluation loop is intentionally split into three stages:
 
-1. `scripts.replay_agent_eval` replays a fixture through the runtime and writes
+1. `scripts.replay_agent_eval` replays an engineering fixture through the runtime and writes
    SSE, trace, retrieval, source-drawer and structured verification evidence.
-2. Quality feedback is stored as a redacted, trace-linked triage item. A
-   reviewer marks it reproduced/accepted/rejected/deferred through the
-   quality-admin API.
-3. `scripts.export_quality_feedback` exports accepted items as **pending**
-   audited fixtures. The source ledger must be completed before a fixture can
-   block promotion.
+2. Quality feedback is stored as a redacted, trace-linked triage item. An
+   engineering quality owner marks it reproduced/accepted/rejected/deferred
+   through the quality-admin API.
+3. `scripts.export_quality_feedback` exports accepted items as replay fixtures.
+   The export is for regression/debugging and never acts as legal ground truth
+   or a human-approval gate.
 
 The replay report is the join key for debugging: it records the commit SHA,
 pipeline/model/config metadata, conversation and trace IDs, every SSE event,
@@ -21,14 +21,14 @@ it is never converted into a passing score.
 
 ```powershell
 python -m scripts.replay_agent_eval `
-  --fixture data/eval/audited/2026-law-follow-up.json `
+  --fixture data/eval/examples/legal-follow-up.json `
   --mode deterministic `
   --output artifacts/evaluation-replay.json
 ```
 
 Deterministic replay uses an in-memory history and runner adapter. It validates
 event ordering, multi-turn identity, report structure and verifier plumbing;
-it is not legal ground truth.
+it is not legal ground truth and does not require manual case approval.
 
 ## Live replay
 
@@ -36,12 +36,13 @@ Live replay is explicit and may call the configured provider/corpus:
 
 ```powershell
 python -m scripts.replay_agent_eval `
-  --fixture data/eval/audited/<audited-case>.json `
+  --fixture data/eval/examples/<fixture>.json `
   --mode live `
   --output artifacts/evaluation-replay-live.json
 ```
 
 The Promptfoo workflow runs deterministic cases in PR CI. It delegates quality
-semantics to the internal verifier and treats pending legal audits as
-informational rather than passing them as audited quality evidence.
+semantics to the internal verifier; provider outages and missing artifacts fail
+the engineering gate, while legal-domain ground truth remains outside this
+project's framework/tracing acceptance scope.
 
