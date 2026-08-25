@@ -51,7 +51,7 @@ text or formal legal advice.
 
 ### Acceptance & Quality
 
-- [Current Acceptance Status](acceptance_status.md) — working-tree remediation status
+- [Current Acceptance Status](acceptance_status.md) — commit-scoped verification for the current `main`
 - [Guided User Experience Acceptance](browser_acceptance_report_guided_user_experience.md) — latest committed guided-UX snapshot
 - [Browser Acceptance Report](browser_acceptance_report.md) — historical browser/API snapshot
 - [V4 Acceptance Report](pipeline_v4_acceptance_report.md) — historical V4 pipeline snapshot

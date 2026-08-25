@@ -52,6 +52,9 @@ async def _run_case(runtime: AgentWorkflowRuntime, case: dict[str, Any]) -> dict
 
     answer = str((terminal or {}).get("text") or "")
     documents = list((terminal or {}).get("documents") or [])
+    source_drawer = list((terminal or {}).get("sources") or [])
+    trace_id = str((terminal or {}).get("trace_id") or "")
+    provider_status = "ok" if terminal is not None and not errors else "provider_unavailable"
     evaluation = await evaluate_ragas_sample(
         query=query,
         answer=answer,
@@ -66,7 +69,11 @@ async def _run_case(runtime: AgentWorkflowRuntime, case: dict[str, Any]) -> dict
         "terminal_type": str((terminal or {}).get("type") or "missing"),
         "termination_reason": str((terminal or {}).get("termination_reason") or ""),
         "pipeline_version": str((terminal or {}).get("pipeline_version") or ""),
+        "trace_id": trace_id,
+        "corpus_sha": str((terminal or {}).get("corpus_sha") or ""),
         "document_count": len(documents),
+        "source_drawer_count": len(source_drawer),
+        "provider_status": provider_status,
         "latency_s": round(time.perf_counter() - started, 3),
         "errors": errors,
         "metrics": {
@@ -77,8 +84,36 @@ async def _run_case(runtime: AgentWorkflowRuntime, case: dict[str, Any]) -> dict
             "anchor_accuracy": evaluation.anchor_accuracy,
             "overall_score": evaluation.overall_ragas_score,
             "passed": evaluation.passed_gate and not errors and terminal is not None,
+            "evaluator_status": evaluation.evaluator_status,
         },
     }
+
+
+def _promotion_ready(
+    results: list[dict[str, Any]],
+    *,
+    min_pass_rate: float,
+    min_anchor_accuracy: float,
+    min_context_recall: float,
+) -> bool:
+    """Apply live-gate thresholds without treating unavailable evidence as a pass."""
+
+    if not results:
+        return False
+    if any(item.get("provider_status") != "ok" for item in results):
+        return False
+    if any((item.get("metrics") or {}).get("evaluator_status") != "ok" for item in results):
+        return False
+
+    total = len(results)
+    pass_rate = sum(bool(item["metrics"]["passed"]) for item in results) / total
+    anchor_accuracy = sum(float(item["metrics"]["anchor_accuracy"]) for item in results) / total
+    context_recall = sum(float(item["metrics"]["context_recall"]) for item in results) / total
+    return (
+        pass_rate >= min_pass_rate
+        and anchor_accuracy >= min_anchor_accuracy
+        and context_recall >= min_context_recall
+    )
 
 
 async def _run(args: argparse.Namespace) -> int:
@@ -101,6 +136,16 @@ async def _run(args: argparse.Namespace) -> int:
     pass_rate = sum(bool(item["metrics"]["passed"]) for item in results) / total
     anchor_accuracy = sum(float(item["metrics"]["anchor_accuracy"]) for item in results) / total
     context_recall = sum(float(item["metrics"]["context_recall"]) for item in results) / total
+    evaluator_statuses = sorted(
+        {
+            str((item.get("metrics") or {}).get("evaluator_status") or "unknown")
+            for item in results
+        }
+    )
+    evaluator_unavailable_cases = sum(
+        (item.get("metrics") or {}).get("evaluator_status") != "ok" for item in results
+    )
+    provider_unavailable_cases = sum(item.get("provider_status") != "ok" for item in results)
     report = {
         "benchmark": str(args.benchmark),
         "sample_size": total,
@@ -113,13 +158,17 @@ async def _run(args: argparse.Namespace) -> int:
             "pass_rate": round(pass_rate, 4),
             "anchor_accuracy": round(anchor_accuracy, 4),
             "context_recall": round(context_recall, 4),
+            "evaluator_statuses": evaluator_statuses,
+            "evaluator_unavailable_cases": evaluator_unavailable_cases,
+            "provider_unavailable_cases": provider_unavailable_cases,
         },
         "cases": results,
     }
-    report["promotion_ready"] = (
-        pass_rate >= args.min_pass_rate
-        and anchor_accuracy >= args.min_anchor_accuracy
-        and context_recall >= args.min_context_recall
+    report["promotion_ready"] = _promotion_ready(
+        results,
+        min_pass_rate=args.min_pass_rate,
+        min_anchor_accuracy=args.min_anchor_accuracy,
+        min_context_recall=args.min_context_recall,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
