@@ -55,6 +55,13 @@ async def _run_case(runtime: AgentWorkflowRuntime, case: dict[str, Any]) -> dict
     source_drawer = list((terminal or {}).get("sources") or [])
     trace_id = str((terminal or {}).get("trace_id") or "")
     provider_status = "ok" if terminal is not None and not errors else "provider_unavailable"
+    source_payload_status = (
+        "ok"
+        if source_drawer
+        else "not_applicable"
+        if not documents
+        else "missing"
+    )
     evaluation = await evaluate_ragas_sample(
         query=query,
         answer=answer,
@@ -73,6 +80,7 @@ async def _run_case(runtime: AgentWorkflowRuntime, case: dict[str, Any]) -> dict
         "corpus_sha": str((terminal or {}).get("corpus_sha") or ""),
         "document_count": len(documents),
         "source_drawer_count": len(source_drawer),
+        "source_payload_status": source_payload_status,
         "provider_status": provider_status,
         "latency_s": round(time.perf_counter() - started, 3),
         "errors": errors,
@@ -101,6 +109,8 @@ def _promotion_ready(
     if not results:
         return False
     if any(item.get("provider_status") != "ok" for item in results):
+        return False
+    if any(item.get("source_payload_status") == "missing" for item in results):
         return False
     if any((item.get("metrics") or {}).get("evaluator_status") != "ok" for item in results):
         return False

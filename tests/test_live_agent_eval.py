@@ -5,9 +5,16 @@ from __future__ import annotations
 from scripts.run_live_agent_eval import _promotion_ready
 
 
-def _case(*, evaluator_status: str = "ok", provider_status: str = "ok", passed: bool = True) -> dict:
+def _case(
+    *,
+    evaluator_status: str = "ok",
+    provider_status: str = "ok",
+    source_payload_status: str = "ok",
+    passed: bool = True,
+) -> dict:
     return {
         "provider_status": provider_status,
+        "source_payload_status": source_payload_status,
         "metrics": {
             "evaluator_status": evaluator_status,
             "passed": passed,
@@ -30,6 +37,17 @@ def test_live_gate_requires_available_evaluator_for_every_case() -> None:
 
 def test_live_gate_requires_provider_for_every_case() -> None:
     results = [_case(), _case(provider_status="provider_unavailable", passed=False)]
+
+    assert not _promotion_ready(
+        results,
+        min_pass_rate=0.5,
+        min_anchor_accuracy=0.5,
+        min_context_recall=0.5,
+    )
+
+
+def test_live_gate_requires_source_payload_when_documents_are_returned() -> None:
+    results = [_case(), _case(source_payload_status="missing", passed=False)]
 
     assert not _promotion_ready(
         results,
