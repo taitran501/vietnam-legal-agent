@@ -43,8 +43,10 @@ The V4 deterministic eval manifest contains 125 cases:
 - 60 query-understanding cases
 - 5 manifest cases
 
-The full test suite comprises 490 pytest tests, 18 agent test cases, and 27
-Playwright browser tests.
+The current acceptance run comprises 574 passing pytest tests (3 skipped), 18
+agent test cases, and 27 Playwright browser tests. See
+[`docs/acceptance_status.md`](../acceptance_status.md) for the commit-scoped
+evidence and remaining promotion gates.
 
 ## Historical experiments
 
