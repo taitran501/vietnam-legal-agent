@@ -17,7 +17,7 @@ from epr_agent.agent.agent_loop import AgentRunResult, AgentStep
 from epr_agent.agent.graph import WorkflowDependencies
 from epr_agent.agent.planner import BoundedPlanner
 from epr_agent.agent.runtime import AgentWorkflowRuntime
-from epr_agent.domain.models import DocumentRecord
+from epr_agent.domain.models import AgentState, DocumentRecord
 from epr_agent.eval.contracts import (
     AuditedEvalCase,
     EvaluationStatus,
@@ -56,7 +56,7 @@ class ReplayHistory:
         _conversation_id: str,
         user_message: str,
         assistant_message: str,
-        metadata: dict[str, Any] | None = None,
+        metadata: dict[str, Any],
     ) -> int:
         self.messages.extend(
             [
@@ -66,33 +66,61 @@ class ReplayHistory:
         )
         return len(self.messages)
 
-    async def begin_turn(self, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+    async def begin_turn(
+        self,
+        _user_id: str,
+        _conversation_id: str,
+        _turn_id: str,
+        _query: str,
+        *,
+        mode: str,
+        operation: str,
+        replay_metadata: dict[str, Any],
+        target_assistant_message_id: int | None,
+    ) -> dict[str, Any]:
         return {"status": "pending", "assistant_message_id": len(self.messages) + 1}
 
-    async def update_turn_content(self, *_args: Any, **_kwargs: Any) -> bool:
+    async def update_turn_content(
+        self, _user_id: str, _conversation_id: str, _turn_id: str, _content: str
+    ) -> bool:
         return True
 
-    async def is_turn_cancelled(self, *_args: Any, **_kwargs: Any) -> bool:
+    async def is_turn_cancelled(self, _user_id: str, _conversation_id: str, _turn_id: str) -> bool:
         return False
 
-    async def cancel_turn(self, *_args: Any, **_kwargs: Any) -> dict[str, Any] | None:
+    async def cancel_turn(self, _user_id: str, _conversation_id: str, _turn_id: str) -> dict[str, Any] | None:
         return {"status": "stopped"}
 
-    async def finish_turn(self, *_args: Any, **kwargs: Any) -> dict[str, Any]:
-        record = dict(kwargs)
+    async def finish_turn(
+        self,
+        _user_id: str,
+        _conversation_id: str,
+        _turn_id: str,
+        *,
+        content: str,
+        metadata: dict[str, Any] | None,
+        status: str,
+        error_code: str | None = None,
+    ) -> dict[str, Any]:
+        record = {
+            "content": content,
+            "metadata": metadata,
+            "status": status,
+            "error_code": error_code,
+        }
         self.finished.append(record)
         return {"status": record.get("status", "complete"), "assistant_message_id": len(self.messages) + 1}
 
-    async def save_case(self, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+    async def save_case(self, _user_id: str, _conversation_id: str, _state: dict[str, Any]) -> dict[str, Any]:
         return {}
 
-    async def clear_case(self, *_args: Any, **_kwargs: Any) -> None:
+    async def clear_case(self, _user_id: str, _conversation_id: str) -> None:
         return None
 
-    async def get_case(self, *_args: Any, **_kwargs: Any) -> None:
+    async def get_case(self, _user_id: str, _conversation_id: str) -> dict[str, Any] | None:
         return None
 
-    async def record_run(self, state: dict[str, Any], *_args: Any) -> None:
+    async def record_run(self, state: AgentState, _started_at: float, _ended_at: float) -> None:
         self.runs.append(dict(state))
 
 
@@ -114,7 +142,7 @@ class DeterministicReplayRunner:
         source_by_id = {source.source_id: source for source in self.case.sources}
         for index, claim in enumerate(self.case.claims, start=1):
             source_id = claim.source_ids[0] if claim.source_ids else ""
-            source = source_by_id.get(source_id)
+            source_record = source_by_id.get(source_id)
             anchor = claim.anchors[0] if claim.anchors else ""
             documents.append(
                 DocumentRecord(
@@ -123,9 +151,9 @@ class DeterministicReplayRunner:
                     source="legal",
                     metadata={
                         "source_id": source_id,
-                        "source_title": source.title if source else "",
+                        "source_title": source_record.title if source_record else "",
                         "legal_anchor": anchor,
-                        "official_url": source.official_url if source else "",
+                        "official_url": source_record.official_url if source_record else "",
                     },
                 ).to_dict()
             )
@@ -136,11 +164,11 @@ class DeterministicReplayRunner:
         if not answer_lines:
             answer = "Chưa có đủ căn cứ đã được kiểm toán để trả lời an toàn."
             termination = "insufficient_evidence"
-            source = "error"
+            source_name = "error"
         else:
             answer = "\n".join(answer_lines)
             termination = outcome.value
-            source = "legal"
+            source_name = "legal"
         return AgentRunResult(
             answer=answer,
             termination_reason=termination,
@@ -156,7 +184,7 @@ class DeterministicReplayRunner:
             ],
             evidence=documents,
             citations=citations,
-            source=source,
+            source=source_name,
             steps_taken=1,
             cache_hit=False,
             awaiting_user_input=outcome == ExpectedOutcome.CLARIFICATION,
@@ -346,7 +374,10 @@ def git_commit_sha() -> str:
 
 def load_cases(path: str | Path) -> list[AuditedEvalCase]:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    raw_cases = payload.get("cases") if isinstance(payload, dict) and "cases" in payload else [payload]
+    if isinstance(payload, dict) and isinstance(payload.get("cases"), list):
+        raw_cases = payload["cases"]
+    else:
+        raw_cases = [payload]
     return [AuditedEvalCase.model_validate(item) for item in raw_cases]
 
 
