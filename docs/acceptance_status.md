@@ -15,7 +15,7 @@ The following checks were run in the repository acceptance environment
 
 | Check | Result |
 | --- | --- |
-| `pytest -q` | **573 passed, 3 skipped, 9 warnings** (audit branch; baseline main was 570) |
+| `pytest -q` | **574 passed, 3 skipped, 9 warnings** (audit branch; baseline main was 570) |
 | `python -m tests.eval.run_eval --suite all` | **exit 0**; deterministic route matrix **60/60**, generated at this commit |
 | `python tests/eval/agent_harness.py --suite all` | **18/18** trajectory cases |
 | `python tests/eval/persona_simulation.py --persona all` | **15/15** persona cases |
