@@ -1,0 +1,37 @@
+name: Promptfoo Deterministic Evaluation
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  promptfoo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Run deterministic replay matrix
+        run: >-
+          npx --yes promptfoo@0.122.0 eval
+          -c promptfooconfig.yaml
+          --output artifacts/promptfoo-eval.json
+      - name: Upload Promptfoo evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: promptfoo-eval-${{ github.sha }}
+          path: artifacts/promptfoo-eval.json
+          if-no-files-found: error
+          retention-days: 30
+

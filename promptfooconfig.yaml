@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: Deterministic source-audited replay checks for the Vietnam Legal Agent
+
+prompts:
+  - "{{fixture}}"
+
+providers:
+  - id: file://promptfoo/replay_provider.py
+
+tests:
+  - file://promptfoo/tests.py:generate_tests
+
+defaultTest:
+  assert:
+    - type: python
+      value: file://promptfoo/assertions.py:get_assert
+
