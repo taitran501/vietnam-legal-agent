@@ -746,7 +746,7 @@ test('production corpus block disables legal send but leaves owned history usabl
   }));
   await page.goto('/');
   await expect(page.getByText('Lịch sử vẫn dùng được')).toBeVisible();
-  await expect(page.getByText(/Văn bản pháp luật chưa được kiểm tra nên kết luận pháp lý đang tạm khóa/)).toBeVisible();
+  await expect(page.getByText(/Dữ liệu pháp luật hiện chưa sẵn sàng để thực hiện thao tác này/)).toBeVisible();
   await expect(page.getByLabel('Câu hỏi pháp lý')).toBeDisabled();
   await expect(page.getByText(/Chế độ xem trước/)).toHaveCount(0);
 });
