@@ -34,7 +34,8 @@ criterion.
 
 ## Test counts
 
-- **490 pytest** unit and integration tests
+- **574 passing pytest** unit and integration tests (**3 skipped** in the
+  acceptance environment)
 - **8 eval** pipeline evaluation modules (covering 40 E2E trajectories, 60 query-understanding cases, and 60 retrieval cases)
 - **18 agent** trajectory test cases
 - **27 Playwright** browser integration tests

@@ -1,7 +1,8 @@
 # Current acceptance status
 
-**Checked:** 2026-08-21
-**Workspace:** `main` in `vietnam-legal-agent`
+**Checked:** 2026-08-25
+**Baseline commit:** `34f1ee8` (`main` in `vietnam-legal-agent`)
+**Audit branch:** `audit/repo-docs-and-runtime-contracts` (not merged)
 
 This file records checks against the current checkout. It is not a replacement
 for the commit-scoped historical reports, and production/legal approval remains
@@ -14,18 +15,23 @@ The following checks were run in the repository acceptance environment
 
 | Check | Result |
 | --- | --- |
-| `pytest -q` | **490 passed, 3 skipped** |
-| `python -m tests.eval.run_eval --suite all` | **exit 0**; deterministic route matrix 60/60 |
-| `ruff check src/epr_agent backend scripts tests` | **pass** |
-| `mypy src/epr_agent backend` | **pass** (70 source files) |
+| `pytest -q` | **574 passed, 3 skipped, 9 warnings** (audit branch; baseline main was 570) |
+| `python -m tests.eval.run_eval --suite all` | **exit 0**; deterministic route matrix **60/60**, generated at this commit |
+| `python tests/eval/agent_harness.py --suite all` | **18/18** trajectory cases |
+| `python tests/eval/persona_simulation.py --persona all` | **15/15** persona cases |
+| `ruff check src/epr_agent backend scripts tests promptfoo` | **pass** |
+| `mypy src/epr_agent backend` | **pass** (77 source files) |
 | `python -m scripts.sync_corpus_metadata --check` | **pass**, no issues |
-| `git diff --check` | **pass**; only Git line-ending warnings |
+| `git diff --check` | **pass** |
 | `docker compose ... config --quiet` | **pass** for the base stack plus deterministic CI smoke overlay |
 | Universal corpus verification | **pass** for the local content-locked artifact; generated DB remains ignored |
-| Frontend Vitest | **42 passed** in 14 test files |
+| Frontend Vitest | **45 passed** in 15 test files |
 | Frontend lint | **pass**; existing Fast Refresh warnings, no errors |
 | Frontend production build | **pass**; Vite reports a non-blocking >500 kB bundle warning |
-| Playwright browser acceptance | **27 passed** |
+| Playwright browser acceptance | **27 passed** in the latest GitHub Actions E2E job |
+| Pilot-load CI contract | **pass**; 50-turn Redis-backed SSE SLO job |
+| Compose-smoke CI contract | **pass**; latest `main` push workflow |
+| Promptfoo deterministic replay | **pass**; latest `main` push workflow |
 
 The system Python interpreter without the project dependencies is not an
 acceptance environment: it cannot import the declared `sse-starlette`
@@ -76,6 +82,9 @@ interpreting a test result.
   use `UniversalCaseFormResolver` and `evaluate_universal_case()`.
 - The autonomous agent path (`pipeline-agent`) shares the same tool registry
   and supports all legal domains via `evaluate_legal_case`.
+- The audited-evaluation control plane now records multi-turn replay events,
+  trace/source payloads, claim-level verification, and redacted feedback triage.
+  Pending fixtures remain informational and cannot block promotion.
 
 ## Still not proven by local checks
 
@@ -97,6 +106,12 @@ These are deliberate release gates, not claims that local tests can satisfy:
 - upload/OCR and historical-law snapshots are not implemented, and legal
   coverage remains limited to the explicitly supported domains. They must not
   be implied by the preliminary export.
+- The checked-in historical RAGAS artifact is exploratory only: it reports a
+  10% gate pass rate and 28% statutory-anchor accuracy, and is not evidence of
+  current production quality. The live provider-backed evaluation has not been
+  run in this checkout because it is a manual `workflow_dispatch` gate.
+- The 2026-law fixture is still `pending` legal-source audit; no generated
+  answer from that fixture is an authoritative legal ground truth.
 
 The historical V4 acceptance report remains valid only for the commit and
 environment named inside that report. Its live local-stack result is useful

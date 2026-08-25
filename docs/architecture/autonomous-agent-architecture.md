@@ -98,7 +98,8 @@ pytest tests/eval/test_non_user_flows.py -v
 ```
 
 ### Overall Test Suite:
-- **490+ pytest** unit and integration tests
+- **574 passing pytest** unit and integration tests (**3 skipped** in the
+  acceptance environment)
 - **8 eval** pipeline evaluation modules (40 E2E trajectories, 60 query-understanding cases, 60 retrieval cases, 1 agent trajectory manifest)
 - **18 agent** trajectory test cases
 - **27 Playwright** browser integration tests

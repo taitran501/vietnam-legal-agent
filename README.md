@@ -20,7 +20,10 @@ required dependency is missing.
 
 - The repository supports a local Docker preview and a deterministic browser
   test environment.
-- GitHub Actions validates the backend, frontend, and browser-test contracts.
+- GitHub Actions validates the backend, frontend, browser, pilot-capacity,
+  Compose-smoke, and deterministic evaluation contracts.
+- The provider-backed `Live Agent Evaluation` is manual-only and runs against
+  the protected `pilot` environment; it is not implied by pull-request CI.
 - There is no hosted public demo in this repository.
 - Production legal capability remains subject to corpus review, an approved
   effective date, deployment configuration, and external operational gates.
@@ -192,7 +195,11 @@ The workflow in `.github/workflows/ci.yml` runs on pull requests and pushes to
 | --- | --- |
 | `backend` | Corpus metadata sync, pytest, deterministic route evaluation, Ruff, and mypy. |
 | `frontend` | `npm ci`, ESLint, Vitest, and the production TypeScript/Vite build. |
+| `pilot-load` | Redis-backed two-worker SSE contract: 50 concurrent turns, saturation, and lease cleanup. |
 | `e2e` | Playwright browser tests after the backend and frontend jobs pass. |
+| `compose-smoke` | Builds the preview topology and checks gateway/backend/dependency readiness. |
+| `Promptfoo Deterministic Evaluation` | Pull-request replay matrix backed by the internal claim/source verifier; no real provider. |
+| `Live Agent Evaluation` | Manual `workflow_dispatch` only; real provider/corpus checks in the protected `pilot` environment. |
 
 The CI badge above reports the repository workflow. It does not claim legal
 approval, production readiness, uptime, latency, or the availability of
@@ -215,7 +222,10 @@ Important settings include:
 | `POSTGRES_PASSWORD` | Required by Compose; there is no insecure default. |
 | `QDRANT_URL` / `USE_QDRANT_CLOUD` | Self-hosted or Qdrant Cloud vector storage. |
 | `REDIS_URL` | Cache and request-protection backend. |
+| `AGENT_MAX_IN_FLIGHT_TURNS` / `AGENT_ADMISSION_WAIT_SECONDS` | Deployment-wide agent-turn admission (`50` / `2s` by default). |
+| `AGENT_LEASE_TTL_SECONDS` / `AGENT_LEASE_HEARTBEAT_SECONDS` | Redis lease lifetime and heartbeat for long-running turns (`300s` / `30s`). |
 | `DOCUMENT_MAX_IN_FLIGHT_UPLOADS` | Deployment-wide Redis admission limit for the API-only document preview (default `10`). |
+| `ENABLE_CROSS_ENCODER_RERANK` / `CROSS_ENCODER_SHADOW_MODE` / `CROSS_ENCODER_ROLLOUT_PERCENT` | Reranker safety controls; default is shadow-only with 0% user rollout. |
 | `RATE_LIMIT_FAIL_OPEN` | Keep `false` outside an explicitly isolated preview. |
 | `OIDC_*`, `SERVICE_TOKEN_DEFINITIONS`, `API_KEYS` | Deployment authentication options. |
 | `ALLOWED_ORIGINS` | HTTPS origins for a cross-origin deployment; empty is suitable for the same-origin Compose gateway. |
@@ -276,9 +286,28 @@ Start with [docs/README.md](docs/README.md) for the documentation map,
 [the autonomous agent architecture](docs/architecture/autonomous-agent-architecture.md), and
 [the V4 behavior contract](docs/pipeline_v4_behavior_contract.md).
 
-## Benchmark & Quantitative Evaluation (RAGAS)
+The evaluation control plane is documented in
+[replay and quality triage](docs/evaluation/replay-and-triage.md). Deterministic
+replay checks event ordering and artifact plumbing; only fixtures with an
+authoritative source ledger and `audit.status: audited` can block promotion.
+The checked-in 2026-law fixture is deliberately still `pending`.
 
-The system is evaluated against the multi-domain **Vietnamese Legal QA Golden Benchmark (50 comprehensive statutory scenarios)** across **65,967 statutory provisions** in `vietnam_legal_collection_v1` using SOTA legal embedding model `darklethelong/vnlegal-lal` (1024-dim), BM25 lexical indexing, and GPU CrossEncoder reranking (`mmarco-mMiniLMv2-L12-H384-v1`).
+## Historical benchmark artifact (not promotion evidence)
+
+The repository contains a 50-case exploratory benchmark across six legal
+domains. The checked-in report was generated on **2026-08-19** against the
+`vietnam_legal_collection_v1` collection with the configured
+`darklethelong/vnlegal-lal` embedding model. Cross-encoder reranking is
+configured in shadow mode by default (`CROSS_ENCODER_ROLLOUT_PERCENT=0`), so
+the report must not be read as proof that reranking is active for users.
+
+The report is a reproducibility reference, not a current quality or production
+claim. It predates the audited source-ledger contract and reports only a 10%
+LLM-judge gate pass rate, 28% statutory-anchor accuracy, 4.85s average
+retrieval latency, and 8.18s average end-to-end latency. See the raw
+[historical report](data/eval/ragas_benchmark_results.json) and use the
+[replay/evaluation control plane](docs/evaluation/replay-and-triage.md) for
+promotion evidence.
 
 ### 1. Retrieval & Ranking Benchmark (50 Statutory Scenarios)
 
@@ -291,7 +320,7 @@ The system is evaluated against the multi-domain **Vietnamese Legal QA Golden Be
 | **MRR @ 10** | **0.6189** | Mean Reciprocal Rank across all 50 queries |
 | **NDCG @ 3** | **0.5596** | Normalized Discounted Cumulative Gain @ 3 |
 | **NDCG @ 10** | **0.6447** | Normalized Discounted Cumulative Gain @ 10 |
-| **Steady-state Retrieval Latency** | **1.2s - 2.5s** | Parallel Qdrant Dense + BM25 + CrossEncoder on 65k docs |
+| **Average retrieval latency (historical report)** | **4.85s** | Environment-specific dense + BM25 benchmark measurement |
 
 ### 2. RAGAS Framework Evaluation (End-to-End Legal QA)
 
@@ -303,7 +332,9 @@ Evaluated via LLM-as-a-Judge and statutory citation verification across all 50 s
 | **Answer Relevance (Độ trúng đích)** | **90.0%** | Direct semantic & legal alignment with the user's inquiry |
 | **Context Precision (Độ chính xác ngữ cảnh)** | **28.5%** | Proportion of top-k retrieved documents containing essential legal grounds |
 | **Context Recall (Độ bao phủ căn cứ)** | **52.0%** | Proportion of expected statutory anchors found in retrieved context |
+| **Statutory Anchor Accuracy** | **28.0%** | Expected statutory anchors present in the generated answer |
 | **Composite RAGAS Score** | **65.0%** | Weighted multi-dimensional legal assistance quality score |
+| **LLM-judge gate pass rate** | **10.0%** | Historical exploratory gate; not a promotion threshold |
 
 ### 3. Domain Performance Breakdown (50 Scenarios across 6 Domains)
 

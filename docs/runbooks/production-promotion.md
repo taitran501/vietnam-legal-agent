@@ -12,6 +12,10 @@ environment. The workflow runs the checked-in 50-case benchmark through the
 actual autonomous runtime and requires a pass rate of 70%, statutory-anchor
 accuracy of 80%, and context recall of 75%. Its JSON artifact is the promotion
 evidence; deterministic pull-request checks do not replace this live gate.
+Every case must also report `evaluator_status: ok` and
+`provider_status: ok`. An unavailable judge, provider, terminal event, or
+source payload fails promotion even when aggregate percentages remain above
+threshold.
 
 ## Release Gates
 

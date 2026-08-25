@@ -11,6 +11,12 @@ The evaluation loop is intentionally split into three stages:
    audited fixtures. The source ledger must be completed before a fixture can
    block promotion.
 
+The replay report is the join key for debugging: it records the commit SHA,
+pipeline/model/config metadata, conversation and trace IDs, every SSE event,
+tool trajectory, retrieved documents, source-drawer payload, and structured
+failure taxonomy. A provider or evaluator outage is recorded as unavailable;
+it is never converted into a passing score.
+
 ## Deterministic replay
 
 ```powershell
