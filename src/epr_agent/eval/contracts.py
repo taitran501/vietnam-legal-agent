@@ -1,9 +1,9 @@
-"""Versioned contracts for source-audited legal evaluation cases.
+"""Versioned contracts for replayable legal evaluation cases.
 
 The runtime deliberately keeps generated prose out of the golden oracle.  An
-audited case describes the legal claims and canonical evidence that must be
-present; the replay/verifier layer decides whether an observed turn satisfies
-that contract.
+evaluation case describes expected behavior, claims, and source metadata that
+the replay/verifier layer can inspect.  It is an engineering fixture, not a
+human-approved legal ground truth.
 """
 
 from __future__ import annotations
@@ -16,9 +16,9 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-class AuditStatus(StrEnum):
-    PENDING = "pending"
-    AUDITED = "audited"
+class EvidenceStatus(StrEnum):
+    INFORMATIONAL = "informational"
+    READY = "ready"
     REJECTED = "rejected"
 
 
@@ -65,7 +65,7 @@ class ExpectedClaim(_ContractModel):
     """A claim-level oracle that does not require exact generated wording."""
 
     claim_id: str = Field(min_length=1)
-    text: str = Field(min_length=1, description="Reviewer-authored claim description")
+    text: str = Field(min_length=1, description="Source-backed claim description")
     kind: str = Field(default="legal_rule", min_length=1)
     required: bool = True
     source_ids: list[str] = Field(default_factory=list)
@@ -97,16 +97,14 @@ class ExpectedCitation(_ContractModel):
     citation_index: int | None = Field(default=None, ge=1)
 
 
-class AuditMetadata(_ContractModel):
-    status: AuditStatus = AuditStatus.PENDING
-    audited_by: str = ""
-    audited_at: str = ""
+class EvidenceMetadata(_ContractModel):
+    status: EvidenceStatus = EvidenceStatus.INFORMATIONAL
     corpus_sha: str = ""
     notes: str = ""
 
 
-class AuditedEvalCase(_ContractModel):
-    """Source-audited multi-turn evaluation fixture."""
+class EvaluationCase(_ContractModel):
+    """Replayable multi-turn evaluation fixture."""
 
     case_id: str = Field(min_length=1)
     domain: str = "legal"
@@ -118,10 +116,10 @@ class AuditedEvalCase(_ContractModel):
     allowed_omissions: list[str] = Field(default_factory=list)
     forbidden_claims: list[str] = Field(default_factory=list)
     follow_up_expected_behavior: list[ExpectedOutcome] = Field(default_factory=list)
-    audit: AuditMetadata = Field(default_factory=AuditMetadata)
+    evidence: EvidenceMetadata = Field(default_factory=EvidenceMetadata)
 
     @model_validator(mode="after")
-    def validate_references(self) -> AuditedEvalCase:
+    def validate_references(self) -> EvaluationCase:
         claim_ids = {claim.claim_id for claim in self.claims}
         source_ids = {source.source_id for source in self.sources}
         if len(claim_ids) != len(self.claims):
@@ -138,15 +136,6 @@ class AuditedEvalCase(_ContractModel):
         }
         if unknown_sources:
             raise ValueError(f"citations reference unknown sources: {sorted(unknown_sources)}")
-        if self.audit.status == AuditStatus.AUDITED:
-            if self.expected_outcome is None:
-                raise ValueError("audited cases require expected_outcome")
-            if not self.audit.audited_by or not self.audit.audited_at or not self.audit.corpus_sha:
-                raise ValueError("audited cases require reviewer, audit date, and corpus_sha")
-            if not self.sources:
-                raise ValueError("audited cases require authoritative sources")
-            if any(claim.required and not claim.source_ids for claim in self.claims):
-                raise ValueError("required audited claims must reference source_ids")
         return self
 
 
@@ -181,9 +170,9 @@ class EvaluationResult(_ContractModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-def load_audited_case(path: str | Path) -> AuditedEvalCase:
-    """Load and validate one JSON fixture from disk."""
+def load_evaluation_case(path: str | Path) -> EvaluationCase:
+    """Load and validate one replay fixture from disk."""
 
     fixture_path = Path(path)
     payload = json.loads(fixture_path.read_text(encoding="utf-8"))
-    return AuditedEvalCase.model_validate(payload)
+    return EvaluationCase.model_validate(payload)

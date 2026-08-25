@@ -52,8 +52,8 @@ def _settings(mode: str):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("mode", "expected"), [("preview", "ready"), ("production", "blocked")])
-async def test_readiness_separates_preview_legal_gate_and_redis(
+@pytest.mark.parametrize(("mode", "expected"), [("preview", "ready"), ("production", "ready")])
+async def test_readiness_uses_technical_corpus_gate_and_reports_redis(
     monkeypatch: pytest.MonkeyPatch, mode: str, expected: str
 ) -> None:
     import backend.history.store
@@ -70,10 +70,11 @@ async def test_readiness_separates_preview_legal_gate_and_redis(
     monkeypatch.setattr(scripts.canonical_corpus, "corpus_sha256", lambda **_kwargs: "sha-test")
     monkeypatch.setattr(scripts.canonical_corpus, "corpus_readiness_audit", lambda **_kwargs: {
         "source_errors": [],
-        "amendment_errors": ["amendment_map_legal_review_pending", "entry_0:resolution_pending"],
-        "rule_pack_errors": ["rule_pack_legal_review_pending"],
-        "ready_for_promotion": False,
-        "manifest_legal_review_status": "pending",
+        "amendment_errors": [],
+        "rule_pack_errors": [],
+        "ready_for_promotion": True,
+        "technical_ready": True,
+        "source_snapshot_status": "technical",
         "amendment_map_sha256": "amendment-sha",
         "rule_pack_sha256": "rule-sha",
     })

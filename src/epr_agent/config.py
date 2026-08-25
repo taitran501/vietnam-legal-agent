@@ -117,11 +117,11 @@ class Settings(BaseSettings):
     rule_pack_path: Path = Field(default=BASE_DIR / "data" / "epr_rule_pack.json")
     corpus_as_of_date: str | None = Field(
         default=None,
-        description="Legally approved as-of date; build time is never substituted automatically",
+        description="Optional source snapshot date; build time is never substituted automatically",
     )
     corpus_runtime_mode: Literal["production", "preview"] = Field(
         default="production",
-        description="Production requires legal approval; preview permits technically valid unapproved corpora with warnings.",
+        description="Runtime mode for a technically validated source snapshot; preview keeps a non-production warning path.",
     )
     database_url: str | None = Field(
         default=None,

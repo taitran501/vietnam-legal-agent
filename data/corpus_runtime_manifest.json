@@ -3,15 +3,15 @@
   "generated_by": "python -m scripts.sync_corpus_metadata --write",
   "corpus_id": "epr",
   "corpus_version": "epr-law-structure-v4-amendment-chain",
-  "corpus_sha256": "9c7fe73bd6215a1e794432815d34a8a3cf8671dab7f1581d9c3d0abdf2756a45",
+  "corpus_sha256": "dd57ee4b42667a74e3058bd765754a1a5795574d6c841817f2728d15f3859a11",
   "corpus_as_of_date": null,
-  "legal_review_status": "pending",
+  "source_snapshot_status": "technical",
   "manifest_file": "data/corpus_manifest.json",
-  "manifest_sha256": "05c0ab619512bb61bb3656d679703f2b9f914a6b81ee376902aed05096529582",
+  "manifest_sha256": "acdf0a6f6169f168492cbbf8ae098d8ea74274f7feecbf56bf57a0c186192d66",
   "amendment_map_file": "data/amendment_map.json",
-  "amendment_map_sha256": "938a7c8e0dcf015f6b259fb0a208d57caf58757157cf0906dcd30ae5b516bf0a",
+  "amendment_map_sha256": "4b3fc90c439b8ffd262639e86993553814b3cba4ad476fa59c5615df9292a012",
   "rule_pack_file": "data/epr_rule_pack.json",
-  "rule_pack_sha256": "9a0d147dccfd9fa37dbad4ebd27c1acd1aa235db8a688e2188117ed8c8add286",
+  "rule_pack_sha256": "354c81f7abd13d10db07e674bb9e4aa818ebf4369066ac813f8ff05f6636df88",
   "sources": [
     {
       "document_id": "nd-08-2022-nd-cp",
@@ -49,6 +49,6 @@
     "embedding_model": "text-embedding-3-small",
     "embedding_dimensions": 1536,
     "collection_identity": "law_{corpus_id}_{corpus_sha12}_{schema}_{embedding_profile}",
-    "immutable_collection": "law_epr_9c7fe73bd621_legal_structure_v2_v4_appendix1_openai_text_embedding_3_small_v1"
+    "immutable_collection": "law_epr_dd57ee4b4266_legal_structure_v2_v4_appendix1_openai_text_embedding_3_small_v1"
   }
 }

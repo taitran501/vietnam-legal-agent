@@ -1,8 +1,8 @@
-"""Export accepted quality feedback into pending audited fixtures.
+"""Export accepted quality feedback into replay fixtures.
 
 The export preserves reproducibility metadata but never promotes a user
-complaint to legal ground truth. Every generated fixture remains ``pending``
-until a reviewer fills the authoritative source ledger.
+complaint to legal ground truth. Generated fixtures are inputs for deterministic
+replay, debugging, and regression triage.
 """
 
 from __future__ import annotations
@@ -37,13 +37,12 @@ async def _run(output_dir: Path, limit: int) -> int:
             case_id = str(item.get("dataset_case_id") or f"FEEDBACK_{item['id']}")
             fixture: dict[str, Any] = {
                 "case_id": case_id,
-                "domain": "reviewed_feedback",
+                "domain": "feedback_replay",
                 "turns": [
                     {
                         "query": query,
                         "expected_behavior": (
-                            "Replay the reported failure, then replace this pending contract with the reviewer-audited "
-                            "outcome and authoritative source ledger."
+                            "Replay the reported failure and preserve the trace, source payload, and failure artifact."
                         ),
                     }
                 ],
@@ -54,10 +53,8 @@ async def _run(output_dir: Path, limit: int) -> int:
                 "allowed_omissions": [],
                 "forbidden_claims": [],
                 "follow_up_expected_behavior": [],
-                "audit": {
-                    "status": "pending",
-                    "audited_by": "",
-                    "audited_at": "",
+                "evidence": {
+                    "status": "informational",
                     "corpus_sha": str(snapshot.get("corpus_sha") or ""),
                     "notes": json.dumps(
                         {
@@ -88,7 +85,7 @@ def main() -> int:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("data/eval/audited/reviewed-feedback"),
+        default=Path("data/eval/examples/feedback"),
     )
     parser.add_argument("--limit", type=int, default=100)
     args = parser.parse_args()

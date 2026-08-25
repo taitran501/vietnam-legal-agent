@@ -1,4 +1,4 @@
-"""Generate Promptfoo cases from checked-in audited fixtures."""
+"""Generate Promptfoo cases from checked-in engineering replay fixtures."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def generate_tests(config: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     del config
-    fixtures = sorted((ROOT / "data" / "eval" / "audited").glob("*.json"))
+    fixtures = sorted((ROOT / "data" / "eval" / "examples").rglob("*.json"))
     tests: list[dict[str, Any]] = []
     for fixture in fixtures:
         cases = load_cases(fixture)
@@ -24,6 +24,6 @@ def generate_tests(config: dict[str, Any] | None = None) -> list[dict[str, Any]]
                 }
             )
     if not tests:
-        raise RuntimeError("No audited evaluation fixtures found for Promptfoo")
+        raise RuntimeError("No engineering evaluation fixtures found for Promptfoo")
     return tests
 

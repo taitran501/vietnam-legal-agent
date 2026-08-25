@@ -70,7 +70,7 @@ function readinessMessage(readiness: ReadinessResponse | null, offline: boolean)
   const reason = readiness?.capabilities?.legal_chat?.reason || '';
   const messages: Record<string, string> = {
     database_schema_mismatch: 'Lịch sử trò chuyện tạm thời chưa thể sử dụng. Vui lòng thử lại sau hoặc liên hệ quản trị viên.',
-    corpus_promotion_blocked: 'Văn bản pháp luật chưa được kiểm tra nên kết luận pháp lý đang tạm khóa.',
+    corpus_promotion_blocked: 'Dữ liệu pháp luật hiện chưa sẵn sàng để thực hiện thao tác này.',
     corpus_not_ready: 'Văn bản pháp luật chưa sẵn sàng. Lịch sử và tài khoản vẫn có thể sử dụng.',
     qdrant_unavailable: 'Kho tìm kiếm pháp luật đang tạm thời không khả dụng.',
   };

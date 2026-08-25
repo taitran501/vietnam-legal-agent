@@ -10,7 +10,8 @@ Computes 5 quantitative dimensions:
 4. Context Recall (Độ bao phủ của ngữ cảnh - 0.0 to 1.0):
    Extent to which the retrieved documents contain the required ground-truth statutory anchors (Điều, Khoản, Luật).
 5. Statutory Anchor Accuracy (Độ chuẩn xác căn cứ luật - 0.0 to 1.0):
-   Accuracy of explicit statutory references cited in the answer against the ground truth.
+   Accuracy of explicit statutory references cited in the answer against the
+   declared benchmark anchors.
 """
 
 from __future__ import annotations

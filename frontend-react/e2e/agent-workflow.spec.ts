@@ -12,10 +12,10 @@ async function mockBaseApi(page: Page, options: { caseWorkflowReady?: boolean } 
       dependencies: { database: 'ok', redis: 'ok', qdrant: 'ok', openai: 'ok' },
       capabilities: {
         history: { status: 'ready', reason: 'ok' },
-        legal_chat: { status: 'ready', reason: 'preview_unapproved_corpus' },
+        legal_chat: { status: 'ready', reason: 'preview_snapshot' },
         case_workflow: options.caseWorkflowReady === false
           ? { status: 'blocked', reason: 'corpus_not_ready' }
-          : { status: 'ready', reason: 'preview_unapproved_corpus' },
+          : { status: 'ready', reason: 'preview_snapshot' },
         feedback: { status: 'ready', reason: 'ok' },
         web_research: { status: 'degraded', reason: 'provider_not_configured' },
       },

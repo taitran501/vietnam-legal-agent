@@ -18,7 +18,7 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path]:
     (data / "law.json").write_text('{"meta": []}\n', encoding="utf-8")
     (data / "base.pdf").write_bytes(b"signed official source")
     (data / "records.json").write_text('{"meta": []}\n', encoding="utf-8")
-    _write_json(data / "amendment.json", {"review_status": "pending_legal_review", "entries": []})
+    _write_json(data / "amendment.json", {"source_map_status": "technical", "entries": []})
     _write_json(
         data / "rules.json",
         {
@@ -26,7 +26,7 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path]:
             "corpus_id": "stale",
             "corpus_version": "stale",
             "corpus_sha256": "0" * 64,
-            "legal_review_status": "pending",
+            "source_snapshot_status": "technical",
         },
     )
     manifest = data / "manifest.json"
@@ -36,7 +36,7 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path]:
             "corpus_id": "epr-test",
             "corpus_version": "v1",
             "corpus_as_of_date": None,
-            "legal_review_status": "pending",
+            "source_snapshot_status": "technical",
             "amendment_map_file": "data/amendment.json",
             "rule_pack_file": "data/rules.json",
             "documents": [
@@ -54,7 +54,7 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path]:
     return manifest, data / "runtime.json"
 
 
-def test_sync_write_then_check_is_deterministic_and_does_not_approve_legal_status(tmp_path: Path) -> None:
+def test_sync_write_then_check_is_deterministic_without_legal_approval_metadata(tmp_path: Path) -> None:
     manifest, runtime = _fixture(tmp_path)
 
     written = synchronize(write=True, root=tmp_path, manifest_path=manifest, runtime_manifest_path=runtime)
@@ -65,11 +65,11 @@ def test_sync_write_then_check_is_deterministic_and_does_not_approve_legal_statu
     assert checked["issues"] == []
     synced_manifest = json.loads(manifest.read_text(encoding="utf-8"))
     synced_rules = json.loads((tmp_path / "data" / "rules.json").read_text(encoding="utf-8"))
-    assert synced_manifest["legal_review_status"] == "pending"
+    assert synced_manifest["source_snapshot_status"] == "technical"
     assert synced_manifest["corpus_as_of_date"] is None
     assert synced_manifest["documents"][0]["records_sha256"]
     assert synced_manifest["index_contract"]["index_schema_version"] == "legal-structure-v2-v4-appendix1"
-    assert synced_rules["legal_review_status"] == "pending"
+    assert synced_rules["source_snapshot_status"] == "technical"
     assert synced_rules["corpus_sha256"] == checked["corpus_sha256"]
     assert checked["changed"] is False
 

@@ -116,8 +116,8 @@ curl http://127.0.0.1/api/v1/ready
 ```
 
 Open the application at [http://127.0.0.1](http://127.0.0.1). In preview mode,
-the readiness payload and UI may report `preview_unapproved_corpus`; that is
-an expected warning, not a production approval.
+the readiness payload and UI may report `preview_snapshot`; that identifies a
+non-production runtime mode and is not a quality or legal-opinion claim.
 
 Useful commands:
 
@@ -288,9 +288,9 @@ Start with [docs/README.md](docs/README.md) for the documentation map,
 
 The evaluation control plane is documented in
 [replay and quality triage](docs/evaluation/replay-and-triage.md). Deterministic
-replay checks event ordering and artifact plumbing; only fixtures with an
-authoritative source ledger and `audit.status: audited` can block promotion.
-The checked-in 2026-law fixture is deliberately still `pending`.
+replay checks event ordering, trace/context continuity, source payloads, and
+failure artifacts. Fixtures are engineering inputs and never require a legal
+reviewer or become legal ground truth.
 
 ## Historical benchmark artifact (not promotion evidence)
 
@@ -302,7 +302,7 @@ configured in shadow mode by default (`CROSS_ENCODER_ROLLOUT_PERCENT=0`), so
 the report must not be read as proof that reranking is active for users.
 
 The report is a reproducibility reference, not a current quality or production
-claim. It predates the audited source-ledger contract and reports only a 10%
+claim. It predates the replay/evidence contract and reports only a 10%
 LLM-judge gate pass rate, 28% statutory-anchor accuracy, 4.85s average
 retrieval latency, and 8.18s average end-to-end latency. See the raw
 [historical report](data/eval/ragas_benchmark_results.json) and use the

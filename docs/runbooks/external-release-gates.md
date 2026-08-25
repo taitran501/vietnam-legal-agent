@@ -4,19 +4,18 @@ The repository can validate code contracts and a deterministic local preview.
 The following gates require authority or runtime state outside this checkout.
 They must remain explicit in release notes.
 
-## Legal Corpus Approval
+## Source Snapshot Integrity
 
 The technical checks can confirm hashes, source structure, amendment links, and
-rule-pack consistency. They cannot grant legal approval. A maintainer with
-domain authority must set and review the approved corpus status and effective
-as-of date before enabling production legal capability. Preview mode is the
-safe default while that field is pending.
+rule-pack consistency, and effective-date metadata. They are the source of
+truth for the engineering release gate; no reviewer identity or approval field
+is required by the runtime.
 
 This applies across all legal domains in the corpus. Each domain's content
 (including the primary law collection and any supplementary corpuses such as
-Pháp điển) requires an independent source review recorded before its production
-activation. The download lock and SQLite row-count checks establish
-reproducibility, not legal authority.
+Pháp điển) must carry versioned source metadata before activation. The download
+lock and SQLite row-count checks establish reproducibility for the framework;
+they do not attempt to author legal ground truth.
 
 ## Production Runtime
 

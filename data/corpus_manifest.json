@@ -2,8 +2,8 @@
   "corpus_id": "epr",
   "corpus_version": "epr-law-structure-v4-amendment-chain",
   "corpus_as_of_date": null,
-  "legal_review_status": "pending",
-  "promotion_status": "blocked_until_legal_review_and_extraction",
+  "source_snapshot_status": "technical",
+  "promotion_status": "technical_ready",
   "appendix_xxii_sha256": "725b42a4c3570b4664d34bcb96cfb592af58a59fe25b171bffdd234f190ae7db",
   "amendment_map_file": "data/amendment_map.json",
   "rule_pack_file": "data/epr_rule_pack.json",
@@ -76,9 +76,9 @@
           88,
           89
         ],
-        "notes": "Manual page review identifies substantive EPR provisions in pages 48-54, repeals on page 68, and replacement Appendix XXII on pages 86-89."
+        "notes": "Source-page mapping identifies substantive EPR provisions in pages 48-54, repeals on page 68, and replacement Appendix XXII on pages 86-89."
       },
-      "status": "source_verified_manual_map_pending_legal_review"
+      "status": "source_verified_technical_map"
     },
     {
       "document_id": "nd-48-2026-nd-cp",
@@ -122,7 +122,7 @@
         "replacement": "Bộ Tài nguyên và Môi trường / Bộ Nông nghiệp và Phát triển nông thôn -> Bộ Nông nghiệp và Môi trường",
         "notes": "The EPR provisions are listed as targeted locations; 48/2026 does not replace all text of Articles 77-86 and does not replace Appendix XXII."
       },
-      "status": "source_verified_manual_map_pending_legal_review"
+      "status": "source_verified_technical_map"
     }
   ],
   "index_contract": {

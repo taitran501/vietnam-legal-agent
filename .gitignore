@@ -59,8 +59,9 @@ tests/eval/*_report.json
 data/eval/*
 !data/eval/golden_legal_benchmark.json
 !data/eval/ragas_benchmark_results.json
-!data/eval/audited/
-!data/eval/audited/**
+!data/eval/examples/
+!data/eval/examples/legal-follow-up.json
+data/eval/examples/feedback/
 
 # Local scratch and exported design/experiment files
 tmp/

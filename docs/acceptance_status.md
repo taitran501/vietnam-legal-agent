@@ -2,11 +2,12 @@
 
 **Checked:** 2026-08-25
 **Baseline commit:** `34f1ee8` (`main` in `vietnam-legal-agent`)
-**Audit branch:** `audit/repo-docs-and-runtime-contracts` (not merged)
+**Stacked refactor branch:** `refactor/remove-legal-review-gates` (based on
+`audit/repo-docs-and-runtime-contracts`; not merged)
 
 This file records checks against the current checkout. It is not a replacement
-for the commit-scoped historical reports, and production/legal approval remains
-a separate gate.
+for the commit-scoped historical reports; deployment, provider, and corpus
+freshness checks remain separate operational concerns.
 
 ## Local checks
 
@@ -15,7 +16,7 @@ The following checks were run in the repository acceptance environment
 
 | Check | Result |
 | --- | --- |
-| `pytest -q` | **574 passed, 3 skipped, 9 warnings** (audit branch; baseline main was 570) |
+| `pytest -q` | **574 passed, 3 skipped, 9 warnings** (this refactor branch; baseline main was 570) |
 | `python -m tests.eval.run_eval --suite all` | **exit 0**; deterministic route matrix **60/60**, generated at this commit |
 | `python tests/eval/agent_harness.py --suite all` | **18/18** trajectory cases |
 | `python tests/eval/persona_simulation.py --persona all` | **15/15** persona cases |
@@ -25,7 +26,7 @@ The following checks were run in the repository acceptance environment
 | `git diff --check` | **pass** |
 | `docker compose ... config --quiet` | **pass** for the base stack plus deterministic CI smoke overlay |
 | Universal corpus verification | **pass** for the local content-locked artifact; generated DB remains ignored |
-| Frontend Vitest | **45 passed** in 15 test files |
+| Frontend Vitest | **46 passed** in 15 test files |
 | Frontend lint | **pass**; existing Fast Refresh warnings, no errors |
 | Frontend production build | **pass**; Vite reports a non-blocking >500 kB bundle warning |
 | Playwright browser acceptance | **27 passed** in the latest GitHub Actions E2E job |
@@ -64,9 +65,8 @@ interpreting a test result.
 - Trace inspection is explicitly gated, owner-scoped for quality readers,
   operations-scoped for cross-owner access, bounded in memory, and connected to
   the durable redacted run store used by Pipeline V4.
-- Universal-corpus augmentation is disabled by default and rejected in
-  production until that separate source receives legal approval; its inputs and
-  generated output are content-locked for reproducible preview builds.
+- Universal-corpus augmentation is disabled by default; its inputs and generated
+  output are content-locked for reproducible preview builds.
 - Backend/frontend/gateway images run unprivileged; Compose requires a database
   password and no longer pins services to non-scalable container names.
 - Nginx restricts `/metrics`, forwards the HTTPS signal, and targets the
@@ -75,23 +75,21 @@ interpreting a test result.
   converter-only `PDF_SHA256` field is excluded from the canonical row hash,
   while the source hash and extracted row content remain part of identity.
 - Preview Compose promotion now uses the synchronized corpus hash and keeps
-  legal review visibly pending instead of treating preview as production.
+  preview mode visibly separate from production mode.
 - The V4 pipeline routes cases through `detect_legal_domain()` to the
   appropriate rule engine: EPR uses the deterministic `CaseFormResolver`;
   all other domains (labor, civil, corporate, marriage, land, traffic)
   use `UniversalCaseFormResolver` and `evaluate_universal_case()`.
 - The autonomous agent path (`pipeline-agent`) shares the same tool registry
   and supports all legal domains via `evaluate_legal_case`.
-- The audited-evaluation control plane now records multi-turn replay events,
+- The evaluation control plane now records multi-turn replay events,
   trace/source payloads, claim-level verification, and redacted feedback triage.
-  Pending fixtures remain informational and cannot block promotion.
+  Fixtures are engineering evidence and do not require a legal reviewer.
 
 ## Still not proven by local checks
 
 These are deliberate release gates, not claims that local tests can satisfy:
 
-- the legal owner has approved the corpus, rule pack, amendment map, and an
-  effective as-of date;
 - the pushed commit has passed the GitHub Actions Compose smoke job; the local
   check above validates configuration but does not replace the remote container
   run;
@@ -110,8 +108,9 @@ These are deliberate release gates, not claims that local tests can satisfy:
   10% gate pass rate and 28% statutory-anchor accuracy, and is not evidence of
   current production quality. The live provider-backed evaluation has not been
   run in this checkout because it is a manual `workflow_dispatch` gate.
-- The 2026-law fixture is still `pending` legal-source audit; no generated
-  answer from that fixture is an authoritative legal ground truth.
+- Legal-domain ground truth authoring is outside this framework/tracing
+  acceptance scope; runtime safety still depends on source hashes, provenance,
+  effective-date metadata, and fail-closed claim checks.
 
 The historical V4 acceptance report remains valid only for the commit and
 environment named inside that report. Its live local-stack result is useful
