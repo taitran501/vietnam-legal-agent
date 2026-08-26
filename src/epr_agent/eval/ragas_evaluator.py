@@ -25,6 +25,9 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
+EVALUATOR_OK = "ok"
+EVALUATOR_UNAVAILABLE = "evaluation_unavailable"
+
 
 class StatementClaim(BaseModel):
     """An individual factual claim extracted from an answer."""
@@ -72,8 +75,41 @@ class RagasSampleResult(BaseModel):
     anchor_accuracy: float = Field(ge=0.0, le=1.0)
     overall_ragas_score: float = Field(ge=0.0, le=1.0)
     passed_gate: bool
-    evaluator_status: str = Field(default="ok", description="ok or evaluation_unavailable")
+    evaluator_status: str = Field(default=EVALUATOR_OK, description="ok or evaluation_unavailable")
     details: dict[str, Any] = Field(default_factory=dict)
+
+
+def unavailable_ragas_result(
+    *,
+    sample_id: str,
+    query: str,
+    context_recall: float = 0.0,
+    anchor_accuracy: float = 0.0,
+    details: dict[str, Any] | None = None,
+) -> RagasSampleResult:
+    """Build a fail-closed result when an evaluator or provider is unavailable.
+
+    Deterministic metrics may still be useful for diagnosis, but they must not
+    be combined with missing judge dimensions into a quality score.  Keeping
+    this constructor in one place prevents callers from accidentally relying
+    on the model's ``evaluator_status='ok'`` default for exception paths.
+    """
+
+    failure_details = dict(details or {})
+    failure_details.setdefault("evaluator_status", EVALUATOR_UNAVAILABLE)
+    return RagasSampleResult(
+        sample_id=sample_id,
+        query=query,
+        faithfulness=0.0,
+        answer_relevance=0.0,
+        context_precision=0.0,
+        context_recall=round(max(0.0, min(1.0, context_recall)), 3),
+        anchor_accuracy=round(max(0.0, min(1.0, anchor_accuracy)), 3),
+        overall_ragas_score=0.0,
+        passed_gate=False,
+        evaluator_status=EVALUATOR_UNAVAILABLE,
+        details=failure_details,
+    )
 
 
 def compute_context_recall(
@@ -156,32 +192,59 @@ async def evaluate_ragas_sample(
     pass_threshold: float = 0.80,
 ) -> RagasSampleResult:
     """Run comprehensive RAGAS evaluation on a single legal query-answer pair."""
-    from epr_agent.infra.llm_instances import get_llm_smart
-
     expected_anchors = expected_anchors or []
 
     # 1. Context Recall & Anchor Accuracy (Deterministic)
-    context_recall, found_anchors = compute_context_recall(retrieved_docs, expected_anchors)
-    anchor_accuracy, cited_anchors = compute_anchor_accuracy(answer, expected_anchors)
+    try:
+        context_recall, found_anchors = compute_context_recall(retrieved_docs, expected_anchors)
+        anchor_accuracy, cited_anchors = compute_anchor_accuracy(answer, expected_anchors)
+
+        # Keep the prompt construction inside the same guarded section.  A
+        # malformed metadata object must be reported as evaluator-unavailable
+        # instead of aborting the benchmark without a case result.
+        doc_text = "\n\n---\n\n".join(
+            f"[Tài liệu {i}] (Metadata: {json.dumps(d.get('metadata', {}), ensure_ascii=False)})\n{d.get('page_content', '')[:1000]}"
+            for i, d in enumerate(retrieved_docs[:6])
+        )
+    except Exception as exc:  # noqa: BLE001 - malformed inputs are gate failures
+        logger.warning("RAGAS evaluator preprocessing error: %s", exc)
+        return unavailable_ragas_result(
+            sample_id=sample_id,
+            query=query,
+            details={"preprocessing_error": str(exc)},
+        )
 
     # 2. LLM-as-a-Judge for Faithfulness & Answer Relevance & Context Precision
-    doc_text = "\n\n---\n\n".join(
-        f"[Tài liệu {i}] (Metadata: {json.dumps(d.get('metadata', {}), ensure_ascii=False)})\n{d.get('page_content', '')[:1000]}"
-        for i, d in enumerate(retrieved_docs[:6])
-    )
-
     faithfulness_score = 0.0
     relevance_score = 0.0
     precision_score = 0.0
-    evaluator_status = "ok"
+    evaluator_status = EVALUATOR_OK
     details: dict[str, Any] = {
         "found_anchors": found_anchors,
         "cited_anchors": cited_anchors,
     }
 
     try:
-        judge_llm = get_llm_smart()
+        from epr_agent.infra.llm_instances import get_llm_smart
 
+        judge_llm = get_llm_smart()
+    except Exception as exc:  # noqa: BLE001 - provider health is part of the gate
+        logger.warning("RAGAS judge provider unavailable: %s", exc)
+        return unavailable_ragas_result(
+            sample_id=sample_id,
+            query=query,
+            context_recall=context_recall,
+            anchor_accuracy=anchor_accuracy,
+            details={
+                **details,
+                "provider_error": str(exc),
+                "faithfulness_error": str(exc),
+                "relevance_error": str(exc),
+                "precision_error": str(exc),
+            },
+        )
+
+    try:
         # A. Faithfulness
         faith_chain = judge_llm.with_structured_output(FaithfulnessEvaluation)
         faith_res = cast(FaithfulnessEvaluation, await faith_chain.ainvoke(
@@ -193,17 +256,16 @@ async def evaluate_ragas_sample(
                 ),
             ]
         ))
-        if isinstance(faith_res, FaithfulnessEvaluation):
-            faithfulness_score = max(0.0, min(1.0, float(faith_res.faithfulness_score)))
-            details["faithfulness_details"] = faith_res.model_dump(mode="json")
+        if not isinstance(faith_res, FaithfulnessEvaluation):
+            raise TypeError("faithfulness_invalid_structured_output")
+        faithfulness_score = max(0.0, min(1.0, float(faith_res.faithfulness_score)))
+        details["faithfulness_details"] = faith_res.model_dump(mode="json")
     except Exception as exc:  # noqa: BLE001 - evaluator health is part of the gate
         logger.warning("RAGAS Faithfulness evaluation error: %s", exc)
-        evaluator_status = "evaluation_unavailable"
+        evaluator_status = EVALUATOR_UNAVAILABLE
         details["faithfulness_error"] = str(exc)
 
     try:
-        judge_llm = get_llm_smart()
-
         # B. Answer Relevance
         rel_chain = judge_llm.with_structured_output(RelevanceEvaluation)
         rel_res = cast(RelevanceEvaluation, await rel_chain.ainvoke(
@@ -215,17 +277,16 @@ async def evaluate_ragas_sample(
                 ),
             ]
         ))
-        if isinstance(rel_res, RelevanceEvaluation):
-            relevance_score = max(0.0, min(1.0, float(rel_res.relevance_score)))
-            details["relevance_details"] = rel_res.model_dump(mode="json")
+        if not isinstance(rel_res, RelevanceEvaluation):
+            raise TypeError("relevance_invalid_structured_output")
+        relevance_score = max(0.0, min(1.0, float(rel_res.relevance_score)))
+        details["relevance_details"] = rel_res.model_dump(mode="json")
     except Exception as exc:  # noqa: BLE001 - evaluator health is part of the gate
         logger.warning("RAGAS Relevance evaluation error: %s", exc)
-        evaluator_status = "evaluation_unavailable"
+        evaluator_status = EVALUATOR_UNAVAILABLE
         details["relevance_error"] = str(exc)
 
     try:
-        judge_llm = get_llm_smart()
-
         # C. Context Precision
         prec_chain = judge_llm.with_structured_output(ContextPrecisionEvaluation)
         prec_res = cast(ContextPrecisionEvaluation, await prec_chain.ainvoke(
@@ -237,12 +298,13 @@ async def evaluate_ragas_sample(
                 ),
             ]
         ))
-        if isinstance(prec_res, ContextPrecisionEvaluation):
-            precision_score = max(0.0, min(1.0, float(prec_res.precision_score)))
-            details["precision_details"] = prec_res.model_dump(mode="json")
+        if not isinstance(prec_res, ContextPrecisionEvaluation):
+            raise TypeError("precision_invalid_structured_output")
+        precision_score = max(0.0, min(1.0, float(prec_res.precision_score)))
+        details["precision_details"] = prec_res.model_dump(mode="json")
     except Exception as exc:  # noqa: BLE001 - evaluator health is part of the gate
         logger.warning("RAGAS Precision evaluation error: %s", exc)
-        evaluator_status = "evaluation_unavailable"
+        evaluator_status = EVALUATOR_UNAVAILABLE
         details["precision_error"] = str(exc)
 
     # Harmonic mean or weighted composite RAGAS score
@@ -251,10 +313,10 @@ async def evaluate_ragas_sample(
     # Do not expose a partially-computed composite as if it were a valid
     # quality score. Deterministic anchor metrics remain in ``details`` while
     # an unavailable judge makes the promotion score explicitly unusable.
-    overall = sum(w * s for w, s in zip(weights, scores)) if evaluator_status == "ok" else 0.0
+    overall = sum(w * s for w, s in zip(weights, scores)) if evaluator_status == EVALUATOR_OK else 0.0
 
     passed = (
-        evaluator_status == "ok"
+        evaluator_status == EVALUATOR_OK
         and overall >= pass_threshold
         and faithfulness_score >= 0.75
     )
