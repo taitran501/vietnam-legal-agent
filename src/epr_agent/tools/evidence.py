@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
+from typing import Any
 
 from epr_agent.domain.legal import LegalAnchor
 from epr_agent.domain.models import Citation, DocumentRecord, EvidenceAssessment, TaskType
@@ -41,11 +42,28 @@ class EvidenceEvaluator:
             if not expected_articles.issubset(available):
                 return EvidenceAssessment(False, "explicit_article_not_found", len(documents), total_chars, has_metadata)
 
-        if expected_anchors and not all(
-            any(_document_matches_anchor(document, anchor) for document in documents)
-            for anchor in expected_anchors
-        ):
-            return EvidenceAssessment(False, "explicit_anchor_not_found", len(documents), total_chars, has_metadata)
+        if expected_anchors:
+            # An instrument mismatch is stronger than a missing article: a
+            # nearby article from another regulation must not be presented as
+            # the requested source. Keep the legacy reason for article/clause
+            # gaps so existing clients remain compatible.
+            for anchor in expected_anchors:
+                if anchor.document_number and not any(
+                    _document_matches_instrument(document, anchor.document_number)
+                    for document in documents
+                ):
+                    return EvidenceAssessment(
+                        False,
+                        "source_relevance_mismatch",
+                        len(documents),
+                        total_chars,
+                        has_metadata,
+                    )
+            if not all(
+                any(_document_matches_anchor(document, anchor) for document in documents)
+                for anchor in expected_anchors
+            ):
+                return EvidenceAssessment(False, "explicit_anchor_not_found", len(documents), total_chars, has_metadata)
 
         temporal_warnings: list[str] = []
         has_superseded = False
@@ -146,6 +164,70 @@ def is_unresolved_current_law_source(document: DocumentRecord) -> bool:
     return str(value).strip().casefold() in {"false", "0", "no", "pending", "unresolved"}
 
 
+_RELEVANCE_SCORE_KEYS = (
+    "rerank_score",
+    "heuristic_rerank_score",
+    "cross_encoder_score",
+    "combined_score",
+    "score",
+)
+_RELEVANCE_STOPWORDS = {
+    "cho", "chưa", "các", "có", "của", "đang", "được", "gì", "hỏi", "hiện",
+    "khi", "không", "là", "nào", "này", "những", "nói", "pháp", "quy", "quyền",
+    "quy định", "sao", "theo", "thế", "và", "văn", "về", "việc", "với", "xem",
+    "luật", "điều", "khoản", "điểm", "mức", "bao", "nhiêu", "trong", "tại",
+    "từ", "đến", "nay", "năm", "số", "tôi", "bạn", "xin", "hãy", "giúp",
+}
+_RELEVANCE_TOKEN_RE = re.compile(r"[0-9A-Za-zÀ-ỹĐđ]{3,}", re.UNICODE)
+
+
+def _as_explicit_match(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().casefold() in {"true", "1", "yes", "y", "đúng"}
+
+
+def _relevance_tokens(value: Any) -> set[str]:
+    text = str(value or "").casefold()
+    tokens = set(_RELEVANCE_TOKEN_RE.findall(text))
+    return {token for token in tokens if token not in _RELEVANCE_STOPWORDS}
+
+
+def _document_relevance_tokens(document: DocumentRecord) -> set[str]:
+    metadata = document.metadata or {}
+    values = [document.content]
+    values.extend(
+        str(metadata.get(key) or "")
+        for key in (
+            "source",
+            "source_title",
+            "Source_Title",
+            "title",
+            "topic",
+            "subject",
+            "law_ref",
+            "legal_anchor",
+            "document_title",
+        )
+    )
+    return _relevance_tokens(" ".join(values))
+
+
+def _document_scores(document: DocumentRecord) -> list[float]:
+    metadata = document.metadata or {}
+    scores: list[float] = []
+    for key in _RELEVANCE_SCORE_KEYS:
+        raw = metadata.get(key)
+        if raw is None and key == "score":
+            raw = document.score
+        try:
+            if raw is not None:
+                scores.append(float(raw))
+        except (TypeError, ValueError):
+            continue
+    return scores
+
+
 def legal_relevance_checker(*, min_rerank_score: float) -> Callable[[str, list[DocumentRecord]], bool]:
     """Create a calibrated score gate for unanchored legal retrieval.
 
@@ -153,8 +235,9 @@ def legal_relevance_checker(*, min_rerank_score: float) -> Callable[[str, list[D
     caller. For semantic queries, a small score is insufficient evidence even
     when Qdrant returns its nearest neighbours; otherwise an EPR question about
     another jurisdiction would be answered using merely adjacent Vietnamese
-    provisions. Records without a rerank score are kept for deterministic unit
-    doubles, whose relevance is asserted by their dedicated test contracts.
+    provisions. Records without a score or explicit exact-match marker fail
+    closed. A score alone is not sufficient: at least one non-generic
+    lexical/domain signal must also overlap with the query.
     """
 
     threshold = max(0.0, min(1.0, float(min_rerank_score)))
@@ -170,17 +253,18 @@ def legal_relevance_checker(*, min_rerank_score: float) -> Callable[[str, list[D
         # the separate public-research action instead.
         if negative_evidence_pattern.search(query or ""):
             return False
-        if any(bool((document.metadata or {}).get("explicit_match")) for document in documents):
+        if any(_as_explicit_match((document.metadata or {}).get("explicit_match")) for document in documents):
             return True
-        scores: list[float] = []
+        query_tokens = _relevance_tokens(query)
+        if not query_tokens:
+            return False
         for document in documents:
-            raw = (document.metadata or {}).get("rerank_score")
-            try:
-                if raw is not None:
-                    scores.append(float(raw))
-            except (TypeError, ValueError):
+            scores = _document_scores(document)
+            if not scores or max(scores) < threshold:
                 continue
-        return not scores or max(scores) >= threshold
+            if query_tokens.intersection(_document_relevance_tokens(document)):
+                return True
+        return False
 
     return _check
 
@@ -268,13 +352,18 @@ def _document_matches_anchor(document: DocumentRecord, anchor: LegalAnchor) -> b
         )
         if anchor.point.casefold() not in point_text.casefold():
             return False
-    if anchor.document_number:
-        source_text = "\n".join(
-            str(metadata.get(key) or "") for key in ("Document_Number", "source_title", "source")
-        )
-        if anchor.document_number.casefold() not in source_text.casefold():
-            return False
-    return True
+    return not anchor.document_number or _document_matches_instrument(document, anchor.document_number)
+
+
+def _document_matches_instrument(document: DocumentRecord, document_number: str) -> bool:
+    """Match an explicit instrument only against canonical number metadata."""
+
+    metadata = document.metadata or {}
+    source_text = "\n".join(
+        str(metadata.get(key) or "")
+        for key in ("Document_Number", "Instrument_Number", "instrument_number", "number")
+    )
+    return document_number.casefold() in source_text.casefold()
 
 
 def legal_claim_segments(answer: str) -> list[str]:
