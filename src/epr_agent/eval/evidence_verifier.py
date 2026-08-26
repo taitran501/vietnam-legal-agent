@@ -96,7 +96,8 @@ def verify_evaluation_case(
     """Verify one observed answer against a replay contract."""
 
     snapshots = [_snapshot(document) for document in documents]
-    drawer_snapshots = [_snapshot(document) for document in (source_drawer_documents or documents)]
+    drawer_documents = documents if source_drawer_documents is None else source_drawer_documents
+    drawer_snapshots = [_snapshot(document) for document in drawer_documents]
     answer_text = _text(answer)
     citations = _citation_indexes(answer_text)
     failures: list[FailureCode] = []
@@ -125,16 +126,20 @@ def verify_evaluation_case(
         )
         unique = drawer_counts.get(source.source_id, 0) <= 1
         present = bool(matching)
+        present_in_drawer = bool(drawer_matching)
         source_results.append(
             SourceVerification(
                 source_id=source.source_id,
                 present=present,
+                present_in_drawer=present_in_drawer,
                 anchor_matches=found_anchors,
                 official_url_matches=url_matches,
                 unique_in_drawer=unique,
                 reason=(
                     "ok"
-                    if present and (not source.anchors or found_anchors)
+                    if present and present_in_drawer and (not source.anchors or found_anchors)
+                    else "source_drawer_missing"
+                    if present and not present_in_drawer
                     else "source_or_anchor_missing"
                 ),
             )
@@ -143,6 +148,8 @@ def verify_evaluation_case(
             failures.append(FailureCode.RETRIEVAL_MISS)
         elif source.anchors and not found_anchors:
             failures.append(FailureCode.SOURCE_PROVENANCE_LOSS)
+        if present and not present_in_drawer:
+            failures.append(FailureCode.SOURCE_DRAWER_PAYLOAD_MISMATCH)
         if source.official_url and drawer_matching and not url_matches:
             failures.append(FailureCode.SOURCE_DRAWER_PAYLOAD_MISMATCH)
         if drawer_matching and not unique:
