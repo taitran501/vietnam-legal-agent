@@ -343,6 +343,10 @@ LEGAL_SCOPE_TERMS = (
     "tái chế",
     "bao bì",
     "epr",
+    "thời hạn",
+    "mức phạt",
+    "checklist",
+    "tuân thủ",
 )
 
 OWN_CONTEXT_TERMS = (
@@ -441,7 +445,10 @@ def is_legal_scope(query: str, history: list[dict[str, Any]] | None = None, acti
         return False
     if active_case:
         return True
-    if history and is_context_dependent_query(q):
+    # A terse context-only prompt is still a legal workflow boundary even
+    # before history is available; the planner will ask the user to restate
+    # the missing topic instead of calling retrieval.
+    if is_context_dependent_query(q):
         return True
     return _contains_legal_signal(q)
 
