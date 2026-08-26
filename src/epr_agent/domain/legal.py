@@ -21,7 +21,9 @@ CHUNKING_PROFILE = "legal-structure-v2"
 INDEX_SCHEMA_VERSION = "legal-structure-v2-v4-appendix1"
 _ARTICLE_RE = re.compile(r"\b(?:điều|dieu)\s+(\d+[a-zđ]?)\b", re.IGNORECASE)
 _DOCUMENT_RE = re.compile(
-    r"\b(?:nghị\s*định|nghi\s*dinh|thông\s*tư|thong\s*tu|quyết\s*định|quyet\s*dinh)"
+    r"\b(?:(?:bộ\s*)?luật|nghị\s*định|nghi\s*dinh|thông\s*tư|thong\s*tu|"
+    r"quyết\s*định|quyet\s*dinh|nghị\s*quyết|nghi\s*quyet|pháp\s*lệnh|"
+    r"phap\s*lenh)"
     r"\s*(?:số\s*)?(\d+(?:/\d{4})?/[a-z0-9đ-]+)",
     re.IGNORECASE,
 )
