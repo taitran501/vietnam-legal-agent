@@ -1,0 +1,176 @@
+{
+  "schema_version": "natural-language-smoke-v1",
+  "mode": "deterministic",
+  "description": "Structured SSE contracts for natural Vietnamese legal preview flows.",
+  "cases": [
+    {
+      "id": "corporate_factual_lookup",
+      "conversation_id": "smoke-corporate-factual",
+      "turns": [
+        {
+          "query": "Công ty cổ phần cần tối thiểu bao nhiêu cổ đông theo quy định?",
+          "expect": {
+            "route": "legal_lookup",
+            "termination_reason": "answer_complete",
+            "source_nonempty": true,
+            "retrieval_count_min": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "law_2026_lookup",
+      "conversation_id": "smoke-law-2026",
+      "turns": [
+        {
+          "query": "Luật số 08/2026/QH16 có hiệu lực từ ngày nào?",
+          "expect": {
+            "route": "legal_lookup",
+            "termination_reason": "insufficient_evidence",
+            "safe_stop_reason": "source_relevance_mismatch",
+            "source_empty": true,
+            "retrieval_count_min": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "article_77_lookup",
+      "conversation_id": "smoke-article-77",
+      "turns": [
+        {
+          "query": "Điều 77 Nghị định 08/2022/NĐ-CP quy định gì về trách nhiệm tái chế?",
+          "expect": {
+            "route": "legal_lookup",
+            "termination_reason": "answer_complete",
+            "source_nonempty": true,
+            "anchor_contains": "Điều 77",
+            "instrument_contains": "08/2022/NĐ-CP",
+            "retrieval_count_min": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "epr_case_assessment",
+      "conversation_id": "smoke-epr-case",
+      "turns": [
+        {
+          "query": "Doanh nghiệp nhập khẩu bao bì nhựa tại Việt Nam có phải thực hiện EPR không?",
+          "expect": {
+            "route": "case_assessment",
+            "termination_reason": "awaiting_user_input",
+            "context_loaded": true,
+            "retrieval_count_exact": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "follow_up_same_conversation",
+      "conversation_id": "smoke-follow-up",
+      "turns": [
+        {
+          "query": "2026 có luật gì mới không?",
+          "expect": {
+            "route": "legal_lookup",
+            "termination_reason": "answer_complete",
+            "source_nonempty": true
+          }
+        },
+        {
+          "query": "còn gì nữa?",
+          "expect": {
+            "route": "legal_lookup",
+            "termination_reason": "answer_complete",
+            "context_loaded": true,
+            "is_follow_up": true,
+            "history_messages": 2,
+            "standalone_contains": ["2026", "còn gì nữa"],
+            "source_nonempty": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "context_only_new_conversation",
+      "conversation_id": "smoke-context-only",
+      "turns": [
+        {
+          "query": "còn gì nữa?",
+          "expect": {
+            "route": "legal_lookup",
+            "termination_reason": "awaiting_user_input",
+            "context_loaded": true,
+            "is_follow_up": true,
+            "history_messages": 0,
+            "source_empty": true,
+            "retrieval_count_exact": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "chitchat",
+      "conversation_id": "smoke-chitchat",
+      "turns": [
+        {
+          "query": "Xin chào bạn",
+          "expect": {
+            "route": "chitchat",
+            "termination_reason": "answer_complete",
+            "source_empty": true,
+            "retrieval_count_exact": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "bitcoin_out_of_scope",
+      "conversation_id": "smoke-bitcoin",
+      "turns": [
+        {
+          "query": "Bitcoin hôm nay tăng hay giảm?",
+          "expect": {
+            "route": "out_of_scope",
+            "termination_reason": "out_of_scope",
+            "source_empty": true,
+            "retrieval_count_exact": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "unknown_article_safe_stop",
+      "conversation_id": "smoke-unknown-article",
+      "turns": [
+        {
+          "query": "Điều 999 Nghị định 08/2022/NĐ-CP quy định gì?",
+          "expect": {
+            "route": "legal_lookup",
+            "termination_reason": "insufficient_evidence",
+            "safe_stop_reason": "missing_provision",
+            "source_empty": true,
+            "retrieval_count_min": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "source_mismatch_safe_stop",
+      "conversation_id": "smoke-source-mismatch",
+      "turns": [
+        {
+          "query": "Luật số 08/2026/QH16 Điều 77 quy định gì?",
+          "expect": {
+            "route": "legal_lookup",
+            "termination_reason": "insufficient_evidence",
+            "safe_stop_reason": "source_relevance_mismatch",
+            "source_empty": true,
+            "retrieval_count_min": 1
+          }
+        }
+      ]
+    }
+  ]
+}
