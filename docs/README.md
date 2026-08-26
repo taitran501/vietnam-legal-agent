@@ -46,6 +46,7 @@ text or formal legal advice.
 - [Local Preview](runbooks/local-preview.md)
 - [Database Migration](runbooks/database-migration.md)
 - [Production Promotion](runbooks/production-promotion.md)
+- [Live Agent Evaluation](runbooks/live-agent-eval.md) — protected provider-backed pilot gate
 - [Rollback Runbook](runbooks/rollback.md)
 - [External Release Gates](runbooks/external-release-gates.md)
 

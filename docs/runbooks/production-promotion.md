@@ -18,6 +18,10 @@ Every case must also report `evaluator_status: ok` and
 source payload fails promotion even when aggregate percentages remain above
 threshold.
 
+See the [Live Agent Evaluation runbook](live-agent-eval.md) for the required
+`pilot` secrets, Qdrant collection variable, Redis service, dispatch procedure,
+and artifact retention contract.
+
 ## Release Gates
 
 Before starting a production backend, configure a real PostgreSQL URL, Qdrant
