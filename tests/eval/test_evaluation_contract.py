@@ -94,6 +94,32 @@ def test_verifier_maps_claim_to_source_and_citation() -> None:
     assert result.failure_codes == []
     assert result.claim_results[0].supported is True
     assert result.source_results[0].official_url_matches is True
+    assert result.source_results[0].present_in_drawer is True
+
+
+def test_verifier_reports_missing_source_drawer_payload() -> None:
+    case = _evaluation_case()
+    documents = [
+        {
+            "source_id": "law-1",
+            "anchor": "Điều 1",
+            "official_url": "https://example.gov.vn/law-1",
+            "excerpt": "Điều 1 quy định thời hạn 10 ngày.",
+        }
+    ]
+
+    result = verify_evaluation_case(
+        case,
+        answer="Theo Điều 1, thời hạn là 10 ngày [1].",
+        documents=documents,
+        source_drawer_documents=[],
+        observed_outcome=ExpectedOutcome.ANSWER_COMPLETE,
+    )
+
+    assert result.status == EvaluationStatus.FAIL
+    assert "source_drawer_payload_mismatch" in {code.value for code in result.failure_codes}
+    assert result.source_results[0].present is True
+    assert result.source_results[0].present_in_drawer is False
 
 
 def test_verifier_reports_retrieval_and_unsupported_claim_failures() -> None:

@@ -9,8 +9,8 @@
     },
     {
       "query": "Còn gì nữa?",
-      "expected_outcome": "safe_stop",
-      "expected_behavior": "Exercise terse follow-up handling without requiring a manually authored legal answer."
+      "expected_outcome": "clarification",
+      "expected_behavior": "Exercise terse follow-up handling and require clarification when the prior subject is not recoverable."
     }
   ],
   "expected_outcome": "clarification",

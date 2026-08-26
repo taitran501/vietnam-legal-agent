@@ -151,6 +151,7 @@ class ClaimVerification(_ContractModel):
 class SourceVerification(_ContractModel):
     source_id: str
     present: bool
+    present_in_drawer: bool = False
     anchor_matches: list[str] = Field(default_factory=list)
     official_url_matches: bool = False
     unique_in_drawer: bool = True

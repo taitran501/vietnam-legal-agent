@@ -20,6 +20,7 @@ from epr_agent.agent.runtime import AgentWorkflowRuntime
 from epr_agent.domain.models import AgentState, DocumentRecord
 from epr_agent.eval.contracts import (
     EvaluationCase,
+    EvaluationResult,
     EvaluationStatus,
     ExpectedOutcome,
     FailureCode,
@@ -135,8 +136,9 @@ class DeterministicReplayRunner:
 
     def __init__(self, case: EvaluationCase) -> None:
         self.case = case
+        self._turn_index = 0
 
-    def _result(self) -> AgentRunResult:
+    def _result(self, expected_outcome: ExpectedOutcome | None = None) -> AgentRunResult:
         documents: list[dict[str, Any]] = []
         answer_lines: list[str] = []
         citations: list[dict[str, Any]] = []
@@ -161,7 +163,7 @@ class DeterministicReplayRunner:
             answer_lines.append(f"{claim.text} [{index}]")
             citations.append({"index": index, "document_id": source_id or f"replay-doc-{index}", "label": anchor})
 
-        outcome = self.case.expected_outcome or ExpectedOutcome.SAFE_STOP
+        outcome = expected_outcome or self.case.expected_outcome or ExpectedOutcome.SAFE_STOP
         if not answer_lines:
             answer = "Chưa có đủ dữ liệu nguồn trong bản replay để trả lời an toàn."
             termination = "insufficient_evidence"
@@ -193,7 +195,9 @@ class DeterministicReplayRunner:
 
     async def stream(self, _query: str, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
         trace_id = str(kwargs.get("trace_id") or "")
-        result = self._result()
+        turn = self.case.turns[min(self._turn_index, len(self.case.turns) - 1)]
+        self._turn_index += 1
+        result = self._result(turn.expected_outcome)
         yield {
             "type": "agent_tool_call",
             "step": 1,
@@ -265,6 +269,46 @@ def _terminal(events: list[dict[str, Any]]) -> dict[str, Any]:
     )
 
 
+def _case_for_turn(case: EvaluationCase, turn_index: int) -> EvaluationCase:
+    """Project case-level claims/outcome onto the turn being verified."""
+
+    turn = case.turns[turn_index - 1]
+    is_final_turn = turn_index == len(case.turns)
+    expected_claim_ids = set(turn.expected_claim_ids)
+    if expected_claim_ids:
+        claims = [claim for claim in case.claims if claim.claim_id in expected_claim_ids]
+    elif is_final_turn or len(case.turns) == 1:
+        claims = list(case.claims)
+    else:
+        claims = []
+
+    claim_ids = {claim.claim_id for claim in claims}
+    citations = [citation for citation in case.citations if citation.claim_id in claim_ids]
+    source_ids = {
+        source_id
+        for claim in claims
+        for source_id in claim.source_ids
+    }
+    source_ids.update(citation.source_id for citation in citations)
+    sources = (
+        list(case.sources)
+        if is_final_turn and not expected_claim_ids and not claims
+        else [source for source in case.sources if source.source_id in source_ids]
+    )
+    expected_outcome = turn.expected_outcome if turn.expected_outcome is not None else (
+        case.expected_outcome if is_final_turn else None
+    )
+    return case.model_copy(
+        update={
+            "turns": [turn],
+            "expected_outcome": expected_outcome,
+            "claims": claims,
+            "sources": sources,
+            "citations": citations,
+        }
+    )
+
+
 async def replay_case(
     runtime: ReplayRuntime,
     case: EvaluationCase,
@@ -280,6 +324,7 @@ async def replay_case(
     final_terminal: dict[str, Any] = {}
     final_documents: list[Mapping[str, Any]] = []
     final_drawer: list[Mapping[str, Any]] = []
+    turn_results: list[EvaluationResult] = []
     started = time.perf_counter()
 
     for turn_index, turn in enumerate(case.turns, start=1):
@@ -299,7 +344,17 @@ async def replay_case(
             events.append(dict(event))
         terminal = _terminal(events)
         documents = [item for item in terminal.get("documents") or [] if isinstance(item, Mapping)]
-        drawer = [item for item in terminal.get("sources") or [] if isinstance(item, Mapping)] or documents
+        raw_drawer = terminal.get("sources")
+        drawer = [item for item in raw_drawer or [] if isinstance(item, Mapping)]
+        turn_case = _case_for_turn(case, turn_index)
+        turn_result = verify_evaluation_case(
+            turn_case,
+            answer=str(terminal.get("text") or ""),
+            documents=documents,
+            source_drawer_documents=drawer,
+            observed_outcome=_observed_outcome(terminal),
+        )
+        turn_results.append(turn_result)
         final_terminal = terminal
         final_documents = documents
         final_drawer = drawer
@@ -324,12 +379,15 @@ async def replay_case(
                 ],
                 "documents": documents,
                 "source_drawer": drawer,
+                "source_drawer_present": isinstance(raw_drawer, list),
                 "errors": [event for event in events if event.get("type") == "error"],
+                "evaluation": turn_result.model_dump(mode="json"),
             }
         )
 
+    final_case = _case_for_turn(case, len(case.turns))
     result = verify_evaluation_case(
-        case,
+        final_case,
         answer=str(final_terminal.get("text") or ""),
         documents=final_documents,
         source_drawer_documents=final_drawer,
@@ -340,7 +398,25 @@ async def replay_case(
         failure_codes.append(FailureCode.PROVIDER_UNAVAILABLE if mode == "live" else FailureCode.SOURCE_PROVENANCE_LOSS)
     if any(event.get("type") == "error" for report in turn_reports for event in report["events"]):
         failure_codes.append(FailureCode.PROVIDER_UNAVAILABLE if mode == "live" else FailureCode.SOURCE_PROVENANCE_LOSS)
-    result = result.model_copy(update={"failure_codes": list(dict.fromkeys(failure_codes))})
+    for turn_result in turn_results:
+        failure_codes.extend(turn_result.failure_codes)
+    unique_failure_codes = list(dict.fromkeys(failure_codes))
+    result = result.model_copy(
+        update={
+            "status": EvaluationStatus.FAIL if unique_failure_codes else result.status,
+            "gate_eligible": result.gate_eligible and all(item.gate_eligible for item in turn_results),
+            "failure_codes": unique_failure_codes,
+            "metadata": {
+                **result.metadata,
+                "turn_count": len(turn_reports),
+                "turn_failures": [
+                    code.value
+                    for item in turn_results
+                    for code in item.failure_codes
+                ],
+            },
+        }
+    )
     report = {
         "schema_version": "evaluation-replay-v1",
         "case_id": case.case_id,
@@ -354,6 +430,7 @@ async def replay_case(
         "config_hash": config_hash(mode=mode, case=case),
         "latency_ms": round((time.perf_counter() - started) * 1000, 2),
         "turns": turn_reports,
+        "turn_results": [item.model_dump(mode="json") for item in turn_results],
         "result": result.model_dump(mode="json"),
     }
     return report
