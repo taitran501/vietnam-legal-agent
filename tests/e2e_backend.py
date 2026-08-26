@@ -114,8 +114,23 @@ class BrowserHistoryGateway:
 
     async def load(self, user_id: str, conversation_id: str, max_messages: int) -> ContextSnapshot:
         key = (user_id, conversation_id)
+        conversation = list(self.messages.get(key, []))
+        pending_turn_ids = {
+            str(item.get("turn_id"))
+            for item in conversation
+            if item.get("status") in {"pending", "streaming"} and item.get("turn_id")
+        }
+        # Mirror PersistenceStore.get_recent_history: the current durable
+        # turn (including its already-complete user message) is not context
+        # for itself, and unfinished turns never enter follow-up rewriting.
+        completed = [
+            item
+            for item in conversation
+            if item.get("status") == "complete"
+            and str(item.get("turn_id") or "") not in pending_turn_ids
+        ]
         return ContextSnapshot(
-            history=list(self.messages.get(key, []))[-max_messages:],
+            history=completed[-max_messages:],
             active_case=self.cases.get(key),
         )
 
