@@ -25,8 +25,10 @@ required dependency is missing.
 - The provider-backed `Live Agent Evaluation` is manual-only and runs against
   the protected `pilot` environment; it is not implied by pull-request CI.
 - There is no hosted public demo in this repository.
-- Production legal capability remains subject to corpus review, an approved
-  effective date, deployment configuration, and external operational gates.
+- Production legal capability remains subject to technical corpus integrity,
+  versioned effective-date metadata, deployment configuration, and external
+  operational gates. The repository does not make a human legal-review record
+  a framework or promotion dependency.
 
 ## What it does
 
@@ -360,7 +362,8 @@ production legal capability, the release process must independently verify:
 - PostgreSQL, Qdrant, Redis, OpenAI, authentication, HTTPS origins, and
   request-protection settings;
 - source, amendment, rule-pack, corpus, and immutable-index consistency;
-- an approved corpus review status and approved effective date;
+- versioned source metadata, amendment/rule-pack consistency, and effective-date
+  metadata for the corpus and immutable index;
 - migrations, ownership isolation, readiness, rollback, monitoring, and
   authenticated browser/API smoke tests.
 

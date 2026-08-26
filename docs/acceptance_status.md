@@ -1,8 +1,9 @@
 # Current acceptance status
 
-**Checked:** 2026-08-25
-**Acceptance commit:** `6e01c3e` (`main` in `vietnam-legal-agent`)
-**Merged delivery:** PR #48 (`7367575`) followed by PR #49 (`6e01c3e`)
+**Checked:** 2026-08-26
+**Evidence commit:** `02312f9` (`main` in `vietnam-legal-agent`)
+**Merged delivery:** PR #54 (`02312f9`), Promptfoo replay regression hardening
+**CI evidence:** [main CI run 32927787111](https://github.com/taitran501/vietnam-legal-agent/actions/runs/32927787111)
 
 This file records checks against the current checkout. It is not a replacement
 for the commit-scoped historical reports; deployment, provider, and corpus
@@ -15,23 +16,23 @@ The following checks were run in the repository acceptance environment
 
 | Check | Result |
 | --- | --- |
-| `pytest -q` | **574 passed, 3 skipped, 9 warnings** (this refactor branch; baseline main was 570) |
-| `python -m tests.eval.run_eval --suite all` | **exit 0**; deterministic route matrix **60/60**, generated at this commit |
+| `pytest -q` | **592 passed, 2 skipped, 14 warnings** (Task 4 evidence on the merge tree) |
+| `python -m tests.eval.run_eval --suite all` | **exit 0**; deterministic route matrix **60/60**, generated at the evidence commit |
 | `python tests/eval/agent_harness.py --suite all` | **18/18** trajectory cases |
 | `python tests/eval/persona_simulation.py --persona all` | **15/15** persona cases |
 | `ruff check src/epr_agent backend scripts tests promptfoo` | **pass** |
-| `mypy src/epr_agent backend` | **pass** (77 source files) |
+| `mypy src/epr_agent backend` | **pass** |
 | `python -m scripts.sync_corpus_metadata --check` | **pass**, no issues |
 | `git diff --check` | **pass** |
 | `docker compose ... config --quiet` | **pass** for the base stack plus deterministic CI smoke overlay |
 | Universal corpus verification | **pass** for the local content-locked artifact; generated DB remains ignored |
-| Frontend Vitest | **46 passed** in 15 test files |
+| Frontend Vitest | **pass** in the post-merge CI workflow |
 | Frontend lint | **pass**; existing Fast Refresh warnings, no errors |
 | Frontend production build | **pass**; Vite reports a non-blocking >500 kB bundle warning |
-| Playwright browser acceptance | **27 passed** in the latest GitHub Actions E2E job |
+| Playwright browser acceptance | **pass** in the post-merge GitHub Actions E2E job |
 | Pilot-load CI contract | **pass**; 50-turn Redis-backed SSE SLO job |
 | Compose-smoke CI contract | **pass**; latest `main` push workflow |
-| Promptfoo deterministic replay | **pass**; latest `main` push workflow |
+| Promptfoo deterministic replay | **pass** in PR #54 (Node 22.22.x workflow) |
 
 The system Python interpreter without the project dependencies is not an
 acceptance environment: it cannot import the declared `sse-starlette`
