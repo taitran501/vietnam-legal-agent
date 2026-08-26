@@ -22,7 +22,11 @@ from epr_agent.agent.graph import (
     run_workflow,
 )
 from epr_agent.domain.models import AgentState, TaskType, TerminationReason
-from epr_agent.tools.source_provenance import normalize_source, normalized_document_metadata
+from epr_agent.tools.source_provenance import (
+    canonical_source_snapshots,
+    normalize_source,
+    normalized_document_metadata,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -215,16 +219,20 @@ def _documents_for_api(state: AgentState) -> list[dict[str, Any]]:
 
 def _source_snapshots(state: AgentState) -> list[dict[str, Any]]:
     used_indices = _cited_evidence_indices(state.get("answer", ""), list(state.get("evidence", [])))
-    return [
-        normalize_source(
-            item,
-            citation_index=citation_index,
-            corpus_as_of_date=str(state.get("corpus_as_of_date") or ""),
-            excerpt_limit=1200 if item.get("source") == "web" else 2000,
-        )
-        for citation_index, item in enumerate(state.get("evidence", []), start=1)
+    evidence = list(state.get("evidence", []))
+    selected = [
+        (citation_index, item)
+        for citation_index, item in enumerate(evidence, start=1)
         if not used_indices or citation_index in used_indices
     ]
+    if not selected:
+        return []
+    return canonical_source_snapshots(
+        [item for _, item in selected],
+        citation_indices=[citation_index for citation_index, _ in selected],
+        corpus_as_of_date=str(state.get("corpus_as_of_date") or ""),
+        excerpt_limit=1200 if any(item.get("source") == "web" for _, item in selected) else 2000,
+    )
 
 
 def _metadata(state: AgentState) -> dict[str, Any]:

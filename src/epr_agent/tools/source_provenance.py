@@ -11,7 +11,7 @@ the chunk text as a document title when a canonical value is unavailable.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 from urllib.parse import urlparse
 
@@ -281,6 +281,75 @@ def normalize_source(
         "excerpt": excerpt,
     }
     return snapshot
+
+
+def canonical_source_snapshots(
+    items: Sequence[Mapping[str, Any]],
+    *,
+    citation_indices: Sequence[int] | None = None,
+    corpus_as_of_date: str = "",
+    excerpt_limit: int = 2000,
+) -> list[dict[str, Any]]:
+    """Collapse retrieved chunks into stable source-drawer records.
+
+    Retrieval keeps chunks because ranking and citation verification operate at
+    that granularity. The public source drawer should not duplicate one legal
+    instrument for every chunk, though, so records are grouped by
+    ``(source_id, legal_anchor)``. Citation indices remain available as
+    technical metadata for the answer renderer and persisted replay traces.
+    The highest-scored representative supplies the excerpt; ties preserve
+    retrieval order.
+    """
+
+    if citation_indices is not None and len(citation_indices) != len(items):
+        raise ValueError("citation_indices must align with items")
+
+    groups: dict[tuple[str, str], dict[str, Any]] = {}
+    scores: dict[tuple[str, str], float | None] = {}
+    for position, item in enumerate(items):
+        citation_index = int(citation_indices[position]) if citation_indices is not None else position + 1
+        snapshot = normalize_source(
+            item,
+            citation_index=citation_index,
+            corpus_as_of_date=corpus_as_of_date,
+            excerpt_limit=excerpt_limit,
+        )
+        source_id = str(snapshot.get("source_id") or snapshot.get("chunk_id") or "")
+        anchor = str(snapshot.get("anchor") or "")
+        key = (source_id, anchor)
+        raw_score = item.get("score")
+        if raw_score is None:
+            metadata = item.get("metadata") or {}
+            for score_key in ("rerank_score", "cross_encoder_score", "heuristic_rerank_score", "combined_score", "score"):
+                if metadata.get(score_key) is not None:
+                    raw_score = metadata.get(score_key)
+                    break
+        try:
+            score = float(raw_score) if raw_score is not None else None
+        except (TypeError, ValueError):
+            score = None
+
+        existing = groups.get(key)
+        if existing is None:
+            snapshot["citation_indices"] = [citation_index]
+            groups[key] = snapshot
+            scores[key] = score
+            continue
+
+        citation_list = list(existing.get("citation_indices") or [])
+        if citation_index not in citation_list:
+            citation_list.append(citation_index)
+        existing["citation_indices"] = citation_list
+        current_score = scores.get(key)
+        if score is not None and (current_score is None or score > current_score):
+            first_citation = existing.get("citation_index")
+            replacement = dict(snapshot)
+            replacement["citation_index"] = first_citation
+            replacement["citation_indices"] = citation_list
+            groups[key] = replacement
+            scores[key] = score
+
+    return list(groups.values())
 
 
 def normalized_document_metadata(snapshot: Mapping[str, Any], *, original: Mapping[str, Any] | None = None) -> dict[str, Any]:
