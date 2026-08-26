@@ -175,7 +175,7 @@ AGENT_MANIFEST: list[AgentTestCase] = [
     AgentTestCase(
         id="AG-012",
         category="budget_enforcement",
-        query="Câu hỏi phức tạp vượt quá khả năng tìm kiếm",
+        query="Câu hỏi pháp luật phức tạp vượt quá khả năng tìm kiếm",
         expected_termination="insufficient_evidence",
         max_steps_allowed=5,
         mock_all_search_empty=True,

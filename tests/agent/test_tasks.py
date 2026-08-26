@@ -1,14 +1,17 @@
 import pytest
 from pydantic import ValidationError
 
+from epr_agent.domain.legal import explicit_anchors
 from epr_agent.domain.models import TaskType
 from epr_agent.domain.tasks import (
     ExtractedFacts,
     TaskUnderstanding,
     build_follow_up_question,
+    classify_route,
     classify_task,
     detect_legal_domain,
     extract_facts,
+    is_greeting,
     missing_facts,
     rewrite_follow_up,
 )
@@ -31,6 +34,29 @@ def test_classify_general_factual_questions_stay_lookup():
     assert classify_task("Mức phạt nồng độ cồn hiện hành là bao nhiêu?") == TaskType.LEGAL_LOOKUP
     assert classify_task("Điều 36 Bộ luật Lao động quy định gì?") == TaskType.LEGAL_LOOKUP
     assert classify_task("Thời gian thử việc tối đa bao lâu?") == TaskType.LEGAL_LOOKUP
+
+
+def test_factual_corporate_and_instrument_questions_do_not_open_case_forms():
+    assert classify_task(
+        "Luật Doanh nghiệp quy định công ty cổ phần cần tối thiểu bao nhiêu cổ đông sáng lập?"
+    ) == TaskType.LEGAL_LOOKUP
+    assert classify_route(
+        "Luật Doanh nghiệp quy định công ty cổ phần cần tối thiểu bao nhiêu cổ đông sáng lập?"
+    ).value == "legal_lookup"
+    assert classify_task("Luật số 08/2026/QH16 có hiệu lực từ ngày nào?") == TaskType.LEGAL_LOOKUP
+
+
+def test_non_legal_unknown_query_is_closed_before_retrieval():
+    assert classify_route("Giá Bitcoin hôm nay là bao nhiêu?").value == "out_of_scope"
+
+
+def test_greeting_with_legal_request_is_not_chitchat():
+    assert is_greeting("Xin chào, bạn có thể giúp tôi tra cứu luật không?") is False
+
+
+def test_explicit_anchor_parser_supports_law_instrument_numbers():
+    anchors = explicit_anchors("Luật số 08/2026/QH16 có hiệu lực từ ngày nào?")
+    assert [anchor.document_number for anchor in anchors] == ["08/2026/QH16"]
 
 
 def test_detect_legal_domain_for_supported_areas():

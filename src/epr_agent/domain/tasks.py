@@ -8,6 +8,7 @@ contract later, but it cannot invent a new task or bypass missing-fact checks.
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
@@ -69,6 +70,9 @@ CASE_TOPIC_TERMS = (
     "báo cáo",
     "đóng góp",
     "mức đóng góp",
+    "kiện",
+    "đòi lại",
+    "khiếu nại",
 )
 
 LEGAL_DOMAIN_SIGNALS: dict[str, tuple[str, ...]] = {
@@ -100,11 +104,11 @@ def detect_legal_domain(query: str) -> str:
     when no domain has a clear signal.  Used to pick the case engine for the
     closed V4 assessment path; it is a hint, not a hard gate.
     """
-    q = _normalise(query)
+    q = _fold(query)
     best = "general"
     best_hits = 0
     for domain, signals in LEGAL_DOMAIN_SIGNALS.items():
-        hits = sum(1 for signal in signals if signal in q)
+        hits = sum(1 for signal in signals if _fold(signal) in q)
         if hits > best_hits:
             best, best_hits = domain, hits
     return best
@@ -160,6 +164,25 @@ CHECKLIST_TERMS = (
     "các việc cần",
     "lộ trình tuân thủ",
     "kế hoạch tuân thủ",
+)
+
+FACTUAL_LOOKUP_TERMS = (
+    "quy định gì",
+    "quy định thế nào",
+    "có hiệu lực",
+    "hiệu lực từ",
+    "ban hành ngày",
+    "ngày nào",
+    "tối thiểu",
+    "tối đa",
+    "bao nhiêu",
+    "mức phạt",
+    "thời hạn",
+    "điều kiện gì",
+    "thủ tục gì",
+    "là gì",
+    "áp dụng từ",
+    "cần bao nhiêu",
 )
 
 ASSESSMENT_TERMS = (
@@ -289,31 +312,185 @@ NON_LEGAL_OUT_OF_SCOPE_TERMS = (
     "flask backend",
 )
 
+LEGAL_SCOPE_TERMS = (
+    "luật",
+    "bộ luật",
+    "pháp luật",
+    "nghị định",
+    "thông tư",
+    "quyết định",
+    "nghị quyết",
+    "pháp lệnh",
+    "văn bản",
+    "quy định",
+    "điều ",
+    "khoản ",
+    "điểm ",
+    "hiệu lực",
+    "nghĩa vụ",
+    "trách nhiệm",
+    "quyền lợi",
+    "vi phạm",
+    "bồi thường",
+    "khởi kiện",
+    "tranh chấp",
+    "hợp đồng",
+    "ly hôn",
+    "sa thải",
+    "thử việc",
+    "cổ đông",
+    "cổ phần",
+    "đất đai",
+    "sổ đỏ",
+    "giao thông",
+    "nồng độ cồn",
+    "tái chế",
+    "bao bì",
+    "epr",
+    "thời hạn",
+    "mức phạt",
+    "checklist",
+    "tuân thủ",
+)
+
+OWN_CONTEXT_TERMS = (
+    "tôi",
+    "mình",
+    "chúng tôi",
+    "công ty tôi",
+    "doanh nghiệp tôi",
+    "trường hợp của tôi",
+    "của công ty tôi",
+    "của doanh nghiệp tôi",
+    "hợp đồng của tôi",
+)
+
+CASE_ACTION_TERMS = (
+    "có phải",
+    "có thuộc",
+    "phải thực hiện",
+    "được hưởng",
+    "có quyền",
+    "có nghĩa vụ",
+    "đánh giá",
+    "xác định",
+    "áp dụng cho",
+    "trường hợp",
+    "tôi cần làm gì",
+    "tôi phải làm gì",
+    "tư vấn",
+    "kiện",
+    "đòi lại",
+)
+
 
 def _normalise(text: str) -> str:
     return " ".join((text or "").lower().split())
+
+
+def _fold(text: str) -> str:
+    """Compare informal Vietnamese without changing the original query."""
+
+    normalized = unicodedata.normalize("NFD", _normalise(text))
+    return "".join(char for char in normalized if not unicodedata.combining(char)).replace("đ", "d")
+
+
+def _contains_any_term(text: str, terms: tuple[str, ...]) -> bool:
+    folded = _fold(text)
+    for term in terms:
+        candidate = _fold(term)
+        if len(candidate) <= 3:
+            if re.search(rf"\b{re.escape(candidate)}\b", folded):
+                return True
+        elif candidate in folded:
+            return True
+    return False
+
+
+def _contains_legal_signal(query: str) -> bool:
+    q = _fold(query)
+    if not q:
+        return False
+    if explicit_anchors(q):
+        return True
+    if any(_fold(term) in q for term in LEGAL_SCOPE_TERMS):
+        return True
+    return any(_fold(term) in q for signals in LEGAL_DOMAIN_SIGNALS.values() for term in signals)
+
+
+def _is_factual_lookup_query(query: str) -> bool:
+    q = _fold(query)
+    return bool(
+        explicit_anchors(q)
+        or any(_fold(term) in q for term in FACTUAL_LOOKUP_TERMS)
+        or any(_fold(term) in q for term in ("cần tối thiểu", "từ ngày nào", "bao lâu", "thế nào"))
+    )
+
+
+def _is_case_assessment_query(query: str) -> bool:
+    q = _fold(query)
+    raw_q = _normalise(query)
+    # Accent folding turns “tối” into the same token as “tôi”; preserve the
+    # personal-pronoun boundary so a factual “tối đa” question cannot become a
+    # case assessment. Accept both accented and keyboard-only “toi”.
+    has_own_context = bool(re.search(r"(?<!\w)(?:tôi|toi)(?!\w)", raw_q)) or any(
+        _fold(term) in q for term in OWN_CONTEXT_TERMS if term not in {"tôi", "mình"}
+    )
+    # EPR has an established business-role phrasing where “doanh nghiệp
+    # nhập khẩu/sản xuất ... có phải ...” is already a concrete case request,
+    # even when the user omits “tôi”.
+    if (
+        _contains_any_term(q, ("doanh nghiệp", "nhà sản xuất", "nhà nhập khẩu"))
+        and _contains_any_term(q, EPR_TERMS)
+        and _contains_any_term(q, CASE_ACTION_TERMS)
+    ):
+        return True
+    if not has_own_context:
+        return False
+    if _contains_any_term(q, ASSESSMENT_TERMS):
+        return True
+    if _contains_any_term(q, CASE_ACTION_TERMS):
+        return True
+    # Preserve natural first-person fact descriptions such as “tôi là nhà
+    # sản xuất bao bì” without treating a generic “công ty cổ phần” question
+    # as a case assessment.
+    return _contains_any_term(q, CASE_TOPIC_TERMS)
 
 
 def is_greeting(query: str) -> bool:
     q = _normalise(query)
     if not q:
         return False
-    if any((re.search(rf"\b{re.escape(term)}\b", q) if len(term) <= 3 else term in q) for term in GREETING_TERMS):
+    # A greeting followed by a legal request is a legal query, not chitchat.
+    if _contains_legal_signal(q):
+        return False
+    folded = _fold(q)
+    if any((re.search(rf"\b{re.escape(_fold(term))}\b", folded) if len(term) <= 3 else _fold(term) in folded) for term in GREETING_TERMS):
         return True
-    return len(q) <= 45 and not any(term in q for term in EPR_TERMS) and any(
-        term in q for term in ("thời tiết", "trời đẹp", "khỏe không", "đang làm gì")
+    return len(q) <= 45 and not _contains_any_term(q, EPR_TERMS) and any(
+        _fold(term) in folded for term in ("thời tiết", "trời đẹp", "khỏe không", "đang làm gì")
     )
 
 
 def is_legal_scope(query: str, history: list[dict[str, Any]] | None = None, active_case: dict[str, Any] | None = None) -> bool:
     q = _normalise(query)
-    return not any(term in q for term in NON_LEGAL_OUT_OF_SCOPE_TERMS)
+    if _contains_any_term(q, NON_LEGAL_OUT_OF_SCOPE_TERMS):
+        return False
+    if active_case:
+        return True
+    # A terse context-only prompt is still a legal workflow boundary even
+    # before history is available; the planner will ask the user to restate
+    # the missing topic instead of calling retrieval.
+    if is_context_dependent_query(q):
+        return True
+    if _is_case_assessment_query(q):
+        return True
+    return _contains_legal_signal(q)
 
 
 def is_known_non_epr_query(query: str) -> bool:
     """Return true only for queries completely outside legal/regulatory scope."""
-    q = _normalise(query)
-    return any(term in q for term in NON_LEGAL_OUT_OF_SCOPE_TERMS)
+    return _contains_any_term(query, NON_LEGAL_OUT_OF_SCOPE_TERMS)
 
 
 def has_explicit_no_evidence_signal(query: str) -> bool:
@@ -328,16 +505,15 @@ def classify_task(query: str, history: list[dict[str, Any]] | None = None, activ
     if is_greeting(q):
         return TaskType.CHITCHAT
 
-    if any(term in q for term in CHECKLIST_TERMS):
+    if _contains_any_term(q, CHECKLIST_TERMS):
         return TaskType.BUILD_COMPLIANCE_CHECKLIST
 
-    # First-person/company-specific language plus any legal topic signals a
-    # case assessment for that domain.  A general question such as "đối tượng
-    # nào phải..." remains legal_lookup.
-    if any(term in q for term in ASSESSMENT_TERMS) or (
-        re.search(r"\btôi\b|\bdoanh nghiệp\b|\bcông ty\b|\bngười lao động\b|\bngười sử dụng lao động\b", q)
-        and any(t in q for t in CASE_TOPIC_TERMS)
-    ):
+    # A case assessment requires ownership of a concrete situation.  Generic
+    # corporate questions such as “công ty cổ phần cần tối thiểu bao nhiêu…”
+    # remain factual legal lookups.
+    if _is_factual_lookup_query(q) and not _is_case_assessment_query(q):
+        return TaskType.LEGAL_LOOKUP
+    if _is_case_assessment_query(q):
         return TaskType.CASE_ASSESSMENT
 
     if active_case and active_case.get("task_type") in {
@@ -350,8 +526,7 @@ def classify_task(query: str, history: list[dict[str, Any]] | None = None, activ
 
 
 def research_requested(query: str) -> bool:
-    q = _normalise(query)
-    return any(term in q for term in ("tìm trên web", "tìm web", "nguồn công khai", "tra cứu internet", "tìm nguồn mới"))
+    return _contains_any_term(query, ("tìm trên web", "tìm web", "nguồn công khai", "tra cứu internet", "tìm nguồn mới"))
 
 
 def classify_route(
