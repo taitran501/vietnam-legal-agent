@@ -6,13 +6,14 @@ import argparse
 import asyncio
 import json
 import time
-import uuid
 from pathlib import Path
 from typing import Any
 
 from epr_agent.agent.graph import default_dependencies
 from epr_agent.agent.runtime import AgentWorkflowRuntime
+from epr_agent.eval.contracts import EvalTurn, EvaluationCase, EvidenceStatus, ExpectedOutcome
 from epr_agent.eval.ragas_evaluator import evaluate_ragas_sample
+from epr_agent.eval.replay import replay_case
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BENCHMARK = ROOT / "data" / "eval" / "golden_legal_benchmark.json"
@@ -29,32 +30,103 @@ def _documents_for_evaluator(documents: list[dict[str, Any]]) -> list[dict[str, 
     ]
 
 
-async def _run_case(runtime: AgentWorkflowRuntime, case: dict[str, Any]) -> dict[str, Any]:
-    case_id = str(case["id"])
-    query = str(case["query"])
+def _legacy_case_to_evaluation_case(case: dict[str, Any]) -> EvaluationCase:
+    """Adapt the historical benchmark without turning it into legal ground truth.
+
+    The checked-in benchmark predates the structured evaluation contract.  It
+    remains useful for runtime/provider smoke coverage, but its expected
+    anchors are passed separately as informational RAGAS inputs.  The replay
+    report is still the source of truth for event, trace and payload evidence.
+    """
+
+    case_id = str(case.get("id") or case.get("case_id") or "").strip()
+    query = str(case.get("query") or "").strip()
+    if not case_id or not query:
+        raise ValueError("Legacy benchmark cases require non-empty id and query")
+    return EvaluationCase(
+        case_id=case_id,
+        domain=str(case.get("domain") or "general"),
+        turns=[EvalTurn(query=query, expected_outcome=ExpectedOutcome.ANSWER_COMPLETE)],
+        expected_outcome=ExpectedOutcome.ANSWER_COMPLETE,
+        evidence={
+            "status": EvidenceStatus.INFORMATIONAL,
+            "notes": "Legacy runtime benchmark; expected anchors are informational only.",
+        },
+    )
+
+
+def _load_benchmark_cases(path: Path) -> list[tuple[EvaluationCase, list[str]]]:
+    """Load structured fixtures and adapt the legacy 50-case benchmark."""
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    raw_cases = payload.get("cases") if isinstance(payload, dict) else None
+    if not isinstance(raw_cases, list):
+        raw_cases = [payload]
+
+    loaded: list[tuple[EvaluationCase, list[str]]] = []
+    for raw_case in raw_cases:
+        if not isinstance(raw_case, dict):
+            raise TypeError("Evaluation benchmark cases must be JSON objects")
+        if isinstance(raw_case.get("turns"), list):
+            evaluation_case = EvaluationCase.model_validate(raw_case)
+            expected_anchors = sorted(
+                {
+                    anchor
+                    for claim in evaluation_case.claims
+                    for anchor in claim.anchors
+                    if anchor
+                }
+            )
+        else:
+            evaluation_case = _legacy_case_to_evaluation_case(raw_case)
+            expected_anchors = [str(anchor) for anchor in raw_case.get("expected_anchors") or [] if anchor]
+        loaded.append((evaluation_case, expected_anchors))
+    return loaded
+
+
+def _terminal_event(turn_report: dict[str, Any]) -> dict[str, Any]:
+    return next(
+        (
+            event
+            for event in reversed(turn_report.get("events") or [])
+            if event.get("type") in {"response_complete", "response_stopped", "error"}
+        ),
+        {},
+    )
+
+
+async def _run_case(
+    runtime: AgentWorkflowRuntime,
+    case: EvaluationCase,
+    *,
+    expected_anchors: list[str],
+) -> dict[str, Any]:
     started = time.perf_counter()
-    terminal: dict[str, Any] | None = None
-    errors: list[dict[str, Any]] = []
-
-    async for event in runtime.stream(
-        query=query,
+    replay = await replay_case(
+        runtime,
+        case,
+        mode="live",
         user_id="live-eval",
-        conversation_id=f"live-eval-{case_id.lower()}",
-        turn_id=f"live-eval-{uuid.uuid4()}",
-        mode="auto",
-        operation="message",
-        trace_id=str(uuid.uuid4()),
-    ):
-        if event.get("type") in {"response_complete", "response_stopped"}:
-            terminal = event
-        elif event.get("type") == "error":
-            errors.append(event)
-
-    answer = str((terminal or {}).get("text") or "")
-    documents = list((terminal or {}).get("documents") or [])
-    source_drawer = list((terminal or {}).get("sources") or [])
-    trace_id = str((terminal or {}).get("trace_id") or "")
-    provider_status = "ok" if terminal is not None and not errors else "provider_unavailable"
+        conversation_id=f"live-eval-{case.case_id.lower()}",
+    )
+    final_turn = (replay.get("turns") or [{}])[-1]
+    terminal = _terminal_event(final_turn)
+    errors = [event for turn in replay.get("turns") or [] for event in turn.get("errors") or []]
+    query = str(final_turn.get("query") or case.turns[-1].query)
+    answer = str(terminal.get("text") or "")
+    documents = [
+        document for document in terminal.get("documents") or [] if isinstance(document, dict)
+    ]
+    raw_source_drawer = terminal.get("sources")
+    source_drawer = [
+        document for document in raw_source_drawer or [] if isinstance(document, dict)
+    ]
+    trace_id = str(terminal.get("trace_id") or final_turn.get("trace_id") or "")
+    provider_status = "ok" if terminal and not errors else "provider_unavailable"
+    replay_result = dict(replay.get("result") or {})
+    replay_failure_codes = [str(code) for code in replay_result.get("failure_codes") or []]
+    if "provider_unavailable" in replay_failure_codes:
+        provider_status = "provider_unavailable"
     source_payload_status = (
         "ok"
         if source_drawer
@@ -66,24 +138,35 @@ async def _run_case(runtime: AgentWorkflowRuntime, case: dict[str, Any]) -> dict
         query=query,
         answer=answer,
         retrieved_docs=_documents_for_evaluator(documents),
-        expected_anchors=list(case.get("expected_anchors") or []),
-        sample_id=case_id,
+        expected_anchors=expected_anchors,
+        sample_id=case.case_id,
         pass_threshold=0.70,
     )
+    replay_passed = (
+        replay_result.get("status") == "pass"
+        and bool(replay_result.get("gate_eligible", True))
+        and not replay_failure_codes
+    )
     return {
-        "id": case_id,
-        "domain": str(case.get("domain") or "general"),
-        "terminal_type": str((terminal or {}).get("type") or "missing"),
-        "termination_reason": str((terminal or {}).get("termination_reason") or ""),
-        "pipeline_version": str((terminal or {}).get("pipeline_version") or ""),
+        "id": case.case_id,
+        "domain": case.domain,
+        "evidence_status": case.evidence.status.value,
+        "expected_anchors": expected_anchors,
+        "terminal_type": str(terminal.get("type") or "missing"),
+        "termination_reason": str(terminal.get("termination_reason") or ""),
+        "pipeline_version": str(terminal.get("pipeline_version") or replay.get("pipeline_version") or ""),
         "trace_id": trace_id,
-        "corpus_sha": str((terminal or {}).get("corpus_sha") or ""),
+        "corpus_sha": str(terminal.get("corpus_sha") or replay.get("corpus_sha") or ""),
         "document_count": len(documents),
         "source_drawer_count": len(source_drawer),
         "source_payload_status": source_payload_status,
         "provider_status": provider_status,
         "latency_s": round(time.perf_counter() - started, 3),
         "errors": errors,
+        "replay_status": str(replay_result.get("status") or "fail"),
+        "replay_gate_eligible": bool(replay_result.get("gate_eligible")),
+        "replay_failure_codes": replay_failure_codes,
+        "replay": replay,
         "metrics": {
             "faithfulness": evaluation.faithfulness,
             "answer_relevance": evaluation.answer_relevance,
@@ -91,7 +174,7 @@ async def _run_case(runtime: AgentWorkflowRuntime, case: dict[str, Any]) -> dict
             "context_recall": evaluation.context_recall,
             "anchor_accuracy": evaluation.anchor_accuracy,
             "overall_score": evaluation.overall_ragas_score,
-            "passed": evaluation.passed_gate and not errors and terminal is not None,
+            "passed": evaluation.passed_gate and replay_passed and not errors and bool(terminal),
             "evaluator_status": evaluation.evaluator_status,
         },
     }
@@ -112,6 +195,12 @@ def _promotion_ready(
         return False
     if any(item.get("source_payload_status") == "missing" for item in results):
         return False
+    if any(
+        "replay_status" in item
+        and (item.get("replay_status") != "pass" or not item.get("replay_gate_eligible", False))
+        for item in results
+    ):
+        return False
     if any((item.get("metrics") or {}).get("evaluator_status") != "ok" for item in results):
         return False
 
@@ -127,15 +216,14 @@ def _promotion_ready(
 
 
 async def _run(args: argparse.Namespace) -> int:
-    benchmark = json.loads(args.benchmark.read_text(encoding="utf-8"))
-    cases = list(benchmark.get("cases") or [])
+    cases = _load_benchmark_cases(args.benchmark)
     if not cases:
         raise ValueError("Live benchmark contains no cases")
 
     runtime = AgentWorkflowRuntime(default_dependencies(), answer_chunk_delay_s=0)
     results: list[dict[str, Any]] = []
-    for index, case in enumerate(cases, start=1):
-        result = await _run_case(runtime, case)
+    for index, (case, expected_anchors) in enumerate(cases, start=1):
+        result = await _run_case(runtime, case, expected_anchors=expected_anchors)
         results.append(result)
         print(
             f"[{index:02d}/{len(cases):02d}] {result['id']} "
@@ -157,6 +245,8 @@ async def _run(args: argparse.Namespace) -> int:
     )
     provider_unavailable_cases = sum(item.get("provider_status") != "ok" for item in results)
     report = {
+        "schema_version": "live-agent-eval-v2",
+        "mode": "live",
         "benchmark": str(args.benchmark),
         "sample_size": total,
         "thresholds": {
