@@ -29,7 +29,11 @@ sys.path.insert(0, str(_ROOT))
 sys.path.insert(0, str(_ROOT / "src"))
 
 from epr_agent.agent.agent_loop import EprAgentRunner
-from epr_agent.eval.ragas_evaluator import RagasSampleResult, evaluate_ragas_sample
+from epr_agent.eval.ragas_evaluator import (
+    RagasSampleResult,
+    evaluate_ragas_sample,
+    unavailable_ragas_result,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 logger = logging.getLogger(__name__)
@@ -96,17 +100,13 @@ async def run_benchmark(
             logger.error("Error evaluating %s: %s", case_id, exc)
             # Create failed placeholder
             results.append(
-                RagasSampleResult(
+                unavailable_ragas_result(
                     sample_id=case_id,
                     query=query,
-                    faithfulness=0.0,
-                    answer_relevance=0.0,
-                    context_precision=0.0,
-                    context_recall=0.0,
-                    anchor_accuracy=0.0,
-                    overall_ragas_score=0.0,
-                    passed_gate=False,
-                    details={"error": str(exc)},
+                    details={
+                        "error": str(exc),
+                        "error_type": type(exc).__name__,
+                    },
                 )
             )
 
@@ -121,6 +121,10 @@ async def run_benchmark(
     avg_anchor = sum(r.anchor_accuracy for r in results) / total if total else 0.0
     avg_overall = sum(r.overall_ragas_score for r in results) / total if total else 0.0
     pass_rate = (passed_count / total) * 100 if total else 0.0
+    evaluator_statuses = sorted({r.evaluator_status for r in results})
+    evaluator_unavailable_cases = sum(
+        r.evaluator_status != "ok" for r in results
+    )
 
     summary = {
         "timestamp": datetime.now(UTC).isoformat(),
@@ -137,6 +141,8 @@ async def run_benchmark(
             "mean_overall_ragas": round(avg_overall, 3),
         },
         "gate_threshold": pass_gate,
+        "evaluator_statuses": evaluator_statuses,
+        "evaluator_unavailable_cases": evaluator_unavailable_cases,
         "results": [r.model_dump(mode="json") for r in results],
     }
 

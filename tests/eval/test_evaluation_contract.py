@@ -154,3 +154,63 @@ async def test_ragas_judge_failure_is_not_scored_as_a_pass(monkeypatch: pytest.M
     assert result.passed_gate is False
     assert result.overall_ragas_score == 0.0
     assert "faithfulness_error" in result.details
+
+
+@pytest.mark.asyncio
+async def test_ragas_invalid_structured_output_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from epr_agent.eval.ragas_evaluator import evaluate_ragas_sample
+
+    class InvalidJudge:
+        def with_structured_output(self, _schema):
+            return self
+
+        async def ainvoke(self, _messages):
+            return {"not": "a validated evaluation"}
+
+    monkeypatch.setattr("epr_agent.infra.llm_instances.get_llm_smart", lambda: InvalidJudge())
+
+    result = await evaluate_ragas_sample(
+        query="Quy định gì?",
+        answer="Theo Điều 1 [1].",
+        retrieved_docs=[{"page_content": "Điều 1", "metadata": {}}],
+        expected_anchors=["Điều 1"],
+        sample_id="invalid-judge-output",
+    )
+
+    assert result.evaluator_status == "evaluation_unavailable"
+    assert result.passed_gate is False
+    assert result.overall_ragas_score == 0.0
+    assert "faithfulness_error" in result.details
+    assert "relevance_error" in result.details
+    assert "precision_error" in result.details
+
+
+@pytest.mark.asyncio
+async def test_legacy_ragas_harness_marks_case_exception_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from scripts import run_legal_ragas_harness as harness
+
+    class FailingRunner:
+        async def run(self, *, query: str):
+            raise RuntimeError(f"provider unavailable for {query}")
+
+    benchmark = tmp_path / "benchmark.json"
+    benchmark.write_text(
+        '{"cases": [{"id": "HARNESS-001", "query": "Quy định gì?"}]}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(harness, "EprAgentRunner", FailingRunner)
+
+    summary = await harness.run_benchmark(
+        benchmark_file=benchmark,
+        output_dir=tmp_path / "reports",
+    )
+
+    assert summary["evaluator_statuses"] == ["evaluation_unavailable"]
+    assert summary["evaluator_unavailable_cases"] == 1
+    assert summary["results"][0]["evaluator_status"] == "evaluation_unavailable"
+    assert summary["results"][0]["passed_gate"] is False

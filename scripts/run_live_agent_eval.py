@@ -12,7 +12,7 @@ from typing import Any
 from epr_agent.agent.graph import default_dependencies
 from epr_agent.agent.runtime import AgentWorkflowRuntime
 from epr_agent.eval.contracts import EvalTurn, EvaluationCase, EvidenceStatus, ExpectedOutcome
-from epr_agent.eval.ragas_evaluator import evaluate_ragas_sample
+from epr_agent.eval.ragas_evaluator import evaluate_ragas_sample, unavailable_ragas_result
 from epr_agent.eval.replay import replay_case
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -95,6 +95,49 @@ def _terminal_event(turn_report: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _failed_replay_report(
+    case: EvaluationCase,
+    *,
+    conversation_id: str,
+    error: Exception,
+) -> dict[str, Any]:
+    """Create a stable case artifact when the runtime cannot produce a replay."""
+
+    message = str(error) or type(error).__name__
+    error_event = {
+        "type": "error",
+        "code": "provider_unavailable",
+        "error_code": "provider_unavailable",
+        "message": message,
+    }
+    turn = {
+        "turn_index": 1,
+        "query": case.turns[0].query,
+        "conversation_id": conversation_id,
+        "trace_id": "",
+        "events": [error_event],
+        "errors": [error_event],
+        "documents": [],
+        "source_drawer": [],
+        "terminal_type": "error",
+    }
+    return {
+        "schema_version": "evaluation-replay-v1",
+        "case_id": case.case_id,
+        "mode": "live",
+        "conversation_id": conversation_id,
+        "pipeline_version": "pipeline-agent",
+        "corpus_sha": "",
+        "turns": [turn],
+        "result": {
+            "status": "fail",
+            "gate_eligible": True,
+            "failure_codes": ["provider_unavailable"],
+        },
+        "error": message,
+    }
+
+
 async def _run_case(
     runtime: AgentWorkflowRuntime,
     case: EvaluationCase,
@@ -102,13 +145,29 @@ async def _run_case(
     expected_anchors: list[str],
 ) -> dict[str, Any]:
     started = time.perf_counter()
-    replay = await replay_case(
-        runtime,
-        case,
-        mode="live",
-        user_id="live-eval",
-        conversation_id=f"live-eval-{case.case_id.lower()}",
-    )
+    conversation_id = f"live-eval-{case.case_id.lower()}"
+    replay_error: Exception | None = None
+    try:
+        replay = await replay_case(
+            runtime,
+            case,
+            mode="live",
+            user_id="live-eval",
+            conversation_id=conversation_id,
+        )
+        if not isinstance(replay, dict):
+            raise TypeError("replay_invalid_report")
+        turns = replay.get("turns")
+        if (
+            not isinstance(turns, list)
+            or not turns
+            or any(not isinstance(turn, dict) for turn in turns)
+        ):
+            raise TypeError("replay_invalid_turns")
+    except Exception as exc:  # noqa: BLE001 - preserve a failed case artifact
+        replay_error = exc
+        replay = _failed_replay_report(case, conversation_id=conversation_id, error=exc)
+
     final_turn = (replay.get("turns") or [{}])[-1]
     terminal = _terminal_event(final_turn)
     errors = [event for turn in replay.get("turns") or [] for event in turn.get("errors") or []]
@@ -134,14 +193,39 @@ async def _run_case(
         if not documents
         else "missing"
     )
-    evaluation = await evaluate_ragas_sample(
-        query=query,
-        answer=answer,
-        retrieved_docs=_documents_for_evaluator(documents),
-        expected_anchors=expected_anchors,
-        sample_id=case.case_id,
-        pass_threshold=0.70,
-    )
+    evaluator_error: Exception | None = None
+    if replay_error is not None or provider_status != "ok" or not terminal:
+        evaluation = unavailable_ragas_result(
+            sample_id=case.case_id,
+            query=query,
+            details={
+                "error_code": "provider_unavailable",
+                "provider_error": str(replay_error) if replay_error else "terminal_unavailable",
+            },
+        )
+    else:
+        try:
+            evaluation = await evaluate_ragas_sample(
+                query=query,
+                answer=answer,
+                retrieved_docs=_documents_for_evaluator(documents),
+                expected_anchors=expected_anchors,
+                sample_id=case.case_id,
+                pass_threshold=0.70,
+            )
+        except Exception as exc:  # noqa: BLE001 - evaluator health is a gate
+            evaluator_error = exc
+            evaluation = unavailable_ragas_result(
+                sample_id=case.case_id,
+                query=query,
+                context_recall=0.0,
+                anchor_accuracy=0.0,
+                details={
+                    "error_code": "evaluation_unavailable",
+                    "evaluator_error": str(exc),
+                    "error_type": type(exc).__name__,
+                },
+            )
     replay_passed = (
         replay_result.get("status") == "pass"
         and bool(replay_result.get("gate_eligible", True))
@@ -161,6 +245,8 @@ async def _run_case(
         "source_drawer_count": len(source_drawer),
         "source_payload_status": source_payload_status,
         "provider_status": provider_status,
+        "provider_error": str(replay_error) if replay_error else None,
+        "evaluator_error": str(evaluator_error) if evaluator_error else None,
         "latency_s": round(time.perf_counter() - started, 3),
         "errors": errors,
         "replay_status": str(replay_result.get("status") or "fail"),
