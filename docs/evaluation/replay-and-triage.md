@@ -50,3 +50,17 @@ a failing artifact instead of becoming a passing or missing case. Provider or
 evaluator-unavailable statuses fail the engineering gate, while legal-domain
 ground truth remains outside this project's framework/tracing acceptance scope.
 
+## Evaluation boundary
+
+The evaluation control plane is an engineering feedback loop. Fixtures record
+runtime expectations, provenance shape, and reproducibility metadata; they do
+not author legal ground truth and do not require a legal reviewer, reviewer
+identity, or approval status. The legacy 50-case benchmark and the 2026-law
+conversation are therefore informational runtime inputs rather than promotion
+blockers. A failure is triaged through replay evidence and the feedback dataset
+as a retrieval, provenance, context, safety, or provider problem.
+
+If a product or legal team later needs an authoritative legal benchmark, that is
+a separate data-governance activity. It must not be smuggled into this
+framework's CI contract by treating generated answers as source truth.
+
