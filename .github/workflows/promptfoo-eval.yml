@@ -21,6 +21,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22.22.x"
+      - name: Verify replay adapter contract
+        run: python -m pytest -q tests/eval/test_promptfoo_adapter.py
       - name: Run deterministic replay matrix
         run: >-
           npx --yes promptfoo@0.122.0 eval

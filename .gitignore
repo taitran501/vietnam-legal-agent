@@ -61,6 +61,7 @@ data/eval/*
 !data/eval/ragas_benchmark_results.json
 !data/eval/examples/
 !data/eval/examples/legal-follow-up.json
+!data/eval/examples/source-citation-contract.json
 data/eval/examples/feedback/
 
 # Local scratch and exported design/experiment files
