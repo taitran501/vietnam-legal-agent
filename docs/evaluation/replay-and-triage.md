@@ -41,8 +41,12 @@ python -m scripts.replay_agent_eval `
   --output artifacts/evaluation-replay-live.json
 ```
 
-The Promptfoo workflow runs deterministic cases in PR CI. It delegates quality
-semantics to the internal verifier; provider outages and missing artifacts fail
-the engineering gate, while legal-domain ground truth remains outside this
-project's framework/tracing acceptance scope.
+The Promptfoo workflow runs deterministic cases in PR CI. It is only a matrix
+and CI wrapper around the checked-in replay runner. Its Python assertion checks
+the internal verifier's structured outcome, claim support and citation mapping,
+source-drawer payload (including canonical source URL and uniqueness), and the
+stable failure taxonomy. A replay/provider adapter exception is serialised as
+a failing artifact instead of becoming a passing or missing case. Provider or
+evaluator-unavailable statuses fail the engineering gate, while legal-domain
+ground truth remains outside this project's framework/tracing acceptance scope.
 

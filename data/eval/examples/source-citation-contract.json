@@ -1,0 +1,47 @@
+{
+  "case_id": "SOURCE_CITATION_REPLAY_EXAMPLE",
+  "domain": "legal",
+  "turns": [
+    {
+      "query": "Thời hạn theo nguồn mô phỏng là bao lâu?",
+      "expected_outcome": "answer_complete",
+      "expected_behavior": "Exercise claim, citation and source-drawer payload verification without asserting legal ground truth."
+    }
+  ],
+  "expected_outcome": "answer_complete",
+  "claims": [
+    {
+      "claim_id": "claim-1",
+      "text": "Thời hạn là 10 ngày.",
+      "kind": "engineering_fixture_claim",
+      "required": true,
+      "source_ids": ["fixture-source-1"],
+      "anchors": ["Điều mô phỏng 1"],
+      "match_terms": ["10 ngày"]
+    }
+  ],
+  "sources": [
+    {
+      "source_id": "fixture-source-1",
+      "instrument_number": "FIXTURE-001",
+      "title": "Synthetic source contract",
+      "authority": "engineering-fixture",
+      "official_url": "https://example.invalid/engineering-fixture-001",
+      "anchors": ["Điều mô phỏng 1"],
+      "corpus_sha": "replay-fixture",
+      "effective_status": "fixture_only"
+    }
+  ],
+  "citations": [
+    {
+      "claim_id": "claim-1",
+      "source_id": "fixture-source-1",
+      "anchor": "Điều mô phỏng 1",
+      "citation_index": 1
+    }
+  ],
+  "evidence": {
+    "status": "informational",
+    "notes": "Synthetic engineering contract for Promptfoo claim/citation/source payload assertions; not legal ground truth."
+  }
+}
