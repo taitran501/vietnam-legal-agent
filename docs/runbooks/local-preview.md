@@ -51,6 +51,25 @@ FastAPI chat routes, SSE client, React rendering, durable in-memory turn
 contract, source drawer, case drawer, and feedback controls; it is not evidence
 that the production Qdrant or official web provider is available.
 
+## Natural-language smoke replay
+
+The structured smoke fixture replays common Vietnamese prompts against the same
+deterministic backend used by browser acceptance. It checks route, termination,
+follow-up context metadata, retrieval phases, and canonical source snapshots;
+generated prose is intentionally not compared verbatim.
+
+With the deterministic backend running on port 8010:
+
+```powershell
+python scripts/run_natural_language_smoke.py `
+  --base-url http://127.0.0.1:8010 `
+  --report artifacts/natural-language-smoke.json
+```
+
+The report is a local preview diagnostic, not a live-provider or legal-ground-
+truth promotion gate. A failed case should be debugged from its trace ID and
+structured failure reason before any browser feedback is filed.
+
 ## Promotion Boundary
 
 Do not set preview mode in production. The production readiness gate requires

@@ -54,6 +54,7 @@ from epr_agent.domain.tasks import (
     classify_route,
     detect_legal_domain,
     has_explicit_no_evidence_signal,
+    rewrite_follow_up,
 )
 from epr_agent.domain.v4 import (
     AssessmentStatus,
@@ -222,6 +223,31 @@ def _metadata_v4(state: AgentState) -> dict[str, Any]:
         }
     )
     return data
+
+
+def _apply_context_metadata(state: AgentState, snapshot: Any) -> None:
+    """Apply one context contract to both case and delegated lookup paths."""
+
+    history = list(snapshot.history or [])
+    active = dict(snapshot.active_case or {})
+    query = str(state.get("query") or "").strip()
+    state["history"] = history
+    state["history_summary"] = snapshot.summary
+    state["active_case"] = snapshot.active_case
+    state["context_loaded"] = True
+    state["history_messages"] = len(history)
+
+    rewritten = rewrite_follow_up(query, history, snapshot.active_case)
+    previous_case_query = str(active.get("last_query") or "").strip()
+    is_case_continuation = bool(
+        active
+        and previous_case_query
+        and query.casefold() != previous_case_query.casefold()
+    )
+    if is_case_continuation and (not rewritten or rewritten.casefold() == query.casefold()):
+        rewritten = f"Chủ đề từ lượt trước: {previous_case_query}. Thông tin bổ sung: {query}.".strip()
+    state["is_follow_up"] = bool(is_case_continuation or rewritten.casefold() != query.casefold())
+    state["standalone_query"] = rewritten or previous_case_query or query
 
 
 def _terminal_safe_stop(
@@ -439,9 +465,7 @@ class V4WorkflowRuntime(WorkflowRuntime):
 
         append_action(state, Action.LOAD_CONTEXT)
         snapshot = await self.deps.history.load(state["user_id"], state["conversation_id"], self.deps.max_history_messages)
-        state["history"] = snapshot.history
-        state["history_summary"] = snapshot.summary
-        state["active_case"] = snapshot.active_case
+        _apply_context_metadata(state, snapshot)
 
         append_action(state, Action.UNDERSTAND_TASK)
         active = snapshot.active_case or {}
@@ -461,7 +485,6 @@ class V4WorkflowRuntime(WorkflowRuntime):
         state["route"] = route.value
         state["task_type"] = task.value
         state["source_scope"] = "legal_corpus"
-        state["standalone_query"] = state.get("query", "") or str(active.get("last_query") or "")
 
         domain = detect_legal_domain(state["standalone_query"])
         stored_domain = str(active.get("legal_domain") or "")
@@ -1190,10 +1213,8 @@ class V4WorkflowRuntime(WorkflowRuntime):
         # such as "doanh thu 20 tỷ" must continue the existing assessment
         # instead of being treated as an out-of-scope standalone query.
         snapshot = await self.deps.history.load(state["user_id"], state["conversation_id"], self.deps.max_history_messages)
-        state["history"] = snapshot.history
-        state["history_summary"] = snapshot.summary
+        _apply_context_metadata(state, snapshot)
         active_case = snapshot.active_case
-        state["active_case"] = active_case
         route = classify_route(state.get("query", ""), snapshot.history, active_case)
         if route in {RouteType.CASE_ASSESSMENT, RouteType.COMPLIANCE_CHECKLIST}:
             return await self._execute_case(state)

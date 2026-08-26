@@ -115,6 +115,44 @@ jobs:
       - run: npm run test:e2e -- --reporter=line
         working-directory: frontend-react
 
+  natural-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - name: Start deterministic natural-language SSE host
+        run: |
+          uvicorn tests.e2e_backend:app --host 127.0.0.1 --port 8010 > /tmp/natural-smoke-server.log 2>&1 &
+          echo $! > /tmp/natural-smoke-server.pid
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8010/api/v1/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/natural-smoke-server.log
+          exit 1
+      - name: Replay structured natural-language smoke
+        run: python scripts/run_natural_language_smoke.py --base-url http://127.0.0.1:8010 --report artifacts/natural-language-smoke.json
+      - name: Upload natural-language smoke report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: natural-language-smoke-report
+          path: artifacts/natural-language-smoke.json
+          if-no-files-found: warn
+      - name: Stop deterministic natural-language SSE host
+        if: always()
+        run: |
+          if [ -f /tmp/natural-smoke-server.pid ]; then
+            kill "$(cat /tmp/natural-smoke-server.pid)" || true
+          fi
+
   compose-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 20
