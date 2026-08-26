@@ -675,6 +675,7 @@ def build_workflow(deps: WorkflowDependencies):
             "missing_source_metadata": "missing_provision",
             "explicit_article_not_found": "missing_provision",
             "explicit_anchor_not_found": "missing_provision",
+            "source_relevance_mismatch": "source_relevance_mismatch",
             "relevance_check_failed": "missing_provision",
             "official_web_source_not_found": "missing_provision",
             "claim_support_verifier_unavailable": "unavailable_dependencies",
@@ -687,6 +688,7 @@ def build_workflow(deps: WorkflowDependencies):
         # candidates are not user-facing sources and cannot support a safe stop.
         state["evidence"] = []
         state["citations"] = []
+        state["sources"] = []
         _trace(state, reason_code=state["termination_reason"], payload={"citation_error": reason or ""})
         return state
 

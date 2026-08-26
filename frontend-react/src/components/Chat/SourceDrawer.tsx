@@ -89,8 +89,11 @@ function documentUrl(document: SourceDocument): string | undefined {
 
 function cleanExcerptText(raw: string): string {
   if (!raw) return 'Không có đoạn trích hiển thị.';
+  // Defensive cleanup for legacy API payloads that flattened metadata fields
+  // with ``||`` before the canonical source snapshot contract was introduced.
+  let text = raw.replace(/\s*\|\|+\s*/g, '\n\n');
   // Strip raw ASCII headers like [CHỦ ĐỀ]: ... | [ĐỀ MỤC]: ... \n\n
-  let text = raw.replace(/^(\[[^\]]+\]\s*:\s*[^|\n]+\s*\|\s*)+/gi, '');
+  text = text.replace(/^(\[[^\]]+\]\s*:\s*[^|\n]+\s*\|\s*)+/gi, '');
   text = text.replace(/^(\[[^\]]+\]\s*:\s*[^\n]+\n+)+/gi, '');
   return text.trim() || raw.trim();
 }

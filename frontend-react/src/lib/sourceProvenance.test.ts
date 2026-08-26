@@ -6,6 +6,7 @@ describe('source provenance adapters', () => {
     const [document] = sourceDocumentsFromSnapshots([
       {
         citation_index: 2,
+        citation_indices: [2, 4],
         source_id: 'nd-318-2026',
         chunk_id: 'chunk-1',
         title: 'Nghị định số 318/2026/NĐ-CP',
@@ -21,6 +22,7 @@ describe('source provenance adapters', () => {
     expect(document.metadata.Source_Title).toBe('Nghị định số 318/2026/NĐ-CP');
     expect(document.metadata.Document_Number).toBe('318/2026/NĐ-CP');
     expect(document.metadata.legal_anchor).toBe('Điều 1');
+    expect(document.metadata.citation_indices).toEqual([2, 4]);
     expect(document.page_content).toBe('Điều 1 quy định phạm vi áp dụng.');
   });
 });

@@ -256,9 +256,12 @@ export function useChatStream() {
           const persistedId = event.assistant_message_id
             ? Number(event.assistant_message_id)
             : useChatStore.getState().messages.find((message) => message.id === run.localAssistantId)?.serverMessageId;
-          const sourceDocuments = event.documents?.length
-            ? event.documents as SourceDocument[]
-            : sourceDocumentsFromSnapshots(event.sources);
+          // Canonical source snapshots are grouped by source/anchor and carry
+          // the provenance fields needed by the drawer. Raw per-chunk
+          // ``documents`` remain a compatibility fallback for old responses.
+          const sourceDocuments = event.sources?.length
+            ? sourceDocumentsFromSnapshots(event.sources)
+            : (event.documents || []) as SourceDocument[];
           store.updateMessage(run.localAssistantId, {
             content: fullContent,
             source: asResponseSource(event.source),

@@ -112,4 +112,29 @@ describe('SourceDrawer', () => {
     expect(screen.getByText('Mã nguồn: chunk-unknown')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Mở nguồn/i })).not.toBeInTheDocument();
   });
+
+  it('defensively separates legacy flattened fields in the excerpt', () => {
+    render(
+      <SourceDrawer
+        documents={[
+          {
+            page_content: 'Tài liệu đính kèm || 08/2022/NĐ-CP || Điều 77 quy định trách nhiệm tái chế.',
+            document_id: 'chunk-77',
+            metadata: {
+              source_id: 'nd-08-2022',
+              Source_Title: 'Nghị định số 08/2022/NĐ-CP',
+              Document_Number: '08/2022/NĐ-CP',
+              legal_anchor: 'Điều 77',
+            },
+          },
+        ]}
+        isOpen
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/Tài liệu đính kèm/)).toBeInTheDocument();
+    expect(screen.getByText(/Điều 77 quy định trách nhiệm tái chế/)).toBeInTheDocument();
+    expect(screen.queryByText(/\|\|/)).not.toBeInTheDocument();
+  });
 });
