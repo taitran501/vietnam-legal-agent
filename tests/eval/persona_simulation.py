@@ -333,7 +333,7 @@ PERSONA_TEST_CASES: list[UniversalPersonaTestCase] = [
         id="ENG-LOOP-EXHAUSTION",
         persona="senior_dev",
         legal_domain="Budget Governance",
-        query="Thực hiện lặp đi lặp lại một câu truy vấn để kiểm tra loop limit và budget controller",
+        query="Thực hiện lặp đi lặp lại một câu truy vấn pháp luật để kiểm tra loop limit và budget controller",
         description="Adversarial cyclic loop probing max_steps=5 and duplicate argument prevention.",
         expected_termination="insufficient_evidence",
         max_steps_allowed=5,
