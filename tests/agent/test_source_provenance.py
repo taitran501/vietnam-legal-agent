@@ -4,7 +4,11 @@ from types import SimpleNamespace
 
 from epr_agent.agent.runtime import _documents_for_api, _source_snapshots
 from epr_agent.tools.retrieval import _to_record
-from epr_agent.tools.source_provenance import normalize_source, normalized_document_metadata
+from epr_agent.tools.source_provenance import (
+    canonical_source_snapshots,
+    normalize_source,
+    normalized_document_metadata,
+)
 
 
 def test_normalize_source_uses_parent_document_and_keeps_chunk_excerpt() -> None:
@@ -133,3 +137,75 @@ def test_runtime_api_documents_expose_canonical_parent_and_clean_excerpt() -> No
     assert documents[0]["page_content"].startswith("Điều 77")
     assert snapshots[0]["source_id"] == "nd-08-2022"
     assert snapshots[0]["chunk_id"] == "chunk-77"
+
+
+def test_canonical_source_snapshots_group_chunks_and_keep_all_citation_indices() -> None:
+    items = [
+        {
+            "document_id": "chunk-77-a",
+            "content": "Đoạn đầu Điều 77.",
+            "score": 0.62,
+            "metadata": {
+                "parent_id": "nd-08-2022",
+                "Document_Number": "08/2022/NĐ-CP",
+                "legal_anchor": "Điều 77",
+                "source_title": "Nghị định số 08/2022/NĐ-CP",
+            },
+        },
+        {
+            "document_id": "chunk-77-b",
+            "content": "Đoạn chính Điều 77 || trường dữ liệu cũ.",
+            "score": 0.91,
+            "metadata": {
+                "parent_id": "nd-08-2022",
+                "instrument_number": "08/2022/NĐ-CP",
+                "legal_anchor": "Điều 77",
+                "source_title": "Nghị định số 08/2022/NĐ-CP",
+            },
+        },
+    ]
+
+    snapshots = canonical_source_snapshots(items, citation_indices=[1, 2])
+
+    assert len(snapshots) == 1
+    assert snapshots[0]["source_id"] == "nd-08-2022"
+    assert snapshots[0]["citation_index"] == 1
+    assert snapshots[0]["citation_indices"] == [1, 2]
+    assert snapshots[0]["chunk_id"] == "chunk-77-b"
+    assert snapshots[0]["excerpt"] == "Đoạn chính Điều 77\n\ntrường dữ liệu cũ."
+
+
+def test_runtime_source_snapshots_use_canonical_grouping_for_duplicate_chunks() -> None:
+    state = {
+        "answer": "Theo Điều 77 [1] và [2].",
+        "evidence": [
+            {
+                "document_id": "chunk-a",
+                "content": "Điều 77 đoạn một.",
+                "score": 0.4,
+                "metadata": {
+                    "parent_id": "nd-08-2022",
+                    "Document_Number": "08/2022/NĐ-CP",
+                    "legal_anchor": "Điều 77",
+                    "source_title": "Nghị định số 08/2022/NĐ-CP",
+                },
+            },
+            {
+                "document_id": "chunk-b",
+                "content": "Điều 77 đoạn hai.",
+                "score": 0.8,
+                "metadata": {
+                    "parent_id": "nd-08-2022",
+                    "Document_Number": "08/2022/NĐ-CP",
+                    "legal_anchor": "Điều 77",
+                    "source_title": "Nghị định số 08/2022/NĐ-CP",
+                },
+            },
+        ],
+    }
+
+    snapshots = _source_snapshots(state)
+
+    assert len(snapshots) == 1
+    assert snapshots[0]["citation_indices"] == [1, 2]
+    assert snapshots[0]["chunk_id"] == "chunk-b"
