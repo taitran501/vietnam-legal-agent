@@ -93,7 +93,6 @@ class BrowserHistoryGateway:
         }
         self.next_message_id += 1
         return message
-
     def _conversation(self, user_id: str, conversation_id: str) -> list[dict[str, Any]]:
         key = (user_id, conversation_id)
         self.created_at.setdefault(key, datetime.now(UTC).timestamp())
@@ -321,6 +320,36 @@ class BrowserHistoryGateway:
         self.runs.append(dict(state))
 
 
+class DeterministicGenerationGateway(EvidenceGenerationGateway):
+    """Keep browser acceptance independent from paid provider credentials.
+
+    Legal lookup still uses the evidence-first formatter from the production
+    gateway, while chitchat is deliberately static so the deterministic host
+    cannot accidentally call OpenAI in CI or local smoke runs.
+    """
+
+    async def chitchat(self, query: str, history: list[dict[str, Any]]) -> str:
+        return "Xin chào! Tôi có thể hỗ trợ tra cứu pháp luật Việt Nam."
+
+    async def answer(
+        self,
+        task_type: str,
+        query: str,
+        documents: list[DocumentRecord],
+        facts: dict[str, str],
+    ) -> str:
+        """Use extractive legal output even when a developer has an API key.
+
+        The deterministic host must exercise the same evidence contract on
+        every machine; otherwise a local ``.env`` could silently turn this
+        acceptance path into a provider-backed test.
+        """
+
+        if task_type in {"assess_epr_obligation", "build_compliance_checklist"}:
+            return await super().answer(task_type, query, documents, facts)
+        return self._compose_legal_route_answer(documents)
+
+
 history = BrowserHistoryGateway()
 chat_routes.cancel_turn_persistent = history.cancel_turn
 
@@ -360,7 +389,7 @@ dependencies = WorkflowDependencies(
     cache=ScopedAnswerCache(InMemoryAnswerCache(), corpus_version="browser-e2e"),
     retrieval=StaticRetrievalGateway(legal_documents=legal_documents),
     evidence=EvidenceEvaluator(min_chars=20),
-    generation=EvidenceGenerationGateway(),
+    generation=DeterministicGenerationGateway(),
     planner=BoundedPlanner(max_retrieval_actions=3, max_repairs=1, max_iterations=12),
 )
 case_form_resolver = CaseFormResolver()
