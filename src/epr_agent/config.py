@@ -365,7 +365,9 @@ def validate_production_settings(settings: Settings) -> None:
     if settings.enable_trace_debug_api:
         errors.append("ENABLE_TRACE_DEBUG_API must be false")
     if settings.enable_universal_retrieval:
-        errors.append("ENABLE_UNIVERSAL_RETRIEVAL must be false until the universal corpus is legally approved")
+        errors.append(
+            "ENABLE_UNIVERSAL_RETRIEVAL must be false until the content-locked universal corpus is included in the production release"
+        )
     database_url = str(settings.database_url or "")
     if not database_url.startswith(("postgresql://", "postgres://", "postgresql+asyncpg://")):
         errors.append("DATABASE_URL must point to PostgreSQL")

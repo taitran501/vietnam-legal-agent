@@ -57,3 +57,8 @@ def test_preview_mode_allows_local_development_defaults() -> None:
     )
 
     validate_production_settings(settings)
+
+
+def test_universal_retrieval_gate_is_technical_not_legal_approval() -> None:
+    with pytest.raises(ValueError, match="content-locked universal corpus"):
+        validate_production_settings(_production_settings(enable_universal_retrieval=True))

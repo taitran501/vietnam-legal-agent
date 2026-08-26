@@ -1,9 +1,9 @@
 # Current acceptance status
 
 **Checked:** 2026-08-26
-**Evidence commit:** `02312f9` (`main` in `vietnam-legal-agent`)
-**Merged delivery:** PR #54 (`02312f9`), Promptfoo replay regression hardening
-**CI evidence:** [main CI run 32927787111](https://github.com/taitran501/vietnam-legal-agent/actions/runs/32927787111)
+**Evidence commit:** `22d339c` (`main` in `vietnam-legal-agent`)
+**Merged delivery:** PR #56 (`22d339c`), live-agent evaluation workflow hardening
+**CI evidence:** [main CI run 32935342399](https://github.com/taitran501/vietnam-legal-agent/actions/runs/32935342399)
 
 This file records checks against the current checkout. It is not a replacement
 for the commit-scoped historical reports; deployment, provider, and corpus
@@ -16,7 +16,7 @@ The following checks were run in the repository acceptance environment
 
 | Check | Result |
 | --- | --- |
-| `pytest -q` | **592 passed, 2 skipped, 14 warnings** (Task 4 evidence on the merge tree) |
+| `pytest -q` | **594 passed, 2 skipped, 14 warnings** (Task 7 evidence on the merge tree) |
 | `python -m tests.eval.run_eval --suite all` | **exit 0**; deterministic route matrix **60/60**, generated at the evidence commit |
 | `python tests/eval/agent_harness.py --suite all` | **18/18** trajectory cases |
 | `python tests/eval/persona_simulation.py --persona all` | **15/15** persona cases |
@@ -90,9 +90,6 @@ interpreting a test result.
 
 These are deliberate release gates, not claims that local tests can satisfy:
 
-- the pushed commit has passed the GitHub Actions Compose smoke job; the local
-  check above validates configuration but does not replace the remote container
-  run;
 - a production deployment has healthy PostgreSQL/Qdrant/Redis/OpenAI/OIDC
   integrations, real authentication, monitoring, backups, and measured p95
   latency;
@@ -107,7 +104,11 @@ These are deliberate release gates, not claims that local tests can satisfy:
 - The checked-in historical RAGAS artifact is exploratory only: it reports a
   10% gate pass rate and 28% statutory-anchor accuracy, and is not evidence of
   current production quality. The live provider-backed evaluation has not been
-  run in this checkout because it is a manual `workflow_dispatch` gate.
+  run in this checkout because it is a manual `workflow_dispatch` gate and the
+  protected GitHub `pilot` environment currently returns HTTP 404.
+- GitHub repository metadata is still incomplete: the current authenticated
+  record has an empty description, homepage, and topic list. This is an
+  administrator-owned release hygiene task, not a code or legal-review gate.
 - Legal-domain ground truth authoring is outside this framework/tracing
   acceptance scope; runtime safety still depends on source hashes, provenance,
   effective-date metadata, and fail-closed claim checks.
