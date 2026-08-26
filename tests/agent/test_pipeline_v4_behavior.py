@@ -120,6 +120,38 @@ async def test_assessment_action_asks_for_missing_facts_before_assessment_card()
 
 
 @pytest.mark.asyncio
+async def test_factual_corporate_question_uses_lookup_route_not_case_form():
+    history = MemoryHistory()
+    app, retrieval = runtime(history)
+    state = await app.run(
+        query="Luật Doanh nghiệp quy định công ty cổ phần cần tối thiểu bao nhiêu cổ đông sáng lập?",
+        user_id="v4-user",
+        conversation_id="v4-corporate-factual",
+    )
+
+    assert state["route"] == "legal_lookup"
+    assert state["task_type"] == "legal_lookup"
+    assert state.get("missing_facts") == []
+    assert retrieval.calls == [("legal", state["query"])]
+
+
+@pytest.mark.asyncio
+async def test_unknown_non_legal_question_safe_stops_without_retrieval():
+    history = MemoryHistory()
+    app, retrieval = runtime(history)
+    state = await app.run(
+        query="Giá Bitcoin hôm nay là bao nhiêu?",
+        user_id="v4-user",
+        conversation_id="v4-bitcoin",
+    )
+
+    assert state["route"] == "out_of_scope"
+    assert state["termination_reason"] == "out_of_scope"
+    assert state["evidence"] == []
+    assert retrieval.calls == []
+
+
+@pytest.mark.asyncio
 async def test_completed_assessment_requires_all_mandatory_issue_evidence():
     history = MemoryHistory()
     app, retrieval = runtime(history)
