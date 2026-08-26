@@ -57,6 +57,11 @@ def legal_document(anchor: str, *, extra: str = "", document_id: str | None = No
             "Dieu": anchor if anchor.startswith("Điều") else "",
             "Parent_Dieu": anchor if anchor.startswith("Điều") else "",
             "legal_anchor": anchor,
+            # Deterministic fixtures must carry the same typed provenance that
+            # production evidence validation requires.  A title alone is not
+            # sufficient to prove an instrument-number match.
+            "instrument_number": "08/2022/NĐ-CP",
+            "explicit_match": True,
             "source": title,
             "source_title": title,
             "source_file": "data/08_2022_ND-CP_479457.doc",
