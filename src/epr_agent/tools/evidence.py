@@ -173,12 +173,18 @@ _RELEVANCE_SCORE_KEYS = (
 )
 _RELEVANCE_STOPWORDS = {
     "cho", "chưa", "các", "có", "của", "đang", "được", "gì", "hỏi", "hiện",
-    "khi", "không", "là", "nào", "này", "những", "nói", "pháp", "quy", "quyền",
+    "khi", "không", "là", "nào", "này", "những", "nói", "pháp", "quy", "quyền", "định", "cần",
     "quy định", "sao", "theo", "thế", "và", "văn", "về", "việc", "với", "xem",
     "luật", "điều", "khoản", "điểm", "mức", "bao", "nhiêu", "trong", "tại",
     "từ", "đến", "nay", "năm", "số", "tôi", "bạn", "xin", "hãy", "giúp",
 }
 _RELEVANCE_TOKEN_RE = re.compile(r"[0-9A-Za-zÀ-ỹĐđ]{3,}", re.UNICODE)
+_YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
+_YEAR_DISCOVERY_RE = re.compile(
+    r"\b(?:mới|ban\s*hành|có\s*hiệu\s*lực|hiệu\s*lực\s*năm)\b",
+    re.IGNORECASE,
+)
+_INSTRUMENT_RE = re.compile(r"\b\d{1,5}/\d{4}/[A-ZĐ0-9][A-ZĐ0-9-]*\b", re.IGNORECASE)
 
 
 def _as_explicit_match(value: Any) -> bool:
@@ -228,6 +234,44 @@ def _document_scores(document: DocumentRecord) -> list[float]:
     return scores
 
 
+def _year_discovery_query(query: str) -> set[str]:
+    """Return years that must be represented by a source instrument."""
+
+    text = str(query or "")
+    years = set(_YEAR_RE.findall(text))
+    if not years or not _YEAR_DISCOVERY_RE.search(text):
+        return set()
+    if _INSTRUMENT_RE.search(text) or _ARTICLE_RE.search(text):
+        return set()
+    return years
+
+
+def _document_instrument_text(document: DocumentRecord) -> str:
+    metadata = document.metadata or {}
+    return " ".join(
+        str(metadata.get(key) or "")
+        for key in (
+            "Document_Number",
+            "Instrument_Number",
+            "instrument_number",
+            "number",
+            "source_title",
+            "Source_Title",
+            "document_title",
+            "title",
+            "source",
+            "law_ref",
+        )
+    )
+
+
+def _year_discovery_source_matches(query: str, document: DocumentRecord) -> bool:
+    requested_years = _year_discovery_query(query)
+    if not requested_years:
+        return True
+    return any(year in _document_instrument_text(document) for year in requested_years)
+
+
 def legal_relevance_checker(*, min_rerank_score: float) -> Callable[[str, list[DocumentRecord]], bool]:
     """Create a calibrated score gate for unanchored legal retrieval.
 
@@ -252,6 +296,10 @@ def legal_relevance_checker(*, min_rerank_score: float) -> Callable[[str, list[D
         # satisfied by a merely related chunk. It must stop safely and offer
         # the separate public-research action instead.
         if negative_evidence_pattern.search(query or ""):
+            return False
+        if _year_discovery_query(query) and not any(
+            _year_discovery_source_matches(query, document) for document in documents
+        ):
             return False
         if any(_as_explicit_match((document.metadata or {}).get("explicit_match")) for document in documents):
             return True

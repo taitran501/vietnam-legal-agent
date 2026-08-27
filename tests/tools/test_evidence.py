@@ -172,6 +172,26 @@ def test_relevance_gate_rejects_documents_without_score_or_explicit_match():
     assert result.reason == "relevance_check_failed"
 
 
+def test_relevance_gate_rejects_old_instrument_for_generic_new_law_query():
+    old_source = document()
+    old_source.metadata.update(
+        {
+            "Document_Number": "08/2022/NĐ-CP",
+            "source_title": "Nghị định 08/2022/NĐ-CP",
+            "rerank_score": 0.98,
+        }
+    )
+    evaluator = EvidenceEvaluator(
+        min_chars=20,
+        relevance_checker=legal_relevance_checker(min_rerank_score=0.40),
+    )
+
+    result = evaluator.evaluate("2026 có luật gì mới không?", [old_source], TaskType.LEGAL_LOOKUP)
+
+    assert result.sufficient is False
+    assert result.reason == "relevance_check_failed"
+
+
 def test_citation_verifier_rejects_missing_and_out_of_range_citations():
     docs = [document()]
     valid, _, reason = verify_citations("Theo Điều 77 [1], đây là kết luận có căn cứ.", docs, TaskType.LEGAL_LOOKUP)

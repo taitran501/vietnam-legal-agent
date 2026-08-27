@@ -58,3 +58,25 @@ def test_universal_index_builder_is_importable_without_running_the_cli() -> None
 
     assert callable(builder.main)
     assert builder.DB_PATH == ROOT / "data" / "corpus" / "universal_legal" / "universal_legal.db"
+
+
+def test_universal_retriever_does_not_return_arbitrary_articles_for_year_discovery() -> None:
+    retriever = UniversalLegalRetriever()
+
+    assert retriever.search("2026 có luật gì mới không?", limit=5) == []
+
+
+def test_universal_retriever_prefers_the_corporate_minimum_shareholder_provision() -> None:
+    retriever = UniversalLegalRetriever()
+
+    results = retriever.search(
+        "Công ty cổ phần cần tối thiểu bao nhiêu cổ đông theo quy định?",
+        limit=5,
+    )
+
+    assert results
+    assert any(
+        "Điều 111" in str(item.get("metadata", {}).get("legal_anchor"))
+        and "59/2020/QH14" in str(item.get("metadata", {}).get("instrument_number"))
+        for item in results
+    )

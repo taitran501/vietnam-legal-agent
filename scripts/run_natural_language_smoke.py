@@ -63,6 +63,7 @@ def evaluate_turn_contract(
     terminal = terminals[-1] if terminals else {}
     sources = _source_records(terminal)
     documents = _documents(terminal)
+    answer = str(terminal.get("text") or "")
     source_ids = [str(source.get("source_id") or "") for source in sources if source.get("source_id")]
     anchors = [str(source.get("anchor") or "") for source in sources if source.get("anchor")]
     instruments = [
@@ -72,6 +73,7 @@ def evaluate_turn_contract(
     ]
     observed = {
         "terminal_type": str(terminal.get("type") or ""),
+        "answer": answer,
         "route": str(terminal.get("route") or ""),
         "termination_reason": str(terminal.get("termination_reason") or ""),
         "safe_stop_reason": str(terminal.get("safe_stop_reason") or ""),
@@ -117,6 +119,15 @@ def evaluate_turn_contract(
     instrument = str(expected.get("instrument_contains") or "")
     if instrument and not any(instrument.casefold() in value.casefold() for value in instruments):
         failures.append(f"instrument_contains: {instrument!r} not found in {instruments!r}")
+    for fragment in expected.get("source_id_contains") or []:
+        if not any(str(fragment).casefold() in value.casefold() for value in source_ids):
+            failures.append(f"source_id_contains: {fragment!r} not found in {source_ids!r}")
+    for fragment in expected.get("answer_contains") or []:
+        if str(fragment).casefold() not in answer.casefold():
+            failures.append(f"answer_contains: {fragment!r} not found in terminal answer")
+    for fragment in expected.get("answer_not_contains") or []:
+        if str(fragment).casefold() in answer.casefold():
+            failures.append(f"answer_not_contains: {fragment!r} unexpectedly found in terminal answer")
     for fragment in expected.get("standalone_contains") or []:
         if str(fragment).casefold() not in observed["standalone_query"].casefold():
             failures.append(f"standalone_contains: {fragment!r} missing")

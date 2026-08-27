@@ -6,8 +6,10 @@ import logging
 import sqlite3
 from typing import Any, Protocol
 
+from epr_agent.domain.legal import explicit_anchors
 from epr_agent.domain.models import DocumentRecord
 from epr_agent.domain.v4 import RetrievalRequest
+from epr_agent.tools.evidence import legal_relevance_checker
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +75,24 @@ class QdrantLegalRetrievalGateway:
             if request is not None:
                 record.metadata.setdefault("v4_issue_id", request.issue_id)
                 record.metadata.setdefault("v4_required_anchors", request.required_anchors)
+
+        # Qdrant can still return a dense nearest neighbour from another legal
+        # domain. Apply the same fail-closed relevance contract used by the
+        # graph before allowing those records to trigger augmentation or
+        # generation. Explicit anchors remain available for the dedicated
+        # instrument/article checks below.
+        query_text = retrieval_query(query)
+        has_typed_anchors = bool(request and request.required_anchors)
+        if (
+            records
+            and bool(getattr(settings, "enable_relevance_gate", True))
+            and not has_typed_anchors
+            and not explicit_anchors(query_text)
+        ):
+            checker = legal_relevance_checker(
+                min_rerank_score=getattr(settings, "min_legal_rerank_score", 0.40)
+            )
+            records = [record for record in records if checker(query_text, [record])]
 
         # The universal corpus is a separately locked preview supplement. It
         # must never silently become a production fallback for the approved
