@@ -56,17 +56,46 @@ class QdrantLegalRetrievalGateway:
         from epr_agent.retrieval.retrieval import retrieve_legal_async
 
         request = query if isinstance(query, RetrievalRequest) else None
+        settings = get_settings()
+        query_text = retrieval_query(query)
+
+        # The official delta is a deliberately narrow preview source.  Check
+        # it before Qdrant so an exact instrument cannot be shadowed by a
+        # nearest-neighbour result from the EPR corpus.  The retriever itself
+        # refuses unanchored and unsupported substantive queries.
+        if bool(getattr(settings, "enable_official_delta_retrieval", False)):
+            try:
+                from epr_agent.retrieval.official_delta import OfficialDeltaRetriever
+
+                delta_retriever = OfficialDeltaRetriever(getattr(settings, "official_delta_manifest_path", None))
+                delta_documents = delta_retriever.search(
+                    query_text,
+                    limit=request.top_k if request else 5,
+                    required_anchors=request.required_anchors if request else None,
+                )
+                if delta_documents:
+                    return delta_documents
+                # Once the preview manifest owns an exact instrument, do not
+                # let an unsupported question fall through to a nearby EPR
+                # nearest-neighbour result.  Other instruments remain on the
+                # canonical retrieval path.
+                if delta_retriever.covers_instrument(
+                    query_text,
+                    required_anchors=request.required_anchors if request else None,
+                ):
+                    return []
+            except (OSError, TypeError, ValueError) as exc:
+                logger.warning("Official delta retrieval skipped: %s", exc)
         documents = []
         try:
             documents = await retrieve_legal_async(
-                retrieval_query(query),
+                query_text,
                 required_anchors=request.required_anchors if request else None,
                 metadata_filters=request.metadata_filters if request else None,
                 top_k=request.top_k if request else 10,
             )
         except Exception as exc:  # noqa: BLE001 - fallback to Universal Legal Retriever
             logger.warning("Primary Qdrant legal retrieval failed or unavailable (%s), falling back to universal legal corpus", exc)
-        settings = get_settings()
         records = [_to_record(document, source="legal", index=i) for i, document in enumerate(documents)]
         for record in records:
             record.metadata.setdefault("source", str(getattr(settings, "law_citation_label", "Vietnamese legal corpus")))
@@ -81,7 +110,6 @@ class QdrantLegalRetrievalGateway:
         # graph before allowing those records to trigger augmentation or
         # generation. Explicit anchors remain available for the dedicated
         # instrument/article checks below.
-        query_text = retrieval_query(query)
         has_typed_anchors = bool(request and request.required_anchors)
         if (
             records

@@ -1,0 +1,51 @@
+{
+  "schema_version": "official-law-delta-v1",
+  "corpus_id": "official-national-law-delta",
+  "corpus_version": "official-law-delta-2026-09-05-08-qh16",
+  "snapshot_date": "2026-09-05",
+  "retrieved_at_utc": "2026-09-05T03:23:25.852869+00:00",
+  "source": {
+    "authority": "official",
+    "portal": "https://vanban.chinhphu.vn/?classid=1&docid=218101&pageid=27160&typegroupid=3",
+    "license_note": "Official government legal-document source; retain attribution and source URL."
+  },
+  "documents": [
+    {
+      "document_id": "law-08-2026-qh16",
+      "instrument_number": "08/2026/QH16",
+      "title": "Luật sửa đổi, bổ sung một số điều của Luật Cơ quan đại diện nước Cộng hòa xã hội chủ nghĩa Việt Nam ở nước ngoài",
+      "document_type": "Luật",
+      "issuer": "Quốc hội",
+      "signer": "Trần Thanh Mẫn",
+      "issue_date": "2026-04-23",
+      "effective_from": "2026-07-01",
+      "effective_status": "active",
+      "official_url": "https://vanban.chinhphu.vn/?classid=1&docid=218101&pageid=27160&typegroupid=3",
+      "pdf_url": "https://datafiles.chinhphu.vn/cpp/files/vbpq/2026/5/08-qh.signed.pdf",
+      "local_file": "data/corpus/official_delta/08_2026_QH16.signed.pdf",
+      "source_sha256": "346845f7bc141a8388d26c4741d17136ce1902851c37f573a49dbae8fe738f9d",
+      "retrieved_at_utc": "2026-09-05T03:23:25.852869+00:00",
+      "coverage": "official_metadata_and_effective_clause",
+      "pdf_page_count": 8,
+      "text_extractable": false,
+      "chunks": [
+        {
+          "chunk_id": "law-08-2026-qh16-metadata",
+          "kind": "metadata",
+          "legal_anchor": "",
+          "text": "Luật số 08/2026/QH16 của Quốc hội: Luật sửa đổi, bổ sung một số điều của Luật Cơ quan đại diện nước Cộng hòa xã hội chủ nghĩa Việt Nam ở nước ngoài. Ngày ban hành 2026-04-23; ngày có hiệu lực 2026-07-01.",
+          "score": 0.99
+        },
+        {
+          "chunk_id": "law-08-2026-qh16-dieu-2-khoan-1",
+          "kind": "effective_clause",
+          "legal_anchor": "Điều 2",
+          "clause": "Khoản 1",
+          "page": 8,
+          "text": "Luật sửa đổi, bổ sung một số điều của Luật Cơ quan đại diện nước Cộng hòa xã hội chủ nghĩa Việt Nam ở nước ngoài. Số ký hiệu 08/2026/QH16; ngày ban hành 2026-04-23. Điều 2. Điều khoản thi hành: Luật này có hiệu lực thi hành từ ngày 01 tháng 7 năm 2026.",
+          "score": 1.0
+        }
+      ]
+    }
+  ]
+}
