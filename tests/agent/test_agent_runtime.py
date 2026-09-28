@@ -11,6 +11,7 @@ from epr_agent.agent.runtime import AgentWorkflowRuntime, WorkflowDependencies, 
 from epr_agent.domain.models import DocumentRecord, TerminationReason
 from epr_agent.tools.evidence import EvidenceEvaluator
 from epr_agent.tools.history import ContextSnapshot, HistoryGateway
+from epr_agent.tools.legal_readiness import SyntheticReadyLegalReadinessGate
 from epr_agent.tools.retrieval import StaticRetrievalGateway
 
 
@@ -116,6 +117,42 @@ async def test_agent_runtime_chitchat_bypass(agent_deps):
 
 
 @pytest.mark.asyncio
+async def test_agent_runtime_pending_legal_readiness_stops_before_agent_runner(agent_deps):
+    class RunnerMustNotRun:
+        async def stream(self, query: str, **kwargs):
+            raise AssertionError("legal readiness must stop before agent generation")
+            yield  # pragma: no cover
+
+    deps = WorkflowDependencies(
+        history=agent_deps.history,
+        cache=agent_deps.cache,
+        retrieval=agent_deps.retrieval,
+        evidence=agent_deps.evidence,
+        generation=agent_deps.generation,
+        planner=agent_deps.planner,
+        legal_readiness=SyntheticReadyLegalReadinessGate(
+            ready=False,
+            manifest_sha256="pending-manifest",
+        ),
+    )
+
+    events = [
+        event
+        async for event in AgentWorkflowRuntime(deps, runner=RunnerMustNotRun()).stream(
+            query="Điều 77 quy định gì?",
+            user_id="u1",
+            conversation_id="c1",
+        )
+    ]
+
+    complete = next(event for event in events if event.get("type") == "response_complete")
+    assert complete["source"] == "error"
+    assert complete["citation_error"] == "legal_review_pending"
+    assert complete["legal_readiness_status"] == "pending"
+    assert complete["legal_readiness_sha"] == "pending-manifest"
+
+
+@pytest.mark.asyncio
 async def test_agent_runtime_out_of_scope_bypass(agent_deps):
     runtime = AgentWorkflowRuntime(agent_deps)
     events = []
@@ -158,6 +195,45 @@ async def test_agent_runtime_successful_stream(agent_deps):
     assert complete["pipeline_version"] == "pipeline-agent"
     assert "[1]" in complete["text"]
     assert len(complete["documents"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_runtime_explicit_research_web_uses_web_citation_policy(agent_deps):
+    document = DocumentRecord(
+        content="Nguồn chính thức nêu quy định cần tra cứu.",
+        document_id="web-1",
+        source="web",
+        metadata={
+            "title": "Cổng thông tin chính thức",
+            "official_url": "https://vbpl.vn/example",
+            "authority": "official",
+        },
+    )
+    result = AgentRunResult(
+        answer="Theo nguồn chính thức [1].",
+        termination_reason=TerminationReason.RESEARCH_COMPLETE.value,
+        trajectory=[],
+        evidence=[document.to_dict()],
+        citations=[],
+        source="web_search",
+        steps_taken=1,
+        cache_hit=False,
+    )
+
+    events = [
+        event
+        async for event in AgentWorkflowRuntime(agent_deps, runner=FakeRunner(result)).stream(
+            query="Tra cứu nguồn mới về EPR",
+            mode="research_web",
+            user_id="u1",
+            conversation_id="c1",
+        )
+    ]
+
+    complete = next(event for event in events if event.get("type") == "response_complete")
+    assert complete["source"] == "web_search"
+    assert complete["termination_reason"] == TerminationReason.RESEARCH_COMPLETE.value
+    assert complete["citation_error"] == "ok"
 
 
 @pytest.mark.asyncio

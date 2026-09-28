@@ -15,6 +15,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from epr_agent.domain.verification import VerificationStatus
+
 
 class EvidenceStatus(StrEnum):
     INFORMATIONAL = "informational"
@@ -40,12 +42,25 @@ class FailureCode(StrEnum):
     SOURCE_PROVENANCE_LOSS = "source_provenance_loss"
     FOLLOWUP_CONTEXT_LOSS = "followup_context_loss"
     UNSUPPORTED_CLAIM = "unsupported_claim"
+    INSUFFICIENT_EVIDENCE = "insufficient_evidence"
+    VERIFICATION_UNAVAILABLE = "verification_unavailable"
+    OUT_OF_SCOPE = "out_of_scope"
     WRONG_EFFECTIVE_DATE = "wrong_effective_date"
     SOURCE_DRAWER_PAYLOAD_MISMATCH = "source_drawer_payload_mismatch"
     SAFE_STOP_MISMATCH = "safe_stop_mismatch"
     EVALUATOR_UNAVAILABLE = "evaluator_unavailable"
     PROVIDER_UNAVAILABLE = "provider_unavailable"
     LATENCY = "latency"
+
+
+def failure_code_for_verification_status(status: VerificationStatus) -> FailureCode | None:
+    """Map runtime verification outcomes to replay/CI failure codes."""
+
+    return {
+        VerificationStatus.INSUFFICIENT_EVIDENCE: FailureCode.INSUFFICIENT_EVIDENCE,
+        VerificationStatus.UNSUPPORTED_CLAIM: FailureCode.UNSUPPORTED_CLAIM,
+        VerificationStatus.VERIFICATION_UNAVAILABLE: FailureCode.VERIFICATION_UNAVAILABLE,
+    }.get(status)
 
 
 class _ContractModel(BaseModel):

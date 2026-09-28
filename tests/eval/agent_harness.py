@@ -35,6 +35,7 @@ from epr_agent.domain.models import DocumentRecord
 from epr_agent.tools.cache import CachedAnswer
 from epr_agent.tools.evidence import EvidenceEvaluator
 from epr_agent.tools.history import ContextSnapshot, HistoryGateway
+from epr_agent.tools.legal_readiness import SyntheticReadyLegalReadinessGate
 from epr_agent.tools.retrieval import StaticRetrievalGateway
 from tests.eval.agent_manifest import AGENT_MANIFEST, AgentTestCase
 
@@ -301,6 +302,7 @@ class AgentHarness:
             evidence=tool_deps.evidence_evaluator,
             generation=tool_deps.generation,
             planner=None,
+            legal_readiness=SyntheticReadyLegalReadinessGate(),
         )
 
         mock_llm = _build_mock_llm_for_case(case)

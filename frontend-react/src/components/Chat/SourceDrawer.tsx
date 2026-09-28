@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react';
 import type { SourceDocument } from '@/types';
 import { Drawer } from '@/components/UI/Drawer';
 import { Icon } from '@/components/UI/Icon';
-import { previewNotice } from '@/lib/userCopy';
 
 interface SourceDrawerProps {
   citations?: Array<Record<string, unknown>>;
@@ -98,7 +97,7 @@ function cleanExcerptText(raw: string): string {
   return text.trim() || raw.trim();
 }
 
-export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, onClose, preview = false }: SourceDrawerProps) {
+export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, onClose }: SourceDrawerProps) {
   const sourceRefs = useRef(new Map<number, HTMLElement>());
 
   useEffect(() => {
@@ -119,11 +118,6 @@ export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, on
       title="Nguồn tham khảo"
     >
       <div className="space-y-4 p-4 sm:p-5">
-        {preview && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs leading-5 text-amber-900" role="status">
-            {previewNotice}
-          </div>
-        )}
 
         {documents.map((document, index) => {
           const citationIndex = Number(metadataValue(document, ['citation_index'])) || index + 1;

@@ -116,6 +116,28 @@ def test_evidence_evaluator_accepts_canonical_instrument_number_metadata():
     assert result.sufficient is True
 
 
+def test_evidence_evaluator_matches_an_explicit_appendix_anchor():
+    appendix = document()
+    appendix.metadata.update(
+        {
+            "legal_anchor": "Phụ lục XXII",
+            "Dieu": "",
+            "Document_Number": "08/2022/NĐ-CP",
+            "source": "Nghị định 08/2022/NĐ-CP - Phụ lục XXII",
+        }
+    )
+    requested = LegalAnchor(document_number="08/2022/NĐ-CP", appendix="Phụ lục XXII")
+
+    result = EvidenceEvaluator(min_chars=20).evaluate(
+        "Phụ lục XXII quy định gì?",
+        [appendix],
+        TaskType.LEGAL_LOOKUP,
+        expected_anchors=[requested],
+    )
+
+    assert result.sufficient is True
+
+
 def test_relevance_gate_rejects_nearest_but_weak_unanchored_documents():
     weak = document()
     weak.metadata["rerank_score"] = 0.31
@@ -167,6 +189,26 @@ def test_relevance_gate_rejects_documents_without_score_or_explicit_match():
     evaluator = EvidenceEvaluator(min_chars=20, relevance_checker=legal_relevance_checker(min_rerank_score=0.40))
 
     result = evaluator.evaluate("EPR trách nhiệm tái chế bao bì", [no_score], TaskType.LEGAL_LOOKUP)
+
+    assert result.sufficient is False
+    assert result.reason == "relevance_check_failed"
+
+
+def test_relevance_gate_rejects_old_instrument_for_generic_new_law_query():
+    old_source = document()
+    old_source.metadata.update(
+        {
+            "Document_Number": "08/2022/NĐ-CP",
+            "source_title": "Nghị định 08/2022/NĐ-CP",
+            "rerank_score": 0.98,
+        }
+    )
+    evaluator = EvidenceEvaluator(
+        min_chars=20,
+        relevance_checker=legal_relevance_checker(min_rerank_score=0.40),
+    )
+
+    result = evaluator.evaluate("2026 có luật gì mới không?", [old_source], TaskType.LEGAL_LOOKUP)
 
     assert result.sufficient is False
     assert result.reason == "relevance_check_failed"

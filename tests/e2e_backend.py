@@ -19,11 +19,12 @@ from epr_agent.agent.graph import WorkflowDependencies
 from epr_agent.agent.planner import BoundedPlanner
 from epr_agent.agent.v4 import V4WorkflowRuntime
 from epr_agent.domain.epr_rules import CaseFormResolver
+from epr_agent.domain.legal import explicit_anchors
 from epr_agent.domain.models import AgentState, DocumentRecord
 from epr_agent.domain.v4 import CaseStateV4, FactSource, FactValue
 from epr_agent.infra.admission import AdmissionLease
 from epr_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
-from epr_agent.tools.evidence import EvidenceEvaluator
+from epr_agent.tools.evidence import EvidenceEvaluator, legal_relevance_checker
 from epr_agent.tools.generation import EvidenceGenerationGateway
 from epr_agent.tools.history import ContextSnapshot
 from epr_agent.tools.retrieval import StaticRetrievalGateway
@@ -383,12 +384,70 @@ def _legal_document(anchor: str) -> DocumentRecord:
     )
 
 
-legal_documents = [_legal_document(f"Điều {article}") for article in range(77, 93)] + [_legal_document("Phụ lục XXII")]
+def _corporate_document() -> DocumentRecord:
+    """Small canonical fixture for the factual corporate smoke case."""
+
+    content = (
+        "Điều 111. Công ty cổ phần\n"
+        "1. Công ty cổ phần là doanh nghiệp, trong đó:\n"
+        "b) Cổ đông có thể là tổ chức, cá nhân; số lượng cổ đông tối thiểu là 03 "
+        "và không hạn chế số lượng tối đa.\n"
+        "c) Cổ đông chỉ chịu trách nhiệm về các khoản nợ và nghĩa vụ tài sản khác "
+        "của doanh nghiệp trong phạm vi số vốn đã góp vào doanh nghiệp.\n"
+    )
+    return DocumentRecord(
+        content=content,
+        metadata={
+            "Dieu": "Điều 111",
+            "Parent_Dieu": "Điều 111",
+            "legal_anchor": "59/2020/QH14 | Điều 111",
+            "Document_Number": "59/2020/QH14",
+            "source": "Luật Doanh nghiệp 2020",
+            "source_title": "Luật Doanh nghiệp 2020",
+            "source_file": "data/corpus/universal_legal/universal_legal.db",
+            "Corpus_Version": "browser-e2e-v4",
+            "Corpus_SHA256": "browser-e2e-corpus-v4",
+            "Embedding_Profile": "openai-text-embedding-3-small-v1",
+            "official_url": "http://vbpl.vn/TW/Pages/vbpq-toanvan.aspx?ItemID=142881#Chuong_V_Dieu_111",
+            "effective_status": "active",
+            "effective_from": "2021-01-01",
+            "corpus_as_of_date": "2026-08-14",
+            "legal_domain": "corporate",
+        },
+        document_id="corp-law-111",
+        score=0.97,
+        source="legal",
+    )
+
+
+class PreviewRetrievalGateway(StaticRetrievalGateway):
+    """Deterministic adapter that refuses cross-domain fixture leakage."""
+
+    _checker = staticmethod(legal_relevance_checker(min_rerank_score=0.40))
+
+    async def legal(self, query):
+        documents = await super().legal(query)
+        query_text = query.query if hasattr(query, "query") else str(query)
+        if getattr(query, "required_anchors", None) or explicit_anchors(query_text):
+            # Let the graph's explicit instrument/article evaluator report a
+            # precise mismatch rather than hiding all candidates here.
+            return documents
+        return [document for document in documents if self._checker(query_text, [document])]
+
+
+legal_documents = [
+    *[_legal_document(f"Điều {article}") for article in range(77, 93)],
+    _legal_document("Phụ lục XXII"),
+    _corporate_document(),
+]
 dependencies = WorkflowDependencies(
     history=history,
     cache=ScopedAnswerCache(InMemoryAnswerCache(), corpus_version="browser-e2e"),
-    retrieval=StaticRetrievalGateway(legal_documents=legal_documents),
-    evidence=EvidenceEvaluator(min_chars=20),
+    retrieval=PreviewRetrievalGateway(legal_documents=legal_documents),
+    evidence=EvidenceEvaluator(
+        min_chars=20,
+        relevance_checker=legal_relevance_checker(min_rerank_score=0.40),
+    ),
     generation=DeterministicGenerationGateway(),
     planner=BoundedPlanner(max_retrieval_actions=3, max_repairs=1, max_iterations=12),
 )

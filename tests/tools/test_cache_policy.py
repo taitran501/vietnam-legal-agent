@@ -1,7 +1,8 @@
 import pytest
 
 from epr_agent.domain.models import TaskType
-from epr_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
+from epr_agent.domain.verification import VerificationStatus
+from epr_agent.tools.cache import CachedAnswer, InMemoryAnswerCache, ScopedAnswerCache
 
 
 @pytest.mark.asyncio
@@ -51,3 +52,63 @@ async def test_answer_only_legacy_cache_entry_is_ignored():
     await backend.store(key, "legacy answer without evidence")
     value, _ = await cache.lookup(TaskType.LEGAL_LOOKUP, "EPR")
     assert value is None
+
+
+@pytest.mark.asyncio
+async def test_cache_rejects_old_readiness_or_verification_metadata():
+    backend = InMemoryAnswerCache()
+    cache = ScopedAnswerCache(
+        backend,
+        corpus_sha="corpus-current",
+        legal_readiness_sha="manifest-current",
+    )
+    key = cache.build_key(TaskType.LEGAL_LOOKUP, "EPR")
+
+    old_readiness = CachedAnswer(
+        answer="Theo Điều 77 [1].",
+        evidence=[{"content": "Điều 77", "document_id": "law-77"}],
+        citations=[{"index": 1}],
+        source="legal",
+        corpus_sha="corpus-current",
+        legal_readiness_sha="manifest-old",
+    )
+    await backend.store(key, old_readiness.serialise())
+    value, _ = await cache.lookup(TaskType.LEGAL_LOOKUP, "EPR")
+    assert value is None
+
+    unverifiable = CachedAnswer(
+        answer="Theo Điều 77 [1].",
+        evidence=[{"content": "Điều 77", "document_id": "law-77"}],
+        citations=[{"index": 1}],
+        source="legal",
+        corpus_sha="corpus-current",
+        legal_readiness_sha="manifest-current",
+        verification_status=VerificationStatus.UNSUPPORTED_CLAIM,
+    )
+    await backend.store(key, unverifiable.serialise())
+    value, _ = await cache.lookup(TaskType.LEGAL_LOOKUP, "EPR")
+    assert value is None
+
+
+@pytest.mark.asyncio
+async def test_cache_key_refresh_makes_previous_readiness_snapshot_a_miss():
+    backend = InMemoryAnswerCache()
+    cache = ScopedAnswerCache(
+        backend,
+        corpus_sha="corpus-current",
+        legal_readiness_sha="manifest-current",
+    )
+    await cache.store(
+        TaskType.LEGAL_LOOKUP,
+        "EPR",
+        "Theo Điều 77 [1].",
+        evidence=[{"content": "Điều 77", "document_id": "law-77"}],
+        citations=[{"index": 1}],
+        source="legal",
+    )
+
+    cache.update_legal_readiness_sha("manifest-replaced")
+    value, new_key = await cache.lookup(TaskType.LEGAL_LOOKUP, "EPR")
+
+    assert value is None
+    assert "manifest-replaced" in new_key

@@ -70,11 +70,22 @@ async def chat(request: Request, body: ChatRequest):
     case_patch = {**body.case_patch, **typed_case_patch}
 
     readiness, _ = await readiness_payload()
-    legal_capability = readiness.get("capabilities", {}).get("legal_chat", {})
-    if legal_capability.get("status") != "ready":
+    history_capability = readiness.get("capabilities", {}).get("history", {})
+    dependencies = readiness.get("dependencies", {})
+    infrastructure_reason = ""
+    if history_capability.get("status") != "ready":
+        infrastructure_reason = str(history_capability.get("reason") or "database_unavailable")
+    elif dependencies.get("database") not in {None, "ok"}:
+        infrastructure_reason = "database_unavailable"
+    elif dependencies.get("openai") not in {None, "ok"}:
+        infrastructure_reason = "provider_unavailable"
+    # Legal corpus/readiness is intentionally not part of this admission
+    # check.  The workflow itself safe-stops legal routes while allowing
+    # chitchat, history, auth, and feedback to remain available.
+    if infrastructure_reason:
         async def _not_ready():
-            reason = str(legal_capability.get("reason") or "corpus_not_ready")
-            retryable = reason not in {"database_schema_mismatch", "corpus_promotion_blocked"}
+            reason = infrastructure_reason
+            retryable = reason not in {"database_schema_mismatch"}
             metrics.track_sse_error(reason, retryable)
             logger.info("sse_error code=%s retryable=%s trace_id=%s", reason, retryable, trace_id)
             yield {
@@ -85,7 +96,7 @@ async def chat(request: Request, body: ChatRequest):
                         "message": (
                             "Cơ sở dữ liệu lịch sử cần được nâng cấp trước khi tiếp tục."
                             if reason == "database_schema_mismatch"
-                            else "Dữ liệu pháp luật đang chưa sẵn sàng. Vui lòng thử lại sau khi index hoàn tất."
+                            else "Hệ thống chưa sẵn sàng xử lý yêu cầu. Vui lòng thử lại sau."
                         ),
                         "retryable": retryable,
                         "retry_after_seconds": 30 if retryable else None,
@@ -156,14 +167,16 @@ async def chat(request: Request, body: ChatRequest):
                     lease_ttl_seconds=settings.agent_lease_ttl_seconds,
                 )
             except AdmissionUnavailable:
-                outcome = "capacity_unavailable"
-                metrics.track_admission_decision("agent_turns", "acquire_unavailable")
-                yield _capacity_error(
-                    "capacity_unavailable",
-                    "Hệ thống chưa thể kiểm tra năng lực xử lý. Vui lòng thử lại.",
-                )
-                return
-            if lease is None:
+                if not getattr(settings, "rate_limit_fail_open", False):
+                    outcome = "capacity_unavailable"
+                    metrics.track_admission_decision("agent_turns", "acquire_unavailable")
+                    yield _capacity_error(
+                        "capacity_unavailable",
+                        "Hệ thống chưa thể kiểm tra năng lực xử lý. Vui lòng thử lại.",
+                    )
+                    return
+                lease = None
+            if lease is None and not getattr(settings, "rate_limit_fail_open", False):
                 outcome = "capacity_exceeded"
                 metrics.track_admission_decision("agent_turns", "capacity_exceeded")
                 yield _capacity_error(
@@ -171,10 +184,11 @@ async def chat(request: Request, body: ChatRequest):
                     "Hệ thống đang xử lý nhiều yêu cầu. Vui lòng thử lại sau ít giây.",
                 )
                 return
-            metrics.track_admission_decision("agent_turns", "acquired")
-            heartbeat_task = asyncio.create_task(
-                admission.heartbeat(lease, settings.agent_lease_heartbeat_seconds)
-            )
+            if lease is not None:
+                metrics.track_admission_decision("agent_turns", "acquired")
+                heartbeat_task = asyncio.create_task(
+                    admission.heartbeat(lease, settings.agent_lease_heartbeat_seconds)
+                )
             async for event in agentic_stream_chat(
                 query=body.query,
                 user_id=user_id,
@@ -191,7 +205,7 @@ async def chat(request: Request, body: ChatRequest):
                 target_assistant_message_id=body.target_assistant_message_id,
                 runtime=runtime,
             ):
-                if heartbeat_task.done():
+                if heartbeat_task is not None and heartbeat_task.done():
                     heartbeat_task.result()
                 # Readiness is the authoritative runtime gate for this request.
                 event["preview"] = bool(readiness.get("preview"))

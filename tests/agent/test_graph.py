@@ -9,6 +9,7 @@ from epr_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
 from epr_agent.tools.evidence import EvidenceEvaluator
 from epr_agent.tools.generation import StaticGenerationGateway
 from epr_agent.tools.history import ContextSnapshot
+from epr_agent.tools.legal_readiness import SyntheticReadyLegalReadinessGate
 from epr_agent.tools.retrieval import StaticRetrievalGateway
 from epr_agent.tools.verifier import StaticClaimSupportVerifier
 
@@ -40,7 +41,9 @@ class FakeHistory:
         self.runs.append(state)
 
 
-def make_dependencies(*, legal=None, history=None, generation=None, cache_backend=None, claim_verifier=None):
+def make_dependencies(
+    *, legal=None, history=None, generation=None, cache_backend=None, claim_verifier=None, legal_readiness=None
+):
     return WorkflowDependencies(
         history=history or FakeHistory(),
         cache=ScopedAnswerCache(cache_backend or InMemoryAnswerCache()),
@@ -49,6 +52,7 @@ def make_dependencies(*, legal=None, history=None, generation=None, cache_backen
         generation=generation or StaticGenerationGateway(),
         planner=BoundedPlanner(max_retrieval_actions=3, max_repairs=1, max_iterations=12),
         claim_verifier=claim_verifier,
+        legal_readiness=legal_readiness,
     )
 
 
@@ -88,6 +92,28 @@ async def test_legal_lookup_uses_bounded_retrieval_and_verifies_citation():
     assert state["citation_valid"] is True
     assert "retrieve_legal" in state["action_sequence"]
     assert state["retrieval_actions"] <= 3
+
+
+@pytest.mark.asyncio
+async def test_pending_legal_readiness_stops_before_retrieval_or_generation():
+    deps = make_dependencies(
+        legal=[legal_doc()],
+        legal_readiness=SyntheticReadyLegalReadinessGate(ready=False, manifest_sha256="pending-manifest"),
+    )
+
+    state = await run_workflow(
+        "Quy định EPR về bao bì là gì?",
+        user_id="u1",
+        conversation_id="pending-readiness",
+        deps=deps,
+    )
+
+    assert state["termination_reason"] == "insufficient_evidence"
+    assert state["citation_error"] == "legal_review_pending"
+    assert state["legal_readiness_status"] == "pending"
+    assert state["legal_readiness_sha"] == "pending-manifest"
+    assert "retrieve_legal" not in state["action_sequence"]
+    assert state["source"] == "error"
 
 
 @pytest.mark.asyncio

@@ -14,6 +14,8 @@ Models:
 """
 
 import importlib
+import logging
+import threading
 from functools import lru_cache
 from typing import Any
 
@@ -21,6 +23,8 @@ from langchain_core.embeddings import Embeddings
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from epr_agent.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 def _require_api_key(settings: Any) -> str:
@@ -70,30 +74,42 @@ def get_llm_stream() -> ChatOpenAI:
     )
 
 
+_st_lock = threading.Lock()
+_shared_st_models: dict[str, Any] = {}
+
+
 class LocalSentenceTransformerEmbeddings(Embeddings):
     """Local sentence embedding wrapper compatible with LangChain Embeddings interface."""
 
     def __init__(self, model_name: str = "darklethelong/vnlegal-lal", device: str | None = None) -> None:
         self.model_name = model_name
-        self.device = device
-        self._model: Any = None
+        self.device = device or "cpu"
 
     def _get_model(self):
-        if self._model is None:
-            try:
-                torch: Any = importlib.import_module("torch")
-                from sentence_transformers import SentenceTransformer
-                dev = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
-                self._model = SentenceTransformer(self.model_name, device=dev)
-                if hasattr(self._model, "to"):
-                    self._model.to(dtype=torch.float32)
-                self._model.eval()
-            except Exception as exc:
-                raise RuntimeError(
-                    f"Failed to load local embedding model '{self.model_name}': {exc}. "
-                    "Make sure 'sentence-transformers' and 'torch' are installed."
-                ) from exc
-        return self._model
+        with _st_lock:
+            key = f"{self.model_name}:{self.device}"
+            if key not in _shared_st_models:
+                try:
+                    torch: Any = importlib.import_module("torch")
+                    from sentence_transformers import SentenceTransformer
+                    try:
+                        model = SentenceTransformer(self.model_name, device=self.device)
+                    except Exception as dev_err:
+                        if self.device != "cpu":
+                            logger.warning("Device '%s' failed (%s), falling back to 'cpu'", self.device, dev_err)
+                            model = SentenceTransformer(self.model_name, device="cpu")
+                        else:
+                            raise
+                    if hasattr(model, "to"):
+                        model.to(dtype=torch.float32)
+                    model.eval()
+                    _shared_st_models[key] = model
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Failed to load local embedding model '{self.model_name}': {exc}. "
+                        "Make sure 'sentence-transformers' and 'torch' are installed."
+                    ) from exc
+            return _shared_st_models[key]
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         model = self._get_model()

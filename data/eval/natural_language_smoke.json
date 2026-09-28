@@ -13,7 +13,12 @@
             "route": "legal_lookup",
             "termination_reason": "answer_complete",
             "source_nonempty": true,
-            "retrieval_count_min": 1
+            "retrieval_count_min": 1,
+            "source_id_contains": ["corp-law-111"],
+            "anchor_contains": "Điều 111",
+            "instrument_contains": "59/2020/QH14",
+            "answer_contains": ["03", "cổ đông"],
+            "answer_not_contains": ["EPR", "tái chế"]
           }
         }
       ]
@@ -74,20 +79,25 @@
           "query": "2026 có luật gì mới không?",
           "expect": {
             "route": "legal_lookup",
-            "termination_reason": "answer_complete",
-            "source_nonempty": true
+            "termination_reason": "insufficient_evidence",
+            "safe_stop_reason": "missing_provision",
+            "source_empty": true,
+            "retrieval_count_min": 1,
+            "answer_not_contains": ["Nghị định 08/2022", "EPR", "tái chế"]
           }
         },
         {
           "query": "còn gì nữa?",
           "expect": {
             "route": "legal_lookup",
-            "termination_reason": "answer_complete",
+            "termination_reason": "insufficient_evidence",
+            "safe_stop_reason": "missing_provision",
             "context_loaded": true,
             "is_follow_up": true,
             "history_messages": 2,
             "standalone_contains": ["2026", "còn gì nữa"],
-            "source_nonempty": true
+            "source_empty": true,
+            "answer_not_contains": ["Nghị định 08/2022", "EPR", "tái chế"]
           }
         }
       ]

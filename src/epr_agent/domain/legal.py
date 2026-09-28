@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Sequence
 from datetime import date
 from typing import Any, Literal
 
@@ -20,6 +21,10 @@ EMBEDDING_DIMENSIONS = 1536
 CHUNKING_PROFILE = "legal-structure-v2"
 INDEX_SCHEMA_VERSION = "legal-structure-v2-v4-appendix1"
 _ARTICLE_RE = re.compile(r"\b(?:điều|dieu)\s+(\d+[a-zđ]?)\b", re.IGNORECASE)
+_APPENDIX_RE = re.compile(
+    r"\b(?:phụ\s*lục|phu\s*luc)\s*(?:số\s*)?([ivxlcdm]+|\d+)\b",
+    re.IGNORECASE,
+)
 _DOCUMENT_RE = re.compile(
     r"\b(?:(?:bộ\s*)?luật|nghị\s*định|nghi\s*dinh|thông\s*tư|thong\s*tu|"
     r"quyết\s*định|quyet\s*dinh|nghị\s*quyết|nghi\s*quyet|pháp\s*lệnh|"
@@ -71,9 +76,12 @@ class LegalAnchor(BaseModel):
     article: str = ""
     clause: str = ""
     point: str = ""
+    appendix: str = ""
 
     def key(self) -> str:
-        return " | ".join(part for part in (self.document_number, self.article, self.clause, self.point) if part)
+        return " | ".join(
+            part for part in (self.document_number, self.article, self.clause, self.point, self.appendix) if part
+        )
 
 
 def explicit_anchors(query: str) -> list[LegalAnchor]:
@@ -107,11 +115,46 @@ def explicit_anchors(query: str) -> list[LegalAnchor]:
         # its Khoản/Điểm suffix.
         if not any(existing.article.casefold() == anchor.article.casefold() for existing in anchors):
             anchors.append(anchor)
+    for match in _APPENDIX_RE.finditer(text):
+        appendix = f"Phụ lục {match.group(1).upper()}"
+        anchor = LegalAnchor(document_number=default_document, appendix=appendix)
+        if not any(existing.key().casefold() == anchor.key().casefold() for existing in anchors):
+            anchors.append(anchor)
     # A document name by itself is still an explicit anchor: downstream
     # rewriting must preserve it even when no Article is mentioned.
     if not anchors and default_document:
         anchors.append(LegalAnchor(document_number=default_document))
     return anchors
+
+
+def parse_required_anchors(raw_anchors: Sequence[str]) -> tuple[list[LegalAnchor], list[str]]:
+    """Parse and deduplicate required anchors without silently dropping errors.
+
+    The request model intentionally keeps ``required_anchors`` as ``list[str]``
+    for wire compatibility.  This helper is the typed boundary used by the
+    official-delta adapter.  ``invalid`` contains every input that did not
+    produce an explicit legal anchor so callers can fail closed while
+    retaining the original values in traces.
+    """
+
+    parsed: list[LegalAnchor] = []
+    invalid: list[str] = []
+    seen: set[str] = set()
+    for raw_value in raw_anchors:
+        raw = str(raw_value).strip()
+        if not raw:
+            invalid.append(raw)
+            continue
+        anchors = explicit_anchors(raw)
+        if not anchors:
+            invalid.append(raw)
+            continue
+        for anchor in anchors:
+            key = anchor.key()
+            if key and key not in seen:
+                parsed.append(anchor)
+                seen.add(key)
+    return parsed, invalid
 
 
 def normalise_embedding_text(text: str) -> str:

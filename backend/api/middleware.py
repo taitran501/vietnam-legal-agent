@@ -69,7 +69,8 @@ class RateLimiter:
             pipe.expire(minute_key, 120)  # Keep for 2 minutes
             pipe.incr(hour_key)
             pipe.expire(hour_key, 7200)   # Keep for 2 hours
-            results = await pipe.execute()
+            import asyncio
+            results = await asyncio.wait_for(pipe.execute(), timeout=0.2)
             
             minute_count = results[0]
             hour_count = results[2]

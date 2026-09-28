@@ -54,6 +54,16 @@ def test_greeting_with_legal_request_is_not_chitchat():
     assert is_greeting("Xin chào, bạn có thể giúp tôi tra cứu luật không?") is False
 
 
+def test_pure_greetings_and_identity_queries_are_chitchat():
+    assert is_greeting("alo ai vay") is True
+    assert classify_route("alo ai vay").value == "chitchat"
+    assert is_greeting("ai vậy") is True
+    assert classify_route("bạn là ai").value == "chitchat"
+    assert is_greeting("chào bạn") is True
+    assert classify_route("chào bạn").value == "chitchat"
+
+
+
 def test_explicit_anchor_parser_supports_law_instrument_numbers():
     anchors = explicit_anchors("Luật số 08/2026/QH16 có hiệu lực từ ngày nào?")
     assert [anchor.document_number for anchor in anchors] == ["08/2026/QH16"]

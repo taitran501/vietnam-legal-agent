@@ -31,7 +31,7 @@ EPR_TERMS = (
 
 # General legal topics used to recognise first-person/company requests as case
 # assessments regardless of domain (labor, land, civil, corporate, traffic,
-# marriage & family, environmental/EPR).
+# marriage & family, environmental/EPR, tax, etc.).
 CASE_TOPIC_TERMS = (
     "nghĩa vụ",
     "quyền",
@@ -48,7 +48,9 @@ CASE_TOPIC_TERMS = (
     "lương",
     "thuê",
     "đặt cọc",
-    "vay",
+    "vay tiền",
+
+    "hợp đồng vay",
     "ly hôn",
     "kết hôn",
     "cổ đông",
@@ -76,12 +78,17 @@ CASE_TOPIC_TERMS = (
 )
 
 LEGAL_DOMAIN_SIGNALS: dict[str, tuple[str, ...]] = {
-    "labor": ("lao động", "thử việc", "thôi việc", "sa thải", "chấm dứt hợp đồng", "lương", "người sử dụng lao động", "người lao động", "bảo hiểm xã hội", "làm thêm giờ", "thai sản"),
-    "civil_contract": ("hợp đồng", "thuê nhà", "đặt cọc", "vay", "mua bán", "tăng giá thuê", "lãi suất", "phạt vi phạm hợp đồng"),
-    "marriage_family": ("ly hôn", "kết hôn", "hôn nhân", "gia đình", "cấp dưỡng", "trích lục kết hôn"),
+    "labor": ("lao động", "thử việc", "thôi việc", "sa thải", "đuổi việc", "nghỉ việc", "cho nghỉ việc", "bị cho nghỉ", "chấm dứt hợp đồng", "lương", "tiền lương", "người sử dụng lao động", "người lao động", "bảo hiểm xã hội", "bhtn", "bhyt", "bhxh", "bảo hiểm thất nghiệp", "làm thêm giờ", "thai sản", "giám đốc", "báo trước", "trợ cấp", "đền bù", "bồi thường"),
+    "civil_contract": ("hợp đồng", "thuê nhà", "chủ nhà", "tiền nhà", "đặt cọc", "tiền cọc", "vay tiền", "hợp đồng vay", "khoản vay", "cho vay", "mượn tiền", "đòi nợ", "mua bán", "tăng giá", "tăng giá thuê", "hợp đồng thuê", "lãi suất", "phạt vi phạm hợp đồng", "bồi thường", "thừa kế", "di chúc", "bồi thường thiệt hại", "thiệt hại ngoài hợp đồng", "viện phí", "sửa xe"),
+    "marriage_family": ("ly hôn", "kết hôn", "hôn nhân", "gia đình", "cấp dưỡng", "trích lục kết hôn", "quyền nuôi con", "nuôi con", "vợ chồng", "tài sản chung", "tài sản riêng", "chia tài sản", "phân chia tài sản", "chồng", "vợ", "bạo lực gia đình", "ngoại tình", "trước khi cưới"),
     "corporate": ("cổ đông", "cổ phần", "đại hội đồng", "hội đồng quản trị", "điều lệ công ty", "thành lập doanh nghiệp"),
     "land": ("đất", "đất đai", "sổ đỏ", "sổ hồng", "thu hồi", "thu hồi đất", "bồi thường đất", "quyền sử dụng đất", "tái định cư", "giấy chứng nhận quyền sử dụng"),
-    "traffic": ("giao thông", "nồng độ cồn", "vượt đèn", "quá tốc độ", "bằng lái", "tai nạn", "xử phạt giao thông", "mức phạt"),
+    "traffic": ("giao thông", "nồng độ cồn", "vượt đèn", "quá tốc độ", "bằng lái", "tai nạn", "xử phạt giao thông", "mức phạt", "tai nạn giao thông", "viện phí", "sửa xe", "tông xe", "va chạm xe", "bồi thường tai nạn"),
+    "tax": ("thuế", "thuế tncn", "thuế tndn", "thuế gtgt", "thuế vat", "giảm trừ gia cảnh", "người phụ thuộc", "hoàn thuế", "quyết toán thuế"),
+    "intellectual_property": ("sở hữu trí tuệ", "nhãn hiệu", "bản quyền", "sáng chế", "kiểu dáng công nghiệp", "xâm phạm quyền"),
+    "construction": ("xây dựng", "giấy phép xây dựng", "xây dựng trái phép", "công trình xây dựng", "nghiệm thu"),
+    "consumer_protection": ("bảo vệ người tiêu dùng", "hàng giả", "hàng nhái", "khiếu nại người tiêu dùng"),
+    "administrative": ("xử phạt vi phạm hành chính", "khiếu nại hành chính", "tố cáo", "tố tụng hành chính"),
     "epr": EPR_TERMS
     + (
         "pin",
@@ -126,19 +133,38 @@ NO_EVIDENCE_TERMS = (
     "tiêu chuẩn quốc tế epr",
 )
 
+_GREETING_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b(xin\s+)?chao\b"),
+    re.compile(r"\b(hello|hi|hey|alo)\b"),
+    re.compile(r"\b(alo\s+)?ai\s+(vay|day|do|the|ha|nhi|dang\s+truc)\b"),
+    re.compile(r"\b(ban|may|cau|em|anh|chi|bot|tro\s+ly)\s+la\s+ai\b"),
+    re.compile(r"\b(ban|may|cau|em)\s+ten\s+gi\b"),
+    re.compile(r"\bco\s+ai\s+(o\s+day\s+)?(khong|ko)\b"),
+    re.compile(r"\b(lam\s+duoc\s+gi|giup\s+(duoc\s+)?gi|chuc\s+nang\s+la\s+gi|gioi\s+thieu)\b"),
+    re.compile(r"\b(cam\s+on|thank|thanks|tam\s+biet|bye)\b"),
+)
+
 GREETING_TERMS = (
     "xin chào",
     "chào bạn",
     "hello",
     "hi",
+    "alo",
     "cảm ơn",
     "thanks",
     "thank you",
     "tạm biệt",
-    "bạn là ai",
+    "chào buổi sáng",
+    "chào buổi chiều",
+    "chào buổi tối",
+    "chào bot",
+    "chào trợ lý",
+    "chào em",
+    "chào anh",
+    "chào chị",
+    "hey",
     "hôm nay trời",
     "hôm nay thế nào",
-    "chào buổi sáng",
     "quan tâm nhất",
     "cần quan tâm",
     "quan tâm gì",
@@ -267,6 +293,37 @@ class QueryPlan(BaseModel):
     facts: ExtractedFacts = Field(default_factory=ExtractedFacts)
     missing_facts: list[str] = Field(default_factory=list)
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    @field_validator("task_type", mode="before")
+    @classmethod
+    def _normalize_task_type(cls, value: object) -> object:
+        val_str = str(value).lower()
+        if val_str in {"case_assessment", "assess_case", "assess_epr_obligation"}:
+            return TaskType.CASE_ASSESSMENT
+        if val_str in {"compliance_checklist", "checklist", "build_compliance_checklist"}:
+            return TaskType.BUILD_COMPLIANCE_CHECKLIST
+        if val_str in {"chitchat", "greeting"}:
+            return TaskType.CHITCHAT
+        if val_str in {"legal_lookup", "legal_explain_compare", "explain_compare", "out_of_scope", "research_web"}:
+            return TaskType.LEGAL_LOOKUP
+        return value
+
+    @field_validator("route", mode="before")
+    @classmethod
+    def _normalize_route(cls, value: object) -> object:
+        val_str = str(value).lower()
+        if val_str in {"assess_epr_obligation", "assess_case", "case_assessment"}:
+            return RouteType.CASE_ASSESSMENT
+        if val_str in {"compliance_checklist", "checklist", "build_compliance_checklist"}:
+            return RouteType.COMPLIANCE_CHECKLIST
+        if val_str in {"chitchat", "greeting"}:
+            return RouteType.CHITCHAT
+        if val_str in {"legal_explain_compare", "explain_compare"}:
+            return RouteType.LEGAL_EXPLAIN_COMPARE
+        if val_str in {"research_web", "web_research"}:
+            return RouteType.RESEARCH_WEB
+        if val_str in {"out_of_scope", "non_legal"}:
+            return RouteType.OUT_OF_SCOPE
+        return RouteType.LEGAL_LOOKUP
 
     @field_validator("standalone_query", mode="before")
     @classmethod
@@ -310,6 +367,10 @@ NON_LEGAL_OUT_OF_SCOPE_TERMS = (
     "write code",
     "python code",
     "flask backend",
+    "giá bitcoin",
+    "bitcoin",
+    "crypto",
+    "tiền ảo",
 )
 
 LEGAL_SCOPE_TERMS = (
@@ -351,6 +412,13 @@ LEGAL_SCOPE_TERMS = (
     "mức phạt",
     "checklist",
     "tuân thủ",
+    "chia tài sản",
+    "tài sản chung",
+    "tài sản riêng",
+    "nuôi con",
+    "viện phí",
+    "sửa xe",
+    "vợ chồng",
 )
 
 OWN_CONTEXT_TERMS = (
@@ -358,11 +426,14 @@ OWN_CONTEXT_TERMS = (
     "mình",
     "chúng tôi",
     "công ty tôi",
+    "công ty em",
     "doanh nghiệp tôi",
     "trường hợp của tôi",
+    "trường hợp của em",
     "của công ty tôi",
     "của doanh nghiệp tôi",
     "hợp đồng của tôi",
+    "hợp đồng của em",
 )
 
 CASE_ACTION_TERMS = (
@@ -399,7 +470,7 @@ def _contains_any_term(text: str, terms: tuple[str, ...]) -> bool:
     folded = _fold(text)
     for term in terms:
         candidate = _fold(term)
-        if len(candidate) <= 3:
+        if len(candidate) <= 4:
             if re.search(rf"\b{re.escape(candidate)}\b", folded):
                 return True
         elif candidate in folded:
@@ -413,16 +484,25 @@ def _contains_legal_signal(query: str) -> bool:
         return False
     if explicit_anchors(q):
         return True
-    if any(_fold(term) in q for term in LEGAL_SCOPE_TERMS):
+    if _contains_any_term(q, LEGAL_SCOPE_TERMS):
         return True
-    return any(_fold(term) in q for signals in LEGAL_DOMAIN_SIGNALS.values() for term in signals)
+    for signals in LEGAL_DOMAIN_SIGNALS.values():
+        if _contains_any_term(q, signals):
+            return True
+    return False
 
 
 def _is_factual_lookup_query(query: str) -> bool:
     q = _fold(query)
+    for term in FACTUAL_LOOKUP_TERMS:
+        folded_term = _fold(term)
+        if len(folded_term) <= 6:
+            if re.search(rf"\b{re.escape(folded_term)}\b", q):
+                return True
+        elif folded_term in q:
+            return True
     return bool(
         explicit_anchors(q)
-        or any(_fold(term) in q for term in FACTUAL_LOOKUP_TERMS)
         or any(_fold(term) in q for term in ("cần tối thiểu", "từ ngày nào", "bao lâu", "thế nào"))
     )
 
@@ -433,7 +513,7 @@ def _is_case_assessment_query(query: str) -> bool:
     # Accent folding turns “tối” into the same token as “tôi”; preserve the
     # personal-pronoun boundary so a factual “tối đa” question cannot become a
     # case assessment. Accept both accented and keyboard-only “toi”.
-    has_own_context = bool(re.search(r"(?<!\w)(?:tôi|toi)(?!\w)", raw_q)) or any(
+    has_own_context = bool(re.search(r"(?<!\w)(?:tôi|toi|em|cháu|mình|minh)(?!\w)", raw_q)) or any(
         _fold(term) in q for term in OWN_CONTEXT_TERMS if term not in {"tôi", "mình"}
     )
     # EPR has an established business-role phrasing where “doanh nghiệp
@@ -461,12 +541,15 @@ def is_greeting(query: str) -> bool:
     q = _normalise(query)
     if not q:
         return False
-    # A greeting followed by a legal request is a legal query, not chitchat.
-    if _contains_legal_signal(q):
-        return False
     folded = _fold(q)
-    if any((re.search(rf"\b{re.escape(_fold(term))}\b", folded) if len(term) <= 3 else _fold(term) in folded) for term in GREETING_TERMS):
-        return True
+    is_greeting_match = any(pattern.search(folded) for pattern in _GREETING_PATTERNS) or any(
+        (re.search(rf"\b{re.escape(_fold(term))}\b", folded) if len(term) <= 4 else _fold(term) in folded)
+        for term in GREETING_TERMS
+    )
+    if is_greeting_match:
+        if explicit_anchors(q):
+            return False
+        return not any(term in folded for term in ("tra cuu", "luat", "dieu ", "khoan ", "nghi dinh", "thong tu", "sa thai", "ly hon", "tranh chap", "khoi kien", "boi thuong"))
     return len(q) <= 45 and not _contains_any_term(q, EPR_TERMS) and any(
         _fold(term) in folded for term in ("thời tiết", "trời đẹp", "khỏe không", "đang làm gì")
     )
@@ -474,18 +557,7 @@ def is_greeting(query: str) -> bool:
 
 def is_legal_scope(query: str, history: list[dict[str, Any]] | None = None, active_case: dict[str, Any] | None = None) -> bool:
     q = _normalise(query)
-    if _contains_any_term(q, NON_LEGAL_OUT_OF_SCOPE_TERMS):
-        return False
-    if active_case:
-        return True
-    # A terse context-only prompt is still a legal workflow boundary even
-    # before history is available; the planner will ask the user to restate
-    # the missing topic instead of calling retrieval.
-    if is_context_dependent_query(q):
-        return True
-    if _is_case_assessment_query(q):
-        return True
-    return _contains_legal_signal(q)
+    return not _contains_any_term(q, NON_LEGAL_OUT_OF_SCOPE_TERMS)
 
 
 def is_known_non_epr_query(query: str) -> bool:
@@ -505,6 +577,12 @@ def classify_task(query: str, history: list[dict[str, Any]] | None = None, activ
     if is_greeting(q):
         return TaskType.CHITCHAT
 
+    if active_case and active_case.get("task_type") in {
+        TaskType.CASE_ASSESSMENT.value,
+        TaskType.BUILD_COMPLIANCE_CHECKLIST.value,
+    } and len(q) < 100:
+        return TaskType(active_case["task_type"])
+
     if _contains_any_term(q, CHECKLIST_TERMS):
         return TaskType.BUILD_COMPLIANCE_CHECKLIST
 
@@ -515,12 +593,6 @@ def classify_task(query: str, history: list[dict[str, Any]] | None = None, activ
         return TaskType.LEGAL_LOOKUP
     if _is_case_assessment_query(q):
         return TaskType.CASE_ASSESSMENT
-
-    if active_case and active_case.get("task_type") in {
-        TaskType.CASE_ASSESSMENT.value,
-        TaskType.BUILD_COMPLIANCE_CHECKLIST.value,
-    } and len(q) < 100:
-        return TaskType(active_case["task_type"])
 
     return TaskType.LEGAL_LOOKUP
 
@@ -801,7 +873,7 @@ def preserve_explicit_anchors(original_query: str, rewritten_query: str) -> str:
     missing = [
         value
         for anchor in explicit_anchors(original_query)
-        for value in (anchor.document_number, anchor.article, anchor.clause, anchor.point)
+        for value in (anchor.document_number, anchor.article, anchor.clause, anchor.point, anchor.appendix)
         if value and value.casefold() not in rewritten.casefold()
     ]
     if missing:
@@ -833,7 +905,7 @@ def deterministic_task_understanding(
     task = classify_task(query, history, active_case)
     standalone = rewrite_follow_up(query, history, active_case)
     facts = merge_facts(active_case, extract_facts(query))
-    is_follow_up = is_context_dependent_query(query) or standalone != " ".join((query or "").split())
+    is_follow_up = is_context_dependent_query(query) or standalone != " ".join((query or "").split()) or bool(active_case)
     return TaskUnderstanding(
         task_type=task,
         route=classify_route(query, history, active_case),

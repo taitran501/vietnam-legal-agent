@@ -34,7 +34,6 @@ import {
   authSessionExpiredCopy,
   authSignedOutCopy,
   capabilityUnavailableCopy,
-  previewNotice,
   taskCopy,
 } from '@/lib/userCopy';
 import { downloadPreliminaryReport } from '@/lib/reportExport';
@@ -476,13 +475,6 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
           onOpenCase={() => setCaseDrawerOpen(true)}
           onOpenMobileNav={() => setMobileSidebarOpen(true)}
         />
-
-        {preview && (
-          <div className="flex shrink-0 items-center justify-center gap-2 border-b border-[#d7a65a] bg-[#fff1d7] px-4 py-2 text-center text-xs font-semibold text-[#714b18]" role="status">
-            <Icon name="alert" size={15} />
-            {previewNotice}
-          </div>
-        )}
         {!legalReady && !preview && (
           <div className="flex shrink-0 items-center justify-center gap-2 border-b border-[#ead6b8] bg-[#fff8ea] px-4 py-2 text-center text-xs text-[#714b18]" role="status">
             <Icon name="wifiOff" size={15} />

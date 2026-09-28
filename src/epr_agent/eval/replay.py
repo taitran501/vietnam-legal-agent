@@ -30,6 +30,7 @@ from epr_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
 from epr_agent.tools.evidence import EvidenceEvaluator
 from epr_agent.tools.generation import EvidenceGenerationGateway
 from epr_agent.tools.history import ContextSnapshot
+from epr_agent.tools.legal_readiness import SyntheticReadyLegalReadinessGate
 from epr_agent.tools.retrieval import StaticRetrievalGateway
 
 
@@ -239,6 +240,7 @@ def deterministic_runtime(case: EvaluationCase) -> AgentWorkflowRuntime:
         evidence=EvidenceEvaluator(min_docs=1, min_chars=1),
         generation=EvidenceGenerationGateway(),
         planner=BoundedPlanner(max_retrieval_actions=2, max_repairs=1, max_iterations=5),
+        legal_readiness=SyntheticReadyLegalReadinessGate(),
     )
     return AgentWorkflowRuntime(
         deps,

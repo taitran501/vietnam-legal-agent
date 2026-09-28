@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from epr_agent.domain.verification import VerificationStatus
 from epr_agent.eval.contracts import (
     AuthoritativeSource,
     EvalTurn,
@@ -15,6 +16,8 @@ from epr_agent.eval.contracts import (
     ExpectedCitation,
     ExpectedClaim,
     ExpectedOutcome,
+    FailureCode,
+    failure_code_for_verification_status,
     load_evaluation_case,
 )
 from epr_agent.eval.evidence_verifier import verify_evaluation_case
@@ -58,6 +61,22 @@ def test_evaluation_case_uses_informational_evidence_by_default() -> None:
         evidence={"status": EvidenceStatus.INFORMATIONAL},
     )
     assert case.evidence.status == EvidenceStatus.INFORMATIONAL
+
+
+def test_runtime_verification_status_maps_to_replay_failure_code() -> None:
+    assert (
+        failure_code_for_verification_status(VerificationStatus.INSUFFICIENT_EVIDENCE)
+        is FailureCode.INSUFFICIENT_EVIDENCE
+    )
+    assert (
+        failure_code_for_verification_status(VerificationStatus.UNSUPPORTED_CLAIM)
+        is FailureCode.UNSUPPORTED_CLAIM
+    )
+    assert (
+        failure_code_for_verification_status(VerificationStatus.VERIFICATION_UNAVAILABLE)
+        is FailureCode.VERIFICATION_UNAVAILABLE
+    )
+    assert failure_code_for_verification_status(VerificationStatus.VERIFIED) is None
 
 
 def test_example_fixture_is_evaluated_as_engineering_evidence() -> None:

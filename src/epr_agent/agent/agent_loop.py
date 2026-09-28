@@ -11,13 +11,14 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, cast
 
 from epr_agent.agent.agent_prompt import SYSTEM_PROMPT
 from epr_agent.agent.planner import AgentBudgetController
 from epr_agent.agent.tool_registry import ALL_AGENT_TOOLS
-from epr_agent.domain.models import TerminationReason
+from epr_agent.domain.models import TerminationReason, documents_from_dict
+from epr_agent.tools.evidence import build_citations, extract_citation_sources
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,10 @@ class AgentRunResult:
     source: str
     steps_taken: int
     cache_hit: bool
+    citation_sources: list[dict[str, Any]] = field(default_factory=list)
+    question_form: dict[str, Any] | None = None
+    allow_skip: bool = False
+    financial_calculation: dict[str, Any] | None = None
     awaiting_user_input: bool = False
     follow_up_question: str = ""
     case_state: dict[str, Any] | None = None
@@ -75,8 +80,8 @@ class AgentRunConfig:
     """Configuration and guardrail limits for the agent loop."""
 
     max_steps: int = 5
-    max_search_calls: int = 4
-    max_web_calls: int = 1
+    max_search_calls: int = 6
+    max_web_calls: int = 3
     tool_timeout_s: float = 20.0
     enable_cache: bool = True
 
@@ -120,11 +125,15 @@ def _compact_observation_for_agent(tool_name: str, observation: dict[str, Any]) 
         for doc in observation["documents"][:4]:
             if not isinstance(doc, dict):
                 continue
-            content = str(doc.get("content") or doc.get("page_content") or "")[:700]
+            content = str(doc.get("content") or doc.get("page_content") or "")[:800]
             meta = dict(doc.get("metadata") or {})
             essential_meta = {
                 k: meta[k]
-                for k in ("Dieu", "Chuong", "Muc", "Document_Number", "Source_Title", "anchor")
+                for k in (
+                    "Dieu", "Chuong", "Muc", "Document_Number", "Source_Title",
+                    "source_title", "legal_anchor", "anchor", "law_ref",
+                    "source", "title", "url", "official_url"
+                )
                 if k in meta
             }
             compacted_docs.append({
@@ -143,7 +152,7 @@ def _compact_observation_for_agent(tool_name: str, observation: dict[str, Any]) 
 
 
 class EprAgentRunner:
-    """Autonomous ReAct runner for supported Vietnamese legal analysis."""
+    """Autonomous ReAct runner for supported Vietnamese legal assistance."""
 
     def __init__(
         self,
@@ -224,6 +233,7 @@ class EprAgentRunner:
         all_evidence: list[dict[str, Any]] = []
         cache_hit = False
         assessment_payload: dict[str, Any] | None = None
+        financial_payload: dict[str, Any] | None = None
 
         messages = self._build_initial_messages(
             query,
@@ -270,6 +280,24 @@ class EprAgentRunner:
             tool_calls = getattr(response, "tool_calls", None) or []
             if not tool_calls:
                 answer = str(getattr(response, "content", "") or "").strip()
+                # If answering a legal question without any evidence retrieved, nudge agent to search
+                if (
+                    not all_evidence
+                    and not cache_hit
+                    and step < self.config.max_steps - 1
+                    and len(answer) > 40
+                    and not any(w in answer.lower() for w in ("xin chào", "chào bạn", "hello", "hi", "bạn là ai", "hẹn gặp lại", "cảm ơn bạn"))
+                ):
+                    messages.append({
+                        "role": "user",
+                        "content": "Yêu cầu bắt buộc: Câu trả lời cần có căn cứ pháp lý. Hãy gọi tool `search_legal_provisions` với từ khóa trọng tâm để tra cứu quy định pháp luật trước khi kết luận.",
+                    })
+                    continue
+
+                doc_records = documents_from_dict(all_evidence)
+                citation_sources = [cs.to_dict() for cs in extract_citation_sources(answer, doc_records)]
+                citations = [c.to_dict() for c in build_citations(doc_records)]
+
                 yield {
                     "type": "agent_complete",
                     "result": AgentRunResult(
@@ -281,11 +309,13 @@ class EprAgentRunner:
                         ),
                         trajectory=trajectory,
                         evidence=all_evidence,
-                        citations=[],
+                        citations=citations,
+                        citation_sources=citation_sources,
                         source="cache" if cache_hit else "legal",
                         steps_taken=step + 1,
                         cache_hit=cache_hit,
                         assessment=assessment_payload,
+                        financial_calculation=financial_payload,
                     ),
                 }
                 return
@@ -378,6 +408,12 @@ class EprAgentRunner:
                 # Track evidence
                 if "documents" in observation and isinstance(observation["documents"], list):
                     all_evidence.extend(observation["documents"])
+                elif (
+                    tool_name == "lookup_answer_cache"
+                    and observation.get("hit")
+                    and isinstance(observation.get("evidence"), list)
+                ):
+                    all_evidence.extend(observation["evidence"])
 
                 # Track cache
                 if tool_name == "lookup_answer_cache" and observation.get("hit"):
@@ -387,9 +423,42 @@ class EprAgentRunner:
                 if tool_name == "evaluate_legal_case" and observation.get("ok"):
                     assessment_payload = observation
 
-                # Handle terminal clarification action
+                # Track financial calculation results
+                if tool_name == "calculate_statutory_amounts" and observation.get("ok"):
+                    financial_payload = observation
+
+                # Handle clarification action (Open-Design Pattern with Skip affordance)
                 if tool_name == "ask_user_for_clarification" or observation.get("awaiting_user_input"):
                     question = observation.get("question") or "Bạn có thể cung cấp thêm thông tin cần thiết không?"
+                    question_form = observation.get("question_form")
+                    allow_skip = bool(observation.get("allow_skip", True))
+
+                    # If the user asked a substantive legal question, urge the agent to search and provide direct consultation
+                    has_substantive_inquiry = any(
+                        kw in query.lower()
+                        for kw in (
+                            "co duoc", "có được", "ai se", "ai sẽ", "chia the nao", "chia thế nào",
+                            "bao nhieu", "nộp đơn", "nop don", "khoi kien", "khởi kiện",
+                            "nuoi con", "nuôi con", "the nao", "thế nào", "tang gia", "tăng giá",
+                            "duoc khong", "được không"
+                        )
+                    )
+                    if has_substantive_inquiry and step < 2 and not all_evidence:
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": call_id,
+                            "content": json.dumps({
+                                "status": "clarification_recorded",
+                                "instruction": (
+                                    "Người dùng đang hỏi trực tiếp về quyền và nghĩa vụ pháp lý. "
+                                    "Bạn BẮT BUỘC phải gọi `search_legal_provisions` để tra cứu căn cứ điều luật và giải đáp trực tiếp câu hỏi của người dùng trước, "
+                                    "sau đó mới đính kèm gợi ý làm rõ ở cuối câu trả lời."
+                                ),
+                                "question_form": question_form,
+                            }, ensure_ascii=False),
+                        })
+                        continue
+
                     yield {
                         "type": "agent_complete",
                         "result": AgentRunResult(
@@ -398,11 +467,14 @@ class EprAgentRunner:
                             trajectory=trajectory,
                             evidence=[],
                             citations=[],
+                            citation_sources=[],
                             source="follow_up",
                             steps_taken=step + 1,
                             cache_hit=False,
                             awaiting_user_input=True,
                             follow_up_question=question,
+                            question_form=question_form,
+                            allow_skip=allow_skip,
                             case_state={
                                 "status": "collecting",
                                 "missing_facts": observation.get("missing_fields", []),
@@ -426,6 +498,10 @@ class EprAgentRunner:
                 })
 
         # ── 4. MAX STEPS REACHED: Safe termination fallback ──
+        doc_records = documents_from_dict(all_evidence)
+        citation_sources = [cs.to_dict() for cs in extract_citation_sources("", doc_records)]
+        citations = [c.to_dict() for c in build_citations(doc_records)]
+
         yield {
             "type": "agent_complete",
             "result": AgentRunResult(
@@ -433,10 +509,13 @@ class EprAgentRunner:
                 termination_reason=TerminationReason.INSUFFICIENT_EVIDENCE.value,
                 trajectory=trajectory,
                 evidence=all_evidence,
-                citations=[],
+                citations=citations,
+                citation_sources=citation_sources,
                 source="error",
                 steps_taken=step + 1,
                 cache_hit=False,
+                assessment=assessment_payload,
+                financial_calculation=financial_payload,
             ),
         }
 

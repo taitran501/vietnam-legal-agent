@@ -107,6 +107,26 @@ class Settings(BaseSettings):
         default=False,
         description="Allow the content-locked universal corpus as an explicit preview supplement; never implicit in production.",
     )
+    enable_official_delta_retrieval: bool = Field(
+        default=False,
+        description="Allow the exact-instrument official delta in preview; keep disabled until its source is promoted into the canonical corpus.",
+    )
+    enforce_legal_safety_circuit_breaker: bool = Field(
+        default=True,
+        description="Require legal verifier and critic failures to stop legal answer delivery",
+    )
+    enforce_legal_readiness_gate: bool = Field(
+        default=True,
+        description="Require an independently signed legal-readiness manifest for production legal answers",
+    )
+    legal_readiness_manifest_path: Path = Field(
+        default=BASE_DIR / "data" / "legal_readiness_manifest.json",
+        description="Independent legal review manifest; it is not part of the corpus hash",
+    )
+    official_delta_manifest_path: Path = Field(
+        default=BASE_DIR / "data" / "corpus" / "official_delta" / "manifest.json",
+        description="Repository-managed manifest for the small official-law delta experiment.",
+    )
     agent_pipeline_version: str = Field(
         default="pipeline-v4",
         description="Server-selected workflow runtime: pipeline-v3 | pipeline-v4 | pipeline-agent. Clients never choose a pipeline version.",
@@ -362,11 +382,19 @@ def validate_production_settings(settings: Settings) -> None:
         errors.append("REQUIRE_AUTH must be true")
     if settings.rate_limit_fail_open:
         errors.append("RATE_LIMIT_FAIL_OPEN must be false")
+    if not settings.enforce_legal_safety_circuit_breaker:
+        errors.append("ENFORCE_LEGAL_SAFETY_CIRCUIT_BREAKER must be true")
+    if not settings.enforce_legal_readiness_gate:
+        errors.append("ENFORCE_LEGAL_READINESS_GATE must be true")
     if settings.enable_trace_debug_api:
         errors.append("ENABLE_TRACE_DEBUG_API must be false")
     if settings.enable_universal_retrieval:
         errors.append(
             "ENABLE_UNIVERSAL_RETRIEVAL must be false until the content-locked universal corpus is included in the production release"
+        )
+    if settings.enable_official_delta_retrieval:
+        errors.append(
+            "ENABLE_OFFICIAL_DELTA_RETRIEVAL is preview-only until the delta is promoted into the canonical production corpus"
         )
     database_url = str(settings.database_url or "")
     if not database_url.startswith(("postgresql://", "postgres://", "postgresql+asyncpg://")):

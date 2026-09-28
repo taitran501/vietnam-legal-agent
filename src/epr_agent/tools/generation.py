@@ -1,6 +1,6 @@
 """Answer composition adapters.
 
-Legal lookup keeps the existing streaming LLM prompt through an adapter.  Case
+Legal lookup keeps the existing streaming LLM prompt through an adapter. Case
 assessment and checklist output is structured and conservative in the MVP so a
 missing or unverifiable fact cannot become an invented legal conclusion.
 """
@@ -13,7 +13,7 @@ import logging
 import re
 import unicodedata
 from typing import Any, Protocol
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qs, parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 
 from pydantic import BaseModel, Field
 
@@ -32,8 +32,23 @@ _WEB_LEGAL_SIGNALS = (
     "chinh phu",
     "quoc hoi",
     "thu tuong",
+    "toa an",
+    "vien kiem sat",
+    "bo tu phap",
+    "bo cong an",
     "bo tai chinh",
-    "epr",
+    "bo lao dong",
+    "bo tai nguyen",
+    "hop dong",
+    "lao dong",
+    "dat dai",
+    "dan su",
+    "hinh su",
+    "doanh nghiep",
+    "thue",
+    "hon nhan",
+    "giao thong",
+    "boi thuong",
     "tai che",
     "bao ve moi truong",
 )
@@ -90,6 +105,60 @@ def _web_result_matches_query(query: str, title: str, excerpt: str, url: str) ->
 def _clean_web_excerpt(value: str, limit: int) -> str:
     without_markup = re.sub(r"<[^>]+>", " ", value or "")
     return " ".join(without_markup.split())[:limit]
+
+
+def _search_duckduckgo_free(query: str, domains: list[str]) -> list[dict[str, Any]]:
+    """Free web search fallback querying public search engine with domain scoping."""
+    import html
+
+    import httpx
+
+    site_filter = " OR ".join(f"site:{d}" for d in domains[:3]) if domains else ""
+    full_query = f"{query} {site_filter}".strip() if site_filter else query
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
+    }
+    results: list[dict[str, Any]] = []
+    try:
+        with httpx.Client(timeout=10.0, follow_redirects=True) as client:
+            resp = client.post("https://html.duckduckgo.com/html/", data={"q": full_query}, headers=headers)
+            if resp.status_code == 200:
+                raw_html = resp.text
+                blocks = re.findall(r'<div class="[^"]*result__body[^"]*">([\s\S]*?)</div>\s*</div>', raw_html)
+                for block in blocks:
+                    title_m = re.search(r'<a[^>]+class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)</a>', block) or re.search(r'<a[^>]+class="[^"]*result__url[^"]*"[^>]*>([\s\S]*?)</a>', block)
+                    link_m = re.search(r'<a[^>]+href="([^"]+)"', block)
+                    snippet_m = re.search(r'class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)</(?:a|td|div)>', block)
+
+                    raw_href = link_m.group(1) if link_m else ""
+                    if "uddg=" in raw_href:
+                        parsed_href = urlsplit(raw_href)
+                        qs = parse_qs(parsed_href.query)
+                        actual_url = unquote(qs.get("uddg", [""])[0])
+                    else:
+                        actual_url = raw_href
+                    if actual_url and not actual_url.startswith("http"):
+                        actual_url = f"https://{actual_url}"
+
+                    raw_title = re.sub(r"<[^>]+>", "", title_m.group(1) if title_m else "")
+                    title = html.unescape(" ".join(raw_title.split()))
+                    raw_snippet = re.sub(r"<[^>]+>", "", snippet_m.group(1) if snippet_m else "")
+                    snippet = html.unescape(" ".join(raw_snippet.split()))
+
+                    if title and actual_url:
+                        results.append({
+                            "title": title,
+                            "url": actual_url,
+                            "content": snippet,
+                        })
+                        if len(results) >= 5:
+                            break
+    except Exception as exc:  # noqa: BLE001 - optional web search failure should not crash agent
+        logger.warning("Free web search provider encountered error: %s", exc)
+    return results
 
 
 class GenerationGateway(Protocol):
@@ -203,35 +272,33 @@ class EvidenceGenerationGateway:
         return self._compose_legal_route_answer(documents)
 
     async def web(self, query: str) -> tuple[str, list[DocumentRecord]]:
-        """Run explicit Tavily research and preserve each returned source.
-
-        The previous fallback manufactured one ``example.invalid`` document
-        from an already-synthesised answer.  This route instead returns the
-        actual title/URL/snippet so the response can be checked structurally.
-        """
+        """Run explicit web research and preserve each returned official source."""
 
         from epr_agent.config import get_settings
 
         settings = get_settings()
-        key = (settings.tavily_api_key or "").strip()
-        if not key or key.startswith("your-"):
-            return "", []
         domains = _official_domains(settings.web_official_domains)
         if not domains:
             return "", []
         scoped_query = f"{query} Việt Nam văn bản pháp luật chính thức"
 
-        def _search() -> list[dict[str, Any]]:
-            from tavily import TavilyClient  # type: ignore[import-untyped]
+        key = (getattr(settings, "tavily_api_key", None) or "").strip()
+        use_tavily = bool(key and not key.startswith("your-"))
 
-            result = TavilyClient(api_key=key).search(
-                query=scoped_query,
-                search_depth="advanced",
-                max_results=5,
-                include_answer=False,
-                include_domains=domains,
-            )
-            return list(result.get("results") or [])
+        def _search() -> list[dict[str, Any]]:
+            if use_tavily:
+                from tavily import TavilyClient  # type: ignore[import-untyped]
+
+                result = TavilyClient(api_key=key).search(
+                    query=scoped_query,
+                    search_depth="advanced",
+                    max_results=5,
+                    include_answer=False,
+                    include_domains=domains,
+                )
+                return list(result.get("results") or [])
+            # Free search harness provider fallback
+            return _search_duckduckgo_free(scoped_query, domains)
 
         try:
             results = await asyncio.to_thread(_search)
@@ -323,10 +390,10 @@ class EvidenceGenerationGateway:
     def _compose_checklist(query: str, facts: dict[str, str], documents: list[DocumentRecord]) -> str:
         return (
             "Checklist sơ bộ cho trường hợp đã cung cấp:\n"
-            f"1. Xác nhận vai trò doanh nghiệp ({facts.get('business_role', 'chưa rõ')}) và phạm vi hoạt động [1].\n"
-            f"2. Lập danh mục sản phẩm/bao bì ({facts.get('product_or_packaging', 'chưa rõ')}) và vật liệu ({facts.get('material', 'chưa rõ')}) [1].\n"
+            f"1. Xác nhận vai trò chủ thể ({facts.get('business_role', facts.get('role', 'chưa rõ'))}) và phạm vi hoạt động [1].\n"
+            f"2. Xác định đối tượng liên quan ({facts.get('product_or_packaging', facts.get('contract_type', 'chưa rõ'))}) và các điều kiện áp dụng [1].\n"
             "3. Đối chiếu ngưỡng, thời điểm và hình thức thực hiện trong điều khoản nguồn [1].\n"
-            "4. Lưu hồ sơ chứng minh số lượng, vật liệu và phương án thực hiện để kiểm tra nội bộ [1]."
+            "4. Lưu hồ sơ chứng minh và phương án thực hiện để kiểm tra, giám sát nội bộ [1]."
         )
 
     @classmethod

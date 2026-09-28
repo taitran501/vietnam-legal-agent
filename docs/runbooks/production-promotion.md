@@ -29,8 +29,17 @@ endpoint, OpenAI key, at least one authentication mechanism (OIDC, service
 token, or legacy compatibility key), and HTTPS `ALLOWED_ORIGINS` when the UI is
 cross-origin. `POSTGRES_PASSWORD` is required by Compose and has no insecure
 default. The backend rejects production startup when auth is disabled, rate
-limiting is fail-open, trace debugging is enabled, or local/HTTP CORS origins
-are configured.
+limiting is fail-open, trace debugging is enabled, either legal safety gate is
+disabled, or local/HTTP CORS origins are configured.
+
+The technical corpus audit and the independent legal-readiness manifest are
+separate release gates. The repository manifest starts blocked and contains no
+reviewer or sign-off. That state must not prevent process startup: `/health`
+continues to report liveness and `/ready` reports `degraded` while technical
+dependencies are healthy. Legal chat and case routes safe-stop until every
+requested EPR provision has a matching reviewer record, reviewed interval, and
+subject hash; chitchat, authentication, history, feedback, and explicit web
+research remain separate capabilities.
 
 Run these from the exact release commit:
 
@@ -51,15 +60,19 @@ Review the audit for:
 The current repository records technical amendment readiness without turning a
 benchmark fixture into legal ground truth. If technical integrity is absent,
 the active alias remains unchanged and the affected capabilities fail closed.
+The legal-readiness manifest is hashed separately from the corpus and must
+reference the exact corpus, amendment-map, and rule-pack hashes. It is not
+considered a legal approval until an authorized reviewer signs the relevant
+scope entries.
 
-## Multi-Domain Corpus Promotion
+## Bounded EPR Scope
 
-Each legal domain in the corpus follows its own technical activation boundary.
-The primary law collection and supplementary corpuses (e.g., Pháp điển) must
-have versioned source metadata and an explicit feature flag; no separate human
-reviewer record is required by the runtime. `ENABLE_UNIVERSAL_RETRIEVAL` remains
-`false` in production unless its content-locked inputs have passed the same
-technical checks.
+Milestone 1 only permits the bounded EPR scope of Điều 77–86 and Phụ lục XXII.
+No Nghị định 05/2025/NĐ-CP or Nghị định 48/2026/NĐ-CP ingestion, temporal
+materialization, or Universal Corpus expansion is part of this release. Any
+future corpus expansion needs its own technical audit, legal-readiness scope,
+and explicit production promotion decision. `ENABLE_UNIVERSAL_RETRIEVAL`
+remains `false` in production.
 
 ## Build and Promote Qdrant
 

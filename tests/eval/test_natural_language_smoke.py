@@ -63,6 +63,37 @@ def test_natural_smoke_contract_reports_missing_terminal_and_empty_source_mismat
     assert "no terminal SSE event received" in failures
 
 
+def test_natural_smoke_contract_rejects_wrong_domain_source() -> None:
+    observed, failures = evaluate_turn_contract(
+        [
+            {
+                "type": "response_complete",
+                "route": "legal_lookup",
+                "termination_reason": "answer_complete",
+                "text": "Theo Điều 77, trách nhiệm tái chế theo Nghị định 08/2022/NĐ-CP [1].",
+                "sources": [
+                    {
+                        "source_id": "epr-77",
+                        "anchor": "Điều 77",
+                        "instrument_number": "08/2022/NĐ-CP",
+                    }
+                ],
+            }
+        ],
+        {
+            "route": "legal_lookup",
+            "termination_reason": "answer_complete",
+            "source_nonempty": True,
+            "instrument_contains": "59/2020/QH14",
+            "answer_not_contains": ["tái chế"],
+        },
+    )
+
+    assert observed["sources_count"] == 1
+    assert any("instrument_contains" in failure for failure in failures)
+    assert any("answer_not_contains" in failure for failure in failures)
+
+
 def test_natural_smoke_fixture_is_multi_turn_and_deterministic() -> None:
     fixture_path = Path("data/eval/natural_language_smoke.json")
     fixture = json.loads(fixture_path.read_text(encoding="utf-8"))

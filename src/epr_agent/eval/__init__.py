@@ -14,6 +14,7 @@ from epr_agent.eval.contracts import (
     ExpectedOutcome,
     FailureCode,
     SourceVerification,
+    failure_code_for_verification_status,
 )
 from epr_agent.eval.evidence_verifier import verify_evaluation_case
 
@@ -31,5 +32,6 @@ __all__ = [
     "ExpectedOutcome",
     "FailureCode",
     "SourceVerification",
+    "failure_code_for_verification_status",
     "verify_evaluation_case",
 ]
