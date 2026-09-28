@@ -146,9 +146,19 @@ export const useChatStore = create<ChatState>((set) => ({
   setStatusMessage: (message) =>
     set({ statusMessage: message }),
   addWorkflowStep: (step) =>
-    set((state) => ({
-      workflowSteps: [...state.workflowSteps.filter((item) => item.step !== step.step), step].sort((a, b) => a.step - b.step),
-    })),
+    set((state) => {
+      const existingIdx = state.workflowSteps.findIndex(
+        (item) => (step.step > 0 && item.step === step.step) || (item.action === step.action && item.status === 'running')
+      );
+      if (existingIdx >= 0) {
+        const updated = [...state.workflowSteps];
+        updated[existingIdx] = { ...updated[existingIdx], ...step };
+        return { workflowSteps: updated.sort((a, b) => a.step - b.step) };
+      }
+      return {
+        workflowSteps: [...state.workflowSteps, step].sort((a, b) => a.step - b.step),
+      };
+    }),
   setWorkflowSteps: (workflowSteps) => set({ workflowSteps }),
   setActiveCase: (activeCase) => set({ activeCase }),
   setActiveTurn: (activeTurn) => set({ activeTurn }),

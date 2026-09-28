@@ -226,6 +226,8 @@ export function useChatStream() {
             action: event.action || 'unknown',
             label: event.label,
             status: event.status || 'completed',
+            latency_ms: event.latency_ms,
+            details: event.details ?? event.args,
             trace_id: event.trace_id,
           });
         } else if (event.type === 'response_chunk') {

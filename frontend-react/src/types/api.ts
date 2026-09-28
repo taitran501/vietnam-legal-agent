@@ -34,6 +34,9 @@ export interface SSEEvent {
   label?: string;
   status?: string;
   sequence?: number;
+  latency_ms?: number;
+  args?: Record<string, unknown>;
+  details?: unknown;
   trace_id?: string;
   task_type?: string;
   route?: string;

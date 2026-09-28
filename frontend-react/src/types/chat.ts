@@ -207,6 +207,8 @@ export interface WorkflowStep {
   pipeline_version?: string;
   sequence?: number;
   details?: unknown;
+  latency_ms?: number;
+  args?: Record<string, unknown>;
 }
 
 export interface Conversation {

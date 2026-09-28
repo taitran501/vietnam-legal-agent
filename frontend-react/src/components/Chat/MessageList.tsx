@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { CaseState, ChatMessage, SourceDocument, StreamError, WorkflowStep } from '@/types';
 import { ChatMessageComponent } from './ChatMessage';
 import { TypingIndicator } from './TypingIndicator';
+import { ReasoningBlock } from './ReasoningBlock';
 import { useAutoScroll } from '@/hooks/useAutoScroll';
 import { Icon } from '@/components/UI/Icon';
 import { errorPresentation } from '@/lib/userCopy';
@@ -124,7 +125,7 @@ export function MessageList({
                 <div className="ml-0 mt-3 sm:ml-[42px]">
                   {workflowSteps.length > 0 && (
                     <div className="mb-3">
-                      <TypingIndicator message={statusMessage} steps={workflowSteps} />
+                      <ReasoningBlock isStreaming statusMessage={statusMessage} steps={workflowSteps} />
                     </div>
                   )}
                   <div data-testid="streaming-answer" className="whitespace-pre-wrap break-words text-[15px] leading-7 text-[#262d2c] typing-cursor sm:text-base">

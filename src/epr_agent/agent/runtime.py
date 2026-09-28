@@ -1025,6 +1025,15 @@ class AgentWorkflowRuntime:
                     "message": status_message,
                     "stage": tool_name,
                 }
+                yield {
+                    "type": "workflow_step",
+                    "step": event.get("step", 1),
+                    "action": tool_name,
+                    "status": "running",
+                    "label": status_message,
+                    "args": event.get("args") or {},
+                    "trace_id": trace_id,
+                }
             elif event.get("type") == "agent_tool_result":
                 tool_name = str(event.get("tool") or "")
                 tool_status = str(event.get("status") or "failed")
@@ -1042,6 +1051,7 @@ class AgentWorkflowRuntime:
                     "step": event.get("step", 1),
                     "action": tool_name,
                     "status": tool_status,
+                    "label": _tool_status_messages.get(tool_name, "Đã hoàn thành bước."),
                     "latency_ms": event.get("latency_ms", 0.0),
                     "error_code": event.get("error_code"),
                     "trace_id": trace_id,
