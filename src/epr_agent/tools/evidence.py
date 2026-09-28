@@ -632,3 +632,62 @@ def format_citation_markdown_reference(source_or_sources: CitationSource | list[
     if source_or_sources.url:
         return f"[{source_or_sources.title}]({source_or_sources.url})"
     return f"[{source_or_sources.title}]"
+
+
+def auto_anchor_citations_in_answer(answer: str, documents: list[DocumentRecord]) -> str:
+    """Enrich answer with Deer-Flow inline citation markers [1], [2] when LLM omitted them."""
+    if not answer or not documents:
+        return answer
+
+    masked = mask_citation_code(answer)
+    existing_indices = set(int(m) for m in _CITATION_RE.findall(masked))
+    if existing_indices:
+        return answer
+
+    enriched = answer
+    anchored_indices: set[int] = set()
+
+    for idx, doc in enumerate(documents, start=1):
+        meta = doc.metadata or {}
+        dieu_val = str(meta.get("Dieu") or meta.get("article_title") or meta.get("legal_anchor") or "").strip()
+        match_art = re.search(r"Điều\s+(\d+[a-zđ]?)", dieu_val, re.IGNORECASE)
+        patterns_to_try = []
+        if match_art:
+            art_num = match_art.group(1)
+            patterns_to_try.append(re.compile(rf"(Điều\s+{art_num}\b(?!\s*\[\d+\]))", re.IGNORECASE))
+
+        doc_num = str(meta.get("Document_Number") or meta.get("instrument_number") or "").strip()
+        if doc_num and len(doc_num) >= 5:
+            patterns_to_try.append(re.compile(rf"({re.escape(doc_num)}\b(?!\s*\[\d+\]))", re.IGNORECASE))
+
+        for pat in patterns_to_try:
+            if pat.search(enriched):
+                enriched = pat.sub(rf"\1 [{idx}]", enriched, count=1)
+                anchored_indices.add(idx)
+                break
+
+    if not anchored_indices and documents:
+        lines = enriched.split("\n")
+        new_lines = []
+        doc_idx = 1
+        for line in lines:
+            stripped = line.strip()
+            if doc_idx <= len(documents) and (
+                stripped.startswith(("-", "*", "•"))
+                or bool(re.match(r"^\d+[\.\)]", stripped))
+            ):
+                new_lines.append(f"{line} [{doc_idx}]")
+                anchored_indices.add(doc_idx)
+                doc_idx += 1
+            else:
+                new_lines.append(line)
+        enriched = "\n".join(new_lines)
+
+    if not anchored_indices and documents:
+        paragraphs = enriched.split("\n\n", 1)
+        if len(paragraphs) == 2:
+            enriched = f"{paragraphs[0]} [1]\n\n{paragraphs[1]}"
+        else:
+            enriched = f"{enriched} [1]"
+
+    return enriched

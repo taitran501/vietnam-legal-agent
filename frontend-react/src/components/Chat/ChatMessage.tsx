@@ -73,6 +73,8 @@ export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOp
           <div className="legal-prose max-w-none text-[15px] leading-7 text-[#262d2c] sm:text-base">
             <MarkdownRenderer
               content={message.content}
+              documents={message.documents}
+              citations={message.workflow?.citations}
               onCitationClick={(index) => {
                 onOpenSources(
                   message.documents || [],

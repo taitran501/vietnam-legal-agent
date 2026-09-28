@@ -295,6 +295,8 @@ class EprAgentRunner:
                     continue
 
                 doc_records = documents_from_dict(all_evidence)
+                from epr_agent.tools.evidence import auto_anchor_citations_in_answer
+                answer = auto_anchor_citations_in_answer(answer, doc_records)
                 citation_sources = [cs.to_dict() for cs in extract_citation_sources(answer, doc_records)]
                 citations = [c.to_dict() for c in build_citations(doc_records)]
 

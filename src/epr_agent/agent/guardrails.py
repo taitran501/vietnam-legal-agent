@@ -97,6 +97,8 @@ class AgentGuardrails:
             return True, "ok", answer, []
 
         import re
+        from epr_agent.tools.evidence import auto_anchor_citations_in_answer
+        answer = auto_anchor_citations_in_answer(answer, docs)
         has_citations = bool(re.search(r"\[\d+\]", answer))
         if not has_citations:
             citations_dicts = [

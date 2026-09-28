@@ -165,7 +165,8 @@ def _build_article_index():
     """
     global _anchor_index, _article_index, _index_built, _article_index_collection
 
-    collection = _get_law_vectorstore().collection_name
+    settings = get_settings()
+    collection = settings.law_collection
     if _index_built and _article_index_collection == collection:
         return
 
@@ -175,13 +176,12 @@ def _build_article_index():
         _article_index = {}
         _anchor_index = {}
         client = _get_qdrant_client()
-        vs = _get_law_vectorstore()
 
         offset: QdrantOffset = None
         while True:
             def _scroll_article_index(current_offset: QdrantOffset = offset):
                 return client.scroll(
-                    collection_name=vs.collection_name,
+                    collection_name=collection,
                     limit=10000,
                     offset=current_offset,
                     with_payload=True,
@@ -217,7 +217,7 @@ def _build_article_index():
                 break
             offset = next_offset
 
-        _article_index_collection = vs.collection_name
+        _article_index_collection = collection
         _index_built = True
         logger.info("Article index built: %d entries", len(_article_index))
 
@@ -288,7 +288,8 @@ def _build_lexical_index() -> None:
     """Build an in-memory lexical index for lightweight BM25-style retrieval."""
     global _lexical_corpus, _lexical_index_built, _global_idf, _lexical_index_collection
 
-    collection = _get_law_vectorstore().collection_name
+    settings = get_settings()
+    collection = settings.law_collection
     if _lexical_index_built and _lexical_index_collection == collection:
         return
 
@@ -298,14 +299,13 @@ def _build_lexical_index() -> None:
         _lexical_corpus = []
         _global_idf = {}
         client = _get_qdrant_client()
-        vs = _get_law_vectorstore()
 
         records = []
         offset: QdrantOffset = None
         while True:
             def _scroll_lexical_index(current_offset: QdrantOffset = offset):
                 return client.scroll(
-                    collection_name=vs.collection_name,
+                    collection_name=collection,
                     limit=10000,
                     offset=current_offset,
                     with_payload=True,
@@ -367,7 +367,7 @@ def _build_lexical_index() -> None:
             }
 
         _lexical_corpus = corpus
-        _lexical_index_collection = vs.collection_name
+        _lexical_index_collection = collection
         _lexical_index_built = True
         logger.info("Lexical index built: %d docs", len(_lexical_corpus))
 
