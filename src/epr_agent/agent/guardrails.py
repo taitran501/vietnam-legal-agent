@@ -70,10 +70,6 @@ class AgentGuardrails:
             policy = VerificationPolicy(str(verification_policy))
         elif require_evidence:
             policy = VerificationPolicy.LEGAL_CORPUS
-        requires_evidence = require_evidence or policy in {
-            VerificationPolicy.LEGAL_CORPUS,
-            VerificationPolicy.WEB,
-        }
         requires_verification = enforce_legal_safety_circuit_breaker and policy is VerificationPolicy.LEGAL_CORPUS
         if requires_verification and claim_verifier is None:
             return (

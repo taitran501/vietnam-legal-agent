@@ -17,7 +17,7 @@ from typing import Any, cast
 from epr_agent.agent.agent_prompt import SYSTEM_PROMPT
 from epr_agent.agent.planner import AgentBudgetController
 from epr_agent.agent.tool_registry import ALL_AGENT_TOOLS
-from epr_agent.domain.models import DocumentRecord, TerminationReason, documents_from_dict
+from epr_agent.domain.models import TerminationReason, documents_from_dict
 from epr_agent.tools.evidence import build_citations, extract_citation_sources
 
 logger = logging.getLogger(__name__)

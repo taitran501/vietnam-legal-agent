@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import pytest
+
+from epr_agent.agent.tool_registry import ask_user_for_clarification, get_case_form_fields
 from epr_agent.domain.legal_rules import (
     FormOptionModel,
     FormQuestionModel,
@@ -10,7 +12,6 @@ from epr_agent.domain.legal_rules import (
     QuestionFormModel,
     UniversalCaseFormResolver,
 )
-from epr_agent.agent.tool_registry import ask_user_for_clarification, get_case_form_fields
 
 
 def test_question_form_model_structure() -> None:

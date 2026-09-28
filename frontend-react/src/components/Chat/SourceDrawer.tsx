@@ -97,7 +97,7 @@ function cleanExcerptText(raw: string): string {
   return text.trim() || raw.trim();
 }
 
-export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, onClose, preview = false }: SourceDrawerProps) {
+export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, onClose }: SourceDrawerProps) {
   const sourceRefs = useRef(new Map<number, HTMLElement>());
 
   useEffect(() => {

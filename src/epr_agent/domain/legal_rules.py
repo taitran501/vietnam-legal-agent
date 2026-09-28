@@ -15,7 +15,6 @@ legal formula calculations across all domains of Vietnamese Law:
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
@@ -537,7 +536,6 @@ def evaluate_universal_case(
     if domain_clean in ("traffic", "giaothong", "giao_thong"):
         act = norm_facts.get("violation_act", "").lower()
         vehicle = norm_facts.get("vehicle_type", "").lower()
-        alcohol = norm_facts.get("alcohol_concentration", "").lower()
 
         if "cồn" in act or "con" in act or "alcohol" in act or "bia" in act or "ruou" in act:
             if "ô tô" in vehicle or "xe hơi" in vehicle or "car" in vehicle or "oto" in vehicle:

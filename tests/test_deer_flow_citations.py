@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-from epr_agent.domain.models import DocumentRecord, CitationSource, CitationOccurrence
+from epr_agent.domain.models import CitationOccurrence, CitationSource, DocumentRecord
 from epr_agent.tools.evidence import (
     extract_citation_sources,
     format_citation_markdown_reference,

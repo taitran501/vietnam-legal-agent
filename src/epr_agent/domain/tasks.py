@@ -494,9 +494,15 @@ def _contains_legal_signal(query: str) -> bool:
 
 def _is_factual_lookup_query(query: str) -> bool:
     q = _fold(query)
+    for term in FACTUAL_LOOKUP_TERMS:
+        folded_term = _fold(term)
+        if len(folded_term) <= 6:
+            if re.search(rf"\b{re.escape(folded_term)}\b", q):
+                return True
+        elif folded_term in q:
+            return True
     return bool(
         explicit_anchors(q)
-        or any(_fold(term) in q for term in FACTUAL_LOOKUP_TERMS)
         or any(_fold(term) in q for term in ("cần tối thiểu", "từ ngày nào", "bao lâu", "thế nào"))
     )
 
@@ -543,9 +549,7 @@ def is_greeting(query: str) -> bool:
     if is_greeting_match:
         if explicit_anchors(q):
             return False
-        if any(term in folded for term in ("tra cuu", "luat", "dieu ", "khoan ", "nghi dinh", "thong tu", "sa thai", "ly hon", "tranh chap", "khoi kien", "boi thuong")):
-            return False
-        return True
+        return not any(term in folded for term in ("tra cuu", "luat", "dieu ", "khoan ", "nghi dinh", "thong tu", "sa thai", "ly hon", "tranh chap", "khoi kien", "boi thuong"))
     return len(q) <= 45 and not _contains_any_term(q, EPR_TERMS) and any(
         _fold(term) in folded for term in ("thời tiết", "trời đẹp", "khỏe không", "đang làm gì")
     )
@@ -553,9 +557,7 @@ def is_greeting(query: str) -> bool:
 
 def is_legal_scope(query: str, history: list[dict[str, Any]] | None = None, active_case: dict[str, Any] | None = None) -> bool:
     q = _normalise(query)
-    if _contains_any_term(q, NON_LEGAL_OUT_OF_SCOPE_TERMS):
-        return False
-    return True
+    return not _contains_any_term(q, NON_LEGAL_OUT_OF_SCOPE_TERMS)
 
 
 def is_known_non_epr_query(query: str) -> bool:
@@ -575,6 +577,12 @@ def classify_task(query: str, history: list[dict[str, Any]] | None = None, activ
     if is_greeting(q):
         return TaskType.CHITCHAT
 
+    if active_case and active_case.get("task_type") in {
+        TaskType.CASE_ASSESSMENT.value,
+        TaskType.BUILD_COMPLIANCE_CHECKLIST.value,
+    } and len(q) < 100:
+        return TaskType(active_case["task_type"])
+
     if _contains_any_term(q, CHECKLIST_TERMS):
         return TaskType.BUILD_COMPLIANCE_CHECKLIST
 
@@ -585,12 +593,6 @@ def classify_task(query: str, history: list[dict[str, Any]] | None = None, activ
         return TaskType.LEGAL_LOOKUP
     if _is_case_assessment_query(q):
         return TaskType.CASE_ASSESSMENT
-
-    if active_case and active_case.get("task_type") in {
-        TaskType.CASE_ASSESSMENT.value,
-        TaskType.BUILD_COMPLIANCE_CHECKLIST.value,
-    } and len(q) < 100:
-        return TaskType(active_case["task_type"])
 
     return TaskType.LEGAL_LOOKUP
 
@@ -903,7 +905,7 @@ def deterministic_task_understanding(
     task = classify_task(query, history, active_case)
     standalone = rewrite_follow_up(query, history, active_case)
     facts = merge_facts(active_case, extract_facts(query))
-    is_follow_up = is_context_dependent_query(query) or standalone != " ".join((query or "").split())
+    is_follow_up = is_context_dependent_query(query) or standalone != " ".join((query or "").split()) or bool(active_case)
     return TaskUnderstanding(
         task_type=task,
         route=classify_route(query, history, active_case),

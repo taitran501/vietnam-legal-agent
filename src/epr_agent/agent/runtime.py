@@ -584,7 +584,6 @@ class AgentWorkflowRuntime:
                     break
 
         from epr_agent.domain.tasks import (
-            classify_route,
             deterministic_task_understanding,
             is_context_dependent_query,
         )

@@ -33,7 +33,6 @@ from epr_agent.domain.tasks import (
     deterministic_task_understanding,
     extract_facts,
     is_context_dependent_query,
-    is_legal_scope,
     merge_facts,
     missing_facts,
 )

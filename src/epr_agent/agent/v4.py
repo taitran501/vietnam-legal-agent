@@ -625,13 +625,14 @@ class V4WorkflowRuntime(WorkflowRuntime):
         elif operation == TurnOperation.CONTINUE_CASE and active.get("task_type"):
             route = RouteType.COMPLIANCE_CHECKLIST if active["task_type"] == TaskType.BUILD_COMPLIANCE_CHECKLIST.value else RouteType.CASE_ASSESSMENT
         else:
+            understanding_gw = getattr(self.deps, "understanding", None)
             if state.get("mode") == RouteType.RESEARCH_WEB.value:
                 route = RouteType.RESEARCH_WEB
-            elif getattr(self.deps, "understanding", None) is not None:
+            elif understanding_gw is not None:
                 try:
-                    u = await self.deps.understanding.understand(state.get("query", ""), snapshot.history, "", active)
+                    u = await understanding_gw.understand(state.get("query", ""), snapshot.history, "", active)
                     route = RouteType(u.route)
-                except Exception:
+                except Exception:  # noqa: BLE001 - fallback to deterministic route classification
                     route = classify_route(state.get("query", ""), snapshot.history, active)
             else:
                 route = classify_route(state.get("query", ""), snapshot.history, active)
@@ -1425,11 +1426,12 @@ class V4WorkflowRuntime(WorkflowRuntime):
         snapshot = await self.deps.history.load(state["user_id"], state["conversation_id"], self.deps.max_history_messages)
         _apply_context_metadata(state, snapshot)
         active_case = snapshot.active_case
-        if getattr(self.deps, "understanding", None) is not None:
+        understanding_gw = getattr(self.deps, "understanding", None)
+        if understanding_gw is not None:
             try:
-                u = await self.deps.understanding.understand(state.get("query", ""), snapshot.history, "", active_case)
+                u = await understanding_gw.understand(state.get("query", ""), snapshot.history, "", active_case)
                 route = RouteType(u.route)
-            except Exception:
+            except Exception:  # noqa: BLE001 - fallback to deterministic route classification
                 route = classify_route(state.get("query", ""), snapshot.history, active_case)
         else:
             route = classify_route(state.get("query", ""), snapshot.history, active_case)

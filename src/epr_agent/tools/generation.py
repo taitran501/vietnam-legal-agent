@@ -110,7 +110,7 @@ def _clean_web_excerpt(value: str, limit: int) -> str:
 def _search_duckduckgo_free(query: str, domains: list[str]) -> list[dict[str, Any]]:
     """Free web search fallback querying public search engine with domain scoping."""
     import httpx
-    from bs4 import BeautifulSoup
+    from bs4 import BeautifulSoup  # type: ignore[import-untyped]
 
     site_filter = " OR ".join(f"site:{d}" for d in domains[:3]) if domains else ""
     full_query = f"{query} {site_filter}".strip() if site_filter else query
@@ -150,7 +150,7 @@ def _search_duckduckgo_free(query: str, domains: list[str]) -> list[dict[str, An
                         })
                         if len(results) >= 5:
                             break
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - optional web search failure should not crash agent
         logger.warning("Free web search provider encountered error: %s", exc)
     return results
 

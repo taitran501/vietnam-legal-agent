@@ -554,7 +554,7 @@ def _extract_domain(url: str) -> str:
     try:
         hostname = urlparse(url).netloc
         return hostname.replace("www.", "")
-    except Exception:
+    except Exception:  # noqa: BLE001 - malformed URL produces an empty domain
         return ""
 
 

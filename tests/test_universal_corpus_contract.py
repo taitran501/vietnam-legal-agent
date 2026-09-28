@@ -6,6 +6,8 @@ import importlib
 import json
 from pathlib import Path
 
+import pytest
+
 from epr_agent.retrieval.universal_retriever import DEFAULT_DB_PATH, UniversalLegalRetriever
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -68,6 +70,8 @@ def test_universal_retriever_does_not_return_arbitrary_articles_for_year_discove
 
 def test_universal_retriever_prefers_the_corporate_minimum_shareholder_provision() -> None:
     retriever = UniversalLegalRetriever()
+    if not retriever.is_available:
+        pytest.skip("Universal legal corpus database is not built in this environment.")
 
     results = retriever.search(
         "Công ty cổ phần cần tối thiểu bao nhiêu cổ đông theo quy định?",
