@@ -109,8 +109,9 @@ def _clean_web_excerpt(value: str, limit: int) -> str:
 
 def _search_duckduckgo_free(query: str, domains: list[str]) -> list[dict[str, Any]]:
     """Free web search fallback querying public search engine with domain scoping."""
+    import html
+
     import httpx
-    from bs4 import BeautifulSoup  # type: ignore[import-untyped]
 
     site_filter = " OR ".join(f"site:{d}" for d in domains[:3]) if domains else ""
     full_query = f"{query} {site_filter}".strip() if site_filter else query
@@ -125,23 +126,28 @@ def _search_duckduckgo_free(query: str, domains: list[str]) -> list[dict[str, An
         with httpx.Client(timeout=10.0, follow_redirects=True) as client:
             resp = client.post("https://html.duckduckgo.com/html/", data={"q": full_query}, headers=headers)
             if resp.status_code == 200:
-                soup = BeautifulSoup(resp.text, "html.parser")
-                for result_block in soup.select(".result__body"):
-                    title_elem = result_block.select_one(".result__title")
-                    snippet_elem = result_block.select_one(".result__snippet")
-                    url_elem = result_block.select_one(".result__url")
-                    title = title_elem.get_text(strip=True) if title_elem else ""
-                    snippet = snippet_elem.get_text(strip=True) if snippet_elem else ""
-                    link = title_elem.find("a") if title_elem else None
-                    raw_href = str(link.get("href") or "") if link else ""
+                raw_html = resp.text
+                blocks = re.findall(r'<div class="[^"]*result__body[^"]*">([\s\S]*?)</div>\s*</div>', raw_html)
+                for block in blocks:
+                    title_m = re.search(r'<a[^>]+class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)</a>', block) or re.search(r'<a[^>]+class="[^"]*result__url[^"]*"[^>]*>([\s\S]*?)</a>', block)
+                    link_m = re.search(r'<a[^>]+href="([^"]+)"', block)
+                    snippet_m = re.search(r'class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)</(?:a|td|div)>', block)
+
+                    raw_href = link_m.group(1) if link_m else ""
                     if "uddg=" in raw_href:
                         parsed_href = urlsplit(raw_href)
                         qs = parse_qs(parsed_href.query)
                         actual_url = unquote(qs.get("uddg", [""])[0])
                     else:
-                        actual_url = raw_href or (url_elem.get_text(strip=True) if url_elem else "")
+                        actual_url = raw_href
                     if actual_url and not actual_url.startswith("http"):
                         actual_url = f"https://{actual_url}"
+
+                    raw_title = re.sub(r"<[^>]+>", "", title_m.group(1) if title_m else "")
+                    title = html.unescape(" ".join(raw_title.split()))
+                    raw_snippet = re.sub(r"<[^>]+>", "", snippet_m.group(1) if snippet_m else "")
+                    snippet = html.unescape(" ".join(raw_snippet.split()))
+
                     if title and actual_url:
                         results.append({
                             "title": title,
