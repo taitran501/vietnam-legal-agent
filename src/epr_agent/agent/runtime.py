@@ -1180,6 +1180,7 @@ class AgentWorkflowRuntime:
                 termination_reason = TerminationReason.CITATION_VERIFICATION_FAILED.value
                 source = "error"
                 evidence = []
+                citations = []
             elif verified_or_fallback:
                 final_answer = verified_or_fallback
 

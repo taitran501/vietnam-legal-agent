@@ -12,8 +12,9 @@ import hashlib
 import logging
 import re
 import unicodedata
+from html.parser import HTMLParser
 from typing import Any, Protocol
-from urllib.parse import parse_qs, parse_qsl, unquote, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qs, parse_qsl, unquote, urlencode, urljoin, urlsplit, urlunsplit
 
 from pydantic import BaseModel, Field
 
@@ -105,6 +106,172 @@ def _web_result_matches_query(query: str, title: str, excerpt: str, url: str) ->
 def _clean_web_excerpt(value: str, limit: int) -> str:
     without_markup = re.sub(r"<[^>]+>", " ", value or "")
     return " ".join(without_markup.split())[:limit]
+
+
+class _VisibleHTMLTextParser(HTMLParser):
+    """Extract bounded readable page text without retaining script or style data."""
+
+    _BLOCK_TAGS = frozenset({"article", "br", "div", "h1", "h2", "h3", "h4", "li", "p", "section", "td", "tr"})
+    _IGNORED_TAGS = frozenset({"script", "style", "noscript", "svg"})
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self._ignored_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        _ = attrs
+        if self._ignored_depth:
+            if tag in self._IGNORED_TAGS:
+                self._ignored_depth += 1
+            return
+        if tag in self._IGNORED_TAGS:
+            self._ignored_depth = 1
+        elif tag in self._BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._ignored_depth:
+            if tag in self._IGNORED_TAGS:
+                self._ignored_depth = max(0, self._ignored_depth - 1)
+            return
+        if tag in self._BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if not self._ignored_depth:
+            self.parts.append(data)
+
+
+_PAGE_TEXT_STOPWORDS = frozenset({
+    "bao", "bi", "boi", "cac", "can", "cho", "co", "cua", "de", "den", "duoc",
+    "gi", "hay", "la", "luat", "ma", "mot", "moi", "nay", "ngay", "neu", "nhu",
+    "ra", "tai", "theo", "thi", "trong", "tu", "va", "ve", "voi", "y",
+})
+_PAGE_TEXT_PHRASES = (
+    "trach nhiem tai che",
+    "bao bi",
+    "nha san xuat",
+    "dua ra thi truong",
+    "tu ngay",
+    "co hieu luc",
+    "ngoai le",
+    "khong phai thuc hien",
+)
+
+
+def _select_official_page_text(query: str, raw_html: str, max_chars: int) -> str:
+    parser = _VisibleHTMLTextParser()
+    try:
+        parser.feed(raw_html)
+        parser.close()
+    except Exception:  # noqa: BLE001 - malformed official HTML falls back to the search excerpt
+        return ""
+
+    paragraphs: list[str] = []
+    for raw_paragraph in "".join(parser.parts).splitlines():
+        paragraph = " ".join(raw_paragraph.split()).strip()
+        if len(paragraph) < 35:
+            continue
+        if len(paragraph) > 1200:
+            paragraphs.extend(
+                segment.strip()
+                for segment in re.split(r"(?<=[.;:!?])\s+", paragraph)
+                if len(segment.strip()) >= 35
+            )
+        else:
+            paragraphs.append(paragraph)
+    if not paragraphs:
+        return ""
+
+    folded_query = _fold_web_text(query)
+    query_terms = [
+        term
+        for term in re.findall(r"[a-z0-9]+", folded_query)
+        if len(term) >= 3 and term not in _PAGE_TEXT_STOPWORDS
+    ]
+    query_phrases = [phrase for phrase in _PAGE_TEXT_PHRASES if phrase in folded_query]
+    ranked: list[tuple[int, int, str]] = []
+    for index, paragraph in enumerate(paragraphs):
+        folded_paragraph = _fold_web_text(paragraph)
+        score = sum(1 for term in set(query_terms) if term in folded_paragraph)
+        score += 3 * sum(1 for phrase in query_phrases if phrase in folded_paragraph)
+        if score:
+            ranked.append((score, index, paragraph))
+
+    if not ranked:
+        ranked = [(0, index, paragraph) for index, paragraph in enumerate(paragraphs)]
+    selected_indices = {index for _, index, _ in sorted(ranked, key=lambda item: (-item[0], item[1]))[:8]}
+    # Include adjacent paragraphs to preserve nearby conditions and exceptions.
+    selected_indices.update(index - 1 for index in tuple(selected_indices) if index > 0)
+    selected_indices.update(index + 1 for index in tuple(selected_indices) if index + 1 < len(paragraphs))
+
+    output: list[str] = []
+    used = 0
+    for index in sorted(selected_indices):
+        paragraph = paragraphs[index]
+        remaining = max_chars - used
+        if remaining <= 0:
+            break
+        if len(paragraph) > remaining:
+            if not output:
+                output.append(paragraph[:remaining])
+            break
+        output.append(paragraph)
+        used += len(paragraph) + 1
+    return "\n".join(output)
+
+
+async def _fetch_official_page_text(
+    url: str,
+    query: str,
+    allowed_domains: list[str],
+    *,
+    max_chars: int = 4000,
+) -> str:
+    """Best-effort fetch of readable text from an allowlisted official HTML page."""
+
+    safe_url = _normalize_official_url(url, allowed_domains)
+    if not safe_url:
+        return ""
+    try:
+        import httpx
+
+        timeout = httpx.Timeout(4.0, connect=2.0)
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            follow_redirects=False,
+            headers={"User-Agent": "VietnamLegalAgent/1.0"},
+        ) as client:
+            current_url = safe_url
+            for _ in range(3):
+                async with client.stream("GET", current_url) as response:
+                    if response.is_redirect:
+                        location = response.headers.get("location", "")
+                        redirect_url = _normalize_official_url(urljoin(current_url, location), allowed_domains)
+                        if not redirect_url or redirect_url == current_url:
+                            return ""
+                        current_url = redirect_url
+                        continue
+                    if response.status_code != 200:
+                        return ""
+                    content_type = response.headers.get("content-type", "").casefold()
+                    if content_type and "html" not in content_type:
+                        return ""
+
+                    body = bytearray()
+                    async for chunk in response.aiter_bytes():
+                        remaining = 1_000_000 - len(body)
+                        if remaining <= 0:
+                            break
+                        body.extend(chunk[:remaining])
+                        if len(chunk) > remaining:
+                            break
+                    raw_html = bytes(body).decode(response.encoding or "utf-8", errors="replace")
+                    return _select_official_page_text(query, raw_html, max_chars)
+    except Exception as exc:  # noqa: BLE001 - source fetch failure falls back to the search snippet
+        logger.debug("Official source page fetch skipped (%s)", type(exc).__name__)
+    return ""
 
 
 def _search_duckduckgo_free(query: str, domains: list[str]) -> list[dict[str, Any]]:
@@ -272,7 +439,7 @@ class EvidenceGenerationGateway:
         return self._compose_legal_route_answer(documents)
 
     async def web(self, query: str) -> tuple[str, list[DocumentRecord]]:
-        """Run explicit web research and preserve each returned official source."""
+        """Search allowlisted legal sites and enrich snippets with official page text."""
 
         from epr_agent.config import get_settings
 
@@ -339,6 +506,7 @@ class EvidenceGenerationGateway:
                         "title": title,
                         "url": url,
                         "official_url": url,
+                        "content_origin": "search_result_snippet",
                         "anchor": f"Điều {article_match.group(1)}" if article_match else "",
                         "instrument_number": instrument_match.group(0).upper() if instrument_match else "",
                         "effective_status": "unknown",
@@ -351,6 +519,25 @@ class EvidenceGenerationGateway:
 
             metrics.track_web_result_rejection("no_accepted_results")
             return "", []
+
+        page_text_limit = min(4000, max(2000, int(settings.web_excerpt_max_chars)))
+        page_texts = await asyncio.gather(
+            *(
+                _fetch_official_page_text(
+                    str(document.metadata.get("official_url") or ""),
+                    query,
+                    domains,
+                    max_chars=page_text_limit,
+                )
+                for document in documents
+            ),
+            return_exceptions=True,
+        )
+        for document, page_text in zip(documents, page_texts):
+            if isinstance(page_text, str) and page_text.strip():
+                document.content = page_text
+                document.metadata["content_origin"] = "official_html_page"
+
         lines = ["### Nguồn chính thức ngoài corpus", "", "Tôi đã tìm thấy các nguồn chính thức để bạn đối chiếu:"]
         for index, document in enumerate(documents, start=1):
             lines.append(f"- [{index}] {document.metadata['title']} — {document.metadata['url']}")

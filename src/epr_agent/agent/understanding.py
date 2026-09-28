@@ -101,6 +101,25 @@ class StructuredTaskUnderstandingGateway:
             if not result.standalone_query or not result.standalone_query.strip():
                 result.standalone_query = query
             result.standalone_query = preserve_explicit_anchors(query, result.standalone_query)
+
+            # A valid enum is not enough to make a case-assessment route valid.
+            # Recheck model-selected case routes with the deterministic rules so
+            # general questions about a class of businesses stay legal lookups.
+            if result.route is RouteType.CASE_ASSESSMENT and not active_case and not result.is_follow_up:
+                deterministic = deterministic_task_understanding(query, history, active_case)
+                if deterministic.route is not RouteType.CASE_ASSESSMENT:
+                    logger.info(
+                        "Overriding unsupported case-assessment route with deterministic route=%s",
+                        deterministic.route.value,
+                    )
+                    result.route = deterministic.route
+                    result.task_type = deterministic.task_type
+                    result.is_follow_up = deterministic.is_follow_up
+                    result.standalone_query = deterministic.standalone_query
+                    result.research_requested = deterministic.research_requested
+                    result.facts = deterministic.facts
+                    result.missing_facts = deterministic.missing_facts
+                    result.confidence = deterministic.confidence
             if not result.research_requested:
                 result.research_requested = (result.route == RouteType.RESEARCH_WEB)
             return result
