@@ -5,8 +5,10 @@ import { TypingIndicator } from './TypingIndicator';
 import { useAutoScroll } from '@/hooks/useAutoScroll';
 import { Icon } from '@/components/UI/Icon';
 import { errorPresentation } from '@/lib/userCopy';
+import { ActiveCaseProgress } from '@/components/Case/ActiveCaseProgress';
 
 interface MessageListProps {
+  activeCase?: CaseState | null;
   error: StreamError | null;
   isStreaming: boolean;
   messages: ChatMessage[];
@@ -24,6 +26,7 @@ interface MessageListProps {
 }
 
 export function MessageList({
+  activeCase,
   error,
   isStreaming,
   messages,
@@ -51,6 +54,14 @@ export function MessageList({
     isStreaming && Boolean(streamingContent) && (last?.role !== 'assistant' || (last.content?.trim() ?? '') === '');
   const displayedError = error ? errorPresentation(error) : null;
 
+  const effectiveCase = activeCase || visibleMessages.slice().reverse().find((m) => m.workflow?.case_state)?.workflow?.case_state;
+  const hasCaseData = Boolean(
+    effectiveCase && (
+      Object.keys(effectiveCase.facts || {}).length > 0
+      || (effectiveCase.missing_facts || []).length > 0
+    ),
+  );
+
   useEffect(() => {
     if (!error?.retryable) {
       setRetryCountdown(0);
@@ -72,6 +83,15 @@ export function MessageList({
         ref={containerRef}
       >
         <div className="mx-auto w-full">
+          {hasCaseData && effectiveCase && (
+            <div className="px-4 pt-4 sm:px-6">
+              <ActiveCaseProgress
+                caseState={effectiveCase}
+                onOpenCase={onOpenCase}
+              />
+            </div>
+          )}
+
           {visibleMessages.map((message, index) => (
             <ChatMessageComponent
               key={`${message.id}-${index}`}

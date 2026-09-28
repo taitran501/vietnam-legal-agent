@@ -24,53 +24,116 @@ interface WelcomeScreenProps {
   caseDisabledReason?: string;
 }
 
-export type LegalGoalId = 'legality' | 'procedure' | 'dispute';
+export type LegalGoalId = 'legal_lookup' | 'case_assessment' | 'legal_explain_compare' | 'compliance_checklist';
 
 export interface LegalGoal {
   id: LegalGoalId;
   icon: IconName;
   label: string;
   intent: string;
+  template: string;
   placeholder: string;
   suggestions: { title: string; prompt: string; icon: IconName }[];
 }
 
 export const legalGoals: LegalGoal[] = [
   {
-    id: 'legality',
-    icon: 'scale',
-    label: 'Kiểm tra tính hợp pháp & Nghĩa vụ',
+    id: 'legal_lookup',
+    icon: 'search',
+    label: 'Tra cứu quy định pháp luật',
     intent: 'legal_lookup',
-    placeholder: 'Mô tả hành vi, điều khoản hợp đồng hoặc nghĩa vụ cần kiểm tra đúng/sai luật…',
+    template: 'Tôi muốn tra cứu quy định pháp luật về [nội dung/vấn đề cần tìm], theo [tên văn bản nếu có]...',
+    placeholder: 'Ví dụ: Mức phạt xe máy vượt đèn đỏ theo Nghị định 100...',
     suggestions: [
       {
-        title: 'Trách nhiệm tái chế bao bì (EPR)',
-        prompt: 'Cơ sở sản xuất, đóng gói hàng bằng túi nilon và chai nhựa có bắt buộc phải đóng tiền tái chế hay xử lý rác thải không?',
+        title: 'Phạt xe máy vượt đèn đỏ',
+        prompt: 'Tôi đi xe máy vượt đèn đỏ thì bị phạt bao nhiêu tiền và có bị tước bằng lái không?',
+        icon: 'alert',
+      },
+      {
+        title: 'Cổ đông tối thiểu công ty CP',
+        prompt: 'Thành lập công ty cổ phần thì cần tối thiểu bao nhiêu cổ đông sáng lập theo Luật Doanh nghiệp?',
         icon: 'building',
       },
       {
-        title: 'Thời gian thử việc và giữ lương',
-        prompt: 'Công ty cho nhân viên thử việc 3 tháng và giữ lại một phần tiền lương thì có đúng quy định không?',
+        title: 'Thời gian & Lương thử việc',
+        prompt: 'Thời gian thử việc tối đa và mức lương thử việc theo quy định Bộ luật Lao động là bao nhiêu?',
         icon: 'clock',
       },
       {
-        title: 'Thỏa thuận phạt vi phạm hợp đồng',
-        prompt: 'Trong hợp đồng mua bán, hai bên tự thỏa thuận mức phạt vi phạm 15% giá trị thì có hợp pháp không?',
-        icon: 'fileText',
-      },
-      {
-        title: 'Kinh doanh online & Thuế',
-        prompt: 'Bán hàng qua mạng xã hội với quy mô nhỏ thì có bắt buộc phải đăng ký kinh doanh và đóng thuế không?',
+        title: 'Trách nhiệm tái chế bao bì (EPR)',
+        prompt: 'Cơ sở sản xuất, đóng gói hàng bằng túi nilon và chai nhựa có bắt buộc phải đóng tiền tái chế hay xử lý rác thải không?',
         icon: 'scale',
       },
     ],
   },
   {
-    id: 'procedure',
+    id: 'case_assessment',
+    icon: 'scale',
+    label: 'Kiểm tra tính hợp pháp & Nghĩa vụ',
+    intent: 'case_assessment',
+    template: 'Tình huống của tôi là: [mô tả sự việc thực tế]. Theo quy định pháp luật hiện hành, tôi có quyền/nghĩa vụ gì và xử lý thế nào?',
+    placeholder: 'Mô tả vụ việc thực tế bạn đang gặp phải để đánh giá căn cứ và quyền lợi...',
+    suggestions: [
+      {
+        title: 'Chủ nhà đòi tăng giá thuê 30%',
+        prompt: 'Chủ nhà đòi tăng giá thuê nhà 30% giữa chừng có đúng luật không?',
+        icon: 'building',
+      },
+      {
+        title: 'Cho thôi việc không báo trước',
+        prompt: 'Công ty cho tôi nghỉ việc ngay từ ngày mai không báo trước thì bồi thường thế nào?',
+        icon: 'alert',
+      },
+      {
+        title: 'Tranh chấp tiền đặt cọc mua nhà',
+        prompt: 'Tôi đặt cọc mua nhà nhưng bên bán đổi ý không bán và không chịu trả lại tiền cọc thì phải giải quyết thế nào?',
+        icon: 'shield',
+      },
+      {
+        title: 'Đơn phương ly hôn & Nuôi con',
+        prompt: 'Vợ chồng muốn đơn phương ly hôn thì thủ tục và quyền nuôi con dưới 36 tháng tuổi được pháp luật quy định thế nào?',
+        icon: 'scale',
+      },
+    ],
+  },
+  {
+    id: 'legal_explain_compare',
     icon: 'fileText',
+    label: 'Giải thích & So sánh quy định',
+    intent: 'legal_explain_compare',
+    template: 'Giải thích và so sánh điểm khác biệt giữa [quy định A] và [quy định B] theo pháp luật Việt Nam...',
+    placeholder: 'Ví dụ: So sánh hợp đồng lao động xác định thời hạn và không xác định thời hạn...',
+    suggestions: [
+      {
+        title: 'So sánh HĐLĐ có/không thời hạn',
+        prompt: 'So sánh hợp đồng lao động xác định thời hạn và không xác định thời hạn theo Bộ luật Lao động 2019.',
+        icon: 'fileText',
+      },
+      {
+        title: 'Đặt cọc khác gì Trả trước',
+        prompt: 'Phân biệt tiền đặt cọc và tiền trả trước trong giao dịch mua bán nhà đất theo Bộ luật Dân sự.',
+        icon: 'scale',
+      },
+      {
+        title: 'Đơn phương chấm dứt vs Sa thải',
+        prompt: 'Phân biệt người sử dụng lao động đơn phương chấm dứt hợp đồng lao động với hình thức kỷ luật sa thải.',
+        icon: 'alert',
+      },
+      {
+        title: 'Công ty TNHH vs Cổ phần',
+        prompt: 'So sánh ưu và nhược điểm giữa Công ty TNHH 1 thành viên và Công ty Cổ phần khi khởi nghiệp.',
+        icon: 'building',
+      },
+    ],
+  },
+  {
+    id: 'compliance_checklist',
+    icon: 'checklist',
     label: 'Hướng dẫn hồ sơ & Thủ tục',
     intent: 'compliance_checklist',
-    placeholder: 'Nhập thủ tục hoặc giấy phép bạn cần thực hiện (làm sổ đỏ, mở quán, đăng ký thuế…)',
+    template: 'Lập danh sách các bước và hồ sơ tài liệu cần chuẩn bị để thực hiện thủ tục [tên thủ tục]...',
+    placeholder: 'Nhập thủ tục bạn cần thực hiện (cấp sổ đỏ, mở quán ăn, đăng ký thuế…)',
     suggestions: [
       {
         title: 'Cấp Sổ đỏ đất khai hoang',
@@ -83,7 +146,7 @@ export const legalGoals: LegalGoal[] = [
         icon: 'checklist',
       },
       {
-        title: 'Đăng ký người phụ thuộc giảm trừ gia cảnh',
+        title: 'Đăng ký người phụ thuộc thuế TNCN',
         prompt: 'Thủ tục đăng ký người phụ thuộc (bố mẹ già, con nhỏ) để giảm tiền thuế thu nhập cá nhân cần giấy tờ gì?',
         icon: 'fileText',
       },
@@ -94,50 +157,42 @@ export const legalGoals: LegalGoal[] = [
       },
     ],
   },
-  {
-    id: 'dispute',
-    icon: 'shield',
-    label: 'Bảo vệ quyền lợi & Tranh chấp',
-    intent: 'protect_rights',
-    placeholder: 'Mô tả vụ việc bị vi phạm, tranh chấp hoặc bị phạt bạn đang gặp phải…',
-    suggestions: [
-      {
-        title: 'Bị cho thôi việc đột ngột',
-        prompt: 'Tôi bị công ty cho thôi việc đột ngột không rõ lý do thì được đòi bồi thường và trợ cấp những khoản gì?',
-        icon: 'scale',
-      },
-      {
-        title: 'Tranh chấp tiền đặt cọc mua nhà',
-        prompt: 'Tôi đặt cọc mua nhà nhưng bên bán đổi ý không bán và không chịu trả lại tiền cọc thì phải giải quyết thế nào?',
-        icon: 'shield',
-      },
-      {
-        title: 'Hết hợp đồng thuê nhà không chịu dọn',
-        prompt: 'Hết hạn hợp đồng mà người thuê nhà không chịu dọn đi và không trả tiền nhà thì xử lý thế nào cho đúng luật?',
-        icon: 'building',
-      },
-      {
-        title: 'Khiếu nại biên bản xử phạt hành chính',
-        prompt: 'Nếu bị cơ quan chức năng lập biên bản xử phạt mà thấy không thỏa đáng thì cần làm đơn khiếu nại ở đâu?',
-        icon: 'alert',
-      },
-    ],
-  },
 ];
 
 export const defaultCards = [
   {
-    category: 'Đất đai & Bất động sản',
-    title: 'Cấp Sổ đỏ lần đầu',
-    prompt: 'Thủ tục cấp Giấy chứng nhận quyền sử dụng đất (Sổ đỏ) lần đầu theo Luật Đất đai mới.',
+    category: 'Dân sự & Hợp đồng',
+    title: 'Chủ nhà tăng giá thuê 30%',
+    prompt: 'Chủ nhà đòi tăng giá thuê nhà 30% giữa chừng có đúng luật không?',
     icon: 'building' as const,
-    intent: 'legal_lookup',
+    intent: 'case_assessment',
   },
   {
     category: 'Lao động & Việc làm',
-    title: 'Thời gian & Lương thử việc',
-    prompt: 'Thời gian thử việc tối đa và mức lương thử việc theo quy định Bộ luật Lao động.',
-    icon: 'clock' as const,
+    title: 'Thôi việc không báo trước',
+    prompt: 'Công ty cho tôi nghỉ việc ngay từ ngày mai không báo trước thì bồi thường thế nào?',
+    icon: 'alert' as const,
+    intent: 'case_assessment',
+  },
+  {
+    category: 'Giao thông đường bộ',
+    title: 'Xe máy vượt đèn đỏ',
+    prompt: 'Tôi đi xe máy vượt đèn đỏ thì bị phạt bao nhiêu tiền và có bị tước bằng lái không?',
+    icon: 'scale' as const,
+    intent: 'legal_lookup',
+  },
+  {
+    category: 'Hôn nhân & Gia đình',
+    title: 'Ly hôn & Quyền nuôi con',
+    prompt: 'Vợ chồng muốn đơn phương ly hôn thì thủ tục và quyền nuôi con dưới 36 tháng tuổi được pháp luật quy định thế nào?',
+    icon: 'scale' as const,
+    intent: 'case_assessment',
+  },
+  {
+    category: 'Doanh nghiệp & Đầu tư',
+    title: 'Cổ đông tối thiểu công ty CP',
+    prompt: 'Thành lập công ty cổ phần thì cần tối thiểu bao nhiêu cổ đông sáng lập theo Luật Doanh nghiệp?',
+    icon: 'building' as const,
     intent: 'legal_lookup',
   },
   {
@@ -146,13 +201,6 @@ export const defaultCards = [
     prompt: 'Cơ sở sản xuất hàng hóa có bắt buộc phải đóng tiền tái chế bao bì rác thải không?',
     icon: 'scale' as const,
     intent: 'legal_lookup',
-  },
-  {
-    category: 'Dân sự & Hợp đồng',
-    title: 'Tranh chấp tiền đặt cọc',
-    prompt: 'Bên bán không trả lại tiền đặt cọc mua nhà thì tôi phải khởi kiện ở đâu?',
-    icon: 'shield' as const,
-    intent: 'protect_rights',
   },
 ];
 
@@ -189,6 +237,7 @@ export function WelcomeScreen({
       setSelectedGoalId(null);
     } else {
       setSelectedGoalId(goal.id);
+      onPrefillPrompt(goal.template, goal.intent);
     }
     setPrefillRevision((revision) => revision + 1);
   };
@@ -283,6 +332,24 @@ export function WelcomeScreen({
                   </>
                 )}
               </div>
+
+              {activeGoal && (
+                <div className="mt-3 flex items-center justify-between rounded-lg border border-teal-200/80 bg-teal-50/70 px-3.5 py-2 text-xs text-teal-900 shadow-xs">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Icon name="check" size={14} className="text-teal-700 shrink-0" />
+                    <span className="truncate">
+                      Đã điền khung câu hỏi mẫu <strong>{activeGoal.label}</strong> vào ô chat. Bạn hãy sửa đổi nội dung và bấm gửi.
+                    </span>
+                  </div>
+                  <button
+                    className="ml-2 shrink-0 font-semibold text-teal-800 underline hover:text-teal-950"
+                    onClick={() => onPrefillPrompt(activeGoal.template, activeGoal.intent)}
+                    type="button"
+                  >
+                    Điền lại mẫu
+                  </button>
+                </div>
+              )}
 
               {caseDisabled && caseDisabledReason && (
                 <p className="mt-2 text-center text-xs leading-5 text-amber-800" id="case-capability-message" role="status">

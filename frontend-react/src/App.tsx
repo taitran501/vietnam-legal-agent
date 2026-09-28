@@ -400,6 +400,7 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
   ) : (
     <>
       <MessageList
+        activeCase={activeCase}
         error={error}
         isStreaming={isStreaming}
         messages={messages}

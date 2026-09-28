@@ -13,7 +13,7 @@ test('React consumes the real FastAPI SSE and opens verified legal evidence', as
   const firstSource = drawer.locator('#source-1');
   await expect(firstSource.getByRole('heading', { name: 'Nghị định 08/2022/NĐ-CP', exact: true })).toBeVisible();
   await expect(firstSource.getByText('Số: 08/2022/NĐ-CP', { exact: true })).toBeVisible();
-  await expect(firstSource.getByText('Điều 77', { exact: true })).toBeVisible();
+  await expect(firstSource.getByText('Điều 77', { exact: true }).first()).toBeVisible();
 });
 
 test('React paints a verified answer progressively before the SSE completes', async ({ page }) => {
