@@ -90,8 +90,8 @@ class AgentBudgetController:
         self,
         *,
         max_steps: int = 5,
-        max_search_calls: int = 4,
-        max_web_calls: int = 1,
+        max_search_calls: int = 6,
+        max_web_calls: int = 3,
     ) -> None:
         self.max_steps = max(1, max_steps)
         self.max_search_calls = max(1, max_search_calls)
@@ -136,4 +136,3 @@ class AgentBudgetController:
 
     def within_step_budget(self, current_step: int) -> bool:
         return current_step < self.max_steps
-

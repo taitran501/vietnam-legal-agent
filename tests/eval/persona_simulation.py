@@ -38,6 +38,7 @@ from epr_agent.domain.epr_rules import CaseFormResolver
 from epr_agent.domain.models import DocumentRecord
 from epr_agent.tools.evidence import EvidenceEvaluator
 from epr_agent.tools.history import ContextSnapshot, HistoryGateway
+from epr_agent.tools.legal_readiness import SyntheticReadyLegalReadinessGate
 
 # ══════════════════════════════════════════════════════════════════════════════
 # COMPREHENSIVE NATIONAL LEGAL CORPUS (COVERING ALL MAJOR VIETNAMESE LAWS)
@@ -513,6 +514,7 @@ class UniversalMultiPersonaSimulator:
             evidence=tool_deps.evidence_evaluator,
             generation=tool_deps.generation,
             planner=None,
+            legal_readiness=SyntheticReadyLegalReadinessGate(),
         )
 
         mock_llm = _build_universal_mock_llm(case)

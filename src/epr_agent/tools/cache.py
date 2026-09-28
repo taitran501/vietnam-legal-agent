@@ -8,6 +8,10 @@ from dataclasses import asdict, dataclass
 from typing import Any, Protocol
 
 from epr_agent.domain.models import TaskType
+from epr_agent.domain.verification import VerificationStatus
+
+_CACHE_SCHEMA_VERSION = 4
+_VERIFICATION_POLICY_VERSION = "legal-verification-v1"
 
 
 class AnswerCache(Protocol):
@@ -30,7 +34,11 @@ class CachedAnswer:
     citations: list[dict[str, Any]]
     source: str
     corpus_id: str = "epr"
-    schema_version: int = 3
+    corpus_sha: str = ""
+    verification_policy_version: str = _VERIFICATION_POLICY_VERSION
+    verification_status: VerificationStatus = VerificationStatus.VERIFIED
+    schema_version: int = _CACHE_SCHEMA_VERSION
+    legal_readiness_sha: str = ""
 
     def serialise(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False, separators=(",", ":"))
@@ -43,20 +51,45 @@ class CachedAnswer:
             value = json.loads(raw)
         except (TypeError, json.JSONDecodeError):
             return None
-        if not isinstance(value, dict) or value.get("schema_version") != 3:
+        if not isinstance(value, dict) or value.get("schema_version") != _CACHE_SCHEMA_VERSION:
+            return None
+        if not all(
+            field in value
+            for field in (
+                "corpus_sha",
+                "legal_readiness_sha",
+                "verification_policy_version",
+                "verification_status",
+            )
+        ):
             return None
         answer = str(value.get("answer") or "").strip()
         evidence = value.get("evidence")
         citations = value.get("citations")
         source = str(value.get("source") or "")
+        try:
+            verification_status = VerificationStatus(str(value.get("verification_status") or ""))
+        except ValueError:
+            return None
+        if verification_status is not VerificationStatus.VERIFIED:
+            return None
+        verification_policy_version = str(value.get("verification_policy_version") or "")
+        if not verification_policy_version:
+            return None
         if not answer or not isinstance(evidence, list) or not evidence or not isinstance(citations, list):
+            return None
+        if not all(isinstance(item, dict) for item in evidence) or not all(isinstance(item, dict) for item in citations):
             return None
         return cls(
             answer=answer,
-            evidence=[dict(item) for item in evidence if isinstance(item, dict)],
-            citations=[dict(item) for item in citations if isinstance(item, dict)],
+            evidence=[dict(item) for item in evidence],
+            citations=[dict(item) for item in citations],
             source=source,
             corpus_id=str(value.get("corpus_id") or "epr"),
+            corpus_sha=str(value.get("corpus_sha") or ""),
+            verification_policy_version=verification_policy_version,
+            verification_status=verification_status,
+            legal_readiness_sha=str(value.get("legal_readiness_sha") or ""),
         )
 
 
@@ -112,7 +145,8 @@ class ScopedAnswerCache:
         corpus_version: str = "epr-corpus-v1",
         corpus_sha: str = "",
         embedding_profile: str = "openai-text-embedding-3-small-v1",
-        policy_version: str = "legal-only-v3-exact",
+        policy_version: str = _VERIFICATION_POLICY_VERSION,
+        legal_readiness_sha: str = "",
     ) -> None:
         self.backend = backend
         self.corpus_id = corpus_id
@@ -120,6 +154,19 @@ class ScopedAnswerCache:
         self.corpus_sha = corpus_sha
         self.embedding_profile = embedding_profile
         self.policy_version = policy_version
+        self.legal_readiness_sha = legal_readiness_sha
+
+    def update_legal_readiness_sha(self, legal_readiness_sha: str) -> None:
+        """Refresh the readiness snapshot used by subsequent cache keys.
+
+        The manifest is an independently mutable review artifact. Production
+        processes may stay alive while that artifact is replaced, so keeping
+        the value captured at process construction would allow a cache lookup
+        to use an obsolete readiness snapshot. Callers refresh this value
+        immediately before legal cache access.
+        """
+
+        self.legal_readiness_sha = legal_readiness_sha
 
     @staticmethod
     def is_cacheable(task_type: str | TaskType, *, route: str = "legal_lookup") -> bool:
@@ -137,8 +184,8 @@ class ScopedAnswerCache:
         normalised = " ".join((standalone_query or "").lower().split())
         digest = hashlib.sha256(normalised.encode("utf-8")).hexdigest()
         return (
-            f"legal:answer:v3:{self.policy_version}:{self.corpus_id}:{self.corpus_version}:"
-            f"{self.corpus_sha}:{self.embedding_profile}:{route}:{task}:{digest}"
+            f"legal:answer:v4:{self.policy_version}:{self.corpus_id}:{self.corpus_version}:"
+            f"{self.corpus_sha}:{self.legal_readiness_sha}:{self.embedding_profile}:{route}:{task}:{digest}"
         )
 
     async def lookup(
@@ -147,7 +194,17 @@ class ScopedAnswerCache:
         key = self.build_key(task_type, standalone_query, route=route)
         if not self.is_cacheable(task_type, route=route):
             return None, key
-        return CachedAnswer.parse(await self.backend.lookup(key)), key
+        value = CachedAnswer.parse(await self.backend.lookup(key))
+        if value is not None and (
+            value.source != "legal"
+            or value.corpus_id != self.corpus_id
+            or value.corpus_sha != self.corpus_sha
+            or value.verification_policy_version != self.policy_version
+            or value.verification_status is not VerificationStatus.VERIFIED
+            or value.legal_readiness_sha != self.legal_readiness_sha
+        ):
+            return None, key
+        return value, key
 
     async def store(
         self,
@@ -174,5 +231,9 @@ class ScopedAnswerCache:
             citations=citations,
             source=source,
             corpus_id=self.corpus_id,
+            corpus_sha=self.corpus_sha,
+            verification_policy_version=self.policy_version,
+            verification_status=VerificationStatus.VERIFIED,
+            legal_readiness_sha=self.legal_readiness_sha,
         )
         await self.backend.store(self.build_key(task_type, standalone_query, route=route), payload.serialise())

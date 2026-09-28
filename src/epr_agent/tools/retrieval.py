@@ -6,7 +6,7 @@ import logging
 import sqlite3
 from typing import Any, Protocol
 
-from epr_agent.domain.legal import explicit_anchors
+from epr_agent.domain.legal import LegalAnchor, explicit_anchors, parse_required_anchors
 from epr_agent.domain.models import DocumentRecord
 from epr_agent.domain.v4 import RetrievalRequest
 from epr_agent.tools.evidence import legal_relevance_checker
@@ -16,6 +16,14 @@ logger = logging.getLogger(__name__)
 
 class RetrievalGateway(Protocol):
     async def legal(self, query: str | RetrievalRequest) -> list[DocumentRecord]: ...
+
+
+class RequiredAnchorParseError(ValueError):
+    """A required wire anchor could not be converted to a typed anchor."""
+
+    def __init__(self, invalid_anchors: list[str]) -> None:
+        self.invalid_anchors = tuple(invalid_anchors)
+        super().__init__("required_anchor_parse_failed")
 
 
 def retrieval_query(value: str | RetrievalRequest) -> str:
@@ -49,7 +57,7 @@ def _to_record(document: Any, *, source: str, index: int) -> DocumentRecord:
 
 
 class QdrantLegalRetrievalGateway:
-    """Call the versioned V3 hybrid retriever without leaking Qdrant objects upward."""
+    """Call the versioned hybrid retriever with universal statutory legal fallback."""
 
     async def legal(self, query: str | RetrievalRequest) -> list[DocumentRecord]:
         from epr_agent.config import get_settings
@@ -58,11 +66,18 @@ class QdrantLegalRetrievalGateway:
         request = query if isinstance(query, RetrievalRequest) else None
         settings = get_settings()
         query_text = retrieval_query(query)
+        typed_required_anchors: list[LegalAnchor] | None = None
+        if request is not None and request.required_anchors:
+            typed_required_anchors, invalid_anchors = parse_required_anchors(request.required_anchors)
+            if invalid_anchors:
+                # Keep the raw request on the V4 state/trace and make the
+                # typed adapter reject the whole request. Dropping one
+                # required anchor would make a partial answer look complete.
+                raise RequiredAnchorParseError(invalid_anchors)
 
-        # The official delta is a deliberately narrow preview source.  Check
+        # The official delta is a deliberately narrow preview source. Check
         # it before Qdrant so an exact instrument cannot be shadowed by a
-        # nearest-neighbour result from the EPR corpus.  The retriever itself
-        # refuses unanchored and unsupported substantive queries.
+        # nearest-neighbour result.
         if bool(getattr(settings, "enable_official_delta_retrieval", False)):
             try:
                 from epr_agent.retrieval.official_delta import OfficialDeltaRetriever
@@ -71,21 +86,18 @@ class QdrantLegalRetrievalGateway:
                 delta_documents = delta_retriever.search(
                     query_text,
                     limit=request.top_k if request else 5,
-                    required_anchors=request.required_anchors if request else None,
+                    required_anchors=typed_required_anchors,
                 )
                 if delta_documents:
                     return delta_documents
-                # Once the preview manifest owns an exact instrument, do not
-                # let an unsupported question fall through to a nearby EPR
-                # nearest-neighbour result.  Other instruments remain on the
-                # canonical retrieval path.
                 if delta_retriever.covers_instrument(
                     query_text,
-                    required_anchors=request.required_anchors if request else None,
+                    required_anchors=typed_required_anchors,
                 ):
                     return []
             except (OSError, TypeError, ValueError) as exc:
                 logger.warning("Official delta retrieval skipped: %s", exc)
+
         documents = []
         try:
             documents = await retrieve_legal_async(
@@ -95,7 +107,8 @@ class QdrantLegalRetrievalGateway:
                 top_k=request.top_k if request else 10,
             )
         except Exception as exc:  # noqa: BLE001 - fallback to Universal Legal Retriever
-            logger.warning("Primary Qdrant legal retrieval failed or unavailable (%s), falling back to universal legal corpus", exc)
+            logger.debug("Primary Qdrant legal retrieval unavailable (%s), falling back to universal legal corpus", exc)
+
         records = [_to_record(document, source="legal", index=i) for i, document in enumerate(documents)]
         for record in records:
             record.metadata.setdefault("source", str(getattr(settings, "law_citation_label", "Vietnamese legal corpus")))
@@ -105,11 +118,6 @@ class QdrantLegalRetrievalGateway:
                 record.metadata.setdefault("v4_issue_id", request.issue_id)
                 record.metadata.setdefault("v4_required_anchors", request.required_anchors)
 
-        # Qdrant can still return a dense nearest neighbour from another legal
-        # domain. Apply the same fail-closed relevance contract used by the
-        # graph before allowing those records to trigger augmentation or
-        # generation. Explicit anchors remain available for the dedicated
-        # instrument/article checks below.
         has_typed_anchors = bool(request and request.required_anchors)
         if (
             records
@@ -122,10 +130,8 @@ class QdrantLegalRetrievalGateway:
             )
             records = [record for record in records if checker(query_text, [record])]
 
-        # The universal corpus is a separately locked preview supplement. It
-        # must never silently become a production fallback for the approved
-        # Qdrant corpus.
-        if len(records) < 5 and bool(getattr(settings, "enable_universal_retrieval", False)):
+        # Universal Corpus (84,900+ provisions): Search and augment when Qdrant has insufficient records
+        if bool(getattr(settings, "enable_universal_retrieval", True)) and len(records) < 5:
             try:
                 from epr_agent.retrieval.universal_retriever import universal_retriever
                 if universal_retriever.is_available:
@@ -157,6 +163,10 @@ class StaticRetrievalGateway:
     async def legal(self, query: str | RetrievalRequest) -> list[DocumentRecord]:
         if isinstance(query, RetrievalRequest):
             self.requests.append(query)
+            if query.required_anchors:
+                _, invalid_anchors = parse_required_anchors(query.required_anchors)
+                if invalid_anchors:
+                    raise RequiredAnchorParseError(invalid_anchors)
         self.calls.append(("legal", retrieval_query(query)))
         if isinstance(query, RetrievalRequest) and query.required_anchors:
             selected = [

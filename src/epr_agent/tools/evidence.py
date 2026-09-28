@@ -5,9 +5,17 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import urlparse
 
 from epr_agent.domain.legal import LegalAnchor
-from epr_agent.domain.models import Citation, DocumentRecord, EvidenceAssessment, TaskType
+from epr_agent.domain.models import (
+    Citation,
+    CitationOccurrence,
+    CitationSource,
+    DocumentRecord,
+    EvidenceAssessment,
+    TaskType,
+)
 from epr_agent.tools.temporal_guard import get_temporal_warning, is_document_superseded
 
 
@@ -43,10 +51,6 @@ class EvidenceEvaluator:
                 return EvidenceAssessment(False, "explicit_article_not_found", len(documents), total_chars, has_metadata)
 
         if expected_anchors:
-            # An instrument mismatch is stronger than a missing article: a
-            # nearby article from another regulation must not be presented as
-            # the requested source. Keep the legacy reason for article/clause
-            # gaps so existing clients remain compatible.
             for anchor in expected_anchors:
                 if anchor.document_number and not any(
                     _document_matches_instrument(document, anchor.document_number)
@@ -102,8 +106,6 @@ class EvidenceEvaluator:
                     temporal_warnings=temporal_warnings,
                 )
 
-        # For an assessment/checklist, evidence is still necessary but the
-        # decision is made from explicit facts, never from a document score alone.
         return EvidenceAssessment(
             True,
             "ok",
@@ -133,7 +135,18 @@ class EvidenceEvaluator:
             or metadata.get("source")
             or metadata.get("topic")
         )
-        if metadata.get("source_file") or metadata.get("source_uri"):
+        if metadata.get("corpus_source") == "universal_legal" or metadata.get("source_kind") in {"legal_corpus", "official_web"}:
+            has_source = bool(
+                metadata.get("source")
+                or metadata.get("source_title")
+                or metadata.get("official_url")
+                or metadata.get("source_uri")
+                or metadata.get("law_ref")
+                or metadata.get("topic")
+            )
+            return bool(document.document_id and document.content.strip() and has_anchor and has_source)
+
+        if metadata.get("source_file"):
             has_provenance = bool(
                 (metadata.get("Corpus_Version") or metadata.get("corpus_version"))
                 and (metadata.get("Corpus_SHA256") or metadata.get("corpus_sha"))
@@ -143,6 +156,7 @@ class EvidenceEvaluator:
 
         has_source = bool(
             metadata.get("source")
+            or metadata.get("source_title")
             or metadata.get("official_url")
             or metadata.get("law_ref")
             or metadata.get("topic")
@@ -273,17 +287,6 @@ def _year_discovery_source_matches(query: str, document: DocumentRecord) -> bool
 
 
 def legal_relevance_checker(*, min_rerank_score: float) -> Callable[[str, list[DocumentRecord]], bool]:
-    """Create a calibrated score gate for unanchored legal retrieval.
-
-    Explicit legal anchors are already checked against exact metadata by the
-    caller. For semantic queries, a small score is insufficient evidence even
-    when Qdrant returns its nearest neighbours; otherwise an EPR question about
-    another jurisdiction would be answered using merely adjacent Vietnamese
-    provisions. Records without a score or explicit exact-match marker fail
-    closed. A score alone is not sufficient: at least one non-generic
-    lexical/domain signal must also overlap with the query.
-    """
-
     threshold = max(0.0, min(1.0, float(min_rerank_score)))
 
     negative_evidence_pattern = re.compile(
@@ -292,9 +295,6 @@ def legal_relevance_checker(*, min_rerank_score: float) -> Callable[[str, list[D
     )
 
     def _check(query: str, documents: list[DocumentRecord]) -> bool:
-        # A request explicitly asserting that the rule is absent cannot be
-        # satisfied by a merely related chunk. It must stop safely and offer
-        # the separate public-research action instead.
         if negative_evidence_pattern.search(query or ""):
             return False
         if _year_discovery_query(query) and not any(
@@ -379,8 +379,6 @@ def _document_article_ids(document: DocumentRecord) -> set[str]:
 
 
 def _document_matches_anchor(document: DocumentRecord, anchor: LegalAnchor) -> bool:
-    """Check full explicit-address coverage without inferring nearby clauses."""
-
     metadata = document.metadata or {}
     article_text = "\n".join(
         str(metadata.get(key) or "")
@@ -388,6 +386,23 @@ def _document_matches_anchor(document: DocumentRecord, anchor: LegalAnchor) -> b
     )
     if anchor.article and anchor.article.casefold() not in article_text.casefold():
         return False
+    if anchor.appendix:
+        appendix_text = "\n".join(
+            str(metadata.get(key) or "")
+            for key in (
+                "legal_anchor",
+                "appendix",
+                "Phụ lục",
+                "Phu_luc",
+                "Dieu",
+                "Điều",
+                "Parent_Dieu",
+                "appendix_table_id",
+                "appendix_table",
+            )
+        )
+        if anchor.appendix.casefold() not in appendix_text.casefold():
+            return False
     if anchor.clause:
         clause_text = "\n".join(
             str(metadata.get(key) or "") for key in ("legal_anchor", "Khoan", "Khoản", "clause")
@@ -404,8 +419,6 @@ def _document_matches_anchor(document: DocumentRecord, anchor: LegalAnchor) -> b
 
 
 def _document_matches_instrument(document: DocumentRecord, document_number: str) -> bool:
-    """Match an explicit instrument only against canonical number metadata."""
-
     metadata = document.metadata or {}
     source_text = "\n".join(
         str(metadata.get(key) or "")
@@ -415,14 +428,6 @@ def _document_matches_instrument(document: DocumentRecord, document_number: str)
 
 
 def legal_claim_segments(answer: str) -> list[str]:
-    """Return answer lines that make a legal or compliance claim.
-
-    A line is the useful verification unit for the generated Markdown because
-    numbered checklist items and answer paragraphs already place citations on
-    the same line. Headings, source-list labels, and explicit safe-stop text are
-    not treated as legal conclusions.
-    """
-
     segments: list[str] = []
     in_bibliography = False
     for raw_line in (answer or "").splitlines():
@@ -472,8 +477,6 @@ def verify_citations(
     documents: list[DocumentRecord],
     task_type: str | TaskType,
 ) -> tuple[bool, list[Citation], str]:
-    """Verify citation range, claim coverage, and cited article provenance."""
-
     task = TaskType(task_type)
     citations = build_citations(documents)
     indices = [int(value) for value in _CITATION_RE.findall(answer or "")]
@@ -485,7 +488,6 @@ def verify_citations(
     if any(index < 1 or index > max_index for index in indices):
         return False, citations, "citation_out_of_range"
 
-    # Verify that each legal claim carries a citation to retrieved evidence.
     claim_segments = legal_claim_segments(answer)
     for segment in claim_segments:
         segment_indices = [int(value) for value in _CITATION_RE.findall(segment)]
@@ -495,7 +497,6 @@ def verify_citations(
         mentioned_articles = _article_ids(segment)
         if mentioned_articles:
             supported_articles = set().union(*(_document_article_ids(document) for document in cited_documents))
-            # Only fail if none of the mentioned articles exist in the cited documents
             if not mentioned_articles.issubset(supported_articles) and not (mentioned_articles & supported_articles):
                 return False, citations, "article_reference_not_in_evidence"
 
@@ -507,8 +508,6 @@ def verify_citations(
 
 
 def verify_web_citations(answer: str, documents: list[DocumentRecord]) -> tuple[bool, list[Citation], str]:
-    """Verify a research response without pretending it is corpus evidence."""
-
     citations = build_citations(documents)
     indices = [int(value) for value in _CITATION_RE.findall(answer or "")]
     if not documents:
@@ -528,3 +527,108 @@ def _has_web_source(document: DocumentRecord) -> bool:
         and (metadata.get("official_url") or metadata.get("url"))
         and metadata.get("authority") == "official"
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DEER-FLOW STYLE CITATION SOURCES AGGREGATOR & FORMATTER
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def mask_citation_code(markdown: str) -> str:
+    """Mask code regions so examples inside code blocks are not scraped as citations (Deer-Flow pattern)."""
+    if not markdown:
+        return ""
+    # Mask fenced code blocks
+    fenced_masked = re.sub(
+        r"(^|\n)(`{3,}|~{3,})[^\n]*(?:\n[\s\S]*?\n\2[^\n]*(?=\n|$)|[\s\S]*$)",
+        lambda m: re.sub(r"[^\n]", " ", m.group(0)),
+        markdown,
+    )
+    # Mask inline code
+    return re.sub(r"(`+)[\s\S]*?\1", lambda m: " " * len(m.group(0)), fenced_masked)
+
+
+def _extract_domain(url: str) -> str:
+    if not url:
+        return ""
+    try:
+        hostname = urlparse(url).netloc
+        return hostname.replace("www.", "")
+    except Exception:
+        return ""
+
+
+def extract_citation_sources(
+    answer: str,
+    documents: list[DocumentRecord],
+) -> list[CitationSource]:
+    """Extract and aggregate verified legal & web citation sources for the Deer-Flow CitationSourcesPanel."""
+    if not answer or not documents:
+        return []
+
+    searchable = mask_citation_code(answer)
+    sources_map: dict[str, CitationSource] = {}
+
+    for match in _CITATION_RE.finditer(searchable):
+        idx = int(match.group(1))
+        if idx < 1 or idx > len(documents):
+            continue
+
+        doc = documents[idx - 1]
+        meta = doc.metadata or {}
+
+        doc_id = doc.document_id or f"doc_{idx}"
+        title = (
+            meta.get("Dieu")
+            or meta.get("legal_anchor")
+            or meta.get("source_title")
+            or meta.get("title")
+            or meta.get("source")
+            or f"Căn cứ pháp lý [{idx}]"
+        )
+        raw_url = meta.get("official_url") or meta.get("url") or meta.get("source_uri") or meta.get("source_file") or ""
+        url = raw_url if str(raw_url).startswith("http") else ""
+        domain = _extract_domain(url) or ("thuvienphapluat.vn" if "thuvienphapluat" in str(meta) else "vbpl.vn")
+        excerpt = doc.content[:400].strip() if doc.content else ""
+        anchor = meta.get("legal_anchor") or meta.get("Dieu") or meta.get("anchor") or ""
+        authority = meta.get("authority") or ("official" if "vbpl.vn" in url or "chinhphu.vn" in url else "legal_corpus")
+        status = doc.effective_status or meta.get("effective_status") or "active"
+
+        occurrence = CitationOccurrence(index=idx, title=title)
+
+        if doc_id in sources_map:
+            sources_map[doc_id].count += 1
+            sources_map[doc_id].occurrences.append(occurrence)
+        else:
+            sources_map[doc_id] = CitationSource(
+                id=doc_id,
+                title=title,
+                url=url,
+                domain=domain,
+                count=1,
+                occurrences=[occurrence],
+                excerpt=excerpt,
+                authority=authority,
+                legal_anchor=anchor,
+                effective_status=status,
+            )
+
+    return list(sources_map.values())
+
+
+def format_citation_markdown_reference(source_or_sources: CitationSource | list[CitationSource]) -> str:
+    """Format single or list of citation sources for 1-click clipboard copy / reference footer."""
+    if isinstance(source_or_sources, list):
+        if not source_or_sources:
+            return ""
+        lines = ["### 📚 Nguồn căn cứ pháp lý & Tài liệu tham chiếu\n"]
+        for s in source_or_sources:
+            first_idx = s.occurrences[0].index if s.occurrences else 1
+            ref_link = f"[{s.title}]({s.url})" if s.url else f"**{s.title}**"
+            domain_info = f" ({s.domain})" if s.domain else ""
+            lines.append(f"- [{first_idx}] {ref_link}{domain_info}")
+        return "\n".join(lines)
+
+    if source_or_sources.url:
+        return f"[{source_or_sources.title}]({source_or_sources.url})"
+    return f"[{source_or_sources.title}]"

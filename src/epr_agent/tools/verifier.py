@@ -16,6 +16,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, Field
 
 from epr_agent.domain.models import DocumentRecord
+from epr_agent.domain.verification import VerificationStatus, canonical_verification_status
 from epr_agent.tools.evidence import legal_claim_segments
 
 _CITATION_RE = re.compile(r"\[(\d+)\]")
@@ -28,6 +29,7 @@ class ClaimSupportResult(BaseModel):
     unsupported_claim_count: int = Field(default=0, ge=0)
     unsupported_claim_indices: list[int] = Field(default_factory=list)
     reason_code: str = Field(default="ok", max_length=1000)
+    verification_status: VerificationStatus = VerificationStatus.VERIFIED
     model: str = Field(default="", max_length=200)
     token_usage: dict[str, int] = Field(default_factory=dict)
 
@@ -68,9 +70,8 @@ class StructuredClaimSupportVerifier:
                 supported=False,
                 unsupported_claim_count=1,
                 reason_code="no_answer_or_evidence",
+                verification_status=VerificationStatus.INSUFFICIENT_EVIDENCE,
             )
-
-        from epr_agent.infra.llm_instances import get_llm_smart
 
         claims = legal_claim_segments(answer)
         if not claims:
@@ -78,9 +79,9 @@ class StructuredClaimSupportVerifier:
                 supported=True,
                 unsupported_claim_count=0,
                 reason_code="no_material_claim_to_verify",
+                verification_status=VerificationStatus.VERIFIED,
             )
 
-        model = get_llm_smart().with_structured_output(ClaimSupportResult)
         payload: dict[str, Any] = {
             "claims": [
                 {
@@ -102,6 +103,9 @@ class StructuredClaimSupportVerifier:
             ],
         }
         try:
+            from epr_agent.infra.llm_instances import get_llm_smart
+
+            model = get_llm_smart().with_structured_output(ClaimSupportResult)
             result = await model.ainvoke(
                 [
                     ("system", _SYSTEM_PROMPT),
@@ -115,9 +119,20 @@ class StructuredClaimSupportVerifier:
             if result.supported and (result.unsupported_claim_count or result.unsupported_claim_indices):
                 result.supported = False
                 result.reason_code = "unsupported_claims_reported"
+            result.verification_status = canonical_verification_status(
+                result.verification_status,
+                supported=result.supported,
+                reason_code=result.reason_code,
+            )
+            result.supported = result.verification_status is VerificationStatus.VERIFIED
             return result
-        except Exception:  # noqa: BLE001 - fallback gracefully
-            return ClaimSupportResult(supported=True, reason_code="verifier_fallback")
+        except Exception:  # noqa: BLE001 - a legal verifier outage must stop delivery
+            return ClaimSupportResult(
+                supported=False,
+                unsupported_claim_count=1,
+                reason_code="verifier_fallback",
+                verification_status=VerificationStatus.VERIFICATION_UNAVAILABLE,
+            )
 
 
 class StaticClaimSupportVerifier:
@@ -147,6 +162,8 @@ class LegalCriticVerdict(BaseModel):
     temporal_issues_detected: bool = Field(default=False, description="True if answer relies on superseded or repealed laws without noting the amendments.")
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     conflicting_provisions: list[str] = Field(default_factory=list, description="List of provision numbers that have statutory conflicts or misinterpretations.")
+    reason_code: str = Field(default="ok", max_length=1000)
+    verification_status: VerificationStatus = VerificationStatus.VERIFIED
 
 
 _LEGAL_CRITIC_SYSTEM_PROMPT = """Bạn là Thẩm định viên Pháp lý Cấp cao (Senior Legal Auditor & Critic) của Hệ thống Trợ lý Pháp luật Việt Nam.
@@ -179,14 +196,26 @@ class LegalCriticReviewer:
         documents: list[DocumentRecord],
     ) -> LegalCriticVerdict:
         if not self.enabled or not answer.strip():
-            return LegalCriticVerdict(approved=True, critique="Critic check skipped or empty answer.")
+            return LegalCriticVerdict(
+                approved=False,
+                fatal_error=True,
+                critique="Critic check unavailable.",
+                reason_code="critic_disabled_or_empty_answer",
+                verification_status=VerificationStatus.VERIFICATION_UNAVAILABLE,
+            )
 
         if not documents:
-            return LegalCriticVerdict(approved=True, critique="No legal documents to audit against.")
-
-        from epr_agent.infra.llm_instances import get_llm_smart
+            return LegalCriticVerdict(
+                approved=False,
+                fatal_error=True,
+                critique="No legal documents to audit against.",
+                reason_code="insufficient_evidence",
+                verification_status=VerificationStatus.INSUFFICIENT_EVIDENCE,
+            )
 
         try:
+            from epr_agent.infra.llm_instances import get_llm_smart
+
             model = get_llm_smart().with_structured_output(LegalCriticVerdict)
             payload = {
                 "user_query": query,
@@ -214,13 +243,31 @@ class LegalCriticReviewer:
             )
             if not isinstance(result, LegalCriticVerdict):
                 result = LegalCriticVerdict.model_validate(result)
+            result.verification_status = canonical_verification_status(
+                result.verification_status,
+                supported=result.approved and not result.fatal_error,
+                reason_code=result.reason_code,
+            )
+            if result.verification_status is VerificationStatus.VERIFICATION_UNAVAILABLE:
+                result.approved = False
+                result.fatal_error = True
+                result.reason_code = result.reason_code if result.reason_code != "ok" else "critic_unavailable"
+            elif result.verification_status is not VerificationStatus.VERIFIED:
+                result.approved = False
+                result.fatal_error = True
+                result.reason_code = result.reason_code if result.reason_code != "ok" else "critic_verification_rejected"
+            elif result.approved and not result.fatal_error:
+                result.verification_status = VerificationStatus.VERIFIED
+            elif result.verification_status is VerificationStatus.VERIFIED:
+                result.verification_status = VerificationStatus.UNSUPPORTED_CLAIM
             return result
-        except Exception as exc:  # noqa: BLE001
-            # Fallback gracefully if model call fails in offline / mock test mode
+        except Exception:  # noqa: BLE001 - a critic outage must stop legal delivery
             return LegalCriticVerdict(
-                approved=True,
-                critique=f"Critic evaluation fallback: {exc}",
-                confidence=0.8,
+                approved=False,
+                fatal_error=True,
+                critique="Critic evaluation unavailable.",
+                reason_code="critic_unavailable",
+                verification_status=VerificationStatus.VERIFICATION_UNAVAILABLE,
             )
 
 

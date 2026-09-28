@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from epr_agent.agent.graph import WorkflowDependencies
 from epr_agent.agent.planner import BoundedPlanner
 from epr_agent.agent.v4 import V4WorkflowRuntime
+from epr_agent.domain.legal import explicit_anchors
 from epr_agent.domain.models import DocumentRecord
 from epr_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
 from epr_agent.tools.evidence import EvidenceEvaluator
 from epr_agent.tools.generation import EvidenceGenerationGateway, StaticGenerationGateway
 from epr_agent.tools.history import ContextSnapshot
+from epr_agent.tools.legal_readiness import SyntheticReadyLegalReadinessGate
 from epr_agent.tools.retrieval import RetrievalGateway
 
 
@@ -90,7 +91,17 @@ class IssueAwareRetrieval:
         self.requests.append(request)
         anchors = list(getattr(request, "required_anchors", []) or [])
         if isinstance(request, str):
-            anchors = list(dict.fromkeys(re.findall(r"Điều\s+\d+", request, flags=re.IGNORECASE)))
+            # Keep the fixture aligned with the production explicit-anchor
+            # contract, including Appendix XXII.  Document-only anchors are
+            # intentionally left unfiltered because this adapter models the
+            # broad fallback used by the legacy retrieval path.
+            anchors = list(
+                dict.fromkeys(
+                    anchor.key()
+                    for anchor in explicit_anchors(request)
+                    if anchor.article or anchor.appendix
+                )
+            )
         if not anchors:
             return list(self.documents)
         return [
@@ -137,5 +148,6 @@ def runtime(
         evidence=EvidenceEvaluator(min_chars=20),
         generation=DocumentAwareGenerationGateway(),
         planner=BoundedPlanner(max_retrieval_actions=3, max_repairs=1, max_iterations=12),
+        legal_readiness=SyntheticReadyLegalReadinessGate(),
     )
     return V4WorkflowRuntime(dependencies, answer_chunk_delay_s=answer_chunk_delay_s), history, retrieval

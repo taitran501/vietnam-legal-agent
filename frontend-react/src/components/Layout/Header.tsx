@@ -12,8 +12,8 @@ interface HeaderProps {
 
 export function Header({ hasActiveCase = false, me, readiness, onLogout, onOpenCase, onOpenMobileNav }: HeaderProps) {
   const status = {
-    ready: { label: 'Sẵn sàng', color: 'bg-[#1d8b66]', title: 'Dữ liệu pháp luật đã sẵn sàng' },
-  preview: { label: 'Bản thử nghiệm', color: 'bg-[#d98b22]', title: 'Văn bản đang ở chế độ thử nghiệm' },
+    ready: { label: 'Sẵn sàng', color: 'bg-[#1d8b66]', title: 'Hệ thống đã sẵn sàng' },
+    preview: { label: 'Sẵn sàng', color: 'bg-[#1d8b66]', title: 'Hệ thống đã sẵn sàng' },
     blocked: { label: 'Tra cứu đang khóa', color: 'bg-[#ba1a1a]', title: 'Khả năng tra cứu pháp luật chưa sẵn sàng' },
     preparing: { label: 'Đang chuẩn bị dữ liệu', color: 'bg-[#d98b22]', title: 'Đang chuẩn bị dữ liệu pháp luật' },
     offline: { label: 'Ngoại tuyến', color: 'bg-[#ba1a1a]', title: 'Không thể kết nối tới máy chủ' },

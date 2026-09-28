@@ -226,6 +226,8 @@ Important settings include:
 | `POSTGRES_PASSWORD` | Required by Compose; there is no insecure default. |
 | `QDRANT_URL` / `USE_QDRANT_CLOUD` | Self-hosted or Qdrant Cloud vector storage. |
 | `REDIS_URL` | Cache and request-protection backend. |
+| `ENFORCE_LEGAL_SAFETY_CIRCUIT_BREAKER` | Production safety contract; verifier/critic outages fail closed. Must remain `true` in production. |
+| `ENFORCE_LEGAL_READINESS_GATE` / `LEGAL_READINESS_MANIFEST_PATH` | Independent legal-review gate and manifest for the bounded EPR scope. Pending review blocks legal answers but does not stop process startup. |
 | `ENABLE_OFFICIAL_DELTA_RETRIEVAL` / `OFFICIAL_DELTA_MANIFEST_PATH` | Preview-only exact-instrument lookup for the small official-law delta; disabled by default. |
 | `AGENT_MAX_IN_FLIGHT_TURNS` / `AGENT_ADMISSION_WAIT_SECONDS` | Deployment-wide agent-turn admission (`50` / `2s` by default). |
 | `AGENT_LEASE_TTL_SECONDS` / `AGENT_LEASE_HEARTBEAT_SECONDS` | Redis lease lifetime and heartbeat for long-running turns (`300s` / `30s`). |

@@ -116,6 +116,28 @@ def test_evidence_evaluator_accepts_canonical_instrument_number_metadata():
     assert result.sufficient is True
 
 
+def test_evidence_evaluator_matches_an_explicit_appendix_anchor():
+    appendix = document()
+    appendix.metadata.update(
+        {
+            "legal_anchor": "Phụ lục XXII",
+            "Dieu": "",
+            "Document_Number": "08/2022/NĐ-CP",
+            "source": "Nghị định 08/2022/NĐ-CP - Phụ lục XXII",
+        }
+    )
+    requested = LegalAnchor(document_number="08/2022/NĐ-CP", appendix="Phụ lục XXII")
+
+    result = EvidenceEvaluator(min_chars=20).evaluate(
+        "Phụ lục XXII quy định gì?",
+        [appendix],
+        TaskType.LEGAL_LOOKUP,
+        expected_anchors=[requested],
+    )
+
+    assert result.sufficient is True
+
+
 def test_relevance_gate_rejects_nearest_but_weak_unanchored_documents():
     weak = document()
     weak.metadata["rerank_score"] = 0.31

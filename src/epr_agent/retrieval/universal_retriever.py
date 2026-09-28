@@ -37,7 +37,45 @@ def _escape_fts5_term(term: str) -> str:
     return term.replace('"', '""')
 
 
-# Domain keyword boosts for Vietnamese law
+class LegalQueryExpander:
+    """Dynamic query analyzer and expansion engine for Vietnamese legal queries."""
+
+    ARTICLE_PATTERN = re.compile(r"(?:điều|khoản|điểm)\s+\d+[a-zĐđ]?", re.IGNORECASE)
+    INSTRUMENT_PATTERN = re.compile(r"\b\d{1,5}/\d{4}/(?:NĐ-CP|TT-[A-ZĐ]+|QH\d+|UBTVQH\d+|QĐ-[A-ZĐ]+)\b", re.IGNORECASE)
+    LAW_PREFIX_PATTERN = re.compile(r"\b(?:Bộ luật|Luật|Nghị định|Thông tư|Nghị quyết|Quyết định)\s+[\w\sÀ-ỹĐđ]{2,40}\b", re.IGNORECASE)
+
+    @classmethod
+    def extract_legal_entities(cls, query: str) -> list[str]:
+        """Dynamically extract legal articles, instrument IDs, and legislative names."""
+        entities: list[str] = []
+        for m in cls.ARTICLE_PATTERN.finditer(query):
+            val = m.group(0).strip()
+            if val not in entities:
+                entities.append(val)
+        for m in cls.INSTRUMENT_PATTERN.finditer(query):
+            val = m.group(0).strip()
+            if val not in entities:
+                entities.append(val)
+        for m in cls.LAW_PREFIX_PATTERN.finditer(query):
+            val = m.group(0).strip()
+            if val not in entities and len(val.split()) <= 6:
+                entities.append(val)
+        return entities
+
+    @classmethod
+    def extract_ngrams(cls, text: str, min_n: int = 2, max_n: int = 4) -> list[str]:
+        """Extract multi-word noun phrases and legal concepts dynamically."""
+        words = [w for w in re.findall(r"[\wÀ-ỹĐđ]+", text) if w.lower() not in LEGAL_STOP_WORDS]
+        ngrams: list[str] = []
+        for n in range(min_n, min(len(words) + 1, max_n + 1)):
+            for i in range(len(words) - n + 1):
+                phrase = " ".join(words[i : i + n])
+                if len(phrase) >= 5 and phrase not in ngrams:
+                    ngrams.append(phrase)
+        return ngrams
+
+
+# Fast semantic mapping for legal domains and statutory synonyms
 KNOWN_LAW_NAMES = [
     ("đất đai", "Luật Đất đai"),
     ("sổ đỏ", "Luật Đất đai"),
@@ -121,7 +159,6 @@ KNOWN_LAW_NAMES = [
     ("hành chính", "Luật Tố tụng hành chính"),
 ]
 
-# Domain synonym expansions for high-precision FTS5 matching
 SYNONYM_EXPANSIONS: dict[str, list[str]] = {
     "khai hoang": ["138", "139", "tự khai hoang", "không có giấy tờ", "cấp Giấy chứng nhận"],
     "đất khai hoang": ["138", "139", "tự khai hoang", "không có giấy tờ", "cấp Giấy chứng nhận"],
@@ -138,10 +175,7 @@ SYNONYM_EXPANSIONS: dict[str, list[str]] = {
     "tái chế bao bì": ["77", "trách nhiệm tái chế", "08/2022/NĐ-CP"],
 }
 
-
-# These terms are useful for routing but are not retrieval keys on their own.
-# Without this guard a broad prompt such as ``2026 có luật gì mới`` would
-# match arbitrary rows that merely contain the word ``luật``.
+# Generic words that are filtered out unless reinforced with legal terms
 GENERIC_QUERY_WORDS = {
     "ban", "bản", "có", "định", "hiệu", "hành", "lực", "luật", "mới", "năm",
     "pháp", "quy", "quyết", "quyền", "thế", "văn", "được", "gì", "không",
@@ -163,10 +197,6 @@ _QUERY_PHRASE_RULES: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
     ),
 )
 
-# Some Pháp điển rows keep a catalogue-level source note (for example
-# ``Căn cứ Luật Doanh nghiệp``) while a duplicate row carries the instrument
-# number.  Fill that missing identity from the corpus' stable law label so a
-# source drawer never exposes an anonymous chunk.
 CANONICAL_SOURCE_HINTS: tuple[tuple[str, str, str, str], ...] = (
     (
         "luật doanh nghiệp",
@@ -211,9 +241,11 @@ class UniversalLegalRetriever:
     def _extract_components(self, query: str) -> tuple[list[str], list[str], list[str]]:
         q_lower = query.lower()
         
-        # 1. Inject law names and multi-word phrases for matched domain keywords
-        injected_law_names = []
+        # 1. Dynamic statutory entity and anchor extraction
+        injected_law_names = LegalQueryExpander.extract_legal_entities(query)
         matched_phrases = []
+
+        # 2. Domain keyword matching
         for kw, law_name in KNOWN_LAW_NAMES:
             if kw in q_lower:
                 if law_name not in injected_law_names:
@@ -221,23 +253,26 @@ class UniversalLegalRetriever:
                 if " " in kw and kw not in matched_phrases:
                     matched_phrases.append(kw)
 
-        # 2. Inject synonyms for specialized colloquial expressions
+        # 3. Dynamic n-gram extraction
+        dynamic_ngrams = LegalQueryExpander.extract_ngrams(query)
+        for ng in dynamic_ngrams:
+            if ng.lower() not in matched_phrases and ng.lower() not in [k[0] for k in KNOWN_LAW_NAMES]:
+                matched_phrases.append(ng)
+
+        # 4. Synonym expansion
         for trigger_phrase, synonyms in SYNONYM_EXPANSIONS.items():
             if trigger_phrase in q_lower:
                 for syn in synonyms:
                     if syn not in matched_phrases and syn not in injected_law_names:
                         matched_phrases.append(syn)
 
-        # Add high-signal phrase constraints for common factual questions.
-        # They are consumed by the strict Tier-1 query below; the broad Tier-2
-        # query remains available as a bounded recall fallback.
         for pattern, phrases in _QUERY_PHRASE_RULES:
             if pattern.search(q_lower):
                 for phrase in phrases:
                     if phrase not in matched_phrases:
                         matched_phrases.append(phrase)
 
-        # 3. Extract meaningful content words — exclude conversational stop words
+        # 5. Extract meaningful content words — exclude conversational stop words
         raw_words = re.findall(r"[\w]+", query)
         content_words = [
             w for w in raw_words
@@ -246,7 +281,6 @@ class UniversalLegalRetriever:
             and not w.isdigit()
         ]
 
-        # 4. Remove content words already captured in matched phrases
         phrase_tokens = set()
         for p in matched_phrases:
             for tok in p.split():
@@ -258,7 +292,6 @@ class UniversalLegalRetriever:
     @staticmethod
     def _has_specific_retrieval_signal(query: str) -> bool:
         """Reject generic legal/year prompts before they hit the catalogue."""
-
         clean_query = " ".join((query or "").split())
         if not clean_query or explicit_anchors(clean_query):
             return bool(clean_query)
@@ -394,8 +427,7 @@ class UniversalLegalRetriever:
 
                 formatted_content = " | ".join(header_parts) + "\n\n" + content
 
-                # Keep only a document URL supplied by the corpus.  A generic
-                # catalogue homepage is not a usable citation target.
+                # Keep only a document URL supplied by the corpus.
                 final_url = src_url.strip() if src_url and src_url.strip().startswith(("http://", "https://")) else ""
                 if final_url.rstrip("/").casefold() in {"http://vbpl.vn", "https://vbpl.vn"}:
                     final_url = ""

@@ -87,3 +87,30 @@ async def test_web_research_safe_empty_when_instrument_does_not_match(monkeypatc
 
     assert answer == ""
     assert documents == []
+
+
+@pytest.mark.asyncio
+async def test_web_research_free_fallback(monkeypatch) -> None:
+    settings = SimpleNamespace(
+        tavily_api_key="",
+        web_official_domains="vanban.chinhphu.vn,vbpl.vn",
+        web_excerpt_max_chars=300,
+    )
+    monkeypatch.setattr("epr_agent.config.get_settings", lambda: settings)
+
+    fake_results = [
+        {
+            "title": "Nghị định số 100/2019/NĐ-CP quy định xử phạt vi phạm hành chính giao thông",
+            "url": "https://vanban.chinhphu.vn/?docid=198826",
+            "content": "Nghị định số 100/2019/NĐ-CP của Chính phủ quy định về xử phạt vi phạm hành chính trong lĩnh vực giao thông đường bộ và đường sắt.",
+        }
+    ]
+    monkeypatch.setattr("epr_agent.tools.generation._search_duckduckgo_free", lambda query, domains: fake_results)
+
+    answer, documents = await EvidenceGenerationGateway().web("Nghị định 100/2019/NĐ-CP xử phạt giao thông")
+
+    assert len(documents) == 1
+    assert documents[0].metadata["source_kind"] == "official_web"
+    assert documents[0].metadata["authority"] == "official"
+    assert "https://vanban.chinhphu.vn/?docid=198826" in answer
+

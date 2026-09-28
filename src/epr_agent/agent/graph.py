@@ -19,6 +19,7 @@ from epr_agent.domain.legal import EMBEDDING_PROFILE, LegalAnchor, explicit_anch
 from epr_agent.domain.models import (
     Action,
     AgentState,
+    EvidenceAssessment,
     TaskType,
     TerminationReason,
     append_action,
@@ -36,6 +37,11 @@ from epr_agent.domain.tasks import (
     merge_facts,
     missing_facts,
 )
+from epr_agent.domain.verification import (
+    VerificationPolicy,
+    VerificationStatus,
+    canonical_verification_status,
+)
 from epr_agent.tools.cache import RedisExactAnswerCache, ScopedAnswerCache
 from epr_agent.tools.evidence import (
     EvidenceEvaluator,
@@ -45,7 +51,13 @@ from epr_agent.tools.evidence import (
 )
 from epr_agent.tools.generation import EvidenceGenerationGateway, GenerationGateway
 from epr_agent.tools.history import HistoryGateway, UnifiedHistoryGateway
-from epr_agent.tools.retrieval import QdrantLegalRetrievalGateway, RetrievalGateway
+from epr_agent.tools.legal_readiness import (
+    LegalReadinessGate,
+    LegalReadinessProvider,
+    ReadinessStatus,
+    sha256_file,
+)
+from epr_agent.tools.retrieval import QdrantLegalRetrievalGateway, RequiredAnchorParseError, RetrievalGateway
 from epr_agent.tools.verifier import (
     ClaimSupportVerifier,
     LegalCriticReviewer,
@@ -53,6 +65,32 @@ from epr_agent.tools.verifier import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _verification_status_for_reason(reason: str, *, valid: bool) -> VerificationStatus:
+    if valid:
+        return VerificationStatus.VERIFIED
+    if reason in {
+        "required_anchor_parse_failed",
+        "legal_readiness_invalid",
+        "verification_unavailable",
+        "claim_support_verification_unavailable",
+        "claim_support_verifier_unavailable",
+    }:
+        return VerificationStatus.VERIFICATION_UNAVAILABLE
+    if reason in {"no_evidence_for_claims", "insufficient_evidence"}:
+        return VerificationStatus.INSUFFICIENT_EVIDENCE
+    if reason.startswith("claim_support_") and "insufficient_evidence" in reason:
+        return VerificationStatus.INSUFFICIENT_EVIDENCE
+    if reason.startswith("claim_support_") or reason in {
+        "article_reference_not_in_evidence",
+        "citation_out_of_range",
+        "legal_claim_without_citation",
+    } or "unsupported_claim" in reason or reason == "critic_legal_flaw_rejected":
+        return VerificationStatus.UNSUPPORTED_CLAIM
+    if reason.startswith("corrected_answer_") and "unavailable" in reason:
+        return VerificationStatus.VERIFICATION_UNAVAILABLE
+    return VerificationStatus.INSUFFICIENT_EVIDENCE
 
 
 @dataclass(slots=True)
@@ -68,6 +106,8 @@ class WorkflowDependencies:
     corpus: CorpusDescriptor | None = None
     claim_verifier: ClaimSupportVerifier | None = None
     critic_reviewer: LegalCriticReviewer | None = None
+    legal_readiness: LegalReadinessProvider | None = None
+    enforce_legal_safety_circuit_breaker: bool = False
 
 
 def default_dependencies() -> WorkflowDependencies:
@@ -92,6 +132,16 @@ def default_dependencies() -> WorkflowDependencies:
         manifest_path=settings.corpus_manifest_path,
         appendix_path=appendix_path,
     )
+    legal_readiness = (
+        LegalReadinessGate(
+            settings.legal_readiness_manifest_path,
+            corpus_sha256=corpus_sha,
+            amendment_map_sha256=sha256_file(settings.amendment_map_path),
+            rule_pack_sha256=sha256_file(settings.rule_pack_path),
+        )
+        if settings.enforce_legal_readiness_gate
+        else None
+    )
     return WorkflowDependencies(
         history=UnifiedHistoryGateway(),
         cache=ScopedAnswerCache(
@@ -100,6 +150,7 @@ def default_dependencies() -> WorkflowDependencies:
             corpus_id=str(getattr(settings, "corpus_id", "epr")),
             corpus_sha=corpus_sha,
             embedding_profile=str(getattr(settings, "embedding_profile", EMBEDDING_PROFILE)),
+            legal_readiness_sha=legal_readiness.manifest_sha256 if legal_readiness else "",
         ),
         retrieval=QdrantLegalRetrievalGateway(),
         evidence=EvidenceEvaluator(
@@ -117,6 +168,8 @@ def default_dependencies() -> WorkflowDependencies:
         understanding=StructuredTaskUnderstandingGateway(),
         claim_verifier=StructuredClaimSupportVerifier(),
         critic_reviewer=LegalCriticReviewer(),
+        legal_readiness=legal_readiness,
+        enforce_legal_safety_circuit_breaker=settings.enforce_legal_safety_circuit_breaker,
         corpus=epr_corpus(
             collection_alias=str(getattr(settings, "law_collection", "law_collection")),
             corpus_version=str(getattr(settings, "corpus_version", "epr-corpus-v1")),
@@ -244,24 +297,8 @@ def build_workflow(deps: WorkflowDependencies):
             )
         task = understanding.task_type
         route = RouteType(understanding.route)
-        # An in-progress case owns terse fact-only replies.  This guards
-        # against a model accidentally reclassifying "Vật liệu là nhựa" as a
-        # standalone legal lookup instead of resuming the collection flow.
-        # Exception: explicit legal threshold / lookup queries escape the lock
-        # so that general factual questions ("ngưỡng dưới 30 tỷ có miễn không")
-        # are answered directly via retrieval rather than stuck in form-filling.
-        import re as _re
-        _q_lower = " ".join(state["query"].lower().split())
-        _explicit_legal_lookup = bool(
-            # numeric threshold with unit: 30 tỷ, 85%, 60 ngày, 6 tháng...
-            _re.search(r"\b\d+\s*(tỷ|triệu|%|phần trăm|ngày|tháng|năm)\b", _q_lower)
-            # explicit lookup phrases
-            or any(p in _q_lower for p in (
-                "là bao nhiêu", "bao nhiêu %", "mức nào", "quy định thế nào",
-                "điều kiện gì", "thủ tục gì", "cần những gì",
-                "giấy tờ gì", "trình tự như thế nào",
-            ))
-        )
+        # If an active case is ongoing and the model detects topic continuity,
+        # continue collecting information for the active case.
         if (
             active_case
             and active_case.get("status", "collecting") != "completed"
@@ -269,24 +306,10 @@ def build_workflow(deps: WorkflowDependencies):
                 TaskType.CASE_ASSESSMENT.value,
                 TaskType.BUILD_COMPLIANCE_CHECKLIST.value,
             }
-            and (understanding.is_follow_up or len(state["query"].strip()) < 160)
-            and not _explicit_legal_lookup
+            and understanding.is_follow_up
         ):
             task = TaskType(active_case["task_type"])
             route = route_for_task(task)
-        # The selected product mode is a user choice, not a model tool call.
-        # It is allowed to choose the bounded web-research route but never to
-        # silently escape the legal-corpus route on insufficient evidence.
-        # Hard override: explicit legal lookup questions (thresholds, specific
-        # rule phrases) must always go through corpus retrieval, regardless of
-        # the LLM's task classification.
-        if _explicit_legal_lookup and task in {
-            TaskType.CASE_ASSESSMENT,
-            TaskType.BUILD_COMPLIANCE_CHECKLIST,
-            TaskType.CHITCHAT,
-        }:
-            task = TaskType.LEGAL_LOOKUP
-            route = RouteType.LEGAL_LOOKUP
         elif state.get("mode") == RouteType.RESEARCH_WEB.value:
             route = RouteType.RESEARCH_WEB
             task = TaskType.LEGAL_LOOKUP
@@ -316,13 +339,38 @@ def build_workflow(deps: WorkflowDependencies):
         state["task_type"] = task.value
         state["route"] = route.value
         state["source_scope"] = route_spec(route).source_scope
+        # Conditional-edge callbacks are selectors in LangGraph: mutations
+        # made there are not reliably merged back into the state.  Persist the
+        # readiness decision in this node before routing so a pending/invalid
+        # manifest cannot reach cache lookup, retrieval, or generation.
+        if route_spec(route).verification_policy is VerificationPolicy.LEGAL_CORPUS and deps.legal_readiness is not None:
+            try:
+                readiness = deps.legal_readiness.audit()
+                state["legal_readiness_status"] = readiness.status.value
+                state["legal_readiness_sha"] = readiness.manifest_sha256
+                if not readiness.legally_ready:
+                    state["citation_error"] = (
+                        "legal_readiness_invalid"
+                        if readiness.status is ReadinessStatus.INVALID
+                        else "legal_review_pending"
+                    )
+                    state["verification_status"] = (
+                        VerificationStatus.VERIFICATION_UNAVAILABLE.value
+                        if readiness.status is ReadinessStatus.INVALID
+                        else VerificationStatus.INSUFFICIENT_EVIDENCE.value
+                    )
+            except Exception:  # noqa: BLE001 - an unreadable gate is invalid
+                state["legal_readiness_status"] = ReadinessStatus.INVALID.value
+                state["legal_readiness_sha"] = deps.legal_readiness.manifest_sha256
+                state["citation_error"] = "legal_readiness_invalid"
+                state["verification_status"] = VerificationStatus.VERIFICATION_UNAVAILABLE.value
         state["is_follow_up"] = understanding.is_follow_up
         state["standalone_query"] = understanding.standalone_query or state["query"].strip()
         state["facts"] = facts
         state["missing_facts"] = missing_facts(task, facts)
         if not state.get("clarification_required"):
             state["follow_up_question"] = build_follow_up_question(task, state["missing_facts"])
-        state["is_legal_scope"] = is_legal_scope(state["standalone_query"], history, active_case)
+        state["is_legal_scope"] = (route != RouteType.OUT_OF_SCOPE)
         state["explicit_articles"] = [anchor.article for anchor in understanding.explicit_anchors if anchor.article]
         state["explicit_anchor_details"] = [anchor.model_dump() for anchor in understanding.explicit_anchors]
         _trace(
@@ -351,6 +399,55 @@ def build_workflow(deps: WorkflowDependencies):
         task = TaskType(state["task_type"])
         started = time.perf_counter()
         try:
+            policy = route_spec(state.get("route", RouteType.LEGAL_LOOKUP.value)).verification_policy
+            if policy is VerificationPolicy.LEGAL_CORPUS and deps.legal_readiness is not None:
+                # The manifest can be replaced without restarting the API.
+                # Refresh the key namespace before lookup so an entry written
+                # under the previous manifest snapshot is a cache miss.
+                try:
+                    readiness = deps.legal_readiness.audit()
+                except Exception:  # noqa: BLE001 - an unreadable gate is invalid
+                    state["legal_readiness_status"] = ReadinessStatus.INVALID.value
+                    state["legal_readiness_sha"] = deps.legal_readiness.manifest_sha256
+                    state["citation_error"] = "legal_readiness_invalid"
+                    state["verification_status"] = VerificationStatus.VERIFICATION_UNAVAILABLE.value
+                    state["cache_status"] = "blocked"
+                    _tool_result(
+                        state,
+                        "answer_cache",
+                        started,
+                        ok=False,
+                        error="legal_readiness_invalid",
+                    )
+                    return state
+                deps.cache.update_legal_readiness_sha(readiness.manifest_sha256)
+                state["legal_readiness_status"] = readiness.status.value
+                state["legal_readiness_sha"] = readiness.manifest_sha256
+                if not readiness.legally_ready:
+                    reason = (
+                        "legal_readiness_invalid"
+                        if readiness.status is ReadinessStatus.INVALID
+                        else "legal_review_pending"
+                    )
+                    state["citation_error"] = reason
+                    state["verification_status"] = (
+                        VerificationStatus.VERIFICATION_UNAVAILABLE.value
+                        if reason == "legal_readiness_invalid"
+                        else VerificationStatus.INSUFFICIENT_EVIDENCE.value
+                    )
+                    state["cache_status"] = "blocked"
+                    _tool_result(
+                        state,
+                        "answer_cache",
+                        started,
+                        ok=False,
+                        error=reason,
+                        metadata={
+                            "legal_readiness_status": readiness.status.value,
+                            "legal_readiness_sha": readiness.manifest_sha256,
+                        },
+                    )
+                    return state
             value, key = await deps.cache.lookup(task, state["standalone_query"], route=state.get("route", "legal_lookup"))
             if value is not None:
                 cached_documents = documents_from_dict(value.evidence)
@@ -358,6 +455,15 @@ def build_workflow(deps: WorkflowDependencies):
                 if not cache_valid:
                     value = None
                     state["citation_error"] = f"cached_{cache_reason}"
+                elif policy is VerificationPolicy.LEGAL_CORPUS and deps.legal_readiness is not None:
+                    readiness = deps.legal_readiness.audit()
+                    state["legal_readiness_status"] = readiness.status.value
+                    state["legal_readiness_sha"] = readiness.manifest_sha256
+                    deps.cache.update_legal_readiness_sha(readiness.manifest_sha256)
+                    allowed, readiness_reason = deps.legal_readiness.allows_documents(cached_documents)
+                    if not allowed:
+                        value = None
+                        state["citation_error"] = f"cached_{readiness_reason}"
             state["cached_answer"] = value.answer if value else None
             state["cached_evidence"] = list(value.evidence) if value else []
             state["cached_citations"] = list(value.citations) if value else []
@@ -478,20 +584,43 @@ def build_workflow(deps: WorkflowDependencies):
             )
         except Exception as exc:  # noqa: BLE001 - retrieval failures must reach safe fallback
             state["evidence"] = []
-            _tool_result(state, "legal_retrieval", started, ok=False, error=type(exc).__name__)
+            retrieval_error = "required_anchor_parse_failed" if isinstance(exc, RequiredAnchorParseError) else type(exc).__name__
+            state["retrieval_error"] = retrieval_error
+            _tool_result(state, "legal_retrieval", started, ok=False, error=retrieval_error)
         return state
 
     async def evaluate_evidence(state: AgentState) -> AgentState:
         append_action(state, Action.EVALUATE_EVIDENCE)
         docs = documents_from_dict(state.get("evidence"))
-        assessment = deps.evidence.evaluate(
-            state["standalone_query"],
-            docs,
-            state["task_type"],
-            expected_anchors=[LegalAnchor.model_validate(value) for value in state.get("explicit_anchor_details") or []],
-        )
+        policy = route_spec(state.get("route", RouteType.LEGAL_LOOKUP.value)).verification_policy
+        readiness_reason = ""
+        if policy is VerificationPolicy.LEGAL_CORPUS and deps.legal_readiness is not None:
+            readiness = deps.legal_readiness.audit()
+            state["legal_readiness_status"] = readiness.status.value
+            state["legal_readiness_sha"] = readiness.manifest_sha256
+            allowed, gate_reason = deps.legal_readiness.allows_documents(docs)
+            if not allowed:
+                readiness_reason = gate_reason
+        if state.get("retrieval_error") == "required_anchor_parse_failed":
+            readiness_reason = "required_anchor_parse_failed"
+        if readiness_reason:
+            assessment = EvidenceAssessment(
+                False,
+                readiness_reason,
+                len(docs),
+                sum(len((doc.content or "").strip()) for doc in docs),
+                bool(docs),
+            )
+        else:
+            assessment = deps.evidence.evaluate(
+                state["standalone_query"],
+                docs,
+                state["task_type"],
+                expected_anchors=[LegalAnchor.model_validate(value) for value in state.get("explicit_anchor_details") or []],
+            )
         state["evidence_assessment"] = assessment.to_dict()
         state["evidence_status"] = "sufficient" if assessment.sufficient else "insufficient"
+        state["verification_status"] = _verification_status_for_reason(assessment.reason, valid=assessment.sufficient).value
         _trace(state, reason_code=assessment.reason, payload=assessment.to_dict())
         return state
 
@@ -575,20 +704,76 @@ def build_workflow(deps: WorkflowDependencies):
             state["citation_valid"] = True
             return state
         docs = documents_from_dict(state.get("evidence"))
-        if state.get("source_scope") == "web_research":
+        route = route_spec(state.get("route", RouteType.LEGAL_LOOKUP.value))
+        policy = route.verification_policy
+        if policy is VerificationPolicy.LEGAL_CORPUS and deps.legal_readiness is not None:
+            try:
+                readiness = deps.legal_readiness.audit()
+                state["legal_readiness_status"] = readiness.status.value
+                state["legal_readiness_sha"] = readiness.manifest_sha256
+                allowed, readiness_reason = deps.legal_readiness.allows_documents(docs)
+            except Exception:  # noqa: BLE001 - final gate failures stop delivery
+                allowed, readiness_reason = False, "legal_readiness_invalid"
+            if not allowed:
+                state["citation_valid"] = False
+                state["citation_error"] = readiness_reason or "legal_readiness_invalid"
+                state["verification_status"] = _verification_status_for_reason(
+                    state["citation_error"], valid=False
+                ).value
+                state["citations"] = []
+                _trace(
+                    state,
+                    reason_code=state["citation_error"],
+                    payload={"reason": "final_legal_readiness_gate"},
+                )
+                return state
+        if (
+            policy is VerificationPolicy.LEGAL_CORPUS
+            and deps.enforce_legal_safety_circuit_breaker
+            and (deps.claim_verifier is None or deps.critic_reviewer is None)
+        ):
+            state["citation_valid"] = False
+            state["citation_error"] = VerificationStatus.VERIFICATION_UNAVAILABLE.value
+            state["verification_status"] = VerificationStatus.VERIFICATION_UNAVAILABLE.value
+            state["citations"] = []
+            _trace(
+                state,
+                reason_code=VerificationStatus.VERIFICATION_UNAVAILABLE.value,
+                payload={"reason": "mandatory_verifier_dependency_missing"},
+            )
+            return state
+        if policy is VerificationPolicy.WEB:
             valid, citations, reason = verify_web_citations(state.get("answer", ""), docs)
         else:
             valid, citations, reason = verify_citations(state.get("answer", ""), docs, task)
-        # Layer two is deliberately one bounded batch call.  It runs only
-        # after citation structure is valid, and only for corpus legal claims.
-        # Tests may omit this dependency and exercise the deterministic
-        # structural contract in isolation.
-        if valid and state.get("source_scope") == "legal_corpus" and deps.claim_verifier is not None:
+
+        # Layer two is deliberately one bounded batch call.  Production legal
+        # routes require both verifier dependencies; injected unit tests can
+        # opt into the same contract with the explicit dependency flag.
+        if valid and policy is VerificationPolicy.LEGAL_CORPUS and deps.claim_verifier is not None:
             started = time.perf_counter()
             try:
                 support = await deps.claim_verifier.verify(state.get("answer", ""), docs)
-                valid = bool(support.supported)
-                reason = support.reason_code if valid else f"claim_support_{support.reason_code}"
+                support_status = canonical_verification_status(
+                    support.verification_status,
+                    supported=support.supported,
+                    reason_code=support.reason_code,
+                )
+                valid = bool(support.supported) and support_status is VerificationStatus.VERIFIED
+                reason = (
+                    "ok"
+                    if valid
+                    else (
+                        VerificationStatus.VERIFICATION_UNAVAILABLE.value
+                        if support_status is VerificationStatus.VERIFICATION_UNAVAILABLE
+                        else f"claim_support_{support_status.value}"
+                    )
+                )
+                state["verification_status"] = support_status.value if valid else (
+                    VerificationStatus.VERIFICATION_UNAVAILABLE.value
+                    if support_status is VerificationStatus.VERIFICATION_UNAVAILABLE
+                    else support_status.value
+                )
                 _tool_result(
                     state,
                     "claim_support_verifier",
@@ -604,7 +789,8 @@ def build_workflow(deps: WorkflowDependencies):
                 )
             except Exception as exc:  # noqa: BLE001 - unverified claims must stop safely
                 valid = False
-                reason = "claim_support_verifier_unavailable"
+                reason = VerificationStatus.VERIFICATION_UNAVAILABLE.value
+                state["verification_status"] = VerificationStatus.VERIFICATION_UNAVAILABLE.value
                 _tool_result(
                     state,
                     "claim_support_verifier",
@@ -614,9 +800,79 @@ def build_workflow(deps: WorkflowDependencies):
                     error=reason,
                     metadata={"reason": "verifier_exception", "error_type": type(exc).__name__},
                 )
+
+        corrected = False
+        if valid and policy is VerificationPolicy.LEGAL_CORPUS and deps.critic_reviewer is not None:
+            try:
+                verdict = await deps.critic_reviewer.review(
+                    state.get("standalone_query", state.get("query", "")),
+                    state.get("answer", ""),
+                    docs,
+                )
+                if verdict.verification_status is VerificationStatus.VERIFICATION_UNAVAILABLE:
+                    valid = False
+                    reason = VerificationStatus.VERIFICATION_UNAVAILABLE.value
+                    state["verification_status"] = VerificationStatus.VERIFICATION_UNAVAILABLE.value
+                elif verdict.verification_status is VerificationStatus.INSUFFICIENT_EVIDENCE:
+                    valid = False
+                    reason = VerificationStatus.INSUFFICIENT_EVIDENCE.value
+                    state["verification_status"] = VerificationStatus.INSUFFICIENT_EVIDENCE.value
+                elif verdict.fatal_error or not verdict.approved:
+                    valid = False
+                    reason = "critic_legal_flaw_rejected"
+                    state["verification_status"] = VerificationStatus.UNSUPPORTED_CLAIM.value
+                elif verdict.corrected_answer and verdict.corrected_answer.strip():
+                    state["answer"] = verdict.corrected_answer
+                    corrected = True
+            except Exception as exc:  # noqa: BLE001 - critic outage must stop legal delivery
+                valid = False
+                reason = VerificationStatus.VERIFICATION_UNAVAILABLE.value
+                state["verification_status"] = VerificationStatus.VERIFICATION_UNAVAILABLE.value
+                _tool_result(
+                    state,
+                    "legal_critic",
+                    time.perf_counter(),
+                    ok=False,
+                    count=len(docs),
+                    error=reason,
+                    metadata={"reason": "critic_exception", "error_type": type(exc).__name__},
+                )
+
+        # A corrected answer is a fresh output.  Re-check structure and claim
+        # support once, without recursively invoking the critic.
+        if valid and corrected:
+            corrected_answer = state.get("answer", "")
+            corrected_valid, corrected_citations, corrected_reason = verify_citations(
+                corrected_answer,
+                docs,
+                task,
+            )
+            if not corrected_valid:
+                valid = False
+                reason = f"corrected_answer_{corrected_reason}"
+            else:
+                citations = corrected_citations
+                if deps.claim_verifier is not None:
+                    try:
+                        corrected_support = await deps.claim_verifier.verify(corrected_answer, docs)
+                        corrected_status = canonical_verification_status(
+                            corrected_support.verification_status,
+                            supported=corrected_support.supported,
+                            reason_code=corrected_support.reason_code,
+                        )
+                        if corrected_status is not VerificationStatus.VERIFIED:
+                            valid = False
+                            reason = f"corrected_answer_{corrected_status.value}"
+                    except Exception:  # noqa: BLE001 - corrected output must not bypass verification
+                        valid = False
+                        reason = VerificationStatus.VERIFICATION_UNAVAILABLE.value
+                state["verification_status"] = (
+                    VerificationStatus.VERIFIED.value if valid else VerificationStatus.UNSUPPORTED_CLAIM.value
+                )
         state["citation_valid"] = valid
         state["citation_error"] = reason
         state["citations"] = [citation.to_dict() for citation in citations]
+        state["verification_status"] = _verification_status_for_reason(reason, valid=valid).value
         _trace(state, reason_code="citations_verified" if valid else reason, payload={"citation_reason": reason, "citation_count": len(citations)})
         return state
 
@@ -648,6 +904,9 @@ def build_workflow(deps: WorkflowDependencies):
             reason = "official_web_source_not_found"
         if state.get("termination_reason") == TerminationReason.INVALID_INPUT.value:
             state["answer"] = "Câu hỏi cần có nội dung và không vượt quá 3.000 ký tự. Bạn hãy gửi lại câu hỏi ngắn gọn hơn."
+        elif citation_reason in {"legal_review_pending", "legal_readiness_invalid"}:
+            state["answer"] = "Tính năng tư vấn pháp lý đang tạm dừng vì bộ căn cứ chưa hoàn tất thẩm định độc lập."
+            state["termination_reason"] = TerminationReason.INSUFFICIENT_EVIDENCE.value
         elif reason == "official_web_source_not_found":
             state["answer"] = "Tôi chưa tìm thấy nguồn chính thức ngoài corpus khớp với điều hoặc văn bản bạn yêu cầu."
             state["termination_reason"] = TerminationReason.INSUFFICIENT_EVIDENCE.value
@@ -671,14 +930,23 @@ def build_workflow(deps: WorkflowDependencies):
         state["safe_stop_reason"] = {
             "no_evidence": "missing_provision",
             "not_enough_docs": "missing_provision",
+            "insufficient_evidence": "missing_provision",
             "content_too_short": "missing_provision",
             "missing_source_metadata": "missing_provision",
             "explicit_article_not_found": "missing_provision",
             "explicit_anchor_not_found": "missing_provision",
             "source_relevance_mismatch": "source_relevance_mismatch",
             "relevance_check_failed": "missing_provision",
+            "required_anchor_parse_failed": "required_anchor_parse_failed",
+            "legal_review_pending": "legal_review_pending",
+            "legal_readiness_invalid": "legal_readiness_invalid",
+            "current_law_support_unverified": "current_law_support_unverified",
+            "verification_unavailable": "unavailable_dependencies",
             "official_web_source_not_found": "missing_provision",
             "claim_support_verifier_unavailable": "unavailable_dependencies",
+            "claim_support_verification_unavailable": "unavailable_dependencies",
+            "claim_support_insufficient_evidence": "missing_provision",
+            "claim_support_unsupported_claim": "unsupported_claim",
             "answer_has_no_citation": "failed_citation_verification",
             "citation_out_of_range": "failed_citation_verification",
             "legal_claim_without_citation": "failed_citation_verification",
@@ -693,6 +961,8 @@ def build_workflow(deps: WorkflowDependencies):
         return state
 
     def route_after_understanding(state: AgentState) -> str:
+        if state.get("citation_error") in {"legal_review_pending", "legal_readiness_invalid"}:
+            return "safe_stop"
         decision = planner.after_understanding(state)
         if decision.action == Action.COMPOSE_ANSWER:
             return "compose"
@@ -705,6 +975,8 @@ def build_workflow(deps: WorkflowDependencies):
         return "cache"
 
     def route_after_cache(state: AgentState) -> str:
+        if state.get("citation_error") in {"legal_review_pending", "legal_readiness_invalid"}:
+            return "safe_stop"
         decision = planner.after_cache(state)
         return "answer_cache" if decision.action == Action.ANSWER_CACHE else "retrieve_legal"
 
@@ -769,7 +1041,9 @@ def build_workflow(deps: WorkflowDependencies):
         {"answer_cache": "answer_cache", "retrieve_legal": "retrieve_legal"},
     )
     graph.add_edge("ask_user", END)
-    graph.add_edge("answer_cache", END)
+    # Cache hits are candidates, not trusted final answers.  They must pass
+    # the same final verification contract as newly generated answers.
+    graph.add_edge("answer_cache", "verify")
     graph.add_edge("retrieve_legal", "evaluate_evidence")
     graph.add_conditional_edges(
         "evaluate_evidence",
@@ -880,5 +1154,9 @@ async def run_workflow(
         deps=deps,
         trace_id=trace_id,
     )
+    if deps.legal_readiness is not None:
+        readiness = deps.legal_readiness.audit()
+        initial["legal_readiness_status"] = readiness.status.value
+        initial["legal_readiness_sha"] = readiness.manifest_sha256
     compiled = compiled_workflow or build_workflow(deps)
     return await compiled.ainvoke(initial)

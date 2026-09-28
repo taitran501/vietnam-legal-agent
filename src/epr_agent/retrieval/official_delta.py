@@ -125,14 +125,28 @@ class OfficialDeltaRetriever:
 
     @staticmethod
     def _anchor_matches(chunk: dict[str, Any], requested: list[LegalAnchor]) -> bool:
-        article_requests = {_normalise(anchor.article) for anchor in requested if anchor.article}
-        clause_requests = {_normalise(anchor.clause) for anchor in requested if anchor.clause}
-        point_requests = {_normalise(anchor.point) for anchor in requested if anchor.point}
-        if article_requests and _normalise(chunk.get("legal_anchor")) not in article_requests:
-            return False
-        if clause_requests and not clause_requests.issubset({_normalise(chunk.get("clause"))}):
-            return False
-        return not point_requests or point_requests.issubset({_normalise(chunk.get("point"))})
+        if not requested:
+            return True
+        chunk_anchor = _normalise(chunk.get("legal_anchor"))
+        chunk_appendix = _normalise(
+            " ".join(
+                str(chunk.get(key) or "")
+                for key in ("appendix", "Phụ lục", "appendix_table_id", "legal_anchor")
+            )
+        )
+        chunk_clause = _normalise(chunk.get("clause") or chunk.get("Khoan"))
+        chunk_point = _normalise(chunk.get("point") or chunk.get("Diem"))
+        for anchor in requested:
+            if anchor.article and chunk_anchor != _normalise(anchor.article):
+                continue
+            if anchor.appendix and _normalise(anchor.appendix) not in chunk_appendix:
+                continue
+            if anchor.clause and _normalise(anchor.clause) != chunk_clause:
+                continue
+            if anchor.point and _normalise(anchor.point) != chunk_point:
+                continue
+            return True
+        return False
 
     @staticmethod
     def _document_matches(number: str, document: dict[str, Any]) -> bool:
@@ -231,8 +245,8 @@ class OfficialDeltaRetriever:
         if len(numbers) != 1:
             return []
         number = next(iter(numbers))
-        has_article = any(anchor.article for anchor in parsed_anchors)
-        if not has_article and not self._metadata_query(clean_query):
+        has_specific_anchor = any(anchor.article or anchor.appendix for anchor in parsed_anchors)
+        if not has_specific_anchor and not self._metadata_query(clean_query):
             return []
 
         matches: list[DocumentRecord] = []
@@ -242,9 +256,9 @@ class OfficialDeltaRetriever:
             for raw_chunk in raw_document.get("chunks") or []:
                 if not isinstance(raw_chunk, dict):
                     continue
-                if has_article and not self._anchor_matches(raw_chunk, parsed_anchors):
+                if has_specific_anchor and not self._anchor_matches(raw_chunk, parsed_anchors):
                     continue
-                if not has_article and str(raw_chunk.get("kind") or "") != "metadata":
+                if not has_specific_anchor and str(raw_chunk.get("kind") or "") != "metadata":
                     continue
                 if not str(raw_chunk.get("text") or "").strip():
                     continue

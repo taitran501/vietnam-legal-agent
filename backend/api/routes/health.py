@@ -10,6 +10,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from backend.api.schemas import HealthResponse
+from epr_agent.tools.legal_readiness import LegalReadinessAudit, ReadinessStatus, audit_legal_readiness
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -44,8 +45,23 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
         "points_count": 0,
         "status": "missing",
         "source_snapshot_status": "unknown",
+        "legal_readiness_status": "unknown",
+        "legal_readiness_sha256": "",
+        "legally_ready": False,
+        "legal_readiness_issues": [],
     }
     audit: dict[str, Any] = {}
+    legal_audit = LegalReadinessAudit(
+        ReadinessStatus.INVALID,
+        False,
+        "invalid",
+        "",
+        "",
+        "",
+        "",
+        ("legal_readiness_not_checked",),
+    )
+    enforce_legal_readiness = bool(getattr(settings, "enforce_legal_readiness_gate", False))
     index_matches = False
     technical_corpus_ready = False
     try:
@@ -79,6 +95,30 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
         corpus["corpus_sha"] = expected_sha
         if settings.appendix_xxii_data_path.exists():
             corpus["appendix_sha256"] = hashlib.sha256(settings.appendix_xxii_data_path.read_bytes()).hexdigest()
+        if enforce_legal_readiness:
+            legal_audit = audit_legal_readiness(
+                getattr(settings, "legal_readiness_manifest_path", ""),
+                corpus_sha256=expected_sha,
+                amendment_map_sha256=str(audit.get("amendment_map_sha256") or ""),
+                rule_pack_sha256=str(audit.get("rule_pack_sha256") or ""),
+            )
+        else:
+            # Injected preview/readiness doubles from older integrations do
+            # not expose the Milestone 1 setting.  The production Settings
+            # model always has it and therefore always uses the manifest.
+            legal_audit = LegalReadinessAudit(
+                ReadinessStatus.READY,
+                True,
+                "ready",
+                "not-enforced",
+                expected_sha,
+                str(audit.get("amendment_map_sha256") or ""),
+                str(audit.get("rule_pack_sha256") or ""),
+            )
+        corpus["legal_readiness_status"] = legal_audit.status.value
+        corpus["legal_readiness_sha256"] = legal_audit.manifest_sha256
+        corpus["legally_ready"] = legal_audit.legally_ready
+        corpus["legal_readiness_issues"] = list(legal_audit.issues)
         from epr_agent.retrieval.retrieval import _get_qdrant_client
 
         client = _get_qdrant_client()
@@ -103,6 +143,10 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
     except Exception as exc:  # noqa: BLE001 - readiness must be safe when a collection is absent
         logger.info("Legal corpus is not ready: %s", exc)
         dependencies["qdrant"] = "preview" if settings.corpus_runtime_mode == "preview" else "error"
+        if enforce_legal_readiness and legal_audit.status is ReadinessStatus.INVALID:
+            corpus["legal_readiness_status"] = legal_audit.status.value
+            corpus["legal_readiness_sha256"] = legal_audit.manifest_sha256
+            corpus["legal_readiness_issues"] = list(legal_audit.issues)
     try:
         from backend.history.store import _store
 
@@ -128,33 +172,36 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
     if not settings.openai_api_key:
         dependencies["openai"] = "error"
 
-    corpus_ready = bool(audit.get("ready_for_promotion")) if settings.corpus_runtime_mode == "production" else technical_corpus_ready
-    ready = (
+    corpus_ready = technical_corpus_ready
+    technical_ready = (
         dependencies["database"] == "ok"
         and (dependencies["qdrant"] == "ok" or (settings.corpus_runtime_mode == "preview" and dependencies["qdrant"] in {"ok", "preview"}))
         and dependencies["openai"] == "ok"
         and (index_matches or settings.corpus_runtime_mode == "preview")
         and corpus_ready
     )
-    if ready:
+    legal_ready = technical_ready and (legal_audit.status is ReadinessStatus.READY or not enforce_legal_readiness)
+    if legal_ready:
         reason = "preview_snapshot" if settings.corpus_runtime_mode == "preview" else "ok"
         capabilities["legal_chat"] = {"status": "ready", "reason": reason}
         capabilities["case_workflow"] = {"status": "ready", "reason": reason}
     else:
         reason = (
             "database_schema_mismatch" if capabilities["history"]["reason"] == "database_schema_mismatch"
+            else "legal_readiness_invalid" if legal_audit.status is ReadinessStatus.INVALID and technical_ready
+            else "legal_review_pending" if legal_audit.status is ReadinessStatus.PENDING and technical_ready
             else "corpus_promotion_blocked" if not corpus_ready
             else "corpus_index_mismatch" if not index_matches
             else "dependency_unavailable"
         )
         capabilities["legal_chat"] = {"status": "blocked", "reason": reason}
         capabilities["case_workflow"] = {"status": "blocked", "reason": reason}
-    if ready and settings.tavily_api_key:
+    if technical_ready and settings.tavily_api_key:
         capabilities["web_research"] = {"status": "ready", "reason": "official_sources_only"}
     else:
         capabilities["web_research"] = {
             "status": "blocked",
-            "reason": "provider_not_configured" if not settings.tavily_api_key else capabilities["legal_chat"]["reason"],
+            "reason": "provider_not_configured" if not settings.tavily_api_key else "dependency_unavailable",
         }
 
     from epr_agent.infra import metrics
@@ -169,14 +216,18 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
                 state["reason"],
             )
 
-    overall_ready = capabilities["history"]["status"] == "ready" and capabilities["legal_chat"]["status"] == "ready"
+    # Legal review is a capability gate, not a process-liveness gate.  Keep
+    # /ready available with a degraded payload while the technical stack can
+    # serve chitchat/history and legal routes safe-stop.
+    overall_ready = technical_ready and capabilities["history"]["status"] == "ready"
     return {
-        "status": "ready" if overall_ready else "not_ready",
+        "status": "ready" if overall_ready and legal_ready else "degraded" if overall_ready else "not_ready",
         "runtime_mode": settings.corpus_runtime_mode,
         "preview": settings.corpus_runtime_mode == "preview",
         "dependencies": dependencies,
         "capabilities": capabilities,
         "corpus": corpus,
+        "legal_readiness": legal_audit.to_dict(),
     }, overall_ready
 
 

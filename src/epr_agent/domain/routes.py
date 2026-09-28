@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from epr_agent.domain.models import TaskType
+from epr_agent.domain.verification import VerificationPolicy
 
 
 class RouteType(StrEnum):
@@ -31,10 +32,18 @@ class RouteSpec:
     cacheable: bool
     requires_case_facts: bool = False
     source_scope: str = "legal_corpus"
+    verification_policy: VerificationPolicy = VerificationPolicy.LEGAL_CORPUS
 
 
 ROUTE_SPECS: dict[RouteType, RouteSpec] = {
-    RouteType.CHITCHAT: RouteSpec(RouteType.CHITCHAT, TaskType.CHITCHAT, 0, False, source_scope="none"),
+    RouteType.CHITCHAT: RouteSpec(
+        RouteType.CHITCHAT,
+        TaskType.CHITCHAT,
+        0,
+        False,
+        source_scope="none",
+        verification_policy=VerificationPolicy.NONE,
+    ),
     RouteType.LEGAL_LOOKUP: RouteSpec(RouteType.LEGAL_LOOKUP, TaskType.LEGAL_LOOKUP, 3, True),
     RouteType.LEGAL_EXPLAIN_COMPARE: RouteSpec(RouteType.LEGAL_EXPLAIN_COMPARE, TaskType.LEGAL_LOOKUP, 6, False),
     RouteType.CASE_ASSESSMENT: RouteSpec(
@@ -51,8 +60,22 @@ ROUTE_SPECS: dict[RouteType, RouteSpec] = {
         False,
         requires_case_facts=True,
     ),
-    RouteType.RESEARCH_WEB: RouteSpec(RouteType.RESEARCH_WEB, TaskType.LEGAL_LOOKUP, 5, False, source_scope="web_research"),
-    RouteType.OUT_OF_SCOPE: RouteSpec(RouteType.OUT_OF_SCOPE, TaskType.LEGAL_LOOKUP, 0, False, source_scope="none"),
+    RouteType.RESEARCH_WEB: RouteSpec(
+        RouteType.RESEARCH_WEB,
+        TaskType.LEGAL_LOOKUP,
+        5,
+        False,
+        source_scope="web_research",
+        verification_policy=VerificationPolicy.WEB,
+    ),
+    RouteType.OUT_OF_SCOPE: RouteSpec(
+        RouteType.OUT_OF_SCOPE,
+        TaskType.LEGAL_LOOKUP,
+        0,
+        False,
+        source_scope="none",
+        verification_policy=VerificationPolicy.NONE,
+    ),
 }
 
 

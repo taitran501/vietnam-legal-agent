@@ -58,13 +58,13 @@ describe('SourceDrawer', () => {
     expect(scrollIntoView).toHaveBeenCalled();
   });
 
-  it('shows the preview notice only when the source drawer is opened in preview mode', () => {
+  it('does not show the preview notice even when opened with preview prop', () => {
     const { rerender } = render(
       <SourceDrawer documents={[]} isOpen onClose={vi.fn()} />,
     );
     expect(screen.queryByText(/Bản thử nghiệm:/)).not.toBeInTheDocument();
     rerender(<SourceDrawer documents={[]} isOpen onClose={vi.fn()} preview />);
-    expect(screen.getByText(/Bản thử nghiệm:/)).toBeInTheDocument();
+    expect(screen.queryByText(/Bản thử nghiệm:/)).not.toBeInTheDocument();
   });
 
   it('renders canonical document identity instead of using the article chunk as the title', () => {

@@ -111,6 +111,18 @@ class Settings(BaseSettings):
         default=False,
         description="Allow the exact-instrument official delta in preview; keep disabled until its source is promoted into the canonical corpus.",
     )
+    enforce_legal_safety_circuit_breaker: bool = Field(
+        default=True,
+        description="Require legal verifier and critic failures to stop legal answer delivery",
+    )
+    enforce_legal_readiness_gate: bool = Field(
+        default=True,
+        description="Require an independently signed legal-readiness manifest for production legal answers",
+    )
+    legal_readiness_manifest_path: Path = Field(
+        default=BASE_DIR / "data" / "legal_readiness_manifest.json",
+        description="Independent legal review manifest; it is not part of the corpus hash",
+    )
     official_delta_manifest_path: Path = Field(
         default=BASE_DIR / "data" / "corpus" / "official_delta" / "manifest.json",
         description="Repository-managed manifest for the small official-law delta experiment.",
@@ -370,6 +382,10 @@ def validate_production_settings(settings: Settings) -> None:
         errors.append("REQUIRE_AUTH must be true")
     if settings.rate_limit_fail_open:
         errors.append("RATE_LIMIT_FAIL_OPEN must be false")
+    if not settings.enforce_legal_safety_circuit_breaker:
+        errors.append("ENFORCE_LEGAL_SAFETY_CIRCUIT_BREAKER must be true")
+    if not settings.enforce_legal_readiness_gate:
+        errors.append("ENFORCE_LEGAL_READINESS_GATE must be true")
     if settings.enable_trace_debug_api:
         errors.append("ENABLE_TRACE_DEBUG_API must be false")
     if settings.enable_universal_retrieval:

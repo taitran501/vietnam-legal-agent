@@ -72,18 +72,21 @@ class RedisAdmissionController:
             now = time.time()
             expires_at = now + lease_ttl_seconds
             try:
-                acquired = await cast(
-                    Awaitable[Any],
-                    redis.eval(
-                        _ACQUIRE_SCRIPT,
-                        1,
-                        self._key(scope),
-                        str(now),
-                        str(expires_at),
-                        str(limit),
-                        token,
-                        str(lease_ttl_seconds),
+                acquired = await asyncio.wait_for(
+                    cast(
+                        Awaitable[Any],
+                        redis.eval(
+                            _ACQUIRE_SCRIPT,
+                            1,
+                            self._key(scope),
+                            str(now),
+                            str(expires_at),
+                            str(limit),
+                            token,
+                            str(lease_ttl_seconds),
+                        ),
                     ),
+                    timeout=0.2,
                 )
             except Exception as exc:
                 raise AdmissionUnavailable("Redis admission control is unavailable") from exc

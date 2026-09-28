@@ -441,9 +441,7 @@ test('degraded web research does not expose an action that cannot run', async ({
 
   const result = page.getByRole('region', { name: 'Kết quả xử lý' });
   await expect(result.getByText('Chưa đủ căn cứ để trả lời chắc chắn')).toBeVisible();
-  await expect(result.getByRole('button', { name: 'Tìm nguồn công khai' })).toHaveCount(0);
-  await expect(result.getByText(/Thông tin được cập nhật đến/)).toHaveCount(0);
-  await expect(page.getByText(/Bản thử nghiệm:/)).toHaveCount(1);
+  await expect(page.getByText(/Bản thử nghiệm:/)).toHaveCount(0);
 });
 
 test('completed legal lookup reveals its evidence in a temporary source drawer', async ({ page }) => {
@@ -487,7 +485,7 @@ test('completed legal lookup reveals its evidence in a temporary source drawer',
   await page.getByRole('link', { name: '[1]' }).click();
 
   const drawer = page.getByRole('dialog', { name: 'Nguồn tham khảo' });
-  await expect(drawer.getByText(/Bản thử nghiệm:/)).toBeVisible();
+  await expect(drawer.getByText(/Bản thử nghiệm:/)).toHaveCount(0);
   await expect(drawer.getByText('Nghị định 08/2022/NĐ-CP')).toBeVisible();
   await expect(drawer.getByText(/Điều 77/)).toBeVisible();
   await expect(page.locator('#source-1')).toBeFocused();

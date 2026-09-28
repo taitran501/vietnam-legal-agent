@@ -110,6 +110,50 @@ class Citation:
 
 
 @dataclass(slots=True)
+class CitationOccurrence:
+    index: int
+    title: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class CitationSource:
+    """Standardized Citation Source model inspired by ByteDance Deer-Flow."""
+
+    id: str
+    title: str
+    url: str
+    domain: str
+    count: int
+    occurrences: list[CitationOccurrence] = field(default_factory=list)
+    excerpt: str = ""
+    authority: str = "official"
+    legal_anchor: str = ""
+    effective_status: str = "active"
+
+    @property
+    def doc_id(self) -> str:
+        return self.id
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "doc_id": self.id,
+            "title": self.title,
+            "url": self.url,
+            "domain": self.domain,
+            "count": self.count,
+            "occurrences": [o.to_dict() for o in self.occurrences],
+            "excerpt": self.excerpt,
+            "authority": self.authority,
+            "legal_anchor": self.legal_anchor,
+            "effective_status": self.effective_status,
+        }
+
+
+@dataclass(slots=True)
 class EvidenceAssessment:
     sufficient: bool
     reason: str
@@ -186,6 +230,10 @@ class AgentState(TypedDict, total=False):
     run_ended_at: str
     run_duration_ms: float
     cache_status: str
+    legal_readiness_status: str
+    legal_readiness_sha: str
+    verification_status: str
+    retrieval_error: str
 
     history: list[dict[str, Any]]
     history_summary: str
@@ -216,6 +264,7 @@ class AgentState(TypedDict, total=False):
     trace_events: list[dict[str, Any]]
     answer: str
     citations: list[dict[str, Any]]
+    citation_sources: list[dict[str, Any]]
     assessment: dict[str, Any] | None
     checklist: list[dict[str, Any]]
     source: str
