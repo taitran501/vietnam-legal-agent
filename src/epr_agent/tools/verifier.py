@@ -39,12 +39,14 @@ class ClaimSupportVerifier(Protocol):
 
 
 _SYSTEM_PROMPT = """You verify whether the generated Vietnamese legal claims and advisory conclusions are
-consistent with and supported by the provided legal evidence chunks. Return only the requested structured schema.
+substantively supported by and consistent with the provided legal evidence chunks. Return only the requested structured schema.
 
 Evaluation Guidelines:
-1. High-level conclusions or introductory summary statements (e.g., 'Ba mẹ bạn có thể được cấp sổ đỏ nếu đáp ứng đủ điều kiện theo quy định [1]') are SUPPORTED if the cited legal article provides a legal pathway, mechanism, or basis for that situation (such as Điều 138/139 providing for granting land certificates for self-reclaimed or unregistered land).
-2. Contextual application to user facts (dates, locations, entity names) is valid and supported as long as the underlying statutory rule is consistent with the cited evidence.
-3. Mark supported=false ONLY if a claim asserts a genuinely FALSE legal proposition (e.g., asserting a non-existent law, reversing a statutory prohibition/permission, or fabricating a specific rate/fine that directly contradicts the evidence)."""
+1. Holistic Evidence Evaluation: A claim or advisory conclusion is SUPPORTED if the legal principle, prohibition, right, or procedure is established by ANY of the provided evidence documents, or by reasonable application of the cited articles taken together. Do not fail a claim solely because the citation index pointed to one related article rather than another within the provided evidence set.
+2. Advisory & Practical Conclusions: Everyday legal advice, user rights (e.g. 'người thuê có quyền từ chối trả thêm tiền', 'yêu cầu chủ nhà thực hiện đúng hợp đồng', 'hai bên cần thương lượng hoặc giải quyết theo hợp đồng'), procedural guidance, and summarizing conclusions are fully SUPPORTED if they align with the general principles in the evidence.
+3. Negative Propositions & Prohibitions: A statement that an action is prohibited or unauthorized (e.g., 'chủ nhà không được tự ý tăng giá thuê 30% giữa chừng nếu hợp đồng không có thỏa thuận') is SUPPORTED when the law establishes that price changes require agreement or mandates stability of lease.
+4. Contextual application to user facts (dates, locations, entity names, percentages) is valid and supported as long as the underlying statutory rule is consistent with the cited evidence.
+5. Mark supported=false ONLY if a claim asserts a genuinely FALSE legal proposition (e.g., asserting a non-existent law, reversing an explicit statutory prohibition/permission, or fabricating a specific rate/fine that directly contradicts the evidence)."""
 
 
 def _anchor(document: DocumentRecord) -> str:

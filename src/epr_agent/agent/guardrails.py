@@ -157,16 +157,23 @@ class AgentGuardrails:
                         citations_dicts,
                     )
                 if not support.supported or support_status is not VerificationStatus.VERIFIED:
-                    has_statutory_basis = any(
-                        str(getattr(d, "id", "")).startswith(("calc_basis", "eval_prov"))
-                        for d in docs
-                    )
-                    if not has_statutory_basis:
-                        return (
-                            False,
-                            f"claim_support_{support_status.value}",
-                            "Tôi chưa thể xác minh đầy đủ căn cứ của các nhận định pháp lý trong câu trả lời.",
-                            citations_dicts,
+                    if critic_reviewer is None:
+                        has_statutory_basis = any(
+                            str(getattr(d, "id", "")).startswith(("calc_basis", "eval_prov"))
+                            for d in docs
+                        )
+                        if not has_statutory_basis:
+                            return (
+                                False,
+                                f"claim_support_{support_status.value}",
+                                "Tôi chưa thể xác minh đầy đủ căn cứ của các nhận định pháp lý trong câu trả lời.",
+                                citations_dicts,
+                            )
+                    else:
+                        logger.info(
+                            "Claim verifier flagged %s (%s); delegating definitive review to Legal Critic",
+                            support.reason_code,
+                            support_status.value,
                         )
             except Exception as exc:  # noqa: BLE001 - unverified claims must stop safely
                 logger.warning("Claim support verifier failed: %s", exc)

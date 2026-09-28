@@ -1008,6 +1008,7 @@ class AgentWorkflowRuntime:
 
         s_loop = trace_session.start_span("agent_cognitive_loop")
         result = None
+        current_tool_args: dict[str, Any] = {}
         async for event in self.runner.stream(
             standalone_query,
             history=snapshot.history,
@@ -1019,20 +1020,12 @@ class AgentWorkflowRuntime:
         ):
             if event.get("type") == "agent_tool_call":
                 tool_name = event.get("tool", "")
+                current_tool_args = event.get("args") or {}
                 status_message = _tool_status_messages.get(tool_name, "Đang xử lý bước tiếp theo…")
                 yield {
                     "type": "status",
                     "message": status_message,
                     "stage": tool_name,
-                }
-                yield {
-                    "type": "workflow_step",
-                    "step": event.get("step", 1),
-                    "action": tool_name,
-                    "status": "running",
-                    "label": status_message,
-                    "args": event.get("args") or {},
-                    "trace_id": trace_id,
                 }
             elif event.get("type") == "agent_tool_result":
                 tool_name = str(event.get("tool") or "")
@@ -1054,8 +1047,10 @@ class AgentWorkflowRuntime:
                     "label": _tool_status_messages.get(tool_name, "Đã hoàn thành bước."),
                     "latency_ms": event.get("latency_ms", 0.0),
                     "error_code": event.get("error_code"),
+                    "args": current_tool_args,
                     "trace_id": trace_id,
                 }
+                current_tool_args = {}
             elif event.get("type") == "agent_complete":
                 result = event.get("result")
 

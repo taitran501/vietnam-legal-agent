@@ -146,7 +146,11 @@ async def search_legal_provisions(
     try:
         parsed_anchors, invalid_anchors = parse_required_anchors(raw_required_anchors)
         if invalid_anchors:
-            raise RequiredAnchorParseError(invalid_anchors)
+            extra_terms = " ".join(a for a in invalid_anchors if a.lower() not in query.lower())
+            if extra_terms:
+                query = f"{query} {extra_terms}".strip()
+                request.query = query
+        request.required_anchors = [a.article or a.key() for a in parsed_anchors]
         docs = await deps.retrieval.legal(request)
         selected = docs[: max(1, min(top_k, 8))]
         assessment = deps.evidence_evaluator.evaluate(
