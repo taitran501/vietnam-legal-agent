@@ -510,6 +510,11 @@ def _is_factual_lookup_query(query: str) -> bool:
 def _is_case_assessment_query(query: str) -> bool:
     q = _fold(query)
     raw_q = _normalise(query)
+
+    # Specific statutory penalty amount inquiries (e.g. "phạt bao nhiêu tiền", "mức phạt") remain factual lookups
+    if _contains_any_term(q, ("phat bao nhieu", "muc phat", "phat tien bao nhieu", "bi phat bao nhieu")) and not _contains_any_term(q, ("boi thuong", "khoi kien", "tranh chap", "khieu nai", "tam giu phuong tien")):
+        return False
+
     # Accent folding turns “tối” into the same token as “tôi”; preserve the
     # personal-pronoun boundary so a factual “tối đa” question cannot become a
     # case assessment. Accept both accented and keyboard-only “toi”.
@@ -525,6 +530,12 @@ def _is_case_assessment_query(query: str) -> bool:
         and _contains_any_term(q, CASE_ACTION_TERMS)
     ):
         return True
+
+    # Real-life dispute / legality assessment without first-person pronoun:
+    # e.g., "chủ nhà đòi tăng giá thuê nhà 30% có đúng luật không"
+    if _contains_any_term(q, ("co dung luat khong", "co vi pham khong", "co duoc phep khong", "co hop phap khong", "xu ly the nao", "giai quyet the nao")) and _contains_any_term(q, CASE_TOPIC_TERMS):
+        return True
+
     if not has_own_context:
         return False
     if _contains_any_term(q, ASSESSMENT_TERMS):

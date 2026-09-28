@@ -91,7 +91,8 @@ describe('SourceDrawer', () => {
     );
 
     expect(screen.getByRole('heading', { name: 'Nghị định số 318/2026/NĐ-CP' })).toBeInTheDocument();
-    expect(screen.getByText('Điều 1 quy định phạm vi áp dụng.')).toBeInTheDocument();
+    expect(screen.getAllByText('Điều 1').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/quy định phạm vi áp dụng/)).toBeInTheDocument();
     expect(screen.getByText('Trạng thái chưa xác định')).toBeInTheDocument();
     expect(screen.getByText('Mã nguồn: nd-318-2026')).toBeInTheDocument();
     expect(screen.queryByText(/\[CHỦ ĐỀ\]/)).not.toBeInTheDocument();
@@ -113,7 +114,7 @@ describe('SourceDrawer', () => {
     expect(screen.queryByRole('link', { name: /Mở nguồn/i })).not.toBeInTheDocument();
   });
 
-  it('defensively separates legacy flattened fields in the excerpt', () => {
+  it('defensively separates legacy flattened fields in the excerpt and highlights article tags', () => {
     render(
       <SourceDrawer
         documents={[
@@ -134,7 +135,30 @@ describe('SourceDrawer', () => {
     );
 
     expect(screen.getByText(/Tài liệu đính kèm/)).toBeInTheDocument();
-    expect(screen.getByText(/Điều 77 quy định trách nhiệm tái chế/)).toBeInTheDocument();
+    const marks = screen.getAllByText('Điều 77');
+    expect(marks.some((el) => el.tagName === 'MARK')).toBe(true);
+    expect(screen.getByText(/quy định trách nhiệm tái chế/)).toBeInTheDocument();
     expect(screen.queryByText(/\|\|/)).not.toBeInTheDocument();
+  });
+
+  it('provides a search link to Cổng VBPL when official_url is missing but document has title', () => {
+    render(
+      <SourceDrawer
+        documents={[
+          {
+            page_content: 'Căn cứ Điều 111 Luật Doanh nghiệp.',
+            document_id: 'doc-dn',
+            metadata: {
+              Source_Title: 'Luật Doanh nghiệp 2020',
+            },
+          },
+        ]}
+        isOpen
+        onClose={vi.fn()}
+      />,
+    );
+
+    const link = screen.getByRole('link', { name: /Tra cứu trên Cổng VBPL/i });
+    expect(link).toHaveAttribute('href', expect.stringContaining('https://vbpl.vn/pages/timkiem.aspx?q='));
   });
 });

@@ -97,6 +97,24 @@ function cleanExcerptText(raw: string): string {
   return text.trim() || raw.trim();
 }
 
+function renderHighlightedExcerpt(text: string) {
+  const parts = text.split(/((?:Điều|Khoản|Điểm)\s+\d+[a-z]?|(?:Điểm\s+[a-z]\b))/gi);
+  if (parts.length <= 1) return text;
+  return parts.map((part, i) => {
+    if (/^((?:Điều|Khoản|Điểm)\s+\d+[a-z]?|(?:Điểm\s+[a-z]\b))$/i.test(part)) {
+      return (
+        <mark
+          className="rounded bg-amber-100/90 px-1 py-0.5 font-semibold text-slate-900 not-italic"
+          key={i}
+        >
+          {part}
+        </mark>
+      );
+    }
+    return part;
+  });
+}
+
 export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, onClose }: SourceDrawerProps) {
   const sourceRefs = useRef(new Map<number, HTMLElement>());
 
@@ -127,12 +145,17 @@ export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, on
           const url = documentUrl(document);
           const instrument = metadataValue(document, ['Document_Number', 'instrument_number']);
           const page = metadataValue(document, ['Pages', 'page']);
-          const effectiveStatus = metadataValue(document, ['effective_status', 'Effective_Status']) || 'unknown';
+          const effectiveStatus = (metadataValue(document, ['effective_status', 'Effective_Status']) || 'unknown').toLowerCase();
           const effectiveFrom = metadataValue(document, ['effective_from', 'Effective_From']);
           const cleanText = cleanExcerptText(document.page_content || '');
           const excerpt = cleanText.slice(0, 1500);
           const sourceId = metadataValue(document, ['source_id', 'Document_Id', 'document_id']) || document.document_id || `doc-${citationIndex}`;
           const hasCanonicalTitle = title !== 'Chưa xác định văn bản';
+
+          const searchParam = instrument || lawName || (hasCanonicalTitle ? title : '');
+          const vbplSearchUrl = !url && searchParam
+            ? `https://vbpl.vn/pages/timkiem.aspx?q=${encodeURIComponent(searchParam)}`
+            : undefined;
 
           return (
             <article
@@ -174,16 +197,22 @@ export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, on
                         {anchor}
                       </span>
                     )}
-                    {effectiveStatus === 'active' && (
+                    {(effectiveStatus === 'active' || effectiveStatus === 'con_hieu_luc') && (
                       <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700 ring-1 ring-emerald-600/20">
                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                         Đang hiệu lực
                       </span>
                     )}
-                    {effectiveStatus === 'superseded' && (
+                    {(effectiveStatus === 'superseded' || effectiveStatus === 'da_sua_doi' || effectiveStatus === 'amended') && (
                       <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 font-medium text-amber-800 ring-1 ring-amber-600/20">
                         <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
                         Đã sửa đổi / bổ sung
+                      </span>
+                    )}
+                    {(effectiveStatus === 'expired' || effectiveStatus === 'het_hieu_luc' || effectiveStatus === 'het_hieu_luc_mot_phan') && (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-rose-50 px-2 py-0.5 font-medium text-rose-700 ring-1 ring-rose-600/20">
+                        <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+                        Hết hiệu lực
                       </span>
                     )}
                     {effectiveStatus === 'unknown' && (
@@ -213,12 +242,12 @@ export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, on
               {/* Clean Law Provision Quote */}
               <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50/70 p-3.5 text-[13px] leading-relaxed text-slate-700">
                 <p className="whitespace-pre-wrap font-sans">
-                  {excerpt}
+                  {renderHighlightedExcerpt(excerpt)}
                   {cleanText.length > excerpt.length ? '…' : ''}
                 </p>
               </div>
 
-              {/* External Official Link button */}
+              {/* External Official Link or National Legal DB search button */}
               <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2.5">
                 {url ? (
                   <a
@@ -230,7 +259,19 @@ export function SourceDrawer({ citations = [], documents, focusIndex, isOpen, on
                     Mở nguồn
                     <Icon name="chevronRight" size={14} />
                   </a>
-                ) : <span className="text-[11px] text-slate-500">Chưa có liên kết chính thức</span>}
+                ) : vbplSearchUrl ? (
+                  <a
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-teal-700 transition-colors hover:text-teal-900 hover:underline"
+                    href={vbplSearchUrl}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Tra cứu trên Cổng VBPL
+                    <Icon name="chevronRight" size={14} />
+                  </a>
+                ) : (
+                  <span className="text-[11px] text-slate-500">Chưa có liên kết chính thức</span>
+                )}
                 <span className="text-[11px] font-mono text-slate-600">
                   Mã nguồn: {sourceId}
                 </span>
