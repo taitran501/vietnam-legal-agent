@@ -245,6 +245,10 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
         dependencies["openai"] = "error"
 
     corpus_ready = technical_corpus_ready
+    universal_source_ready = (
+        not universal_retrieval_enabled
+        or retrieval_sources["universal_legal"]["status"] == "ready"
+    )
     technical_ready = (
         dependencies["database"] == "ok"
         and (dependencies["qdrant"] == "ok" or (settings.corpus_runtime_mode == "preview" and dependencies["qdrant"] in {"ok", "preview"}))
@@ -254,6 +258,10 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
         # stops (or, worse, answers from the wrong corpus).
         and index_matches
         and corpus_ready
+        # An explicitly enabled universal supplement is part of the selected
+        # runtime corpus. Do not advertise legal chat as ready if the SQLite
+        # artifact was omitted from the image or is otherwise unavailable.
+        and universal_source_ready
     )
     legal_ready = technical_ready and (legal_audit.status is ReadinessStatus.READY or not enforce_legal_readiness)
     if legal_ready:
@@ -267,6 +275,7 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
             else "legal_review_pending" if legal_audit.status is ReadinessStatus.PENDING and technical_ready
             else "corpus_promotion_blocked" if not corpus_ready
             else "corpus_index_mismatch" if not index_matches
+            else "universal_corpus_unavailable" if universal_retrieval_enabled and not universal_source_ready
             else "dependency_unavailable"
         )
         capabilities["legal_chat"] = {"status": "blocked", "reason": reason}

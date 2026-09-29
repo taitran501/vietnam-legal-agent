@@ -27,6 +27,26 @@ or a database schema mismatch still blocks the relevant capability.
 Preview readiness means the configured snapshot passed technical checks; it
 does not mean every legal domain has an indexed source.
 
+### Enable the multi-domain preview corpus
+
+The default Compose stack uses the compact EPR collection. To include the
+content-locked Ministry of Justice corpus for labor, civil, corporate, and
+other supported domains, first verify that the generated SQLite artifact is
+present, then start with the explicit preview overlay:
+
+```powershell
+python -m scripts.build_universal_index --verify-only
+docker compose -f docker-compose.yml -f docker-compose.universal-preview.yml up -d --build
+Invoke-RestMethod http://127.0.0.1/api/v1/ready
+```
+
+The overlay enables universal retrieval only in preview and mounts the host
+database read-only. Readiness should show
+`retrieval_sources.universal_legal.status: ready`; if the artifact is absent, legal chat reports
+`universal_corpus_unavailable` instead of silently serving the EPR-only index.
+The generated database is not copied into the application image or enabled in
+production.
+
 Before starting Compose, copy `.env.example` to `.env`, set
 `POSTGRES_PASSWORD` to a long random value, and set `OPENAI_API_KEY` when live
 generation or indexing is required. Compose has no database-password fallback.

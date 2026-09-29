@@ -61,6 +61,7 @@ services:
       EMBEDDING_PROFILE: openai-text-embedding-3-small-v1
       EMBEDDING_MODEL: text-embedding-3-small
       EMBEDDING_DIMENSIONS: "1536"
+      ENABLE_UNIVERSAL_RETRIEVAL: ${ENABLE_UNIVERSAL_RETRIEVAL:-false}
       ENABLE_TRACE_DEBUG_API: ${ENABLE_TRACE_DEBUG_API:-false}
       AGENT_PIPELINE_VERSION: ${AGENT_PIPELINE_VERSION:-pipeline-v4}
       APPENDIX_XXII_DATA_PATH: /app/artifacts/appendix_xxii.jsonl

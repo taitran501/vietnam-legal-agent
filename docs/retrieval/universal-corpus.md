@@ -32,6 +32,25 @@ artifact. The runtime resolves the database from the repository root or the
 `UNIVERSAL_CORPUS_DB_PATH` environment variable, so service working directories
 cannot silently disable universal retrieval.
 
+Docker images intentionally exclude generated `*.db` artifacts. For a local
+multi-domain preview, build and verify the corpus on the host, then mount it
+read-only into the backend with the preview overlay:
+
+```powershell
+python -m scripts.build_universal_index --verify-only
+docker compose -f docker-compose.yml -f docker-compose.universal-preview.yml up -d --build
+Invoke-RestMethod http://127.0.0.1/api/v1/ready
+```
+
+Readiness must report `retrieval_sources.universal_legal.status: ready`. If the
+overlay enables universal retrieval but the mounted artifact is absent or
+invalid, legal chat is blocked with `universal_corpus_unavailable` instead of
+silently running against only the narrower EPR collection. This overlay forces
+`CORPUS_RUNTIME_MODE=preview`; production continues to reject this corpus.
+
+To use an artifact at another host path, set `UNIVERSAL_CORPUS_HOST_PATH` in
+`.env`. The container path remains `/app/data/corpus/universal_legal/universal_legal.db`.
+
 ## Production usage
 
 The generated corpus is not part of the approved production manifest. Runtime

@@ -112,6 +112,55 @@ async def test_readiness_uses_technical_corpus_gate_and_reports_redis(
 
 
 @pytest.mark.asyncio
+async def test_enabled_but_unavailable_universal_corpus_blocks_legal_readiness(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import backend.history.store
+    import scripts.canonical_corpus
+
+    import epr_agent.config
+    import epr_agent.infra.session_store
+    import epr_agent.retrieval.retrieval
+    import epr_agent.retrieval.universal_retriever
+
+    settings = _settings("preview")
+    settings.enable_universal_retrieval = True
+    monkeypatch.setattr(epr_agent.config, "get_settings", lambda: settings)
+    monkeypatch.setattr(backend.history.store, "_store", _async_value(_Store()))
+    monkeypatch.setattr(epr_agent.infra.session_store, "get_redis", _async_value(_Redis()))
+    monkeypatch.setattr(epr_agent.retrieval.retrieval, "_get_qdrant_client", lambda: _Qdrant())
+    monkeypatch.setattr(
+        epr_agent.retrieval.universal_retriever,
+        "universal_retriever",
+        SimpleNamespace(is_available=False),
+    )
+    monkeypatch.setattr(scripts.canonical_corpus, "corpus_sha256", lambda **_kwargs: "sha-test")
+    monkeypatch.setattr(scripts.canonical_corpus, "corpus_readiness_audit", lambda **_kwargs: {
+        "source_errors": [],
+        "amendment_errors": [],
+        "rule_pack_errors": [],
+        "ready_for_promotion": True,
+        "technical_ready": True,
+        "source_snapshot_status": "technical",
+        "amendment_map_sha256": "amendment-sha",
+        "rule_pack_sha256": "rule-sha",
+    })
+
+    payload, ready = await readiness_payload()
+
+    assert payload["retrieval_sources"]["universal_legal"] == {
+        "enabled": True,
+        "status": "unavailable",
+    }
+    assert payload["capabilities"]["legal_chat"] == {
+        "status": "blocked",
+        "reason": "universal_corpus_unavailable",
+    }
+    assert payload["status"] == "not_ready"
+    assert ready is False
+
+
+@pytest.mark.asyncio
 async def test_chat_admission_checks_database_and_provider_without_full_readiness(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

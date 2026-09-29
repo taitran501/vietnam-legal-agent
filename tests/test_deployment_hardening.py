@@ -42,3 +42,15 @@ def test_compose_liveness_does_not_depend_on_corpus_readiness() -> None:
     assert "ready_status=$(curl" in workflow
     assert 'test "$ready_status" = "503"' in workflow
     assert "payload['capabilities']['legal_chat']['status'] == 'blocked'" in workflow
+
+
+def test_universal_preview_overlay_mounts_the_optional_corpus_read_only() -> None:
+    overlay = (ROOT / "docker-compose.universal-preview.yml").read_text(encoding="utf-8")
+    example_env = (ROOT / ".env.example").read_text(encoding="utf-8")
+
+    assert 'ENABLE_UNIVERSAL_RETRIEVAL: "true"' in overlay
+    assert "UNIVERSAL_CORPUS_DB_PATH: /app/data/corpus/universal_legal/universal_legal.db" in overlay
+    assert "target: /app/data/corpus/universal_legal/universal_legal.db" in overlay
+    assert "read_only: true" in overlay
+    assert "create_host_path: false" in overlay
+    assert "UNIVERSAL_CORPUS_HOST_PATH=./data/corpus/universal_legal/universal_legal.db" in example_env

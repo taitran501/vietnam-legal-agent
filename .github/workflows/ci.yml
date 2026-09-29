@@ -181,6 +181,8 @@ jobs:
           sed -i 's/^REDIS_PASSWORD=.*/REDIS_PASSWORD=ci-smoke-password/' .env
       - name: Validate Compose configuration
         run: docker compose -f docker-compose.yml -f docker-compose.ci-smoke.yml config --quiet
+      - name: Validate opt-in universal preview configuration
+        run: docker compose -f docker-compose.yml -f docker-compose.universal-preview.yml config --quiet
       - name: Build and start the Compose topology
         run: docker compose -f docker-compose.yml -f docker-compose.ci-smoke.yml up -d --build
       - name: Verify gateway liveness and safe-degraded preview readiness
