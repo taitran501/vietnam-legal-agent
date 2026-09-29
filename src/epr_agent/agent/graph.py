@@ -44,6 +44,7 @@ from epr_agent.domain.verification import (
 from epr_agent.tools.cache import RedisExactAnswerCache, ScopedAnswerCache
 from epr_agent.tools.evidence import (
     EvidenceEvaluator,
+    auto_anchor_citations_in_answer,
     legal_relevance_checker,
     verify_citations,
     verify_web_citations,
@@ -64,6 +65,18 @@ from epr_agent.tools.verifier import (
 )
 
 logger = logging.getLogger(__name__)
+
+_SOURCE_VERSION_CAVEAT = (
+    "Lưu ý: Phần trả lời chỉ tóm tắt phiên bản văn bản bạn nêu; dữ liệu hiện chưa "
+    "xác nhận nội dung sửa đổi hoặc hiệu lực hiện hành."
+)
+
+
+def _append_source_version_caveat(answer: str) -> str:
+    cleaned = answer.rstrip()
+    if not cleaned or _SOURCE_VERSION_CAVEAT in cleaned:
+        return cleaned
+    return f"{cleaned}\n\n{_SOURCE_VERSION_CAVEAT}"
 
 
 def _verification_status_for_reason(reason: str, *, valid: bool) -> VerificationStatus:
@@ -338,31 +351,20 @@ def build_workflow(deps: WorkflowDependencies):
         state["task_type"] = task.value
         state["route"] = route.value
         state["source_scope"] = route_spec(route).source_scope
-        # Conditional-edge callbacks are selectors in LangGraph: mutations
-        # made there are not reliably merged back into the state.  Persist the
-        # readiness decision in this node before routing so a pending/invalid
-        # manifest cannot reach cache lookup, retrieval, or generation.
+        # Record the EPR readiness snapshot for observability. Enforcement is
+        # document-scoped after retrieval; a pending EPR manifest must not
+        # block unrelated statutes before the source is known.
         if route_spec(route).verification_policy is VerificationPolicy.LEGAL_CORPUS and deps.legal_readiness is not None:
             try:
                 readiness = deps.legal_readiness.audit()
                 state["legal_readiness_status"] = readiness.status.value
                 state["legal_readiness_sha"] = readiness.manifest_sha256
-                if not readiness.legally_ready:
-                    state["citation_error"] = (
-                        "legal_readiness_invalid"
-                        if readiness.status is ReadinessStatus.INVALID
-                        else "legal_review_pending"
-                    )
-                    state["verification_status"] = (
-                        VerificationStatus.VERIFICATION_UNAVAILABLE.value
-                        if readiness.status is ReadinessStatus.INVALID
-                        else VerificationStatus.INSUFFICIENT_EVIDENCE.value
-                    )
             except Exception:  # noqa: BLE001 - an unreadable gate is invalid
                 state["legal_readiness_status"] = ReadinessStatus.INVALID.value
-                state["legal_readiness_sha"] = deps.legal_readiness.manifest_sha256
-                state["citation_error"] = "legal_readiness_invalid"
-                state["verification_status"] = VerificationStatus.VERIFICATION_UNAVAILABLE.value
+                try:
+                    state["legal_readiness_sha"] = deps.legal_readiness.manifest_sha256
+                except Exception:  # noqa: BLE001 - keep the failure visible without blocking unrelated sources
+                    state["legal_readiness_sha"] = ""
         state["is_follow_up"] = understanding.is_follow_up
         state["standalone_query"] = understanding.standalone_query or state["query"].strip()
         state["facts"] = facts
@@ -405,64 +407,34 @@ def build_workflow(deps: WorkflowDependencies):
                 # under the previous manifest snapshot is a cache miss.
                 try:
                     readiness = deps.legal_readiness.audit()
-                except Exception:  # noqa: BLE001 - an unreadable gate is invalid
-                    state["legal_readiness_status"] = ReadinessStatus.INVALID.value
-                    state["legal_readiness_sha"] = deps.legal_readiness.manifest_sha256
-                    state["citation_error"] = "legal_readiness_invalid"
-                    state["verification_status"] = VerificationStatus.VERIFICATION_UNAVAILABLE.value
-                    state["cache_status"] = "blocked"
-                    _tool_result(
-                        state,
-                        "answer_cache",
-                        started,
-                        ok=False,
-                        error="legal_readiness_invalid",
-                    )
-                    return state
-                deps.cache.update_legal_readiness_sha(readiness.manifest_sha256)
-                state["legal_readiness_status"] = readiness.status.value
-                state["legal_readiness_sha"] = readiness.manifest_sha256
-                if not readiness.legally_ready:
-                    reason = (
-                        "legal_readiness_invalid"
-                        if readiness.status is ReadinessStatus.INVALID
-                        else "legal_review_pending"
-                    )
-                    state["citation_error"] = reason
-                    state["verification_status"] = (
-                        VerificationStatus.VERIFICATION_UNAVAILABLE.value
-                        if reason == "legal_readiness_invalid"
-                        else VerificationStatus.INSUFFICIENT_EVIDENCE.value
-                    )
-                    state["cache_status"] = "blocked"
-                    _tool_result(
-                        state,
-                        "answer_cache",
-                        started,
-                        ok=False,
-                        error=reason,
-                        metadata={
-                            "legal_readiness_status": readiness.status.value,
-                            "legal_readiness_sha": readiness.manifest_sha256,
-                        },
-                    )
-                    return state
-            value, key = await deps.cache.lookup(task, state["standalone_query"], route=state.get("route", "legal_lookup"))
-            if value is not None:
-                cached_documents = documents_from_dict(value.evidence)
-                cache_valid, _, cache_reason = verify_citations(value.answer, cached_documents, task)
-                if not cache_valid:
-                    value = None
-                    state["citation_error"] = f"cached_{cache_reason}"
-                elif policy is VerificationPolicy.LEGAL_CORPUS and deps.legal_readiness is not None:
-                    readiness = deps.legal_readiness.audit()
                     state["legal_readiness_status"] = readiness.status.value
                     state["legal_readiness_sha"] = readiness.manifest_sha256
                     deps.cache.update_legal_readiness_sha(readiness.manifest_sha256)
-                    allowed, readiness_reason = deps.legal_readiness.allows_documents(cached_documents)
+                except Exception:  # noqa: BLE001 - document-scoped verification will fail closed later
+                    state["legal_readiness_status"] = ReadinessStatus.INVALID.value
+                    try:
+                        state["legal_readiness_sha"] = deps.legal_readiness.manifest_sha256
+                    except Exception:  # noqa: BLE001 - preserve cache-as-miss behavior
+                        state["legal_readiness_sha"] = ""
+            value, key = await deps.cache.lookup(task, state["standalone_query"], route=state.get("route", "legal_lookup"))
+            if value is not None:
+                cached_documents = documents_from_dict(value.evidence)
+                cache_valid, _, _ = verify_citations(value.answer, cached_documents, task)
+                if not cache_valid:
+                    value = None
+                    state["citation_error"] = ""
+                elif policy is VerificationPolicy.LEGAL_CORPUS and deps.legal_readiness is not None:
+                    try:
+                        readiness = deps.legal_readiness.audit()
+                        state["legal_readiness_status"] = readiness.status.value
+                        state["legal_readiness_sha"] = readiness.manifest_sha256
+                        deps.cache.update_legal_readiness_sha(readiness.manifest_sha256)
+                        allowed, _ = deps.legal_readiness.allows_documents(cached_documents)
+                    except Exception:  # noqa: BLE001 - an unreadable EPR gate invalidates only this cache entry
+                        allowed = False
                     if not allowed:
                         value = None
-                        state["citation_error"] = f"cached_{readiness_reason}"
+                        state["citation_error"] = ""
             state["cached_answer"] = value.answer if value else None
             state["cached_evidence"] = list(value.evidence) if value else []
             state["cached_citations"] = list(value.citations) if value else []
@@ -574,6 +546,7 @@ def build_workflow(deps: WorkflowDependencies):
                             "rrf_score": doc.metadata.get("rrf_score"),
                             "combined_score": doc.metadata.get("combined_score", doc.score),
                             "rerank_score": doc.metadata.get("rerank_score"),
+                            "universal_bm25_rank": doc.metadata.get("bm25_rank"),
                             "selected": index < len(selected_docs),
                             "rejection_reason": "selected" if index < len(selected_docs) else "route_evidence_limit",
                         }
@@ -594,12 +567,20 @@ def build_workflow(deps: WorkflowDependencies):
         policy = route_spec(state.get("route", RouteType.LEGAL_LOOKUP.value)).verification_policy
         readiness_reason = ""
         if policy is VerificationPolicy.LEGAL_CORPUS and deps.legal_readiness is not None:
-            readiness = deps.legal_readiness.audit()
-            state["legal_readiness_status"] = readiness.status.value
-            state["legal_readiness_sha"] = readiness.manifest_sha256
-            allowed, gate_reason = deps.legal_readiness.allows_documents(docs)
-            if not allowed:
-                readiness_reason = gate_reason
+            try:
+                readiness = deps.legal_readiness.audit()
+                state["legal_readiness_status"] = readiness.status.value
+                state["legal_readiness_sha"] = readiness.manifest_sha256
+                allowed, gate_reason = deps.legal_readiness.allows_documents(docs)
+                if not allowed:
+                    readiness_reason = gate_reason
+            except Exception:  # noqa: BLE001 - an unreadable EPR readiness gate fails closed for retrieved documents
+                state["legal_readiness_status"] = ReadinessStatus.INVALID.value
+                try:
+                    state["legal_readiness_sha"] = deps.legal_readiness.manifest_sha256
+                except Exception:  # noqa: BLE001 - no digest is available for a broken manifest
+                    state["legal_readiness_sha"] = ""
+                readiness_reason = "legal_readiness_invalid"
         if state.get("retrieval_error") == "required_anchor_parse_failed":
             readiness_reason = "required_anchor_parse_failed"
         if readiness_reason:
@@ -611,14 +592,28 @@ def build_workflow(deps: WorkflowDependencies):
                 bool(docs),
             )
         else:
+            # Retrieval may use a normalized standalone query, but temporal
+            # qualifiers are safety intent and must survive that rewrite.
+            assessment_query = " ".join(
+                dict.fromkeys(
+                    value
+                    for value in (
+                        str(state.get("query") or "").strip(),
+                        str(state.get("standalone_query") or "").strip(),
+                    )
+                    if value
+                )
+            )
             assessment = deps.evidence.evaluate(
-                state["standalone_query"],
+                assessment_query,
                 docs,
                 state["task_type"],
                 expected_anchors=[LegalAnchor.model_validate(value) for value in state.get("explicit_anchor_details") or []],
             )
         state["evidence_assessment"] = assessment.to_dict()
         state["evidence_status"] = "sufficient" if assessment.sufficient else "insufficient"
+        if readiness_reason in {"legal_review_pending", "legal_readiness_invalid"}:
+            state["citation_error"] = readiness_reason
         state["verification_status"] = _verification_status_for_reason(assessment.reason, valid=assessment.sufficient).value
         _trace(state, reason_code=assessment.reason, payload=assessment.to_dict())
         return state
@@ -660,6 +655,8 @@ def build_workflow(deps: WorkflowDependencies):
             answer = state.get("web_answer", "")
         else:
             answer = await deps.generation.answer(task.value, state["standalone_query"], docs, state.get("facts", {}))
+            if (state.get("evidence_assessment") or {}).get("source_version_only"):
+                answer = _append_source_version_caveat(answer)
         state["answer"] = answer or ""
         if task == TaskType.CASE_ASSESSMENT:
             state["assessment"] = {
@@ -807,6 +804,9 @@ def build_workflow(deps: WorkflowDependencies):
                     state.get("standalone_query", state.get("query", "")),
                     state.get("answer", ""),
                     docs,
+                    source_version_only=bool(
+                        (state.get("evidence_assessment") or {}).get("source_version_only")
+                    ),
                 )
                 if verdict.verification_status is VerificationStatus.VERIFICATION_UNAVAILABLE:
                     valid = False
@@ -821,7 +821,10 @@ def build_workflow(deps: WorkflowDependencies):
                     reason = "critic_legal_flaw_rejected"
                     state["verification_status"] = VerificationStatus.UNSUPPORTED_CLAIM.value
                 elif verdict.corrected_answer and verdict.corrected_answer.strip():
-                    state["answer"] = verdict.corrected_answer
+                    corrected_answer = auto_anchor_citations_in_answer(verdict.corrected_answer, docs)
+                    if (state.get("evidence_assessment") or {}).get("source_version_only"):
+                        corrected_answer = _append_source_version_caveat(corrected_answer)
+                    state["answer"] = corrected_answer
                     corrected = True
             except Exception as exc:  # noqa: BLE001 - critic outage must stop legal delivery
                 valid = False
@@ -880,6 +883,8 @@ def build_workflow(deps: WorkflowDependencies):
         state["repair_count"] = int(state.get("repair_count", 0)) + 1
         docs = documents_from_dict(state.get("evidence"))
         state["answer"] = await deps.generation.repair(state.get("answer", ""), docs, state["task_type"])
+        if (state.get("evidence_assessment") or {}).get("source_version_only"):
+            state["answer"] = _append_source_version_caveat(state["answer"])
         return state
 
     async def finish(state: AgentState) -> AgentState:
@@ -909,6 +914,20 @@ def build_workflow(deps: WorkflowDependencies):
         elif reason == "official_web_source_not_found":
             state["answer"] = "Tôi chưa tìm thấy nguồn chính thức ngoài corpus khớp với điều hoặc văn bản bạn yêu cầu."
             state["termination_reason"] = TerminationReason.INSUFFICIENT_EVIDENCE.value
+        elif reason == "superseded_or_unresolved_source":
+            state["answer"] = (
+                "Tôi đã tìm thấy văn bản liên quan, nhưng dữ liệu chưa xác nhận nội dung sau sửa đổi "
+                "hoặc hiệu lực hiện hành. Vì vậy tôi chưa thể khẳng định đây là quy định đang áp dụng. "
+                "Bạn có thể chọn “Tìm nguồn công khai” để đối chiếu nguồn chính thức."
+            )
+            state["termination_reason"] = TerminationReason.INSUFFICIENT_EVIDENCE.value
+        elif reason == "current_law_status_unverified":
+            state["answer"] = (
+                "Tôi đã tìm thấy điều khoản được hỏi, nhưng kho dữ liệu không có thông tin xác nhận "
+                "hiệu lực hiện hành hoặc các sửa đổi về sau. Bạn có thể chọn “Tìm nguồn công khai” "
+                "để đối chiếu văn bản chính thức."
+            )
+            state["termination_reason"] = TerminationReason.INSUFFICIENT_EVIDENCE.value
         elif citation_reason and citation_reason != "ok":
             state["answer"] = "Tôi chưa thể xác minh đầy đủ câu trả lời từ tài liệu đã truy xuất."
             state["termination_reason"] = TerminationReason.CITATION_VERIFICATION_FAILED.value
@@ -932,10 +951,12 @@ def build_workflow(deps: WorkflowDependencies):
             "insufficient_evidence": "missing_provision",
             "content_too_short": "missing_provision",
             "missing_source_metadata": "missing_provision",
+            "superseded_or_unresolved_source": "current_law_support_unverified",
             "explicit_article_not_found": "missing_provision",
             "explicit_anchor_not_found": "missing_provision",
             "source_relevance_mismatch": "source_relevance_mismatch",
-            "relevance_check_failed": "missing_provision",
+            "relevance_check_failed": "insufficient_evidence",
+            "current_law_status_unverified": "current_law_status_unverified",
             "required_anchor_parse_failed": "required_anchor_parse_failed",
             "legal_review_pending": "legal_review_pending",
             "legal_readiness_invalid": "legal_readiness_invalid",

@@ -63,9 +63,9 @@ async def get_redis() -> aioredis.Redis:
                 socket_keepalive=True,
                 socket_keepalive_options={},
                 health_check_interval=30,
-                retry_on_timeout=True,
-                socket_timeout=5,  # CRITICAL: Add timeout
-                socket_connect_timeout=5,
+                retry_on_timeout=False,
+                socket_timeout=0.75,
+                socket_connect_timeout=0.75,
             )
         _redis_client = aioredis.Redis(connection_pool=_redis_pool)
     

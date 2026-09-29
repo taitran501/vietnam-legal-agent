@@ -16,6 +16,48 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+async def chat_admission_readiness() -> tuple[dict[str, Any], str]:
+    """Check only the local dependencies that can prevent a chat turn.
+
+    The full readiness audit hashes the corpus and probes Qdrant/Redis. Those
+    checks belong on ``/ready``; repeating them for every chat request adds
+    seconds of latency and does not gate legal answers (the workflow handles
+    corpus readiness itself).
+    """
+
+    from epr_agent.config import get_settings
+
+    settings = get_settings()
+    schema_capability = {"status": "ready", "reason": "ok"}
+    dependencies = {"database": "ok", "openai": "ok"}
+    infrastructure_reason = ""
+    try:
+        from backend.history.store import _store
+
+        schema = await (await _store()).schema_status()
+        if schema["status"] != "ready":
+            reason = str(schema.get("code") or "database_schema_mismatch")
+            dependencies["database"] = "error"
+            schema_capability = {"status": "blocked", "reason": reason}
+            infrastructure_reason = reason
+    except Exception as exc:  # noqa: BLE001 - report local storage failures as admission failures
+        logger.info("Chat history database is not ready: %s", exc)
+        reason = str(getattr(exc, "code", "database_unavailable"))
+        dependencies["database"] = "error"
+        schema_capability = {"status": "blocked", "reason": reason}
+        infrastructure_reason = reason
+
+    if not settings.openai_api_key:
+        dependencies["openai"] = "error"
+        infrastructure_reason = infrastructure_reason or "provider_unavailable"
+
+    return {
+        "preview": settings.corpus_runtime_mode == "preview",
+        "dependencies": dependencies,
+        "capabilities": {"history": schema_capability},
+    }, infrastructure_reason
+
+
 async def readiness_payload() -> tuple[dict[str, Any], bool]:
     """Return capability-level readiness without exposing connection details."""
 
@@ -24,6 +66,29 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
 
     settings = get_settings()
     dependencies = {"database": "ok", "qdrant": "ok", "redis": "ok", "openai": "ok"}
+    universal_retrieval_enabled = bool(getattr(settings, "enable_universal_retrieval", True))
+    retrieval_sources: dict[str, Any] = {
+        "qdrant_legal": {
+            "status": "checking",
+            "collection": settings.law_collection,
+            "points_count": 0,
+            "index_matches": False,
+        },
+        "universal_legal": {
+            "enabled": universal_retrieval_enabled,
+            "status": "checking" if universal_retrieval_enabled else "disabled",
+        },
+    }
+    if universal_retrieval_enabled:
+        try:
+            from epr_agent.retrieval.universal_retriever import universal_retriever
+
+            retrieval_sources["universal_legal"]["status"] = (
+                "ready" if universal_retriever.is_available else "unavailable"
+            )
+        except Exception as exc:  # noqa: BLE001 - source health must not fail liveness
+            logger.info("Universal legal corpus is not ready: %s", exc)
+            retrieval_sources["universal_legal"]["status"] = "unavailable"
     capabilities: dict[str, dict[str, str]] = {
         name: {"status": "blocked", "reason": "not_checked"}
         for name in ("history", "legal_chat", "case_workflow", "feedback", "web_research")
@@ -95,17 +160,18 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
         corpus["corpus_sha"] = expected_sha
         if settings.appendix_xxii_data_path.exists():
             corpus["appendix_sha256"] = hashlib.sha256(settings.appendix_xxii_data_path.read_bytes()).hexdigest()
-        if enforce_legal_readiness:
+        legal_readiness_manifest_path = getattr(settings, "legal_readiness_manifest_path", "")
+        if enforce_legal_readiness or legal_readiness_manifest_path:
             legal_audit = audit_legal_readiness(
-                getattr(settings, "legal_readiness_manifest_path", ""),
+                legal_readiness_manifest_path,
                 corpus_sha256=expected_sha,
                 amendment_map_sha256=str(audit.get("amendment_map_sha256") or ""),
                 rule_pack_sha256=str(audit.get("rule_pack_sha256") or ""),
             )
         else:
-            # Injected preview/readiness doubles from older integrations do
-            # not expose the Milestone 1 setting.  The production Settings
-            # model always has it and therefore always uses the manifest.
+            # Older injected readiness doubles do not expose a manifest path.
+            # Production Settings always carries the path, so preview mode
+            # still reports the real review state even when it does not enforce it.
             legal_audit = LegalReadinessAudit(
                 ReadinessStatus.READY,
                 True,
@@ -124,6 +190,7 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
         client = _get_qdrant_client()
         info = client.get_collection(settings.law_collection)
         corpus["points_count"] = int(info.points_count or 0)
+        retrieval_sources["qdrant_legal"]["points_count"] = corpus["points_count"]
         points, _ = client.scroll(settings.law_collection, limit=1, with_payload=True, with_vectors=False)
         payload = dict(points[0].payload or {}) if points else {}
         index_matches = (
@@ -135,6 +202,8 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
             and payload.get("Embedding_Profile") == settings.embedding_profile
             and int(payload.get("Embedding_Dimensions") or 0) == settings.embedding_dimensions
         )
+        retrieval_sources["qdrant_legal"]["index_matches"] = index_matches
+        retrieval_sources["qdrant_legal"]["status"] = "ready" if index_matches else "version_mismatch"
         corpus_ready = audit["ready_for_promotion"] if settings.corpus_runtime_mode == "production" else technical_corpus_ready
         if index_matches and corpus_ready:
             corpus["status"] = "ready" if settings.corpus_runtime_mode == "production" else "preview_ready"
@@ -143,6 +212,9 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
     except Exception as exc:  # noqa: BLE001 - readiness must be safe when a collection is absent
         logger.info("Legal corpus is not ready: %s", exc)
         dependencies["qdrant"] = "preview" if settings.corpus_runtime_mode == "preview" else "error"
+        retrieval_sources["qdrant_legal"]["status"] = (
+            "preview_unavailable" if settings.corpus_runtime_mode == "preview" else "unavailable"
+        )
         if enforce_legal_readiness and legal_audit.status is ReadinessStatus.INVALID:
             corpus["legal_readiness_status"] = legal_audit.status.value
             corpus["legal_readiness_sha256"] = legal_audit.manifest_sha256
@@ -177,7 +249,10 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
         dependencies["database"] == "ok"
         and (dependencies["qdrant"] == "ok" or (settings.corpus_runtime_mode == "preview" and dependencies["qdrant"] in {"ok", "preview"}))
         and dependencies["openai"] == "ok"
-        and (index_matches or settings.corpus_runtime_mode == "preview")
+        # Preview relaxes legal approval, not index identity. Serving against a
+        # stale/unversioned collection produces plausible but unsupported safe
+        # stops (or, worse, answers from the wrong corpus).
+        and index_matches
         and corpus_ready
     )
     legal_ready = technical_ready and (legal_audit.status is ReadinessStatus.READY or not enforce_legal_readiness)
@@ -225,6 +300,7 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
         "runtime_mode": settings.corpus_runtime_mode,
         "preview": settings.corpus_runtime_mode == "preview",
         "dependencies": dependencies,
+        "retrieval_sources": retrieval_sources,
         "capabilities": capabilities,
         "corpus": corpus,
         "legal_readiness": legal_audit.to_dict(),

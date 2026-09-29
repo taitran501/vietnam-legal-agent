@@ -62,6 +62,33 @@ def test_matching_collection_is_idempotent_only_when_schema_and_embedding_match(
     )
 
 
+def test_missing_collection_builds_through_the_active_qdrant_client(monkeypatch) -> None:
+    class _MissingQdrant(_FakeQdrant):
+        def get_collection(self, _collection: str):
+            raise ValueError("collection_missing")
+
+    calls: list[tuple[object, object]] = []
+
+    def _upsert(chunks, *, client=None):
+        calls.append((chunks, client))
+
+    monkeypatch.setattr(build_index, "upsert_to_qdrant", _upsert)
+    client = _MissingQdrant(_payload())
+    chunks = [object()]
+
+    built = ensure_law_index._ensure_collection(
+        client,
+        "law-new",
+        chunks,
+        digest="a" * 64,
+        schema="legal-index-v4",
+        settings=_settings(),
+    )
+
+    assert built is True
+    assert calls == [(chunks, client)]
+
+
 def test_alias_switch_deletes_only_alias_and_keeps_previous_collection(monkeypatch) -> None:
     # qdrant-client is intentionally optional in the fast unit environment;
     # inject the tiny model surface used by the alias operation so this test

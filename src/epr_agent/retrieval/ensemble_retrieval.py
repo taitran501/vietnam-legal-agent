@@ -15,6 +15,7 @@ Speed targets:
 
 from __future__ import annotations
 
+import copy
 import logging
 import math
 import random
@@ -27,7 +28,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from functools import lru_cache
-from typing import TypeAlias, TypeVar
+from typing import Any, TypeAlias, TypeVar
 from uuid import UUID
 
 from langchain_core.documents import Document
@@ -123,8 +124,10 @@ def _debug_top_docs(stage: str, query: str, docs: list[Document], limit: int = 5
 # Article Index for O(1) lookup (used only for explicit article mentions)
 # ---------------------------------------------------------------------------
 
-_article_index: dict[str, list[str]] = {}  # article_name -> [point_id, ...]
-_anchor_index: dict[str, list[str]] = {}  # article/clause/point exact key -> [point_id, ...]
+_article_index: dict[str, list[Any]] = {}  # article_name -> [point_id, ...]
+_anchor_index: dict[str, list[Any]] = {}  # article/clause/point exact key -> [point_id, ...]
+_document_article_index: dict[tuple[str, str], list[Any]] = {}
+_document_anchor_index: dict[tuple[str, str], list[Any]] = {}
 _index_built = False
 _article_index_lock = threading.Lock()
 _article_index_collection = ""
@@ -153,8 +156,75 @@ def _canonical_article_keys(label: str) -> list[str]:
     return keys
 
 
+def _normalise_legal_payload(raw_payload: object) -> dict[str, Any]:
+    """Flatten supported Qdrant payload layouts into the retriever's field contract."""
+    payload = dict(raw_payload) if isinstance(raw_payload, dict) else {}
+    nested = payload.get("metadata")
+    if isinstance(nested, dict):
+        payload = {**nested, **payload}
+
+    aliases = {
+        "Dieu": ("Parent_Dieu", "article_title", "Article_Title"),
+        "Chuong": ("chapter_title", "Chapter_Title"),
+        "Muc": ("section_title", "Section_Title"),
+        "Khoan": ("clause_title", "Clause_Title"),
+        "Diem": ("point_title", "Point_Title"),
+        "Text": ("text", "content"),
+        "source": ("document_title", "source_title", "Source_Title"),
+        "Document_Number": ("document_number", "document_code", "Document_Code"),
+    }
+    for canonical, candidates in aliases.items():
+        if payload.get(canonical):
+            continue
+        for candidate in candidates:
+            if payload.get(candidate):
+                payload[canonical] = payload[candidate]
+                break
+
+    # Older Qdrant imports stored a corpus taxonomy key in article_title,
+    # e.g. "Điều 20.2.LQ.25. Thời gian thử việc". The source's actual legal
+    # address is in document_title, e.g. "(Điều 25 Bộ luật số 45/2019/QH14)".
+    # Keep the original title for display/debugging, but index the legal address.
+    article_title = str(payload.get("Dieu") or "").strip()
+    taxonomy_match = re.match(
+        r"^điều\s+\d+(?:\.\d+)*\.[a-zđ]{1,8}\.\d+(?:\.\d+)*(?=\.|\s|$)",
+        article_title,
+        flags=re.IGNORECASE,
+    )
+    source_title = str(payload.get("document_title") or payload.get("source") or "")
+    source_article = re.search(r"\bđiều\s+(\d+[a-z]?)\b", source_title, flags=re.IGNORECASE)
+    if taxonomy_match and source_article:
+        actual_article = f"Điều {source_article.group(1)}"
+        heading_suffix = article_title[taxonomy_match.end():].strip(" .:-")
+        payload["Dieu"] = f"{actual_article}. {heading_suffix}" if heading_suffix else actual_article
+        payload["Parent_Dieu"] = payload["Dieu"]
+
+    if not payload.get("Document_Number"):
+        source_number = re.search(
+            r"\b(\d+/\d{4}/[A-ZĐ]+[A-Z0-9]*(?:-[A-Z0-9Đ]+)?)\b",
+            source_title,
+            flags=re.IGNORECASE,
+        )
+        if source_number:
+            payload["Document_Number"] = source_number.group(1)
+    return payload
+
+
+def _normalise_document_number(value: object) -> str:
+    """Normalize legal instrument IDs for composite article-index keys."""
+    return re.sub(r"\s+", "", str(value or "")).upper()
+
+
 def _anchor_key(article: str, clause: str = "", point: str = "") -> str:
-    return "|".join(" ".join(str(value or "").casefold().split()) for value in (article, clause, point))
+    article_match = re.search(r"\bđiều\s+(\d+[a-zđ]?)\b", str(article or ""), re.IGNORECASE)
+    clause_match = re.search(r"\bkhoản\s+(\d+[a-zđ]?)\b", str(clause or ""), re.IGNORECASE)
+    point_match = re.search(r"\bđiểm\s+([a-zđ])\b", str(point or ""), re.IGNORECASE)
+    components = (
+        f"Điều {article_match.group(1)}" if article_match else article,
+        f"Khoản {clause_match.group(1)}" if clause_match else clause,
+        f"Điểm {point_match.group(1)}" if point_match else point,
+    )
+    return "|".join(" ".join(str(value or "").casefold().split()) for value in components)
 
 
 def _build_article_index():
@@ -163,7 +233,8 @@ def _build_article_index():
     Only used when user explicitly mentions "Điều X" or "Chương Y".
     Built once at startup, O(N) cost.
     """
-    global _anchor_index, _article_index, _index_built, _article_index_collection
+    global _anchor_index, _article_index, _document_anchor_index, _document_article_index
+    global _index_built, _article_index_collection
 
     settings = get_settings()
     collection = settings.law_collection
@@ -175,6 +246,8 @@ def _build_article_index():
             return
         _article_index = {}
         _anchor_index = {}
+        _document_article_index = {}
+        _document_anchor_index = {}
         client = _get_qdrant_client()
 
         offset: QdrantOffset = None
@@ -197,21 +270,26 @@ def _build_article_index():
                 break
 
             for record in records:
-                payload = record.payload or {}
+                payload = _normalise_legal_payload(record.payload)
                 dieu = payload.get("Dieu", "")
                 chuong = payload.get("Chuong", "")
+                document_number = _normalise_document_number(payload.get("Document_Number"))
                 if dieu:
                     for key in _canonical_article_keys(dieu):
                         if key not in _article_index:
                             _article_index[key] = []
-                        _article_index[key].append(str(record.id))
+                        _article_index[key].append(record.id)
                     anchor_key = _anchor_key(dieu, payload.get("Khoan", ""), payload.get("Diem", ""))
-                    _anchor_index.setdefault(anchor_key, []).append(str(record.id))
+                    _anchor_index.setdefault(anchor_key, []).append(record.id)
+                    if document_number:
+                        for key in _canonical_article_keys(dieu):
+                            _document_article_index.setdefault((document_number, key.casefold()), []).append(record.id)
+                        _document_anchor_index.setdefault((document_number, anchor_key), []).append(record.id)
                 if chuong:
                     chuong_key = f"chuong:{chuong}"
                     if chuong_key not in _article_index:
                         _article_index[chuong_key] = []
-                    _article_index[chuong_key].append(str(record.id))
+                    _article_index[chuong_key].append(record.id)
 
             if next_offset is None:
                 break
@@ -222,18 +300,18 @@ def _build_article_index():
         logger.info("Article index built: %d entries", len(_article_index))
 
 
-def _get_point_ids_for_articles(article_names: list[str]) -> list[str]:
+def _get_point_ids_for_articles(article_names: list[str]) -> list[Any]:
     """Get point IDs for given article names using O(1) index lookup."""
     _build_article_index()
 
-    point_ids = []
+    point_ids: list[Any] = []
     for article_name in article_names:
         if article_name in _article_index:
             point_ids.extend(_article_index[article_name])
 
     # Deduplicate while preserving order
-    seen = set()
-    unique_ids = []
+    seen: set[Any] = set()
+    unique_ids: list[Any] = []
     for pid in point_ids:
         if pid not in seen:
             seen.add(pid)
@@ -242,11 +320,11 @@ def _get_point_ids_for_articles(article_names: list[str]) -> list[str]:
     return unique_ids
 
 
-def _round_robin_anchor_ids(groups: list[list[str]], *, limit: int) -> list[str]:
+def _round_robin_anchor_ids(groups: list[list[Any]], *, limit: int) -> list[Any]:
     """Allocate explicit-retrieval capacity fairly across named anchors."""
 
-    selected: list[str] = []
-    seen: set[str] = set()
+    selected: list[Any] = []
+    seen: set[Any] = set()
     cursors = [0] * len(groups)
     while len(selected) < limit:
         progressed = False
@@ -267,15 +345,29 @@ def _round_robin_anchor_ids(groups: list[list[str]], *, limit: int) -> list[str]
     return selected
 
 
-def _get_point_ids_for_anchors(anchors: list[LegalAnchor], *, limit: int = 20) -> list[str]:
+def _get_point_ids_for_anchors(anchors: list[LegalAnchor], *, limit: int = 20) -> list[Any]:
     """Resolve the most specific declared legal anchors before semantic search."""
 
     _build_article_index()
-    groups: list[list[str]] = []
+    groups: list[list[Any]] = []
     for anchor in anchors:
         if not anchor.article:
             continue
         full_key = _anchor_key(anchor.article, anchor.clause, anchor.point)
+        document_number = _normalise_document_number(anchor.document_number)
+        if document_number:
+            exact = _document_anchor_index.get((document_number, full_key), [])
+            if exact and (anchor.clause or anchor.point):
+                groups.append(exact)
+                continue
+            document_ids: list[Any] = []
+            for key in _canonical_article_keys(anchor.article):
+                document_ids.extend(_document_article_index.get((document_number, key.casefold()), []))
+            # A named legal instrument is a hard constraint. Falling back to
+            # every document's Điều X silently returns unrelated laws when the
+            # requested instrument is absent or its metadata is malformed.
+            groups.append(document_ids)
+            continue
         exact = _anchor_index.get(full_key, []) if (anchor.clause or anchor.point) else []
         # A clause/point can be absent because the raw source did not label it
         # cleanly. In that case Article chunks are candidates only; the V3
@@ -326,7 +418,7 @@ def _build_lexical_index() -> None:
         doc_freq: Counter[str] = Counter()
         corpus: list[dict] = []
         for record in records:
-            payload = record.payload or {}
+            payload = _normalise_legal_payload(record.payload)
             full_text = str(payload.get("lexical_text") or " ".join(
                 str(part) for part in (
                     payload.get("article_title", ""),
@@ -404,6 +496,8 @@ _VIET_STOP_WORDS = {
     "quy", "định", "liên", "quan", "điều", "chương", "mục",
     "nghị", "luật", "bảo", "vệ", "môi", "trường",
 }
+
+_QUERY_PHRASE_FILLER_WORDS = {"bao", "lâu", "xin", "dẫn"}
 
 
 def _tokenize_vietnamese(text: str) -> set[str]:
@@ -525,23 +619,38 @@ def _extract_query_phrases(text: str, max_phrases: int = 8) -> list[str]:
     contiguous phrase matches such as "đánh giá sự phù hợp" or
     "chất ô nhiễm khó phân hủy".
     """
-    raw_tokens = re.findall(r"[\w]+", text.lower(), re.UNICODE)
-    filtered = [t for t in raw_tokens if t not in _VIET_STOP_WORDS and len(t) > 2]
-    phrases: list[str] = []
+    tokens = re.findall(r"[\w]+", text.lower(), re.UNICODE)
+    candidates: list[tuple[float, int, str]] = []
     seen: set[str] = set()
 
-    for size in range(5, 1, -1):
-        if len(filtered) < size:
-            continue
-        for i in range(len(filtered) - size + 1):
-            phrase = " ".join(filtered[i:i + size]).strip()
+    # Build phrases from contiguous query words (including stop words). Removing
+    # stop words first creates phrases that never occur in legal text, and taking
+    # the first eight long windows systematically drops the actual request near
+    # the end of a natural-language question.
+    for size in range(4, 1, -1):
+        for start in range(len(tokens) - size + 1):
+            window = tokens[start:start + size]
+            informative = [
+                token for token in window
+                if token not in _VIET_STOP_WORDS
+                and token not in _QUERY_PHRASE_FILLER_WORDS
+                and len(token) > 2
+            ]
+            if len(informative) < 2:
+                continue
+            phrase = " ".join(window)
             if phrase in seen:
                 continue
             seen.add(phrase)
-            phrases.append(phrase)
-            if len(phrases) >= max_phrases:
-                return phrases
-    return phrases
+            information = sum(_global_idf.get(token, 1.0) for token in informative) / len(informative)
+            density = len(informative) / size
+            # A tiny positional tie-break preserves later, specific clauses when
+            # several phrases have the same information content.
+            score = information + 0.25 * density + 0.001 * start
+            candidates.append((score, size, phrase))
+
+    candidates.sort(key=lambda item: (-item[0], item[1], item[2]))
+    return [phrase for _, _, phrase in candidates[:max_phrases]]
 
 
 def _normalize_text(text: str) -> str:
@@ -560,26 +669,38 @@ def _extract_ordered_phrases(text: str, max_phrases: int = 8) -> list[str]:
     stripped for keyword-only scoring.
     """
     tokens = re.findall(r"[\w]+", text.lower(), re.UNICODE)
-    candidates: list[tuple[int, str]] = []
+    candidates: list[tuple[float, int, str]] = []
     seen: set[str] = set()
-    for size in range(5, 2, -1):
+    for size in range(5, 1, -1):
         if len(tokens) < size:
             continue
         for i in range(len(tokens) - size + 1):
             window = tokens[i:i + size]
             phrase = " ".join(window).strip()
-            if len("".join(window)) < 10:
+            if len("".join(window)) < 6:
                 continue
             if phrase in seen:
                 continue
             seen.add(phrase)
-            informative = sum(1 for token in window if token not in _VIET_STOP_WORDS and len(token) > 2)
+            informative_tokens = [
+                token for token in window
+                if token not in _VIET_STOP_WORDS
+                and token not in _QUERY_PHRASE_FILLER_WORDS
+                and len(token) > 2
+            ]
+            informative = len(informative_tokens)
+            if informative < 2:
+                continue
             edge_bonus = 1 if i == 0 or i + size == len(tokens) else 0
-            score = informative * 10 + size + edge_bonus
-            candidates.append((score, phrase))
+            information = sum(
+                _global_idf.get(token, 1.0)
+                for token in informative_tokens
+            ) / informative
+            score = information + (informative / size) * 0.25 + edge_bonus * 0.001
+            candidates.append((score, size, phrase))
 
-    candidates.sort(key=lambda item: item[0], reverse=True)
-    return [phrase for _, phrase in candidates[:max_phrases]]
+    candidates.sort(key=lambda item: (-item[0], item[1], item[2]))
+    return [phrase for _, _, phrase in candidates[:max_phrases]]
 
 
 def _normalize_semantic_score(score: object) -> float:
@@ -745,9 +866,7 @@ def _score_breakdown(query: str, doc: Document, is_explicit_match: bool = False)
     lead_score = 0.6 * lead_overlap + 0.4 * lead_ordered
 
     # 9. Semantic score from Qdrant retrieval (0-1)
-    semantic_score = _normalize_semantic_score(
-        doc.metadata.get("semantic_score", doc.metadata.get("score"))
-    )
+    semantic_score = _normalize_semantic_score(doc.metadata.get("semantic_score"))
 
     # 10. Lexical score from BM25 candidate retrieval (0-1)
     lexical_score = _normalize_lexical_score(float(doc.metadata.get("lexical_score", 0.0)))
@@ -1199,10 +1318,14 @@ class _EnsembleRetriever:
         if run_shadow and self._cross_encoder_shadow_available:
             try:
                 started = time.perf_counter()
+                # Shadow evaluation is observational only. The cross-encoder
+                # mutates document metadata while scoring, so it must not see
+                # the same objects that will be returned to the user.
+                shadow_candidates = copy.deepcopy(rerank_candidates)
                 shadow_docs = _run_rerank_with_timeout(
                     self._cross_encoder_reranker,
                     query,
-                    rerank_candidates,
+                    shadow_candidates,
                     candidate_limit,
                     settings.rerank_timeout_ms,
                 )
@@ -1282,7 +1405,7 @@ class _EnsembleRetriever:
             points = getattr(response, "points", None) or []
             docs = []
             for point in points:
-                payload = point.payload or {}
+                payload = _normalise_legal_payload(point.payload)
                 metadata = {
                     key: value
                     for key, value in payload.items()
@@ -1383,7 +1506,7 @@ class _EnsembleRetriever:
 
             docs = []
             for point in points:
-                payload = dict(point.payload or {})
+                payload = _normalise_legal_payload(point.payload)
                 is_exact = any(
                     _anchor_key(
                         str(payload.get("Dieu") or ""),

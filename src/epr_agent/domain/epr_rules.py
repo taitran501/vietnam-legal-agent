@@ -99,6 +99,10 @@ _PRODUCT_GROUPS = {
 }
 
 _PACKAGED_CATEGORIES = {
+    "nước đóng chai": "thuc_pham",
+    "nước uống": "thuc_pham",
+    "nước giải khát": "thuc_pham",
+    "đồ uống": "thuc_pham",
     "thực phẩm": "thuc_pham",
     "mỹ phẩm": "my_pham",
     "thuốc": "thuoc",
@@ -149,7 +153,12 @@ def extract_explicit_epr_facts(query: str, *, source: FactSource = FactSource.US
         found["object_kind"] = _fact("raw_material", source, "nguyên liệu", turn_id=turn_id)
     elif "chất thải" in text or "phát sinh trong quá trình sản xuất" in text:
         found["object_kind"] = _fact("production_waste", source, "chất thải", turn_id=turn_id)
-    elif any(p in text for p in ("bao bì", "hộp xốp", "túi ni-lông", "túi nilon", "túi bóng", "chai nhựa", "cốc nhựa", "ly nhựa", "hộp nhựa", "can nhựa", "thùng carton", "hộp giấy", "chai lọ")):
+    elif any(p in text for p in (
+        "bao bì", "hộp xốp", "túi ni-lông", "túi nilon", "túi bóng",
+        "chai pet", "chai nhựa", "chai nhua", "chai thủy tinh", "chai thuỷ tinh",
+        "lọ pet", "cốc nhựa", "ly nhựa", "hộp nhựa", "can nhựa",
+        "thùng carton", "hộp giấy", "chai lọ",
+    )):
         found["object_kind"] = _fact("commercial_packaging", source, "bao bì", turn_id=turn_id)
         found["product_group"] = _fact("bao_bi", source, "bao bì", turn_id=turn_id)
     else:
@@ -200,7 +209,11 @@ def extract_explicit_epr_facts(query: str, *, source: FactSource = FactSource.US
             revenue.group(0),
             turn_id=turn_id,
         )
-    if "không thu hồi" in text or "không tái sử dụng" in text:
+    no_reuse = re.search(
+        r"\b(?:không|chưa|chẳng)\s+(?:(?:được|tự|từng|có)\s+|thực\s+hiện(?:\s+việc)?\s+)*(?:thu hồi|tái sử dụng|đóng gói lại)\b",
+        text,
+    )
+    if no_reuse:
         found["reused_by_producer"] = _fact("no", source, "không thu hồi", turn_id=turn_id)
     elif "thu hồi" in text and ("tái sử dụng" in text or "đóng gói lại" in text):
         found["reused_by_producer"] = _fact("yes", source, "thu hồi/tái sử dụng", turn_id=turn_id)
@@ -545,6 +558,16 @@ def evaluate_assessment(facts: dict[str, FactValue], *, evidence_ids: dict[str, 
 def follow_up_question(missing: list[str]) -> str:
     if not missing:
         return "Bạn có thể xác nhận thêm thông tin trường hợp này không?"
+    missing_set = set(missing)
+    if {"object_kind", "product_group"}.issubset(missing_set):
+        return (
+            "Bạn đang hỏi EPR cho sản phẩm hay bao bì? Nếu là bao bì, hãy mô tả loại và vật liệu, "
+            "ví dụ chai PET hoặc thùng carton."
+        )
+    if "product_group" in missing_set:
+        return "Bạn cho biết nhóm sản phẩm hoặc bao bì (ví dụ chai PET, pin, ắc quy) nhé."
+    if "object_kind" in missing_set:
+        return "Bạn đang hỏi trách nhiệm EPR cho sản phẩm, bao bì, nguyên liệu hay chất thải sản xuất?"
     labels = [CASE_FIELD_LABELS.get(key, key) for key in missing]
     if len(missing) == 1:
         return f"Để tiếp tục, bạn cho biết {labels[0]} được không?"

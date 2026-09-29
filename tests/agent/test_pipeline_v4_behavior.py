@@ -136,6 +136,23 @@ async def test_factual_corporate_question_uses_lookup_route_not_case_form():
 
 
 @pytest.mark.asyncio
+async def test_chitchat_completion_is_not_persisted_as_a_legal_answer():
+    app, retrieval = runtime(MemoryHistory())
+
+    state = await app.run(
+        query="Xin chào, bạn có thể giúp tôi việc gì?",
+        user_id="v4-user",
+        conversation_id="v4-greeting",
+    )
+
+    assert state["route"] == "chitchat"
+    assert state["outcome"] == "completed"
+    assert state["result_type"] == "none"
+    assert state["source"] == "chitchat"
+    assert retrieval.calls == []
+
+
+@pytest.mark.asyncio
 async def test_unknown_non_legal_question_safe_stops_without_retrieval():
     history = MemoryHistory()
     app, retrieval = runtime(history)

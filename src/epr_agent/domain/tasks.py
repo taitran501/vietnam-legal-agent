@@ -141,6 +141,7 @@ _GREETING_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\b(ban|may|cau|em)\s+ten\s+gi\b"),
     re.compile(r"\bco\s+ai\s+(o\s+day\s+)?(khong|ko)\b"),
     re.compile(r"\b(lam\s+duoc\s+gi|giup\s+(duoc\s+)?gi|chuc\s+nang\s+la\s+gi|gioi\s+thieu)\b"),
+    re.compile(r"\bgiup\s+(?:toi\s+)?(?:nhung\s+)?gi\b"),
     re.compile(r"\b(cam\s+on|thank|thanks|tam\s+biet|bye)\b"),
 )
 
@@ -218,6 +219,31 @@ ASSESSMENT_TERMS = (
     "nghĩa vụ của tôi",
     "đánh giá nghĩa vụ",
     "xác định nghĩa vụ",
+)
+
+GENERAL_LOOKUP_CUES = (
+    "những nghĩa vụ nào",
+    "nghĩa vụ nào",
+    "căn cứ pháp lý ở đâu",
+    "căn cứ ở đâu",
+    "quy định ở điều nào",
+    "được quy định ở điều nào",
+    "điều nào quy định",
+    "theo điều nào",
+    "văn bản nào quy định",
+)
+EXPLICIT_ASSESSMENT_CUES = (
+    "có phải",
+    "có thuộc",
+    "được hưởng",
+    "được bồi thường",
+    "có quyền",
+    "vi phạm không",
+    "đúng luật không",
+    "đánh giá",
+    "xác định",
+    "tôi phải làm gì",
+    "kiện",
 )
 
 FACT_LABELS = {
@@ -478,6 +504,14 @@ def _contains_any_term(text: str, terms: tuple[str, ...]) -> bool:
     return False
 
 
+def is_general_lookup_explanation_query(query: str) -> bool:
+    """Recognize explicit requests for a general legal rule or its citation."""
+    return _contains_any_term(query, GENERAL_LOOKUP_CUES) and not _contains_any_term(
+        query,
+        EXPLICIT_ASSESSMENT_CUES,
+    )
+
+
 def _contains_legal_signal(query: str) -> bool:
     q = _fold(query)
     if not q:
@@ -537,6 +571,8 @@ def _is_case_assessment_query(query: str) -> bool:
         return True
 
     if not has_own_context:
+        return False
+    if is_general_lookup_explanation_query(q):
         return False
     if _contains_any_term(q, ASSESSMENT_TERMS):
         return True

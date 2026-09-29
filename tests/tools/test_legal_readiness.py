@@ -62,6 +62,8 @@ def _document() -> DocumentRecord:
         metadata={
             "legal_anchor": "Điều 77",
             "Current_Law_Support": True,
+            "Corpus_ID": "epr",
+            "Document_Number": "08/2022/NĐ-CP",
         },
     )
 
@@ -130,6 +132,33 @@ def test_pending_scope_is_reported_before_current_law_support(tmp_path: Path) ->
     document.current_law_support = False
     document.metadata["Current_Law_Support"] = False
     assert gate.allows_documents([document]) == (False, "legal_review_pending")
+
+
+def test_pending_epr_manifest_does_not_block_documents_outside_its_scope(tmp_path: Path) -> None:
+    subjects = {
+        "corpus_sha256": "c" * 64,
+        "amendment_map_sha256": "b" * 64,
+        "rule_pack_sha256": "d" * 64,
+    }
+    path = tmp_path / "legal-readiness.json"
+    path.write_text(json.dumps(_payload(subject_hashes=subjects, ready=False), ensure_ascii=False), encoding="utf-8")
+    gate = LegalReadinessGate(
+        path,
+        corpus_sha256=subjects["corpus_sha256"],
+        amendment_map_sha256=subjects["amendment_map_sha256"],
+        rule_pack_sha256=subjects["rule_pack_sha256"],
+    )
+    document = _document()
+    document.metadata.update(
+        {
+            "legal_anchor": "Điều 25",
+            "Document_Number": "45/2019/QH14",
+            "source_title": "Bộ luật Lao động số 45/2019/QH14",
+            "Corpus_ID": "labor",
+        }
+    )
+
+    assert gate.allows_documents([document]) == (True, "outside_readiness_scope")
 
 
 def test_manifest_hash_mismatch_is_invalid_and_fails_closed(tmp_path: Path) -> None:

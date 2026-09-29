@@ -1,7 +1,10 @@
+import pytest
+
 from epr_agent.domain.legal import LegalAnchor
 from epr_agent.domain.models import DocumentRecord, TaskType
 from epr_agent.tools.evidence import (
     EvidenceEvaluator,
+    document_matches_anchor,
     legal_claim_segments,
     legal_relevance_checker,
     verify_citations,
@@ -43,7 +46,240 @@ def test_evidence_evaluator_rejects_explicitly_unresolved_current_law_source():
     result = evaluator.evaluate("Điều 77 hiện hành", [unresolved], TaskType.LEGAL_LOOKUP)
 
     assert result.sufficient is False
-    assert result.reason == "superseded_or_unresolved_source"
+    assert result.reason == "current_law_status_unverified"
+
+
+def test_evidence_evaluator_allows_an_exact_source_version_lookup_with_a_warning():
+    unresolved = document()
+    unresolved.metadata.update(
+        {
+            "Current_Law_Support": False,
+            "Document_Number": "08/2022/NĐ-CP",
+            "source_title": "Nghị định số 08/2022/NĐ-CP",
+            "semantic_score": 0.6773,
+            "rerank_score": 0.3177,
+            "combined_score": 0.0474,
+        }
+    )
+
+    result = EvidenceEvaluator(
+        min_chars=20,
+        relevance_checker=legal_relevance_checker(min_rerank_score=0.40),
+    ).evaluate(
+        "Điều 77 Nghị định 08/2022/NĐ-CP quy định gì?",
+        [unresolved],
+        TaskType.LEGAL_LOOKUP,
+    )
+
+    assert result.sufficient is True
+    assert result.source_version_only is True
+    assert result.has_superseded_sources is True
+    assert result.relevance_checked is False
+    assert any("current legal status is unverified" in warning for warning in result.temporal_warnings)
+
+
+def test_exact_named_article_source_is_not_rejected_by_generic_relevance_score():
+    exact = DocumentRecord(
+        content=(
+            "Điều 41 quy định nghĩa vụ của người sử dụng lao động khi đơn phương "
+            "chấm dứt hợp đồng lao động trái pháp luật. "
+        )
+        * 5,
+        metadata={
+            "source_article": "Điều 41",
+            "legal_anchor": "Điều 41. Nghĩa vụ của người sử dụng lao động khi đơn phương chấm dứt hợp đồng lao động trái pháp luật",
+            "Document_Number": "45/2019/QH14",
+            "source_title": "Điều 41 Bộ luật số 45/2019/QH14",
+            "topic": "Lao động",
+            "source_kind": "legal_corpus",
+            "corpus_source": "universal_legal",
+        },
+        document_id="universal:45/2019/QH14",
+        score=0.0,
+        source="Pháp điển & Luật Quốc gia",
+    )
+    evaluator = EvidenceEvaluator(
+        min_chars=20,
+        relevance_checker=legal_relevance_checker(min_rerank_score=0.40),
+    )
+
+    result = evaluator.evaluate(
+        "Điều 41 Bộ luật Lao động 2019 quy định gì?",
+        [exact],
+        TaskType.LEGAL_LOOKUP,
+        expected_anchors=[
+            LegalAnchor(document_title="Bộ luật Lao động 2019", article="Điều 41"),
+        ],
+    )
+
+    assert result.sufficient is True
+    assert result.relevance_checked is False
+
+
+def test_current_status_question_has_a_specific_stop_when_corpus_has_no_status_metadata():
+    article = DocumentRecord(
+        content="Điều 41 quy định nghĩa vụ của người sử dụng lao động khi chấm dứt hợp đồng trái pháp luật. " * 3,
+        metadata={
+            "source_article": "Điều 41",
+            "legal_anchor": "Điều 41",
+            "Document_Number": "45/2019/QH14",
+            "source_title": "Bộ luật Lao động 2019",
+            "source": "Văn bản pháp luật",
+            "source_kind": "legal_corpus",
+            "corpus_source": "universal_legal",
+        },
+        document_id="labor-code-41",
+        source="legal",
+    )
+
+    result = EvidenceEvaluator(min_chars=20).evaluate(
+        "Điều 41 Bộ luật Lao động 2019 hiện nay còn hiệu lực không?",
+        [article],
+        TaskType.LEGAL_LOOKUP,
+    )
+
+    assert result.sufficient is False
+    assert result.reason == "current_law_status_unverified"
+    assert result.documents_considered == 1
+
+
+def test_clause_amendment_support_flag_does_not_verify_instrument_current_status():
+    article = DocumentRecord(
+        content="Điều 92 quy định về điều kiện hoạt động. " * 5,
+        metadata={
+            "legal_anchor": "Điều 92",
+            "Document_Number": "08/2022/NĐ-CP",
+            "source_title": "Nghị định số 08/2022/NĐ-CP",
+            "Current_Law_Support": True,
+            "Effective_Status": "base_source",
+            "source": "Nghị định 08/2022/NĐ-CP",
+        },
+        document_id="law-08-92",
+        source="legal",
+    )
+
+    result = EvidenceEvaluator(min_chars=20).evaluate(
+        "Nghị định 08/2022/NĐ-CP hiện còn hiệu lực không?",
+        [article],
+        TaskType.LEGAL_LOOKUP,
+    )
+
+    assert result.sufficient is False
+    assert result.reason == "current_law_status_unverified"
+
+
+def test_current_status_requires_explicit_review_and_a_known_status():
+    article = DocumentRecord(
+        content="Điều 92 quy định về điều kiện hoạt động. " * 5,
+        metadata={
+            "legal_anchor": "Điều 92",
+            "Document_Number": "08/2022/NĐ-CP",
+            "source_title": "Nghị định số 08/2022/NĐ-CP",
+            "Current_Law_Support": True,
+            "Current_Law_Status_Verified": True,
+            "Effective_Status": "active",
+            "source": "Nghị định 08/2022/NĐ-CP",
+        },
+        document_id="law-08-92-reviewed",
+        source="legal",
+    )
+
+    result = EvidenceEvaluator(min_chars=20).evaluate(
+        "Nghị định 08/2022/NĐ-CP hiện còn hiệu lực không?",
+        [article],
+        TaskType.LEGAL_LOOKUP,
+    )
+
+    assert result.sufficient is True
+    assert result.reason == "ok"
+
+
+def test_official_web_relevance_does_not_require_a_vector_score():
+    web_article = DocumentRecord(
+        content="Điều 41 quy định nghĩa vụ của người sử dụng lao động khi đơn phương chấm dứt hợp đồng trái pháp luật. " * 2,
+        metadata={
+            "title": "Điều 41 Bộ luật Lao động",
+            "official_url": "https://vbpl.vn/example",
+            "authority": "official",
+            "source_kind": "official_web",
+        },
+        document_id="web-labor-41",
+        source="web",
+    )
+    evaluator = EvidenceEvaluator(min_chars=20, relevance_checker=lambda _query, _documents: False)
+
+    result = evaluator.evaluate(
+        "Điều 41 Bộ luật Lao động quy định gì?",
+        [web_article],
+        TaskType.LEGAL_LOOKUP,
+    )
+
+    assert result.sufficient is True
+    assert result.relevance_checked is True
+
+
+def test_official_web_source_with_the_wrong_article_fails_anchor_relevance():
+    web_article = DocumentRecord(
+        content="Điều 40 quy định về quyền đơn phương chấm dứt hợp đồng lao động. " * 3,
+        metadata={
+            "title": "Điều 40 Bộ luật Lao động",
+            "official_url": "https://vbpl.vn/example",
+            "authority": "official",
+            "source_kind": "official_web",
+        },
+        document_id="web-labor-40",
+        source="web",
+    )
+
+    result = EvidenceEvaluator(
+        min_chars=20,
+        relevance_checker=legal_relevance_checker(min_rerank_score=0.40),
+    ).evaluate("Điều 41 Bộ luật Lao động quy định gì?", [web_article], TaskType.LEGAL_LOOKUP)
+
+    assert result.sufficient is False
+    assert result.reason == "relevance_check_failed"
+
+
+def test_ordinary_reference_to_current_document_does_not_trigger_current_law_gate():
+    result = EvidenceEvaluator(min_chars=20).evaluate(
+        "Một quy định EPR chưa có trong văn bản hiện tại là gì?",
+        [document()],
+        TaskType.LEGAL_LOOKUP,
+    )
+
+    assert result.reason == "ok"
+
+
+@pytest.mark.parametrize(
+    ("query", "task_type", "expected_reason"),
+    [
+        (
+            "Điều 77 Nghị định 08/2022/NĐ-CP hiện hành quy định gì?",
+            TaskType.LEGAL_LOOKUP,
+            "current_law_status_unverified",
+        ),
+        (
+            "Điều 77 Nghị định 08/2022/NĐ-CP áp dụng cho công ty tôi không?",
+            TaskType.CASE_ASSESSMENT,
+            "superseded_or_unresolved_source",
+        ),
+    ],
+)
+def test_evidence_evaluator_keeps_current_law_and_case_advice_fail_closed(query, task_type, expected_reason):
+    unresolved = document()
+    unresolved.metadata.update(
+        {
+            "Current_Law_Support": False,
+            "Document_Number": "08/2022/NĐ-CP",
+            "source_title": "Nghị định số 08/2022/NĐ-CP",
+        }
+    )
+
+    result = EvidenceEvaluator(min_chars=20).evaluate(query, [unresolved], task_type)
+
+    assert result.sufficient is False
+    assert result.reason == expected_reason
+    assert result.source_version_only is False
 
 
 def test_evidence_evaluator_preserves_legacy_documents_without_amendment_metadata():
@@ -194,6 +430,96 @@ def test_relevance_gate_rejects_documents_without_score_or_explicit_match():
     assert result.reason == "relevance_check_failed"
 
 
+def test_relevance_gate_keeps_strong_semantic_match_when_cross_encoder_logit_is_negative():
+    exact = document()
+    exact.content = "Người lao động có trình độ cao đẳng được thử việc tối đa sáu mươi ngày."
+    exact.metadata.update(
+        {
+            "Dieu": "Điều 25. Thời gian thử việc",
+            "semantic_score": 0.9333,
+            "heuristic_rerank_score": 0.28,
+            "rerank_score": -0.4166,
+            "cross_encoder_score": -0.4166,
+        }
+    )
+    evaluator = EvidenceEvaluator(
+        min_chars=20,
+        relevance_checker=legal_relevance_checker(min_rerank_score=0.40),
+    )
+
+    result = evaluator.evaluate(
+        "Người lao động có trình độ cao đẳng được thử việc tối đa bao lâu?",
+        [exact],
+        TaskType.LEGAL_LOOKUP,
+    )
+
+    assert result.sufficient is True
+
+
+def test_relevance_gate_does_not_accept_cross_encoder_logit_as_a_normalized_score():
+    unrelated = document()
+    unrelated.content = "Quy định về vận tải đường sắt và cấp phép phương tiện." * 4
+    unrelated.metadata.update(
+        {
+            "rerank_score": 2.8,
+            "cross_encoder_score": 2.8,
+            "semantic_score": 0.62,
+        }
+    )
+    evaluator = EvidenceEvaluator(
+        min_chars=20,
+        relevance_checker=legal_relevance_checker(min_rerank_score=0.40),
+    )
+
+    result = evaluator.evaluate(
+        "Bitcoin và thị trường tài chính quốc tế",
+        [unrelated],
+        TaskType.LEGAL_LOOKUP,
+    )
+
+    assert result.sufficient is False
+    assert result.reason == "relevance_check_failed"
+
+
+def test_universal_corpus_bm25_magnitude_is_not_treated_as_a_relevance_score():
+    unrelated = document()
+    unrelated.content = "Quy định về vận tải đường sắt và cấp phép phương tiện." * 4
+    unrelated.metadata.update({"corpus_source": "universal_legal", "score": 500.0})
+    unrelated.score = 500.0
+    evaluator = EvidenceEvaluator(
+        min_chars=20,
+        relevance_checker=legal_relevance_checker(min_rerank_score=0.40),
+    )
+
+    result = evaluator.evaluate(
+        "Bitcoin và thị trường tài chính quốc tế",
+        [unrelated],
+        TaskType.LEGAL_LOOKUP,
+    )
+
+    assert result.sufficient is False
+    assert result.reason == "relevance_check_failed"
+
+
+def test_universal_corpus_relevance_uses_text_when_no_normalized_model_score_exists():
+    relevant = document()
+    relevant.content = "Điều 25 quy định thời gian thử việc; người có trình độ cao đẳng được thử việc tối đa 60 ngày." * 2
+    relevant.metadata.update({"corpus_source": "universal_legal", "topic": "Lao động"})
+    relevant.score = None
+    evaluator = EvidenceEvaluator(
+        min_chars=20,
+        relevance_checker=legal_relevance_checker(min_rerank_score=0.40),
+    )
+
+    result = evaluator.evaluate(
+        "Người lao động có trình độ cao đẳng được thử việc tối đa bao lâu?",
+        [relevant],
+        TaskType.LEGAL_LOOKUP,
+    )
+
+    assert result.sufficient is True
+
+
 def test_relevance_gate_rejects_old_instrument_for_generic_new_law_query():
     old_source = document()
     old_source.metadata.update(
@@ -269,3 +595,43 @@ def test_citation_verifier_accepts_supported_article_claim():
     )
     assert valid is True
     assert reason == "ok"
+
+
+def test_required_article_anchor_does_not_match_a_body_mention_in_another_article():
+    decoy = document()
+    decoy.metadata.update({"Dieu": "Điều 139", "Parent_Dieu": "Điều 139", "legal_anchor": "Điều 139"})
+    decoy.content += " Điều 77 được nhắc ở đây, nhưng đây vẫn là Điều 139."
+
+    assert document_matches_anchor(decoy, LegalAnchor(article="Điều 77")) is False
+
+
+def test_named_statute_anchor_rejects_same_article_from_another_law():
+    wrong_law = document()
+    wrong_law.metadata.update(
+        {
+            "Dieu": "Điều 41",
+            "legal_anchor": "Điều 41",
+            "Document_Number": "08/2022/NĐ-CP",
+            "source_title": "Nghị định số 08/2022/NĐ-CP",
+            "topic": "Môi trường",
+        }
+    )
+    right_law = DocumentRecord(
+        content="Điều 41 Bộ luật Lao động quy định nghĩa vụ khi đơn phương chấm dứt hợp đồng trái luật.",
+        metadata={
+            "Dieu": "Điều 41",
+            "source_article": "Điều 41",
+            "legal_anchor": "Điều 41",
+            "Document_Number": "45/2019/QH14",
+            "source_title": "(Điều 41 Bộ luật số 45/2019/QH14)",
+            "law_ref": "(Điều 41 Bộ luật số 45/2019/QH14)",
+            "topic": "Lao động",
+            "source_kind": "legal_corpus",
+        },
+        document_id="labor-code-41",
+        source="legal",
+    )
+    anchor = LegalAnchor(article="Điều 41", document_title="Bộ luật Lao động 2019")
+
+    assert document_matches_anchor(wrong_law, anchor) is False
+    assert document_matches_anchor(right_law, anchor) is True

@@ -22,7 +22,7 @@ from fastapi import APIRouter, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
 from backend.api.principal import principal_from_request_state
-from backend.api.routes.health import readiness_payload
+from backend.api.routes.health import chat_admission_readiness
 from backend.api.schemas import ChatRequest
 from backend.history import cancel_turn as cancel_turn_persistent
 from epr_agent.api.routes import stream_chat_events as agentic_stream_chat
@@ -69,16 +69,7 @@ async def chat(request: Request, body: ChatRequest):
     # typed updates separately so confirmation status survives into V4 state.
     case_patch = {**body.case_patch, **typed_case_patch}
 
-    readiness, _ = await readiness_payload()
-    history_capability = readiness.get("capabilities", {}).get("history", {})
-    dependencies = readiness.get("dependencies", {})
-    infrastructure_reason = ""
-    if history_capability.get("status") != "ready":
-        infrastructure_reason = str(history_capability.get("reason") or "database_unavailable")
-    elif dependencies.get("database") not in {None, "ok"}:
-        infrastructure_reason = "database_unavailable"
-    elif dependencies.get("openai") not in {None, "ok"}:
-        infrastructure_reason = "provider_unavailable"
+    admission_state, infrastructure_reason = await chat_admission_readiness()
     # Legal corpus/readiness is intentionally not part of this admission
     # check.  The workflow itself safe-stops legal routes while allowing
     # chitchat, history, auth, and feedback to remain available.
@@ -102,7 +93,7 @@ async def chat(request: Request, body: ChatRequest):
                         "retry_after_seconds": 30 if retryable else None,
                         "trace_id": trace_id,
                         "pipeline_version": "pipeline-v4",
-                        "readiness": readiness,
+                        "readiness": admission_state,
                     },
                     ensure_ascii=False,
                 )
@@ -207,8 +198,8 @@ async def chat(request: Request, body: ChatRequest):
             ):
                 if heartbeat_task is not None and heartbeat_task.done():
                     heartbeat_task.result()
-                # Readiness is the authoritative runtime gate for this request.
-                event["preview"] = bool(readiness.get("preview"))
+                # Runtime mode is UI metadata; corpus gates run in the workflow.
+                event["preview"] = bool(admission_state.get("preview"))
                 event_type = str(event.get("type") or "")
                 if event_type == "error":
                     code = str(event.get("code") or "pipeline_error")

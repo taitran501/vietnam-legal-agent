@@ -10,10 +10,11 @@ import logging
 import os
 import re
 import sqlite3
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
-from epr_agent.domain.legal import explicit_anchors
+from epr_agent.domain.legal import LegalAnchor, explicit_anchors, instrument_name_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,9 @@ LEGAL_STOP_WORDS = {
     "nhé", "bro", "nha", "vậy", "cho_em_hỏi", "mấy", "mới", "đang", "này", "đó", "kia", "thôi",
     "ai", "đâu", "sao", "lại", "đã", "sẽ", "cũng", "đều", "rồi", "ngay",
 }
+_EXACT_ANCHOR_FTS_STOPWORDS = {
+    "bộ", "luật", "nghị", "định", "thông", "tư", "quyết", "pháp", "lệnh",
+}
 
 
 def _escape_fts5_term(term: str) -> str:
@@ -43,6 +47,10 @@ class LegalQueryExpander:
     ARTICLE_PATTERN = re.compile(r"(?:điều|khoản|điểm)\s+\d+[a-zĐđ]?", re.IGNORECASE)
     INSTRUMENT_PATTERN = re.compile(r"\b\d{1,5}/\d{4}/(?:NĐ-CP|TT-[A-ZĐ]+|QH\d+|UBTVQH\d+|QĐ-[A-ZĐ]+)\b", re.IGNORECASE)
     LAW_PREFIX_PATTERN = re.compile(r"\b(?:Bộ luật|Luật|Nghị định|Thông tư|Nghị quyết|Quyết định)\s+[\w\sÀ-ỹĐđ]{2,40}\b", re.IGNORECASE)
+    NON_TITLE_PREFIX_WORDS: ClassVar[set[str]] = {
+        "áp", "bao", "có", "được", "gì", "hướng", "làm", "nào", "phải",
+        "quy", "sao", "thế", "thực", "trong", "về",
+    }
 
     @classmethod
     def extract_legal_entities(cls, query: str) -> list[str]:
@@ -58,6 +66,12 @@ class LegalQueryExpander:
                 entities.append(val)
         for m in cls.LAW_PREFIX_PATTERN.finditer(query):
             val = m.group(0).strip()
+            if query[:m.start()].casefold().rstrip().endswith("pháp"):
+                continue
+            title_words = [word.casefold() for word in val.split()]
+            kind_words = 2 if title_words[:2] == ["bộ", "luật"] else 1
+            if len(title_words) <= kind_words or title_words[kind_words] in cls.NON_TITLE_PREFIX_WORDS:
+                continue
             if val not in entities and len(val.split()) <= 6:
                 entities.append(val)
         return entities
@@ -86,6 +100,8 @@ KNOWN_LAW_NAMES = [
     ("cấp sổ", "Luật Đất đai"),
     ("quyền sử dụng đất", "Luật Đất đai"),
     ("lao động", "Lao động"),
+    ("nợ lương", "Lao động"),
+    ("chậm trả lương", "Lao động"),
     ("thử việc", "Lao động"),
     ("thử việc", "45/2019/QH14"),
     ("hợp đồng lao động", "Lao động"),
@@ -102,7 +118,8 @@ KNOWN_LAW_NAMES = [
     ("phạt vi phạm hợp đồng", "Luật Thương mại"),
     ("phạt hợp đồng", "Luật Thương mại"),
     ("dân sự", "Bộ luật Dân sự"),
-    ("hợp đồng", "Bộ luật Dân sự"),
+    # Generic "hợp đồng" is not enough to choose the Civil Code; labor
+    # contracts and commercial contracts share this phrase.
     ("đặt cọc", "Bộ luật Dân sự"),
     ("bùng cọc", "Bộ luật Dân sự"),
     ("phòng trọ", "Bộ luật Dân sự"),
@@ -112,7 +129,6 @@ KNOWN_LAW_NAMES = [
     ("chia tài sản", "Bộ luật Dân sự"),
     ("hôn nhân", "Luật Hôn nhân và gia đình"),
     ("ly hôn", "Luật Hôn nhân và gia đình"),
-    ("doanh nghiệp", "Luật Doanh nghiệp"),
     ("công ty tnhh", "Luật Doanh nghiệp"),
     ("hộ kinh doanh", "Nghị định về đăng ký kinh doanh"),
     ("thành lập công ty", "Luật Doanh nghiệp"),
@@ -184,6 +200,26 @@ GENERIC_QUERY_WORDS = {
 
 _QUERY_PHRASE_RULES: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
     (
+        re.compile(r"\bthử\s+việc\b", re.IGNORECASE),
+        ("thời gian thử việc",),
+    ),
+    (
+        re.compile(r"\bcao\s+đẳng\b.{0,36}\bthử\s+việc\b|\bthử\s+việc\b.{0,36}\bcao\s+đẳng\b", re.IGNORECASE),
+        ("cao đẳng",),
+    ),
+    (
+        re.compile(r"\b(?:nợ\s+(?:tiền\s+)?lương|chậm\s+(?:trả\s+)?lương|trả\s+lương\s+chậm)\b", re.IGNORECASE),
+        ("trả lương",),
+    ),
+    (
+        re.compile(r"đơn\s+phương\s+chấm\s+dứt\s+hợp\s+đồng.{0,40}trái\s+pháp\s+luật", re.IGNORECASE),
+        ("đơn phương chấm dứt hợp đồng lao động",),
+    ),
+    (
+        re.compile(r"người\s+sử\s+dụng\s+lao\s+động.{0,80}đơn\s+phương\s+chấm\s+dứt.{0,40}trái\s+pháp\s+luật", re.IGNORECASE),
+        ("nghĩa vụ của người sử dụng lao động",),
+    ),
+    (
         re.compile(
             r"(?:tối\s*thiểu|ít\s*nhất).{0,48}cổ\s*đông|"
             r"cổ\s*đông.{0,48}(?:tối\s*thiểu|ít\s*nhất)",
@@ -195,6 +231,13 @@ _QUERY_PHRASE_RULES: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
         re.compile(r"cổ\s*đông\s*sáng\s*lập", re.IGNORECASE),
         ("cổ đông sáng lập",),
     ),
+)
+
+_EPR_OBLIGATION_QUERY_RE = re.compile(
+    r"\bepr\b|trách nhiệm\s+(?:mở rộng|tái chế)|"
+    r"(?:nhà\s+sản\s+xuất|sản\s+xuất|nhập\s+khẩu).{0,80}bao\s+bì|"
+    r"bao\s+bì.{0,80}(?:tái\s+chế|nhà\s+sản\s+xuất|nhập\s+khẩu)",
+    re.IGNORECASE,
 )
 
 CANONICAL_SOURCE_HINTS: tuple[tuple[str, str, str, str], ...] = (
@@ -231,7 +274,11 @@ class UniversalLegalRetriever:
                 str(row[0])
                 for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
             }
-            return {"legal_articles", "legal_articles_fts"}.issubset(tables)
+            if not {"legal_articles", "legal_articles_fts"}.issubset(tables):
+                return False
+            return connection.execute(
+                "SELECT 1 FROM legal_articles LIMIT 1"
+            ).fetchone() is not None
         except sqlite3.Error:
             return False
         finally:
@@ -253,14 +300,9 @@ class UniversalLegalRetriever:
                 if " " in kw and kw not in matched_phrases:
                     matched_phrases.append(kw)
 
-        # 3. Dynamic n-gram extraction
-        dynamic_ngrams = LegalQueryExpander.extract_ngrams(query)
-        for ng in dynamic_ngrams:
-            if ng.lower() not in matched_phrases and ng.lower() not in [k[0] for k in KNOWN_LAW_NAMES]:
-                matched_phrases.append(ng)
-
-        # 4. Synonym expansion
-        for trigger_phrase, synonyms in SYNONYM_EXPANSIONS.items():
+        # Put deliberate concept expansions before overlapping generic n-grams.
+        # The old order let the 12-term cap discard the useful query expansion.
+        for trigger_phrase, synonyms in sorted(SYNONYM_EXPANSIONS.items(), key=lambda item: len(item[0]), reverse=True):
             if trigger_phrase in q_lower:
                 for syn in synonyms:
                     if syn not in matched_phrases and syn not in injected_law_names:
@@ -271,6 +313,12 @@ class UniversalLegalRetriever:
                 for phrase in phrases:
                     if phrase not in matched_phrases:
                         matched_phrases.append(phrase)
+
+        # Generic n-grams are retained as a fallback after domain phrases.
+        dynamic_ngrams = LegalQueryExpander.extract_ngrams(query)
+        for ng in dynamic_ngrams:
+            if ng.lower() not in matched_phrases and ng.lower() not in [k[0] for k in KNOWN_LAW_NAMES]:
+                matched_phrases.append(ng)
 
         # 5. Extract meaningful content words — exclude conversational stop words
         raw_words = re.findall(r"[\w]+", query)
@@ -323,13 +371,96 @@ class UniversalLegalRetriever:
 
     def _extract_search_terms(self, query: str) -> list[str]:
         laws, phrases, words = self._extract_components(query)
+        priority_phrases = self._strict_query_phrases(query)
         all_terms = []
-        for item in laws + phrases + words:
+        for item in laws + priority_phrases + phrases + words:
             if item and item not in all_terms:
                 all_terms.append(item)
         return all_terms[:12]
 
-    def search(self, query: str, limit: int = 5, topic_filter: str | None = None) -> list[dict[str, Any]]:
+    @staticmethod
+    def _row_matches_anchor(row: tuple[Any, ...], anchor: LegalAnchor) -> bool:
+        _record_id, topic, subject, article_title, chapter_title, source_note, source_url, _content, _rank = row
+        source_note_text = str(source_note or "").casefold()
+        source_text = " ".join(
+            str(value or "")
+            for value in (topic, subject, article_title, chapter_title, source_note, source_url)
+        )
+        source_anchors = explicit_anchors(f"{source_note or ''}\n{article_title or ''}")
+        if anchor.article and not any(item.article.casefold() == anchor.article.casefold() for item in source_anchors):
+            return False
+        if anchor.document_number and anchor.document_number.casefold() not in str(source_note or "").casefold():
+            return False
+        if anchor.document_title:
+            title_tokens = instrument_name_tokens(anchor.document_title)
+            if not title_tokens or not all(token in source_text.casefold() for token in title_tokens):
+                return False
+            kind_match = re.match(
+                r"\s*(bộ\s+luật|luật|nghị\s*định|thông\s*tư|quyết\s*định|nghị\s*quyết|pháp\s*lệnh)",
+                anchor.document_title,
+                re.IGNORECASE,
+            )
+            if kind_match:
+                kind = " ".join(kind_match.group(1).casefold().split())
+                if kind == "bộ luật" and "bộ luật" not in source_note_text:
+                    return False
+                if kind != "bộ luật" and kind not in source_note_text:
+                    return False
+        return not anchor.appendix or anchor.appendix.casefold() in source_text.casefold()
+
+    @classmethod
+    def _search_exact_anchors(
+        cls,
+        cursor: sqlite3.Cursor,
+        anchors: Sequence[LegalAnchor],
+        limit: int,
+    ) -> list[tuple[Any, ...]]:
+        """Use legal source addresses to find exact articles before fuzzy FTS."""
+
+        candidates: dict[str, tuple[Any, ...]] = {}
+        for anchor in anchors:
+            article_match = re.search(r"\b(?:điều|dieu)\s+(\d+[a-zđ]?)\b", anchor.article, re.IGNORECASE)
+            if not article_match or not (anchor.document_number or anchor.document_title):
+                continue
+            article_number = article_match.group(1)
+            identifying_tokens = (
+                instrument_name_tokens(anchor.document_number)
+                if anchor.document_number
+                else instrument_name_tokens(anchor.document_title)
+            )
+            identifying_tokens = [
+                token
+                for token in identifying_tokens
+                if token not in _EXACT_ANCHOR_FTS_STOPWORDS
+            ]
+            fts_terms = [f'"Điều {article_number}"']
+            fts_terms.extend(f'"{_escape_fts5_term(token)}"' for token in identifying_tokens)
+            fts_query = " AND ".join(dict.fromkeys(fts_terms))
+
+            cursor.execute(
+                """
+                SELECT a.id, a.topic, a.subject, a.article_title, a.chapter_title,
+                       a.source_note, a.source_url, a.content_text, 0.0
+                FROM legal_articles_fts
+                JOIN legal_articles a ON legal_articles_fts.id = a.id
+                WHERE legal_articles_fts MATCH ?
+                LIMIT 5000
+                """,
+                (fts_query,),
+            )
+            for row in cursor.fetchall():
+                if cls._row_matches_anchor(row, anchor):
+                    candidates[str(row[0])] = row
+
+        return list(candidates.values())[: max(1, limit)]
+
+    def search(
+        self,
+        query: str,
+        limit: int = 5,
+        topic_filter: str | None = None,
+        required_anchors: Sequence[LegalAnchor] | None = None,
+    ) -> list[dict[str, Any]]:
         """Executes a high-relevance BM25 search over 84,900+ Vietnamese legal articles.
         
         Returns a list of structured document dictionaries compatible with Agent pipelines.
@@ -344,12 +475,18 @@ class UniversalLegalRetriever:
             logger.info("Universal retrieval skipped generic query: %r", clean_query)
             return []
 
+        anchors = list(required_anchors) if required_anchors is not None else explicit_anchors(clean_query)
+        has_named_article_anchor = any(
+            anchor.article and (anchor.document_number or anchor.document_title)
+            for anchor in anchors
+        )
+
         laws, phrases, _words = self._extract_components(clean_query)
         terms = self._extract_search_terms(clean_query)
         if not terms:
             terms = re.findall(r"\b[\w\.]+\b", clean_query)[:4]
 
-        # Build Tier 1 (Strict Intersection) and Tier 2 (Broad Union) queries
+        # Build Tier 1 (concept phrase) and Tier 2 (broad lexical) queries.
         tier1_query = None
         strict_phrases = self._strict_query_phrases(clean_query)
         if laws and strict_phrases:
@@ -362,6 +499,44 @@ class UniversalLegalRetriever:
             tier1_query = f"({laws_clause}) AND ({phrases_clause})"
         
         fts_query = " OR ".join(f'"{_escape_fts5_term(t)}"' for t in terms)
+        selected_scope = topic_filter
+        epr_obligation_query = (
+            not selected_scope and bool(_EPR_OBLIGATION_QUERY_RE.search(clean_query))
+        )
+        if not selected_scope and re.search(
+            r"\b(?:lao\s+động|thử\s+việc|tiền\s+lương|trả\s+lương|nghỉ\s+phép)\b",
+            clean_query,
+            re.IGNORECASE,
+        ):
+            selected_scope = "Lao động"
+        scope_sql = ""
+        scope_params: tuple[str, ...] = ()
+        if epr_obligation_query:
+            # EPR queries are easy to contaminate with unrelated legal articles
+            # that merely mention "company", "packaging", or "environment".
+            # Restrict SQL candidates to producer-responsibility clauses and
+            # the implementing decree before LIMIT is applied.
+            scope_sql = """ AND (
+                (
+                    lower(a.subject) = 'luật bảo vệ môi trường'
+                    AND (
+                        lower(a.article_title) LIKE '%trách nhiệm tái chế%'
+                        OR lower(a.article_title) LIKE '%trách nhiệm thu gom%'
+                    )
+                )
+                OR a.source_note LIKE '%08/2022/NĐ-CP%'
+            )"""
+        elif selected_scope:
+            scope = selected_scope.casefold()
+            if scope == "lao động":
+                scope_sql = (
+                    " AND (lower(a.topic) = ? OR lower(a.subject) = ? "
+                    "OR lower(a.subject) LIKE ?)"
+                )
+                scope_params = (scope, scope, "%bộ luật lao động%")
+            else:
+                scope_sql = " AND (lower(a.topic) = ? OR lower(a.subject) = ? OR lower(a.subject) LIKE ?)"
+                scope_params = (scope, scope, f"%{scope}%")
 
         try:
             conn = sqlite3.connect(self.db_path)
@@ -369,7 +544,7 @@ class UniversalLegalRetriever:
 
             # Execute FTS match with column weights (article_title: 10.0, source_note: 8.0, topic: 5.0)
             # and National Law priority bonus (3.0x multiplier on negative BM25 rank)
-            sql = """
+            sql = f"""
             SELECT 
                 a.id, a.topic, a.subject, a.article_title, a.chapter_title, 
                 a.source_note, a.source_url, a.content_text,
@@ -381,22 +556,30 @@ class UniversalLegalRetriever:
             FROM legal_articles_fts fts
             JOIN legal_articles a ON fts.id = a.id
             WHERE legal_articles_fts MATCH ?
+            {scope_sql}
             ORDER BY adjusted_rank ASC
             LIMIT ?;
             """
             
-            rows = []
-            if tier1_query:
-                try:
-                    cursor.execute(sql, (tier1_query, limit * 3))
-                    rows = cursor.fetchall()
-                except sqlite3.Error:
-                    rows = []
+            if has_named_article_anchor:
+                rows = self._search_exact_anchors(cursor, anchors, limit)
+            else:
+                rows = []
+                if tier1_query:
+                    try:
+                        cursor.execute(sql, (tier1_query, *scope_params, limit * 3))
+                        rows = cursor.fetchall()
+                    except sqlite3.Error:
+                        rows = []
 
-            # If Tier 1 didn't yield enough, run Tier 2 broad query
-            if len(rows) < limit:
-                cursor.execute(sql, (fts_query, limit * 4))
-                rows = cursor.fetchall()
+                # Keep focused candidates first when supplementing with broad
+                # matches. Replacing them with the broad result set discarded
+                # the only exact concept hits whenever they numbered < limit.
+                if len(rows) < limit:
+                    cursor.execute(sql, (fts_query, *scope_params, limit * 4))
+                    broad_rows = cursor.fetchall()
+                    seen_ids = {str(row[0]) for row in rows}
+                    rows.extend(row for row in broad_rows if str(row[0]) not in seen_ids)
 
             conn.close()
 
@@ -412,6 +595,19 @@ class UniversalLegalRetriever:
                     continue
                 seen_titles.add(title_key)
 
+                source_anchors = explicit_anchors(str(src_note or ""))
+                source_article = next(
+                    (anchor.article for anchor in source_anchors if anchor.article),
+                    "",
+                )
+                display_article_title = art_title if art_title else "Quy định pháp luật"
+                if source_article:
+                    heading = re.match(r"^Điều\s+[\w.]+\.\s*(.+)$", str(art_title or ""), re.IGNORECASE)
+                    if heading:
+                        display_article_title = f"{source_article}. {heading.group(1)}"
+                    else:
+                        display_article_title = source_article
+
                 # Format hierarchical context for the LLM
                 header_parts = []
                 if topic:
@@ -422,8 +618,8 @@ class UniversalLegalRetriever:
                     header_parts.append(f"[CĂN CỨ VĂN BẢN]: {src_note}")
                 if chap_title:
                     header_parts.append(f"[CHƯƠNG]: {chap_title}")
-                if art_title:
-                    header_parts.append(f"[ĐIỀU KHOẢN]: {art_title}")
+                if display_article_title:
+                    header_parts.append(f"[ĐIỀU KHOẢN]: {display_article_title}")
 
                 formatted_content = " | ".join(header_parts) + "\n\n" + content
 
@@ -459,14 +655,16 @@ class UniversalLegalRetriever:
                     "document_id": rec_id,
                     "page_content": formatted_content,
                     "metadata": {
-                        "Dieu": art_title if art_title else "Quy định pháp luật",
+                        "Dieu": display_article_title,
+                        "source_article": source_article,
+                        "codified_anchor": art_title if art_title else "",
                         "source": source_label[:120],
                         "source_title": source_label[:500],
                         "Source_Title": source_label[:500],
                         "document_title": source_label[:500],
                         "Document_Number": instrument_number,
                         "instrument_number": instrument_number,
-                        "legal_anchor": art_title if art_title else "",
+                        "legal_anchor": display_article_title,
                         "law_ref": src_note or "",
                         "official_url": final_url,
                         "source_uri": final_url,
@@ -483,7 +681,10 @@ class UniversalLegalRetriever:
                         "chapter": chap_title,
                         "corpus_source": "universal_legal",
                     },
-                    "score": abs(float(rank))
+                    # This is a raw BM25 rank (lower is better), not a
+                    # normalized relevance score. Keep it separate so the
+                    # verifier does not mistake a large magnitude for 0-1.
+                    "bm25_rank": float(rank),
                 })
 
                 if len(results) >= limit:

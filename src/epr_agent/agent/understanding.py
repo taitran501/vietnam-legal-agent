@@ -12,7 +12,13 @@ import logging
 from typing import Any, Protocol
 
 from epr_agent.domain.routes import RouteType
-from epr_agent.domain.tasks import TaskUnderstanding, deterministic_task_understanding, preserve_explicit_anchors
+from epr_agent.domain.tasks import (
+    TaskUnderstanding,
+    deterministic_task_understanding,
+    is_general_lookup_explanation_query,
+    is_greeting,
+    preserve_explicit_anchors,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +83,8 @@ class StructuredTaskUnderstandingGateway:
         summary: str,
         active_case: dict[str, Any] | None,
     ) -> TaskUnderstanding:
+        if is_greeting(query) or (not active_case and is_general_lookup_explanation_query(query)):
+            return deterministic_task_understanding(query, history, active_case)
         try:
             from epr_agent.infra.llm_instances import get_llm_router
 

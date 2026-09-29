@@ -9,7 +9,7 @@ from typing import Any, Protocol
 from epr_agent.domain.legal import LegalAnchor, explicit_anchors, parse_required_anchors
 from epr_agent.domain.models import DocumentRecord
 from epr_agent.domain.v4 import RetrievalRequest
-from epr_agent.tools.evidence import legal_relevance_checker
+from epr_agent.tools.evidence import document_matches_anchor, legal_relevance_checker
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +75,8 @@ class QdrantLegalRetrievalGateway:
                 # required anchor would make a partial answer look complete.
                 raise RequiredAnchorParseError(invalid_anchors)
 
+        query_anchors = typed_required_anchors or explicit_anchors(query_text)
+
         # The official delta is a deliberately narrow preview source. Check
         # it before Qdrant so an exact instrument cannot be shadowed by a
         # nearest-neighbour result.
@@ -86,13 +88,13 @@ class QdrantLegalRetrievalGateway:
                 delta_documents = delta_retriever.search(
                     query_text,
                     limit=request.top_k if request else 5,
-                    required_anchors=typed_required_anchors,
+                    required_anchors=query_anchors or None,
                 )
                 if delta_documents:
                     return delta_documents
                 if delta_retriever.covers_instrument(
                     query_text,
-                    required_anchors=typed_required_anchors,
+                    required_anchors=query_anchors or None,
                 ):
                     return []
             except (OSError, TypeError, ValueError) as exc:
@@ -118,16 +120,32 @@ class QdrantLegalRetrievalGateway:
                 record.metadata.setdefault("v4_issue_id", request.issue_id)
                 record.metadata.setdefault("v4_required_anchors", request.required_anchors)
 
+        if query_anchors:
+            records = [
+                record
+                for record in records
+                if any(document_matches_anchor(record, anchor) for anchor in query_anchors)
+            ]
+
         has_typed_anchors = bool(request and request.required_anchors)
-        if (
-            records
-            and bool(getattr(settings, "enable_relevance_gate", True))
-            and not has_typed_anchors
-            and not explicit_anchors(query_text)
-        ):
+        has_unscoped_article_anchor = any(
+            anchor.article and not (anchor.document_number or anchor.document_title)
+            for anchor in query_anchors
+        )
+        can_check_relevance = (
+            bool(getattr(settings, "enable_relevance_gate", True))
+            and (
+                has_unscoped_article_anchor
+                or (not has_typed_anchors and not explicit_anchors(query_text))
+            )
+        )
+        if records and can_check_relevance:
             checker = legal_relevance_checker(
                 min_rerank_score=getattr(settings, "min_legal_rerank_score", 0.40)
             )
+            # Check candidates individually. An aggregate "any match" check
+            # kept every cross-domain neighbor whenever just one result was
+            # relevant, then let those unrelated records enter generation.
             records = [record for record in records if checker(query_text, [record])]
 
         # Universal Corpus (84,900+ provisions): Search and augment when Qdrant has insufficient records
@@ -136,18 +154,43 @@ class QdrantLegalRetrievalGateway:
                 from epr_agent.retrieval.universal_retriever import universal_retriever
                 if universal_retriever.is_available:
                     needed = (request.top_k if request else 8) - len(records)
-                    u_docs = universal_retriever.search(retrieval_query(query), limit=needed)
+                    u_docs = universal_retriever.search(
+                        retrieval_query(query),
+                        limit=needed,
+                        required_anchors=query_anchors or None,
+                    )
                     for i, u_doc in enumerate(u_docs):
                         u_meta = dict(u_doc.get("metadata", {}))
-                        records.append(DocumentRecord(
+                        if u_doc.get("bm25_rank") is not None:
+                            u_meta["bm25_rank"] = u_doc["bm25_rank"]
+                        universal_source = (
+                            u_meta.get("corpus_source") == "universal_legal"
+                            or u_meta.get("source_kind") == "legal_corpus"
+                        )
+                        record = DocumentRecord(
                             content=u_doc["page_content"],
                             metadata=u_meta,
                             document_id=u_doc.get("document_id", f"univ-{i+1}"),
-                            score=u_doc.get("score", 0.85),
-                            source=str(u_meta.get("source") or "Pháp điển & Luật Quốc gia"),
-                        ))
+                            score=None if universal_source else u_doc.get("score"),
+                            # `DocumentRecord.source` is a source kind, not the
+                            # display label stored in metadata['source'].
+                            source="legal",
+                        )
+                        if not query_anchors or any(
+                            document_matches_anchor(record, anchor) for anchor in query_anchors
+                        ):
+                            records.append(record)
             except (sqlite3.Error, OSError, ImportError) as exc:
                 logger.debug("Universal retriever augmentation skipped: %s", exc)
+
+        if records and can_check_relevance:
+            checker = legal_relevance_checker(
+                min_rerank_score=getattr(settings, "min_legal_rerank_score", 0.40)
+            )
+            # The universal fallback has independent ranking and query-scope
+            # behavior, so apply the same per-document relevance gate after
+            # merging both retrieval sources.
+            records = [record for record in records if checker(query_text, [record])]
 
         return records
 

@@ -163,6 +163,7 @@ class EvidenceAssessment:
     relevance_checked: bool = False
     has_superseded_sources: bool = False
     temporal_warnings: list[str] = field(default_factory=list)
+    source_version_only: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

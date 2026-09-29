@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import importlib
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
 
+from epr_agent.domain.legal import explicit_anchors
 from epr_agent.retrieval.universal_retriever import DEFAULT_DB_PATH, UniversalLegalRetriever
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -55,6 +57,21 @@ def test_universal_retriever_default_path_is_repository_root_relative(monkeypatc
     assert retriever.db_path == DEFAULT_DB_PATH
 
 
+def test_universal_retriever_marks_an_empty_database_unavailable(tmp_path: Path) -> None:
+    db_path = tmp_path / "empty-universal.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("CREATE TABLE legal_articles (id TEXT PRIMARY KEY)")
+        connection.execute("CREATE VIRTUAL TABLE legal_articles_fts USING fts5(id)")
+
+    retriever = UniversalLegalRetriever(db_path)
+    assert retriever.is_available is False
+
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("INSERT INTO legal_articles (id) VALUES ('article-1')")
+
+    assert retriever.is_available is True
+
+
 def test_universal_index_builder_is_importable_without_running_the_cli() -> None:
     builder = importlib.import_module("scripts.build_universal_index")
 
@@ -82,5 +99,80 @@ def test_universal_retriever_prefers_the_corporate_minimum_shareholder_provision
     assert any(
         "Điều 111" in str(item.get("metadata", {}).get("legal_anchor"))
         and "59/2020/QH14" in str(item.get("metadata", {}).get("instrument_number"))
+        for item in results
+    )
+
+
+def test_universal_retriever_uses_named_article_anchor_to_find_the_exact_law() -> None:
+    retriever = UniversalLegalRetriever()
+    if not retriever.is_available:
+        pytest.skip("Universal legal corpus database is not built in this environment.")
+
+    query = "Điều 41 Bộ luật Lao động 2019 quy định gì?"
+    results = retriever.search(query, limit=5, required_anchors=explicit_anchors(query))
+
+    assert len(results) == 1
+    metadata = results[0]["metadata"]
+    assert metadata["source_article"] == "Điều 41"
+    assert metadata["Document_Number"] == "45/2019/QH14"
+    assert "Nghĩa vụ của người sử dụng lao động" in metadata["Dieu"]
+
+
+def test_universal_retriever_scopes_natural_trial_query_to_the_requested_article() -> None:
+    retriever = UniversalLegalRetriever()
+    if not retriever.is_available:
+        pytest.skip("Universal legal corpus database is not built in this environment.")
+
+    results = retriever.search(
+        "Người lao động có trình độ cao đẳng được thử việc tối đa bao lâu?",
+        limit=5,
+    )
+
+    assert results
+    assert results[0]["metadata"]["source_article"] == "Điều 25"
+    assert all(item["metadata"]["topic"] == "Lao động" for item in results)
+
+
+def test_universal_retriever_scopes_unpaid_wage_query_to_labor_sources() -> None:
+    retriever = UniversalLegalRetriever()
+    if not retriever.is_available:
+        pytest.skip("Universal legal corpus database is not built in this environment.")
+
+    results = retriever.search("Người lao động bị nợ lương thì làm gì?", limit=5)
+
+    assert results
+    assert all(item["metadata"]["topic"] == "Lao động" for item in results)
+    assert any(item["metadata"]["source_article"] in {"Điều 94", "Điều 97"} for item in results)
+
+
+def test_universal_retriever_targets_employer_duty_for_illegal_termination() -> None:
+    retriever = UniversalLegalRetriever()
+    if not retriever.is_available:
+        pytest.skip("Universal legal corpus database is not built in this environment.")
+
+    results = retriever.search(
+        "Người sử dụng lao động đơn phương chấm dứt hợp đồng trái pháp luật phải làm gì?",
+        limit=5,
+    )
+
+    assert results
+    assert results[0]["metadata"]["source_article"] == "Điều 41"
+
+
+def test_universal_retriever_scopes_natural_epr_query_to_producer_obligations() -> None:
+    retriever = UniversalLegalRetriever()
+    if not retriever.is_available:
+        pytest.skip("Universal legal corpus database is not built in this environment.")
+
+    results = retriever.search(
+        "Công ty sản xuất nước đóng chai dùng bao bì nhựa có nghĩa vụ gì theo EPR?",
+        limit=5,
+    )
+
+    assert results
+    assert results[0]["metadata"]["Dieu"].startswith("Điều 54")
+    assert all(
+        item["metadata"].get("subject") == "Luật Bảo vệ môi trường"
+        or "08/2022/NĐ-CP" in str(item["metadata"].get("law_ref"))
         for item in results
     )

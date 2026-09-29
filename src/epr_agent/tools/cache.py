@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+import time
 from dataclasses import asdict, dataclass
 from typing import Any, Protocol
 
@@ -12,6 +14,9 @@ from epr_agent.domain.verification import VerificationStatus
 
 _CACHE_SCHEMA_VERSION = 4
 _VERIFICATION_POLICY_VERSION = "legal-verification-v1"
+_REDIS_CACHE_OPERATION_TIMEOUT_SECONDS = 1.0
+_REDIS_CACHE_FAILURE_COOLDOWN_SECONDS = 15.0
+_redis_cache_retry_at = 0.0
 
 
 class AnswerCache(Protocol):
@@ -103,24 +108,42 @@ class RedisExactAnswerCache:
     """
 
     async def lookup(self, key: str) -> str | None:
+        global _redis_cache_retry_at
         from epr_agent.infra.session_store import get_redis
 
-        try:
-            value = await (await get_redis()).get(key)
-        except Exception:  # noqa: BLE001 - cache degradation is always a miss
+        if time.monotonic() < _redis_cache_retry_at:
             return None
+
+        async def _read() -> Any:
+            return await (await get_redis()).get(key)
+
+        try:
+            value = await asyncio.wait_for(_read(), timeout=_REDIS_CACHE_OPERATION_TIMEOUT_SECONDS)
+        except Exception:  # noqa: BLE001 - cache degradation is always a miss
+            _redis_cache_retry_at = time.monotonic() + _REDIS_CACHE_FAILURE_COOLDOWN_SECONDS
+            return None
+        _redis_cache_retry_at = 0.0
         if isinstance(value, bytes):
             return value.decode("utf-8")
         return str(value) if value is not None else None
 
     async def store(self, key: str, answer: str) -> None:
+        global _redis_cache_retry_at
         from epr_agent.config import get_settings
         from epr_agent.infra.session_store import get_redis
 
-        try:
-            await (await get_redis()).set(key, answer, ex=get_settings().cache_ttl_seconds)
-        except Exception:  # noqa: BLE001 - cache writes must never fail a run
+        if time.monotonic() < _redis_cache_retry_at:
             return
+
+        async def _write() -> None:
+            await (await get_redis()).set(key, answer, ex=get_settings().cache_ttl_seconds)
+
+        try:
+            await asyncio.wait_for(_write(), timeout=_REDIS_CACHE_OPERATION_TIMEOUT_SECONDS)
+        except Exception:  # noqa: BLE001 - cache writes must never fail a run
+            _redis_cache_retry_at = time.monotonic() + _REDIS_CACHE_FAILURE_COOLDOWN_SECONDS
+            return
+        _redis_cache_retry_at = 0.0
 
 
 class InMemoryAnswerCache:

@@ -16,7 +16,11 @@ from epr_agent.domain.verification import (
     VerificationStatus,
     canonical_verification_status,
 )
-from epr_agent.tools.evidence import verify_citations, verify_web_citations
+from epr_agent.tools.evidence import (
+    is_explicit_source_version_lookup,
+    verify_citations,
+    verify_web_citations,
+)
 from epr_agent.tools.verifier import ClaimSupportVerifier, LegalCriticReviewer
 
 logger = logging.getLogger(__name__)
@@ -49,6 +53,7 @@ class AgentGuardrails:
         claim_verifier: ClaimSupportVerifier | None = None,
         critic_reviewer: LegalCriticReviewer | None = None,
         verification_policy: VerificationPolicy | str | None = None,
+        task_type: TaskType | str = TaskType.LEGAL_LOOKUP,
         enforce_legal_safety_circuit_breaker: bool = False,
     ) -> tuple[bool, str, str, list[dict[str, Any]]]:
         """Verify that claims in the generated answer are grounded in retrieved evidence.
@@ -64,6 +69,7 @@ class AgentGuardrails:
             d if isinstance(d, DocumentRecord) else DocumentRecord.from_dict(d)
             for d in evidence
         ]
+        source_version_only = is_explicit_source_version_lookup(query, docs, task_type)
 
         policy = VerificationPolicy.NONE
         if verification_policy is not None:
@@ -204,7 +210,12 @@ class AgentGuardrails:
         )
         if should_run_critic and critic_reviewer is not None:
             try:
-                critic_verdict = await critic_reviewer.review(query, answer, docs)
+                critic_verdict = await critic_reviewer.review(
+                    query,
+                    answer,
+                    docs,
+                    source_version_only=source_version_only,
+                )
                 if critic_verdict.verification_status is VerificationStatus.VERIFICATION_UNAVAILABLE:
                     return (
                         False,

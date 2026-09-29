@@ -182,6 +182,8 @@ Nguyên tắc Phê duyệt:
 - approved = True: Nếu câu trả lời chuẩn xác, logic pháp lý chặt chẽ và bám sát tài liệu căn cứ.
 - fatal_error = True (approved = False): Chỉ khi câu trả lời tư vấn SAI HOÀN TOÀN về mặt luật định, bịa đặt điều luật, hoặc đảo ngược hoàn toàn quyền/nghĩa vụ của công dân.
 - corrected_answer: Nếu câu trả lời tốt nhưng có thể diễn đạt gãy gọn hơn hoặc bổ sung lưu ý về hiệu lực văn bản, hãy cung cấp bản hoàn thiện.
+- Chế độ source_version_only: Khi payload đánh dấu true, người dùng hỏi nội dung của đúng một phiên bản văn bản đã nêu, không hỏi hiệu lực hiện hành. Đối chiếu với chính phiên bản đó; không từ chối chỉ vì có văn bản sửa đổi sau này nếu câu trả lời nói rõ hiệu lực hiện hành chưa được xác minh. Vẫn từ chối nếu câu trả lời mô tả sai nội dung của phiên bản được nêu.
+- Khi source_version_only là false, hãy thẩm định các nhận định về hiệu lực như bình thường. Nếu evidence chưa xác nhận hiệu lực hiện hành thì câu trả lời nêu rõ chưa xác minh được hiệu lực không phải lỗi pháp lý.
 """
 
 
@@ -196,6 +198,8 @@ class LegalCriticReviewer:
         query: str,
         answer: str,
         documents: list[DocumentRecord],
+        *,
+        source_version_only: bool = False,
     ) -> LegalCriticVerdict:
         if not self.enabled or not answer.strip():
             return LegalCriticVerdict(
@@ -222,6 +226,7 @@ class LegalCriticReviewer:
             payload = {
                 "user_query": query,
                 "draft_answer": answer,
+                "source_version_only": source_version_only,
                 "legal_evidence": [
                     {
                         "document_id": doc.document_id,
@@ -278,11 +283,15 @@ class StaticLegalCriticReviewer:
 
     def __init__(self, *, verdict: LegalCriticVerdict | None = None) -> None:
         self.verdict = verdict or LegalCriticVerdict(approved=True, critique="Static pass.")
+        self.source_version_only_calls: list[bool] = []
 
     async def review(
         self,
         query: str,
         answer: str,
         documents: list[DocumentRecord],
+        *,
+        source_version_only: bool = False,
     ) -> LegalCriticVerdict:
+        self.source_version_only_calls.append(source_version_only)
         return self.verdict

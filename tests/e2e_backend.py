@@ -30,12 +30,11 @@ from epr_agent.tools.history import ContextSnapshot
 from epr_agent.tools.retrieval import StaticRetrievalGateway
 
 
-async def _deterministic_ready() -> tuple[dict[str, object], bool]:
+async def _deterministic_ready() -> tuple[dict[str, object], str]:
     """Keep browser acceptance isolated from Docker/Qdrant readiness.
 
-    The production router correctly checks the versioned corpus before every
-    chat request.  This dedicated browser host exercises the same SSE route
-    with deterministic adapters, so it supplies the ready contract without
+    This dedicated browser host exercises the same SSE route with deterministic
+    adapters, so it supplies the fast chat-admission contract without
     requiring the real local stack during UI tests.
     """
 
@@ -54,11 +53,11 @@ async def _deterministic_ready() -> tuple[dict[str, object], bool]:
             },
             "corpus": {"status": "preview_ready"},
         },
-        True,
+        "",
     )
 
 
-chat_routes.readiness_payload = _deterministic_ready
+chat_routes.chat_admission_readiness = _deterministic_ready
 
 
 class BrowserHistoryGateway:

@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlparse
 
-from epr_agent.domain.legal import LegalAnchor
+from epr_agent.domain.legal import LegalAnchor, explicit_anchors, instrument_name_tokens
 from epr_agent.domain.models import (
     Citation,
     CitationOccurrence,
@@ -64,7 +64,7 @@ class EvidenceEvaluator:
                         has_metadata,
                     )
             if not all(
-                any(_document_matches_anchor(document, anchor) for document in documents)
+                any(document_matches_anchor(document, anchor) for document in documents)
                 for anchor in expected_anchors
             ):
                 return EvidenceAssessment(False, "explicit_anchor_not_found", len(documents), total_chars, has_metadata)
@@ -78,7 +78,31 @@ class EvidenceEvaluator:
             if w and w not in temporal_warnings:
                 temporal_warnings.append(w)
 
-        if any(is_unresolved_current_law_source(document) for document in documents):
+        has_unresolved_current_law = any(
+            is_unresolved_current_law_source(document) for document in documents
+        )
+        source_version_only = has_unresolved_current_law and is_explicit_source_version_lookup(
+            query,
+            documents,
+            task_type,
+        )
+        if _CURRENT_LAW_QUERY_RE.search(query or "") and any(
+            not _has_verified_current_law_status(document) for document in documents
+        ):
+            temporal_warnings.append(
+                "The retrieved source does not verify current legal status or later amendments."
+            )
+            return EvidenceAssessment(
+                False,
+                "current_law_status_unverified",
+                len(documents),
+                total_chars,
+                has_metadata,
+                has_superseded_sources=has_superseded,
+                temporal_warnings=temporal_warnings,
+            )
+
+        if has_unresolved_current_law and not source_version_only:
             return EvidenceAssessment(
                 False,
                 "superseded_or_unresolved_source",
@@ -88,10 +112,36 @@ class EvidenceEvaluator:
                 has_superseded_sources=True,
                 temporal_warnings=temporal_warnings,
             )
+        if source_version_only:
+            temporal_warnings.append(
+                "Answer is limited to the explicitly named source version; current legal status is unverified."
+            )
 
-        if self.relevance_checker is not None:
+        official_web_sources = bool(documents) and all(
+            document.source == "web"
+            and (document.metadata or {}).get("source_kind") == "official_web"
+            and (document.metadata or {}).get("authority") == "official"
+            for document in documents
+        )
+
+        exact_source_address = (
+            str(getattr(task_type, "value", task_type)) == TaskType.LEGAL_LOOKUP.value
+            and expected_anchors is not None
+            and len(expected_anchors) > 0
+            and all(
+                (anchor.document_number or anchor.document_title)
+                and (anchor.article or anchor.appendix)
+                for anchor in expected_anchors
+            )
+            and not _CURRENT_LAW_QUERY_RE.search(query or "")
+        )
+        if self.relevance_checker is not None and not source_version_only and not exact_source_address:
             try:
-                relevant = bool(self.relevance_checker(query, documents))
+                relevant = (
+                    _official_web_relevance(query, documents)
+                    if official_web_sources
+                    else bool(self.relevance_checker(query, documents))
+                )
             except Exception:  # noqa: BLE001 - a failed optional checker is a failed evidence check
                 relevant = False
             if not relevant:
@@ -112,9 +162,10 @@ class EvidenceEvaluator:
             len(documents),
             total_chars,
             has_metadata,
-            self.relevance_checker is not None,
+            self.relevance_checker is not None and not source_version_only and not exact_source_address,
             has_superseded_sources=has_superseded,
             temporal_warnings=temporal_warnings,
+            source_version_only=source_version_only,
         )
 
     @staticmethod
@@ -181,10 +232,10 @@ def is_unresolved_current_law_source(document: DocumentRecord) -> bool:
 _RELEVANCE_SCORE_KEYS = (
     "rerank_score",
     "heuristic_rerank_score",
-    "cross_encoder_score",
     "combined_score",
     "score",
 )
+_MIN_SEMANTIC_RELEVANCE_SCORE = 0.85
 _RELEVANCE_STOPWORDS = {
     "cho", "chưa", "các", "có", "của", "đang", "được", "gì", "hỏi", "hiện",
     "khi", "không", "là", "nào", "này", "những", "nói", "pháp", "quy", "quyền", "định", "cần",
@@ -199,12 +250,55 @@ _YEAR_DISCOVERY_RE = re.compile(
     re.IGNORECASE,
 )
 _INSTRUMENT_RE = re.compile(r"\b\d{1,5}/\d{4}/[A-ZĐ0-9][A-ZĐ0-9-]*\b", re.IGNORECASE)
+_CURRENT_LAW_QUERY_RE = re.compile(
+    r"\b(?:hiện\s+hành|hiện\s+nay|còn\s+hiệu\s+lực|"
+    r"đang\s+có\s+hiệu\s+lực|còn\s+được\s+áp\s+dụng|mới\s+nhất|"
+    r"sau\s+(?:khi\s+)?sửa\s+đổi|đã\s+sửa\s+đổi|tính\s+đến|"
+    r"hiện\s+tại.{0,24}(?:còn\s+hiệu\s+lực|đang\s+áp\s+dụng)|"
+    r"(?:còn\s+hiệu\s+lực|đang\s+áp\s+dụng).{0,24}hiện\s+tại)\b",
+    re.IGNORECASE,
+)
 
 
 def _as_explicit_match(value: Any) -> bool:
     if isinstance(value, bool):
         return value
     return str(value or "").strip().casefold() in {"true", "1", "yes", "y", "đúng"}
+
+
+def _has_verified_current_law_status(document: DocumentRecord) -> bool:
+    """Require explicit instrument-status verification, not a chunk flag.
+
+    ``Current_Law_Support`` only says whether an indexed provision is covered
+    by the corpus's amendment map. It does not independently establish that
+    the complete instrument is currently in force.
+    """
+
+    metadata = document.metadata or {}
+    verified = metadata.get(
+        "Current_Law_Status_Verified",
+        metadata.get("current_law_status_verified"),
+    )
+    status = str(
+        document.effective_status
+        or metadata.get("Effective_Status")
+        or metadata.get("effective_status")
+        or ""
+    ).strip().casefold()
+    known_statuses = {
+        "active",
+        "in_force",
+        "in force",
+        "superseded",
+        "expired",
+        "invalid",
+        "repealed",
+        "partially_repealed",
+        "het_hieu_luc",
+        "bi_bai_bo",
+        "het_hieu_luc_mot_phan",
+    }
+    return _as_explicit_match(verified) and status in known_statuses
 
 
 def _relevance_tokens(value: Any) -> set[str]:
@@ -222,6 +316,11 @@ def _document_relevance_tokens(document: DocumentRecord) -> set[str]:
             "source",
             "source_title",
             "Source_Title",
+            "Dieu",
+            "Chuong",
+            "Muc",
+            "article_title",
+            "chapter_title",
             "title",
             "topic",
             "subject",
@@ -233,12 +332,110 @@ def _document_relevance_tokens(document: DocumentRecord) -> set[str]:
     return _relevance_tokens(" ".join(values))
 
 
+def _universal_legal_relevance(query: str, document: DocumentRecord) -> bool:
+    """Validate universal-corpus results by source address and text overlap.
+
+    SQLite BM25 ranks are unbounded and lower-is-better, so they cannot be
+    interpreted as normalized Qdrant or reranker confidence scores.
+    """
+
+    anchors = explicit_anchors(query)
+    named_anchors = [anchor for anchor in anchors if anchor.document_number or anchor.document_title]
+    for anchor in named_anchors:
+        if anchor.document_number and not _document_matches_instrument(document, anchor.document_number):
+            return False
+        if anchor.document_title and not _document_matches_named_instrument(document, anchor.document_title):
+            return False
+
+    requested_articles = _article_ids(query)
+    if requested_articles:
+        if not requested_articles.issubset(_document_article_ids(document)):
+            return False
+        if named_anchors:
+            return True
+
+    # An article number alone is not a source address: thousands of laws have
+    # an Article 77. Require either a named instrument (checked above) or
+    # topical overlap after removing address tokens.
+    context_query = _ARTICLE_RE.sub(" ", query or "")
+    context_query = _INSTRUMENT_RE.sub(" ", context_query)
+    query_tokens = _relevance_tokens(context_query)
+    generic_legal_tokens = {
+        "trách",
+        "nhiệm",
+        "nghĩa",
+        "vụ",
+        "thực",
+        "hiện",
+        "tổ",
+        "chức",
+        "cá",
+        "nhân",
+        "chính",
+        "phủ",
+    }
+    query_tokens.difference_update(generic_legal_tokens)
+    document_tokens = _document_relevance_tokens(document) - generic_legal_tokens
+    overlap = query_tokens.intersection(document_tokens)
+    minimum_overlap = 1 if len(query_tokens) <= 3 else 2
+    return bool(query_tokens and len(overlap) >= minimum_overlap)
+
+
+def _official_web_relevance(query: str, documents: list[DocumentRecord]) -> bool:
+    """Check web evidence by source text and explicit anchors, not vector scores.
+
+    The official-web gateway already enforces the allowlist and rejects named
+    article/instrument mismatches. Web results have no Qdrant or reranker score,
+    so the legal-corpus score threshold is not meaningful for this source type.
+    """
+
+    requested_articles = _article_ids(query)
+    requested_instruments = {
+        re.sub(r"\s+", "", value).casefold()
+        for value in _INSTRUMENT_RE.findall(query or "")
+    }
+    query_tokens = _relevance_tokens(query)
+
+    for document in documents:
+        metadata = document.metadata or {}
+        source_text = " ".join(
+            str(value or "")
+            for value in (
+                document.content,
+                metadata.get("title"),
+                metadata.get("official_url"),
+                metadata.get("url"),
+            )
+        )
+        source_articles = _article_ids(source_text)
+        source_instruments = {
+            re.sub(r"\s+", "", value).casefold()
+            for value in _INSTRUMENT_RE.findall(source_text)
+        }
+        if requested_articles and not requested_articles.issubset(source_articles):
+            continue
+        if requested_instruments and not requested_instruments.issubset(source_instruments):
+            continue
+        if requested_articles or requested_instruments:
+            return True
+
+        overlap = query_tokens.intersection(_relevance_tokens(source_text))
+        if query_tokens and len(overlap) >= min(2, len(query_tokens)):
+            return True
+    return False
+
+
 def _document_scores(document: DocumentRecord) -> list[float]:
     metadata = document.metadata or {}
     scores: list[float] = []
     for key in _RELEVANCE_SCORE_KEYS:
+        # Cross-encoder outputs are raw logits, not the normalized heuristic
+        # relevance score used by this gate. When it is applied, use the
+        # preserved heuristic score rather than the overloaded rerank_score.
+        if key == "rerank_score" and metadata.get("cross_encoder_score") is not None:
+            continue
         raw = metadata.get(key)
-        if raw is None and key == "score":
+        if raw is None and key == "score" and metadata.get("cross_encoder_score") is None:
             raw = document.score
         try:
             if raw is not None:
@@ -279,6 +476,47 @@ def _document_instrument_text(document: DocumentRecord) -> str:
     )
 
 
+def is_explicit_source_version_lookup(
+    query: str,
+    documents: list[DocumentRecord],
+    task_type: str | TaskType,
+) -> bool:
+    """Allow source-scoped text lookup without claiming the source is current.
+
+    This exemption is intentionally limited to ordinary legal lookups that
+    name exactly one instrument and retrieve only that instrument. Case advice
+    and queries asking about current validity still require verified-current
+    evidence.
+    """
+
+    if str(getattr(task_type, "value", task_type)) != TaskType.LEGAL_LOOKUP.value:
+        return False
+    if _CURRENT_LAW_QUERY_RE.search(query or ""):
+        return False
+
+    requested = {
+        re.sub(r"\s+", "", value).casefold()
+        for value in _INSTRUMENT_RE.findall(query or "")
+    }
+    if len(requested) != 1 or not documents:
+        return False
+
+    requested_articles = _article_ids(query)
+    found_articles: set[str] = set()
+    for document in documents:
+        if document.source != "legal":
+            return False
+        source_instruments = {
+            re.sub(r"\s+", "", value).casefold()
+            for value in _INSTRUMENT_RE.findall(_document_instrument_text(document))
+        }
+        if not requested.issubset(source_instruments):
+            return False
+        found_articles.update(_document_article_ids(document))
+
+    return bool(requested_articles) and requested_articles.issubset(found_articles)
+
+
 def _year_discovery_source_matches(query: str, document: DocumentRecord) -> bool:
     requested_years = _year_discovery_query(query)
     if not requested_years:
@@ -307,8 +545,21 @@ def legal_relevance_checker(*, min_rerank_score: float) -> Callable[[str, list[D
         if not query_tokens:
             return False
         for document in documents:
+            if (document.metadata or {}).get("corpus_source") == "universal_legal":
+                if _universal_legal_relevance(query, document):
+                    return True
+                continue
             scores = _document_scores(document)
-            if not scores or max(scores) < threshold:
+            semantic_score = (document.metadata or {}).get("semantic_score")
+            try:
+                semantic_score = float(semantic_score) if semantic_score is not None else None
+            except (TypeError, ValueError):
+                semantic_score = None
+            has_score_support = bool(scores and max(scores) >= threshold)
+            has_strong_semantic_support = bool(
+                semantic_score is not None and semantic_score >= _MIN_SEMANTIC_RELEVANCE_SCORE
+            )
+            if not has_score_support and not has_strong_semantic_support:
                 continue
             if query_tokens.intersection(_document_relevance_tokens(document)):
                 return True
@@ -378,13 +629,24 @@ def _document_article_ids(document: DocumentRecord) -> set[str]:
     return _article_ids("\n".join(values))
 
 
-def _document_matches_anchor(document: DocumentRecord, anchor: LegalAnchor) -> bool:
+def document_matches_anchor(document: DocumentRecord, anchor: LegalAnchor) -> bool:
+    """Match a required legal address against structural source metadata only.
+
+    A mention of an article in another provision's body is not evidence for
+    that article. Issue coverage and answer validation share this rule.
+    """
+
     metadata = document.metadata or {}
     article_text = "\n".join(
         str(metadata.get(key) or "")
-        for key in ("legal_anchor", "Parent_Dieu", "Dieu", "Điều")
+        for key in ("legal_anchor", "source_article", "Parent_Dieu", "Dieu", "Điều")
     )
-    if anchor.article and anchor.article.casefold() not in article_text.casefold():
+    available_articles = {
+        item.article.casefold()
+        for item in explicit_anchors(article_text)
+        if item.article
+    }
+    if anchor.article and anchor.article.casefold() not in available_articles:
         return False
     if anchor.appendix:
         appendix_text = "\n".join(
@@ -415,7 +677,9 @@ def _document_matches_anchor(document: DocumentRecord, anchor: LegalAnchor) -> b
         )
         if anchor.point.casefold() not in point_text.casefold():
             return False
-    return not anchor.document_number or _document_matches_instrument(document, anchor.document_number)
+    if anchor.document_number and not _document_matches_instrument(document, anchor.document_number):
+        return False
+    return not anchor.document_title or _document_matches_named_instrument(document, anchor.document_title)
 
 
 def _document_matches_instrument(document: DocumentRecord, document_number: str) -> bool:
@@ -425,6 +689,29 @@ def _document_matches_instrument(document: DocumentRecord, document_number: str)
         for key in ("Document_Number", "Instrument_Number", "instrument_number", "number")
     )
     return document_number.casefold() in source_text.casefold()
+
+
+def _document_matches_named_instrument(document: DocumentRecord, document_title: str) -> bool:
+    metadata = document.metadata or {}
+    source_text = "\n".join(
+        str(metadata.get(key) or "")
+        for key in (
+            "Document_Number",
+            "Instrument_Number",
+            "instrument_number",
+            "number",
+            "source_title",
+            "Source_Title",
+            "document_title",
+            "title",
+            "source",
+            "law_ref",
+            "topic",
+            "subject",
+        )
+    ).casefold()
+    identifying_tokens = instrument_name_tokens(document_title)
+    return bool(identifying_tokens) and all(token in source_text for token in identifying_tokens)
 
 
 def legal_claim_segments(answer: str) -> list[str]:

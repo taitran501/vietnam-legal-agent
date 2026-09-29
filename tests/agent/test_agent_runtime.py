@@ -117,12 +117,29 @@ async def test_agent_runtime_chitchat_bypass(agent_deps):
 
 
 @pytest.mark.asyncio
-async def test_agent_runtime_pending_legal_readiness_stops_before_agent_runner(agent_deps):
-    class RunnerMustNotRun:
-        async def stream(self, query: str, **kwargs):
-            raise AssertionError("legal readiness must stop before agent generation")
-            yield  # pragma: no cover
-
+async def test_agent_runtime_pending_epr_readiness_does_not_block_unrelated_law(agent_deps):
+    document = DocumentRecord(
+        content="Người lao động có trình độ cao đẳng được thử việc tối đa sáu mươi ngày. " * 3,
+        document_id="labor-25",
+        source="legal",
+        metadata={
+            "legal_anchor": "Điều 25",
+            "source": "Bộ luật Lao động số 45/2019/QH14",
+            "source_title": "Bộ luật Lao động số 45/2019/QH14",
+            "Document_Number": "45/2019/QH14",
+            "Corpus_ID": "labor",
+        },
+    )
+    result = AgentRunResult(
+        answer="Người lao động có trình độ cao đẳng được thử việc tối đa sáu mươi ngày [1].",
+        termination_reason=TerminationReason.ANSWER_COMPLETE.value,
+        trajectory=[AgentStep(1, "search_legal_provisions", {"query": "Điều 25"}, {}, 10.0, True)],
+        evidence=[document.to_dict()],
+        citations=[],
+        source="legal",
+        steps_taken=2,
+        cache_hit=False,
+    )
     deps = WorkflowDependencies(
         history=agent_deps.history,
         cache=agent_deps.cache,
@@ -138,16 +155,17 @@ async def test_agent_runtime_pending_legal_readiness_stops_before_agent_runner(a
 
     events = [
         event
-        async for event in AgentWorkflowRuntime(deps, runner=RunnerMustNotRun()).stream(
-            query="Điều 77 quy định gì?",
+        async for event in AgentWorkflowRuntime(deps, runner=FakeRunner(result)).stream(
+            query="Bộ luật Lao động quy định thời gian thử việc tối đa bao lâu?",
             user_id="u1",
             conversation_id="c1",
         )
     ]
 
     complete = next(event for event in events if event.get("type") == "response_complete")
-    assert complete["source"] == "error"
-    assert complete["citation_error"] == "legal_review_pending"
+    assert complete["source"] == "legal"
+    assert complete["termination_reason"] == TerminationReason.ANSWER_COMPLETE.value
+    assert complete["citation_error"] == "ok"
     assert complete["legal_readiness_status"] == "pending"
     assert complete["legal_readiness_sha"] == "pending-manifest"
 

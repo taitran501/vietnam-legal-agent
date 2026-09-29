@@ -32,6 +32,13 @@ _DOCUMENT_RE = re.compile(
     r"\s*(?:số\s*)?(\d+(?:/\d{4})?/[a-z0-9đ-]+)",
     re.IGNORECASE,
 )
+_NAMED_DOCUMENT_RE = re.compile(
+    r"\b(?P<title>(?:bộ\s+luật|luật|nghị\s*định|thông\s*tư|quyết\s*định|"
+    r"nghị\s*quyết|pháp\s*lệnh)\s+"
+    r"[\wÀ-ỹĐđ./-]+(?:\s+[\wÀ-ỹĐđ./-]+){0,7}?\s+(?:19|20)\d{2})\b",
+    re.IGNORECASE,
+)
+_INSTRUMENT_NAME_STOPWORDS = {"số", "năm"}
 _CLAUSE_RE = re.compile(r"\b(?:khoản|khoan)\s+(\d+[a-zđ]?)\b", re.IGNORECASE)
 _POINT_RE = re.compile(r"\b(?:điểm|diem)\s+([a-zđ])\b", re.IGNORECASE)
 
@@ -73,6 +80,7 @@ class LegalAnchor(BaseModel):
     """A legal address parsed from a query or attached to a chunk."""
 
     document_number: str = ""
+    document_title: str = ""
     article: str = ""
     clause: str = ""
     point: str = ""
@@ -80,8 +88,27 @@ class LegalAnchor(BaseModel):
 
     def key(self) -> str:
         return " | ".join(
-            part for part in (self.document_number, self.article, self.clause, self.point, self.appendix) if part
+            part
+            for part in (
+                self.document_number,
+                self.document_title,
+                self.article,
+                self.clause,
+                self.point,
+                self.appendix,
+            )
+            if part
         )
+
+
+def instrument_name_tokens(document_title: str) -> list[str]:
+    """Return the identifying words in a named instrument, including its year."""
+
+    return [
+        token.casefold()
+        for token in re.findall(r"[\wÀ-ỹĐđ]+", document_title or "", flags=re.UNICODE)
+        if token.casefold() not in _INSTRUMENT_NAME_STOPWORDS
+    ]
 
 
 def explicit_anchors(query: str) -> list[LegalAnchor]:
@@ -95,6 +122,18 @@ def explicit_anchors(query: str) -> list[LegalAnchor]:
     text = query or ""
     document_numbers = [match.group(1).upper() for match in _DOCUMENT_RE.finditer(text)]
     default_document = document_numbers[0] if len(document_numbers) == 1 else ""
+    document_titles = [
+        title
+        for match in _NAMED_DOCUMENT_RE.finditer(text)
+        if not _DOCUMENT_RE.search(match.group("title"))
+        if (title := " ".join(match.group("title").split()))
+        if any(
+            token not in {"bộ", "luật", "nghị", "định", "thông", "tư", "quyết", "pháp", "lệnh"}
+            and not token.isdigit()
+            for token in instrument_name_tokens(title)
+        )
+    ]
+    default_document_title = document_titles[0] if len(document_titles) == 1 else ""
     article_matches = list(_ARTICLE_RE.finditer(text))
     anchors: list[LegalAnchor] = []
     for index, match in enumerate(article_matches):
@@ -105,6 +144,7 @@ def explicit_anchors(query: str) -> list[LegalAnchor]:
         point_match = _POINT_RE.search(segment)
         anchor = LegalAnchor(
             document_number=default_document,
+            document_title=default_document_title,
             article=article,
             clause=f"Khoản {clause_match.group(1)}" if clause_match else "",
             point=f"Điểm {point_match.group(1)}" if point_match else "",
@@ -113,17 +153,28 @@ def explicit_anchors(query: str) -> list[LegalAnchor]:
         # level.  Keep the first (usually most specific) reference rather than
         # creating a second anchor when the query repeats the same Điều without
         # its Khoản/Điểm suffix.
-        if not any(existing.article.casefold() == anchor.article.casefold() for existing in anchors):
+        if not any(
+            existing.article.casefold() == anchor.article.casefold()
+            and existing.document_number.casefold() == anchor.document_number.casefold()
+            and existing.document_title.casefold() == anchor.document_title.casefold()
+            for existing in anchors
+        ):
             anchors.append(anchor)
     for match in _APPENDIX_RE.finditer(text):
         appendix = f"Phụ lục {match.group(1).upper()}"
-        anchor = LegalAnchor(document_number=default_document, appendix=appendix)
+        anchor = LegalAnchor(
+            document_number=default_document,
+            document_title=default_document_title,
+            appendix=appendix,
+        )
         if not any(existing.key().casefold() == anchor.key().casefold() for existing in anchors):
             anchors.append(anchor)
     # A document name by itself is still an explicit anchor: downstream
     # rewriting must preserve it even when no Article is mentioned.
     if not anchors and default_document:
         anchors.append(LegalAnchor(document_number=default_document))
+    elif not anchors and default_document_title:
+        anchors.append(LegalAnchor(document_title=default_document_title))
     return anchors
 
 

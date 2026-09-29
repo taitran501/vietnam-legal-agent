@@ -153,6 +153,75 @@ async def test_critic_legacy_unavailable_reason_is_not_promoted_to_approval(
     assert verdict.verification_status is VerificationStatus.VERIFICATION_UNAVAILABLE
 
 
+@pytest.mark.asyncio
+async def test_critic_receives_versioned_lookup_scope_and_current_status_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _CapturingModel:
+        def __init__(self) -> None:
+            self.payloads: list[dict[str, object]] = []
+
+        def with_structured_output(self, _schema):
+            return self
+
+        async def ainvoke(self, messages):
+            import json
+
+            self.payloads.append(json.loads(messages[1][1].partition("\n")[2]))
+            return {"approved": True, "reason_code": "ok"}
+
+    import epr_agent.infra.llm_instances
+
+    model = _CapturingModel()
+    monkeypatch.setattr(epr_agent.infra.llm_instances, "get_llm_smart", lambda: model)
+    document = _document()
+    document.metadata.update({
+        "Document_Number": "08/2022/NĐ-CP",
+        "source_title": "Nghị định số 08/2022/NĐ-CP",
+    })
+    reviewer = LegalCriticReviewer()
+
+    await reviewer.review(
+        "Điều 77 Nghị định 08/2022/NĐ-CP quy định gì?",
+        "Theo Điều 77 [1]. Hiệu lực hiện hành chưa được xác minh.",
+        [document],
+        source_version_only=True,
+    )
+    await reviewer.review(
+        "Điều 77 Nghị định 08/2022/NĐ-CP hiện nay còn hiệu lực không?",
+        "Chưa xác minh được hiệu lực hiện hành.",
+        [document],
+        source_version_only=False,
+    )
+
+    assert model.payloads[0]["source_version_only"] is True
+    assert model.payloads[1]["source_version_only"] is False
+
+
+@pytest.mark.asyncio
+async def test_guardrails_pass_source_version_scope_to_critic() -> None:
+    document = _document()
+    document.metadata.update({
+        "Document_Number": "08/2022/NĐ-CP",
+        "source_title": "Nghị định số 08/2022/NĐ-CP",
+    })
+    critic = StaticLegalCriticReviewer()
+
+    valid, reason, _answer, _citations = await AgentGuardrails.check_output(
+        "Nội dung theo Điều 77 [1].",
+        [document],
+        query="Điều 77 Nghị định 08/2022/NĐ-CP quy định gì?",
+        require_evidence=True,
+        verification_policy=VerificationPolicy.LEGAL_CORPUS,
+        task_type="legal_lookup",
+        critic_reviewer=critic,
+    )
+
+    assert valid is True
+    assert reason == "ok"
+    assert critic.source_version_only_calls == [True]
+
+
 class _SequenceVerifier:
     def __init__(self) -> None:
         self.calls = 0

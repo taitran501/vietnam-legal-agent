@@ -46,6 +46,16 @@ def test_factual_corporate_and_instrument_questions_do_not_open_case_forms():
     assert classify_task("Luật số 08/2026/QH16 có hiệu lực từ ngày nào?") == TaskType.LEGAL_LOOKUP
 
 
+def test_general_obligation_and_legal_basis_questions_do_not_open_case_forms():
+    query = (
+        "Công ty tôi nhập khẩu chai nhựa PET để đóng nước bán tại Việt Nam. "
+        "Doanh nghiệp cần kiểm tra những nghĩa vụ EPR nào, và căn cứ pháp lý ở đâu?"
+    )
+
+    assert classify_task(query) == TaskType.LEGAL_LOOKUP
+    assert classify_route(query).value == "legal_lookup"
+
+
 def test_non_legal_unknown_query_is_closed_before_retrieval():
     assert classify_route("Giá Bitcoin hôm nay là bao nhiêu?").value == "out_of_scope"
 
@@ -61,6 +71,8 @@ def test_pure_greetings_and_identity_queries_are_chitchat():
     assert classify_route("bạn là ai").value == "chitchat"
     assert is_greeting("chào bạn") is True
     assert classify_route("chào bạn").value == "chitchat"
+    assert is_greeting("Xin chào, bạn có thể giúp tôi những gì?") is True
+    assert classify_route("Xin chào, bạn có thể giúp tôi những gì?").value == "chitchat"
 
 
 

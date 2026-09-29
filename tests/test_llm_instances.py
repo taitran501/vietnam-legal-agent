@@ -8,10 +8,13 @@ Tests cover:
 - Streaming configuration
 """
 
+from types import SimpleNamespace
+
 import pytest
 
-from epr_agent.config import get_settings
+from epr_agent.config import Settings, get_settings
 from epr_agent.infra.llm_instances import (
+    LocalSentenceTransformerEmbeddings,
     get_embeddings,
     get_llm_fast,
     get_llm_router,
@@ -24,6 +27,8 @@ from epr_agent.infra.llm_instances import (
 def deterministic_provider_configuration(monkeypatch: pytest.MonkeyPatch):
     """Construct provider clients without relying on a developer's local .env."""
     monkeypatch.setenv("OPENAI_API_KEY", "ci-unit-test-placeholder")
+    monkeypatch.setenv("EMBEDDING_PROVIDER", "auto")
+    monkeypatch.setenv("EMBEDDING_PROFILE", "openai-text-embedding-3-small-v1")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -122,6 +127,53 @@ class TestLLMInstances:
         embeddings = get_embeddings()
         model_name = getattr(embeddings, "model_name", getattr(embeddings, "model", ""))
         assert model_name in ["darklethelong/vnlegal-lal", "text-embedding-3-small", "bkai-foundation-models/vietnamese-bi-encoder"]
+
+    def test_local_provider_rejects_openai_index_profile(self):
+        with pytest.raises(ValueError, match="Query and indexed vectors must use the same model"):
+            Settings(
+                embedding_provider="local",
+                embedding_profile="openai-text-embedding-3-small-v1",
+                openai_api_key="ci-unit-test-placeholder",
+            )
+
+    def test_auto_provider_does_not_fallback_to_a_different_vector_space(self, monkeypatch):
+        from epr_agent.infra import llm_instances
+
+        monkeypatch.setattr(
+            llm_instances,
+            "get_settings",
+            lambda: SimpleNamespace(
+                embedding_provider="auto",
+                embedding_profile="openai-text-embedding-3-small-v1",
+                openai_api_key="",
+                embedding_model="text-embedding-3-small",
+                embedding_dimensions=1536,
+                local_embedding_model="darklethelong/vnlegal-lal",
+            ),
+        )
+        get_embeddings.cache_clear()
+
+        with pytest.raises(RuntimeError, match="OPENAI_API_KEY is required for embedding profile"):
+            get_embeddings()
+
+    def test_auto_provider_selects_local_only_for_a_local_index_profile(self, monkeypatch):
+        from epr_agent.infra import llm_instances
+
+        monkeypatch.setattr(
+            llm_instances,
+            "get_settings",
+            lambda: SimpleNamespace(
+                embedding_provider="auto",
+                embedding_profile="vnlegal-lal-v1",
+                openai_api_key="configured-but-not-used",
+                embedding_model="text-embedding-3-small",
+                embedding_dimensions=1024,
+                local_embedding_model="darklethelong/vnlegal-lal",
+            ),
+        )
+        get_embeddings.cache_clear()
+
+        assert isinstance(get_embeddings(), LocalSentenceTransformerEmbeddings)
 
     def test_all_llm_instances_have_timeout(self):
         """All 4 LLM instances should have request_timeout=30."""

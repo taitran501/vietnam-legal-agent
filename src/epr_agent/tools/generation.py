@@ -13,6 +13,7 @@ import logging
 import re
 import unicodedata
 from html.parser import HTMLParser
+from itertools import pairwise
 from typing import Any, Protocol
 from urllib.parse import parse_qs, parse_qsl, unquote, urlencode, urljoin, urlsplit, urlunsplit
 
@@ -328,6 +329,104 @@ def _search_duckduckgo_free(query: str, domains: list[str]) -> list[dict[str, An
     return results
 
 
+_NUMBERED_LEGAL_PARAGRAPH_RE = re.compile(r"(?m)^\s*\d{1,2}\.\s+")
+_LEGAL_QUALIFIER_RE = re.compile(r"\b(?:trừ|ngoại trừ)\b", re.IGNORECASE)
+_LEGAL_CROSS_REFERENCE_RE = re.compile(
+    r"\bđiểm\s+([a-z])\s+khoản\s+(\d+)\b|\bkhoản\s+(\d+)\b",
+    re.IGNORECASE,
+)
+_LEGAL_QUALIFIER_STOP_WORDS = {
+    "các", "cho", "có", "của", "đến", "điểm", "điều", "được", "hoặc", "khoản",
+    "không", "là", "một", "này", "nếu", "như", "phải", "quy", "trong", "trừ",
+    "tại", "theo", "thì", "trường", "và", "vào", "về", "với",
+}
+
+
+def _legal_terms(value: str) -> list[str]:
+    return [
+        token
+        for token in re.findall(r"[\wÀ-ỹĐđ]+", value.casefold())
+        if len(token) >= 2 and token not in _LEGAL_QUALIFIER_STOP_WORDS and not token.isdigit()
+    ]
+
+
+def _adjacent_legal_term_pairs(value: str) -> set[str]:
+    terms = _legal_terms(value)
+    return {f"{left} {right}" for left, right in pairwise(terms)}
+
+
+def _answer_preserves_source_exceptions(answer: str, documents: list[DocumentRecord]) -> bool:
+    """Reject a synthesis that states a qualified duty without its exception.
+
+    Cross-referenced exceptions are resolved from the same retrieved document
+    where possible, so a related option in another answer sentence does not
+    accidentally qualify an unconditional duty.
+    """
+
+    answer_sentences = [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+|[\r\n]+", answer or "")
+        if sentence.strip()
+    ]
+    for document in documents:
+        source = document.content or ""
+        if source.lstrip().startswith("[") and "\n\n" in source:
+            source = source.split("\n\n", 1)[1]
+        paragraph_starts = list(_NUMBERED_LEGAL_PARAGRAPH_RE.finditer(source))
+        for index, start in enumerate(paragraph_starts):
+            end = paragraph_starts[index + 1].start() if index + 1 < len(paragraph_starts) else len(source)
+            paragraph = source[start.end():end].strip()
+            qualifier = _LEGAL_QUALIFIER_RE.search(paragraph)
+            duty = re.search(r"\b(?:phải|có\s+nghĩa\s+vụ|có\s+trách\s+nhiệm)\b(.+)$", paragraph[:qualifier.start()] if qualifier else "", re.IGNORECASE | re.DOTALL)
+            if qualifier is None or duty is None:
+                continue
+
+            duty_terms = set(_legal_terms(duty.group(1)))
+            if not duty_terms:
+                continue
+
+            qualifier_text = paragraph[qualifier.start():]
+            reference = _LEGAL_CROSS_REFERENCE_RE.search(qualifier_text)
+            exception_text = qualifier_text
+            reference_label = ""
+            if reference:
+                if reference.group(1):
+                    letter, paragraph_number = reference.group(1).casefold(), reference.group(2)
+                    reference_label = f"điểm {letter} khoản {paragraph_number}"
+                    point_re = re.compile(
+                        rf"(?m)(?<!\w){re.escape(letter)}\)\s*(.+?)(?=\n\s*[a-z]\)\s|\n\s*\d{{1,2}}\.\s|\Z)",
+                        re.IGNORECASE | re.DOTALL,
+                    )
+                    resolved = point_re.search(source)
+                    if resolved:
+                        exception_text = resolved.group(1)
+                else:
+                    reference_label = f"khoản {reference.group(3)}"
+
+            exception_pairs = _adjacent_legal_term_pairs(exception_text)
+            if reference and reference.group(1):
+                resolved_terms = _legal_terms(exception_text)
+                exception_pairs = {
+                    f"{left} {right}"
+                    for left, right in pairwise(resolved_terms[:6])
+                }
+            reference_casefold = reference_label.casefold()
+            duty_sentences = [
+                sentence
+                for sentence in answer_sentences
+                if len(duty_terms.intersection(_legal_terms(sentence))) >= min(2, len(duty_terms))
+            ]
+            for sentence in duty_sentences:
+                sentence_folded = sentence.casefold()
+                has_qualifier = bool(_LEGAL_QUALIFIER_RE.search(sentence))
+                states_referenced_case = bool(reference_casefold and reference_casefold in sentence_folded)
+                states_resolved_exception = any(pair in sentence_folded for pair in exception_pairs)
+                if not has_qualifier or not (states_referenced_case or states_resolved_exception):
+                    return False
+
+    return True
+
+
 class GenerationGateway(Protocol):
     async def chitchat(self, query: str, history: list[dict[str, Any]]) -> str: ...
 
@@ -382,24 +481,11 @@ def chitchat_response(question: str, chat_history: str) -> str:
 
     from epr_agent.infra.llm_instances import get_llm_fast
 
-    _chitchat_system = """Bạn là **Trợ lý Pháp luật Việt Nam** — hệ thống tư vấn và tra cứu pháp luật thông minh, toàn diện.
+    _chitchat_system = """Bạn là trợ lý tra cứu pháp luật Việt Nam.
 
-PHẠM VI NĂNG LỰC & CHỦ ĐỀ CHUYÊN MÔN:
-Bạn hỗ trợ tra cứu, đối chiếu căn cứ và hướng dẫn thủ tục trên toàn bộ hệ thống Pháp luật Việt Nam:
-- 🏡 **Đất đai & Bất động sản**: Cấp sổ đỏ/sổ hồng, đất khai hoang, tranh chấp, chuyển nhượng (Luật Đất đai 2024).
-- 💼 **Lao động & Việc làm**: Hợp đồng lao động, thử việc, tiền lương, kỷ luật, chế độ BHXH/BHYT (Bộ luật Lao động 2019, Luật BHXH).
-- ⚖️ **Dân sự & Hợp đồng**: Đặt cọc thuê nhà/mua bán, bồi thường, hợp đồng dân sự, thừa kế (Bộ luật Dân sự 2015).
-- 🏢 **Doanh nghiệp & Thương mại**: Thành lập công ty, hộ kinh doanh, cổ phần, phạt hợp đồng (Luật Doanh nghiệp, Luật Thương mại).
-- 💰 **Thuế & Tài chính**: Thuế TNCN, giảm trừ gia cảnh, thuế TNDN, thuế GTGT (Luật Quản lý thuế, Luật Thuế TNCN).
-- 🌿 **Môi trường & Tuân thủ EPR**: Trách nhiệm tái chế bao bì/sản phẩm, đóng góp Quỹ BVMT, Nghị định 08/2022/NĐ-CP, Luật BVMT 2020.
-- 🚗 **Giao thông, Hành chính, PCCC, An toàn thực phẩm**: Quy chuẩn VSATP, phòng cháy chữa cháy, khiếu nại quyết định hành chính.
+Trả lời đúng trọng tâm, bằng tiếng Việt tự nhiên và ngắn gọn. Với lời chào hoặc cảm ơn, đáp lại lịch sự trong một câu. Nếu người dùng hỏi bạn có thể giúp gì, nói rằng bạn có thể tra cứu và giải thích các văn bản có trong nguồn dữ liệu hiện có; không tuyên bố bao quát toàn bộ pháp luật, không liệt kê lĩnh vực chưa được kiểm chứng, và không tự đưa câu hỏi mẫu. Mời người dùng nêu vấn đề cụ thể nếu phù hợp.
 
-QUY TẮC PHẢN HỒI:
-1. Khi người dùng hỏi "bạn là ai / bạn có thể làm gì / bạn hỗ trợ những gì" → giới thiệu rõ bản thân là **Trợ lý Pháp luật Việt Nam**, tóm tắt các lĩnh vực chính bạn hỗ trợ và gợi ý 2-3 câu hỏi mẫu thực tế.
-2. Với câu hỏi chào hỏi / cảm ơn / tạm biệt → phản hồi thân thiện, lịch sự và sẵn sàng hỗ trợ giải đáp bất kỳ vướng mắc pháp luật nào.
-3. Với câu hỏi định hướng chung (ví dụ: "cái gì cần quan tâm nhất", "tôi nên bắt đầu từ đâu", "cần lưu ý gì", "hướng dẫn tôi") → Giải thích rằng vấn đề cần quan tâm hàng đầu tùy thuộc vào tư cách người hỏi (Cá nhân, Người lao động, Hộ kinh doanh hay Doanh nghiệp). Nêu ngắn gọn 2-3 điểm mấu chốt (ví dụ: Rà soát điều khoản hợp đồng & đặt cọc, Tuân thủ nghĩa vụ thuế & bảo hiểm lao động, hoặc Bảo đảm pháp lý tài sản/đất đai), sau đó chủ động mời người dùng chia sẻ cụ thể ngành nghề hoặc tình huống đang gặp phải.
-4. Luôn đọc kỹ ngữ cảnh lịch sử hội thoại trước khi phản hồi.
-5. Giọng điệu khách quan, chuẩn mực, dễ hiểu và tôn trọng người dân/doanh nghiệp.
+Không trả lời nội dung pháp lý như thể đã tra cứu nguồn khi lượt này chưa có căn cứ. Không bịa điều luật, thủ tục, mức phí hoặc phạm vi hỗ trợ. Dùng lịch sử hội thoại để hiểu lời nhắn ngắn; không lặp lại thông tin không cần thiết.
 
 Lịch sử hội thoại:
 {chat_history}"""
@@ -433,7 +519,9 @@ class EvidenceGenerationGateway:
         # 1. Primary: Intelligent LLM Legal RAG Synthesis
         synthesized = await self._synthesize_legal_route_answer(query, documents)
         if synthesized:
-            return synthesized
+            if _answer_preserves_source_exceptions(synthesized, documents):
+                return synthesized
+            logger.info("Legal synthesis omitted a source exception; using extractive answer")
 
         # 2. Fallback: Extractive summary
         return self._compose_legal_route_answer(documents)
@@ -614,21 +702,10 @@ class EvidenceGenerationGateway:
 
         context = "\n".join(context_parts)
         system_prompt = (
-            "Bạn là Trợ lý Pháp luật Việt Nam chuyên nghiệp.\n\n"
-            "Nhiệm vụ của bạn là đọc kỹ các điều khoản pháp luật được cung cấp dưới đây và trả lời tình huống thực tế của người dùng một cách CHÍNH XÁC, DỄ HIỂU, CÓ CẤU TRÚC RÕ RÀNG.\n\n"
-            "CẤU TRÚC BẮT BUỘC CỦA CÂU TRẢ LỜI:\n"
-            "### ✅ Kết luận sơ bộ\n"
-            "- Trả lời TRỰC DIỆN câu hỏi của người dùng ngay từ 1-2 câu đầu tiên (CÓ THỂ / KHÔNG THỂ / ĐƯỢC PHÉP / KHÔNG ĐƯỢC PHÉP / THUỘC DIỆN NÀO) kèm trích dẫn nguồn [1].\n\n"
-            "### 📋 Điều kiện & Phân tích tình huống\n"
-            "- Liệt kê các điều kiện cụ thể để người dùng đối chiếu dưới dạng gạch đầu dòng rõ ràng, mỗi ý đều có trích dẫn [1] hoặc [2].\n"
-            "- Về đối chiếu mốc năm: Phải đọc kỹ các khoản của điều luật và chọn đúng khoản chứa mốc năm của người dùng (ví dụ: năm 1996 thuộc giai đoạn từ ngày 15/10/1993 đến trước ngày 01/7/2014 theo Khoản 3 Điều 138), tuyệt đối không nhầm sang mốc trước năm 1980 [2].\n\n"
-            "### 💰 Nghĩa vụ tài chính & Thủ tục cần làm\n"
-            "- Nêu các bước tiếp theo người dùng cần làm (nơi nộp hồ sơ, giấy tờ cần chuẩn bị) [1].\n"
-            "- Nêu nghĩa vụ tài chính hoặc lệ phí nếu có theo quy định [1] hoặc [2].\n\n"
-            "QUY TẮC BẮT BUỘC:\n"
-            "- LUÔN gắn chỉ số trích dẫn [1], [2], [3] tương ứng với tài liệu nguồn ở cuối mỗi ý hoặc phát biểu quan trọng.\n"
-            "- Tuyệt đối không copy-paste nguyên khối văn bản thô, hãy giải thích bằng ngôn ngữ tự nhiên, súc tích, mạch lạc cho người dân.\n\n"
-            "TÀI LIỆU PHÁP LUẬT ĐÃ TRUY XUẤT:\n"
+            "Bạn là trợ lý tra cứu pháp luật Việt Nam. Trả lời trực tiếp đúng câu hỏi bằng tiếng Việt rõ ràng, ngắn gọn.\n\n"
+            "Chỉ dùng thông tin có trong tài liệu được cung cấp. Gắn chỉ số [n] vào từng nhận định pháp lý và chỉ trích dẫn tài liệu thực sự hỗ trợ nhận định đó. Giữ nguyên điều kiện, ngoại lệ, ngưỡng, thời điểm, đối tượng áp dụng và các lựa chọn thay thế nêu trong nguồn; không biến nghĩa vụ có điều kiện thành nghĩa vụ chung. Khi nguồn dẫn chiếu sang điểm hoặc khoản khác, hãy đọc phần được dẫn chiếu rồi nêu ngắn gọn ngoại lệ ngay trong cùng câu với nghĩa vụ. Nếu không thể xác định ngoại lệ, bỏ nhận định tuyệt đối đó hoặc nói rõ giới hạn. Không tự thêm thủ tục, cơ quan tiếp nhận, giấy tờ, phí, thời hạn, ngoại lệ hoặc hướng xử lý nếu tài liệu không nêu. Không suy đoán hiệu lực hiện hành hay sửa đổi về sau khi nguồn không xác nhận.\n\n"
+            "Nếu người dùng chỉ hỏi một điều khoản, tóm tắt đúng phần liên quan trong 1–4 câu; không tạo các mục kết luận, thủ tục hay tài chính nếu không cần. Chỉ dùng tiêu đề khi câu hỏi có nhiều vấn đề cần phân tích. Nếu nguồn không trả lời phần được hỏi, nêu rõ giới hạn đó thay vì suy diễn.\n\n"
+            "TÀI LIỆU ĐÃ TRUY XUẤT:\n"
             f"{context}"
         )
 

@@ -1,5 +1,6 @@
 import pytest
 
+import epr_agent.tools.cache as cache_module
 from epr_agent.domain.models import TaskType
 from epr_agent.domain.verification import VerificationStatus
 from epr_agent.tools.cache import CachedAnswer, InMemoryAnswerCache, ScopedAnswerCache
@@ -112,3 +113,31 @@ async def test_cache_key_refresh_makes_previous_readiness_snapshot_a_miss():
 
     assert value is None
     assert "manifest-replaced" in new_key
+
+
+@pytest.mark.asyncio
+async def test_unavailable_redis_answer_cache_times_out_and_temporarily_fails_open(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import asyncio
+
+    import epr_agent.infra.session_store
+
+    calls = 0
+
+    async def slow_redis():
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(1)
+
+    monkeypatch.setattr(epr_agent.infra.session_store, "get_redis", slow_redis)
+    monkeypatch.setattr(cache_module, "_REDIS_CACHE_OPERATION_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(cache_module, "_redis_cache_retry_at", 0.0)
+
+    assert await cache_module.RedisExactAnswerCache().lookup("legal:answer:test") is None
+    assert calls == 1
+    assert cache_module._redis_cache_retry_at > 0
+
+    # The open circuit avoids paying the timeout again on the next cache miss.
+    assert await cache_module.RedisExactAnswerCache().lookup("legal:answer:test") is None
+    assert calls == 1

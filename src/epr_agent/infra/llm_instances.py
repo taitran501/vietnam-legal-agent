@@ -126,21 +126,37 @@ class LocalSentenceTransformerEmbeddings(Embeddings):
 def get_embeddings() -> Embeddings:
     """Configured embedding profile (OpenAI or Local VNLegal-LAL) used by legal vector collections."""
     settings = get_settings()
+    local_profiles = {
+        "vnlegal-lal-v1",
+        "vietnamese-legal-embedding-v1",
+        "bge-m3-v1",
+    }
+    local_providers = {"local", "sentence_transformers"}
+    provider = settings.embedding_provider.strip().casefold()
 
-    # Explicit local provider or auto without OpenAI key -> use local model
-    if (
-        settings.embedding_provider in {"local", "sentence_transformers"}
-        or settings.embedding_profile in {"vnlegal-lal-v1", "vietnamese-legal-embedding-v1", "bge-m3-v1"}
-        or (settings.embedding_provider == "auto" and not settings.openai_api_key)
-    ):
+    # The vector profile describes the model used to build the index. Never
+    # switch to a different embedding space just because a key is missing.
+    if provider in local_providers or settings.embedding_profile in local_profiles:
+        if settings.embedding_profile == "openai-text-embedding-3-small-v1":
+            raise RuntimeError(
+                "Embedding provider/profile mismatch: the law collection uses "
+                "openai-text-embedding-3-small-v1, but a local model was selected."
+            )
+        if provider == "openai":
+            raise RuntimeError(
+                f"Embedding provider/profile mismatch: {settings.embedding_profile} requires a local model."
+            )
         model_name = settings.local_embedding_model or "darklethelong/vnlegal-lal"
         return LocalSentenceTransformerEmbeddings(model_name=model_name)
 
-    # Explicit openai provider requires a key
-    if settings.embedding_provider == "openai" and not settings.openai_api_key:
+    if provider not in {"openai", "auto"}:
+        raise RuntimeError(f"Unsupported EMBEDDING_PROVIDER: {settings.embedding_provider}")
+    if settings.embedding_profile != "openai-text-embedding-3-small-v1":
+        raise RuntimeError(f"Unsupported embedding profile: {settings.embedding_profile}")
+    if not settings.openai_api_key:
         raise RuntimeError(
-            "OPENAI_API_KEY is required for OpenAI embeddings. "
-            "Set embedding_provider='local' or configure OPENAI_API_KEY."
+            "OPENAI_API_KEY is required for embedding profile "
+            "openai-text-embedding-3-small-v1. Configure the key or index the corpus with a matching local profile."
         )
 
     return OpenAIEmbeddings(model=settings.embedding_model, dimensions=settings.embedding_dimensions)

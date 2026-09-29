@@ -310,11 +310,14 @@ class Settings(BaseSettings):
             "vietnamese-legal-embedding-v1": (768, "bqbbao6/vietnamese-legal-embedding"),
             "bge-m3-v1": (1024, "BAAI/bge-m3"),
         }
+        local_providers = {"local", "sentence_transformers"}
+        local_profiles = set(_valid_profiles) - {"openai-text-embedding-3-small-v1"}
+        provider = self.embedding_provider.strip().casefold()
         if self.embedding_profile in _valid_profiles:
             expected_dim, _ = _valid_profiles[self.embedding_profile]
             if self.embedding_dimensions != expected_dim:
                 self.embedding_dimensions = expected_dim
-        elif self.embedding_provider in {"local", "sentence_transformers"}:
+        elif provider in local_providers:
             pass  # Custom local model
         elif (
             self.embedding_profile != "openai-text-embedding-3-small-v1"
@@ -324,6 +327,15 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"Unsupported embedding profile: {self.embedding_profile}. "
                 f"Supported: {list(_valid_profiles.keys())}"
+            )
+        if provider in local_providers and self.embedding_profile == "openai-text-embedding-3-small-v1":
+            raise ValueError(
+                "EMBEDDING_PROVIDER selects a local model, but the configured corpus profile is "
+                "openai-text-embedding-3-small-v1. Query and indexed vectors must use the same model."
+            )
+        if provider == "openai" and self.embedding_profile in local_profiles:
+            raise ValueError(
+                f"EMBEDDING_PROFILE={self.embedding_profile} requires a local embedding provider."
             )
         if self.agent_pipeline_version not in {"pipeline-v3", "pipeline-v4", "pipeline-agent"}:
             raise ValueError("AGENT_PIPELINE_VERSION must be pipeline-v3, pipeline-v4, or pipeline-agent")

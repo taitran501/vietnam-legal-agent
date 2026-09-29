@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 import pytest
-from tests.agent.v4_test_support import MemoryHistory, NoEvidenceRetrieval, runtime
+from tests.agent.v4_test_support import (
+    IssueAwareRetrieval,
+    MemoryHistory,
+    NoEvidenceRetrieval,
+    legal_document,
+    runtime,
+)
 from tests.eval.pipeline_v4_manifest import (
     ASSESSMENT_COMPLETE_CASES,
     ASSESSMENT_MISSING_CASES,
@@ -15,7 +21,12 @@ from tests.eval.pipeline_v4_manifest import (
 )
 
 from epr_agent.agent.v4 import _fact_values
-from epr_agent.domain.epr_rules import extract_explicit_epr_facts
+from epr_agent.domain.epr_rules import (
+    extract_explicit_epr_facts,
+    follow_up_question,
+    missing_fact_keys,
+    required_fact_keys,
+)
 from epr_agent.domain.tasks import classify_route, preserve_explicit_anchors
 from epr_agent.domain.v4 import FactSource
 
@@ -66,6 +77,76 @@ def test_v4_fact_extraction_keeps_user_provenance_and_does_not_infer_commercial_
 def test_v4_packaging_other_category_is_explicitly_extractable() -> None:
     facts = extract_explicit_epr_facts("bao bì nhựa dùng cho hàng hóa khác")
     assert facts["packaged_goods_category"].value == "other"
+
+
+@pytest.mark.unit
+def test_v4_understands_bottled_water_and_negative_reuse_without_requesting_recovery_rate() -> None:
+    facts = extract_explicit_epr_facts(
+        "Công ty sản xuất nước đóng chai bán tại Việt Nam, bao bì chính là chai PET; "
+        "doanh thu 1 tỷ đồng mỗi năm và bao bì không được thu hồi để tái sử dụng."
+    )
+
+    assert facts["packaged_goods_category"].value == "thuc_pham"
+    assert facts["object_kind"].value == "commercial_packaging"
+    assert facts["product_group"].value == "bao_bi"
+    assert facts["reused_by_producer"].value == "no"
+    assert facts["annual_revenue_vnd"].value == "1000000000"
+    assert "recovery_rate" not in required_fact_keys(facts)
+
+
+@pytest.mark.unit
+def test_v4_infers_pet_bottle_as_packaging_from_a_normal_user_prompt() -> None:
+    facts = extract_explicit_epr_facts(
+        "Công ty tôi sản xuất nước đóng chai bán tại Việt Nam, chai PET. Tôi cần làm gì để tuân thủ EPR?"
+    )
+
+    assert facts["business_role"].value == "manufacturer"
+    assert facts["object_kind"].value == "commercial_packaging"
+    assert facts["product_group"].value == "bao_bi"
+    assert facts["packaged_goods_category"].value == "thuc_pham"
+    assert facts["material"].value == "pet"
+    assert facts["market_placement"].value == "vietnam_market"
+    assert missing_fact_keys(facts) == ["annual_revenue_vnd", "reused_by_producer"]
+
+
+@pytest.mark.unit
+def test_v4_asks_a_plain_language_question_for_an_unidentified_epr_object() -> None:
+    question = follow_up_question(["object_kind", "product_group"])
+
+    assert "sản phẩm hay bao bì" in question
+    assert "chai PET" in question
+
+
+@pytest.mark.unit
+def test_v4_requests_recovery_rate_only_when_reuse_is_affirmative() -> None:
+    facts = extract_explicit_epr_facts(
+        "Nhà sản xuất bao bì thực phẩm bán tại Việt Nam, thu hồi bao bì để tái sử dụng."
+    )
+
+    assert facts["reused_by_producer"].value == "yes"
+    assert "recovery_rate" in required_fact_keys(facts)
+
+
+@pytest.mark.asyncio
+async def test_pending_epr_readiness_does_not_preempt_a_labor_case_intake() -> None:
+    from epr_agent.tools.legal_readiness import SyntheticReadyLegalReadinessGate
+
+    app, _, _ = runtime()
+    app.deps.legal_readiness = SyntheticReadyLegalReadinessGate(
+        ready=False,
+        manifest_sha256="pending-epr-review",
+    )
+
+    state = await app.run(
+        query="Tôi bị công ty sa thải khi đang nghỉ thai sản, việc này có đúng luật không?",
+        user_id="labor-user",
+        conversation_id="labor-case-with-pending-epr-review",
+    )
+
+    assert state["route"] == "case_assessment"
+    assert state["case_state"]["legal_domain"] == "labor"
+    assert state["termination_reason"] == "awaiting_user_input"
+    assert state.get("citation_error", "") != "legal_review_pending"
 
 
 @pytest.mark.unit
@@ -227,6 +308,40 @@ async def test_v4_insufficient_evidence_never_completes(case: dict[str, object])
     assert state["termination_reason"] == "insufficient_evidence"
     assert state["outcome"] != "completed"
     assert not any("faq" in str(request).casefold() for request in retrieval.requests)
+
+
+@pytest.mark.asyncio
+async def test_v4_issue_coverage_ignores_body_mentions_and_hides_unrelated_sources() -> None:
+    decoy = legal_document(
+        "Điều 139",
+        extra="Đoạn này nhắc Điều 77, Điều 79, Điều 80, Điều 81 và Phụ lục XXII nhưng không thuộc các căn cứ đó.",
+    )
+    retrieval = IssueAwareRetrieval([decoy])
+    app, _, _ = runtime(retrieval=retrieval)
+    state = await app.run(
+        query="Doanh nghiệp sản xuất bao bì thực phẩm tại Việt Nam cần làm gì theo EPR?",
+        user_id="anchor-coverage-user",
+        conversation_id="anchor-coverage-decoy",
+        intent_hint="compliance_checklist",
+        case_patch={
+            "business_role": "manufacturer",
+            "object_kind": "commercial_packaging",
+            "product_group": "bao_bi",
+            "packaged_goods_category": "thuc_pham",
+            "material": "pet",
+            "market_placement": "vietnam_market",
+            "activity_purpose": "commercial",
+            "annual_revenue_vnd": "1000000000",
+            "reused_by_producer": "no",
+        },
+    )
+
+    assert state["outcome"] == "insufficient_evidence"
+    assert state["safe_stop_reason"] == "incomplete_issue_coverage"
+    assert state["covered_issues"] == []
+    assert state["evidence"] == []
+    assert not state.get("citations")
+    assert not state.get("sources")
 
 
 @pytest.mark.asyncio

@@ -30,6 +30,11 @@ _APPENDIX_RE = re.compile(
     r"(?:phụ\s*lục|phu\s*luc)\s*(?:số\s*)?(?:[ivxlcdm]+|\d+)",
     re.IGNORECASE,
 )
+_EPR_INSTRUMENT_NUMBERS = frozenset({
+    "08/2022/nđ-cp",
+    "05/2025/nđ-cp",
+    "48/2026/nđ-cp",
+})
 
 
 class ReadinessStatus(StrEnum):
@@ -312,6 +317,42 @@ def _document_scope_labels(document: DocumentRecord) -> set[str]:
     return labels
 
 
+def _is_epr_readiness_document(document: DocumentRecord) -> bool:
+    """Return whether a record belongs to the EPR manifest's bounded scope.
+
+    The readiness manifest covers only EPR source material.  Article numbers
+    alone are not enough to identify that material because the same article
+    number exists in many Vietnamese statutes.
+    """
+
+    metadata = document.metadata or {}
+    corpus_id = str(metadata.get("Corpus_ID") or metadata.get("corpus_id") or "").strip().casefold()
+    if corpus_id == "epr":
+        return True
+
+    instrument_fields = (
+        "Document_Number",
+        "document_number",
+        "Document_Code",
+        "document_code",
+        "Instrument_Number",
+        "instrument_number",
+        "source_title",
+        "Source_Title",
+        "document_title",
+        "title",
+        "source",
+        "law_ref",
+    )
+    instrument_text = " ".join(str(metadata.get(key) or "") for key in instrument_fields)
+    instruments = {
+        re.sub(r"\s+", "", match.group(0)).casefold()
+        for match in re.finditer(r"\b\d{1,5}/\d{4}/[A-ZĐ0-9][A-ZĐ0-9-]*\b", instrument_text, re.IGNORECASE)
+    }
+    normalized_epr_numbers = {re.sub(r"\s+", "", item) for item in _EPR_INSTRUMENT_NUMBERS}
+    return bool(instruments.intersection(normalized_epr_numbers))
+
+
 class LegalReadinessGate:
     """Runtime gate backed by a re-audited independent manifest."""
 
@@ -341,22 +382,24 @@ class LegalReadinessGate:
         )
 
     def allows_documents(self, documents: Sequence[DocumentRecord]) -> tuple[bool, str]:
+        if not documents:
+            return False, VerificationStatus.INSUFFICIENT_EVIDENCE.value
+        scoped_documents = [document for document in documents if _is_epr_readiness_document(document)]
+        if not scoped_documents:
+            return True, "outside_readiness_scope"
+
         audit = self.audit()
         if audit.status is ReadinessStatus.INVALID:
             return False, "legal_readiness_invalid"
         if not audit.legally_ready:
-            if not documents:
-                return False, "legal_review_pending"
             ready = set(audit.reviewed_anchors)
         else:
-            if not documents:
-                return False, VerificationStatus.INSUFFICIENT_EVIDENCE.value
             ready = set(EPR_SCOPE_ANCHORS) | set(EPR_SCOPE_APPENDICES)
         normalized_ready = {_normalise_label(item) for item in ready}
         normalized_scope = {
             _normalise_label(item) for item in (*EPR_SCOPE_ANCHORS, *EPR_SCOPE_APPENDICES)
         }
-        for document in documents:
+        for document in scoped_documents:
             if document.source != "legal":
                 return False, "legal_readiness_source_not_legal"
             labels = _document_scope_labels(document)
@@ -397,6 +440,10 @@ class SyntheticReadyLegalReadinessGate:
         )
 
     def allows_documents(self, documents: Sequence[DocumentRecord]) -> tuple[bool, str]:
+        if not documents:
+            return False, VerificationStatus.INSUFFICIENT_EVIDENCE.value
+        if not self.ready and not any(_is_epr_readiness_document(document) for document in documents):
+            return True, "outside_readiness_scope"
         return (True, "ok") if self.ready else (False, "legal_review_pending")
 
 

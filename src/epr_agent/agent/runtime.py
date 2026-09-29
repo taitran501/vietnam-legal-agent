@@ -25,7 +25,6 @@ from epr_agent.agent.graph import (
 from epr_agent.domain.models import AgentState, DocumentRecord, TaskType, TerminationReason
 from epr_agent.domain.routes import RouteType, route_spec
 from epr_agent.domain.verification import VerificationPolicy, VerificationStatus
-from epr_agent.tools.legal_readiness import ReadinessStatus
 from epr_agent.tools.source_provenance import (
     canonical_source_snapshots,
     normalize_source,
@@ -850,70 +849,6 @@ class AgentWorkflowRuntime:
             )
         )
         route_policy = route_spec(route).verification_policy
-        if route_policy is VerificationPolicy.LEGAL_CORPUS and self.deps.legal_readiness is not None:
-            try:
-                readiness = self.deps.legal_readiness.audit()
-                legal_readiness_status = readiness.status.value
-                legal_readiness_sha = readiness.manifest_sha256
-                readiness_reason = (
-                    "legal_readiness_invalid"
-                    if readiness.status is ReadinessStatus.INVALID
-                    else "legal_review_pending"
-                    if readiness.status is not ReadinessStatus.READY
-                    else ""
-                )
-            except Exception:  # noqa: BLE001 - an unreadable gate is invalid
-                readiness_reason = "legal_readiness_invalid"
-                legal_readiness_status = ReadinessStatus.INVALID.value
-                legal_readiness_sha = self.deps.legal_readiness.manifest_sha256
-            if readiness_reason:
-                safe_msg = "Tính năng tư vấn pháp lý đang tạm dừng vì bộ căn cứ chưa hoàn tất thẩm định độc lập."
-                try:
-                    final = await finish_fast_path(
-                        safe_msg,
-                        source="error",
-                        termination_reason=TerminationReason.INSUFFICIENT_EVIDENCE.value,
-                        save_legacy_exchange=False,
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("Agent readiness-stop persistence failed: %s", exc)
-                    trace_session.finish(metadata={"error": "storage_unavailable"})
-                    yield storage_error_event("Không thể lưu kết quả. Vui lòng thử lại.")
-                    return
-                if final and final.get("status") == "stopped":
-                    yield stopped_event()
-                    return
-                verification_status = (
-                    VerificationStatus.VERIFICATION_UNAVAILABLE.value
-                    if readiness_reason == "legal_readiness_invalid"
-                    else VerificationStatus.INSUFFICIENT_EVIDENCE.value
-                )
-                trace_session.finish(
-                    metadata={
-                        "source": "error",
-                        "termination": TerminationReason.INSUFFICIENT_EVIDENCE.value,
-                        "reason_code": readiness_reason,
-                        "legal_readiness_status": legal_readiness_status,
-                        "legal_readiness_sha": legal_readiness_sha,
-                    }
-                )
-                yield {
-                    "type": "response_complete",
-                    "text": safe_msg,
-                    "documents": [],
-                    "citations": [],
-                    "source": "error",
-                    "stage": "complete",
-                    "pipeline_version": "pipeline-agent",
-                    "termination_reason": TerminationReason.INSUFFICIENT_EVIDENCE.value,
-                    "citation_error": readiness_reason,
-                    "safe_stop_reason": readiness_reason,
-                    "verification_status": verification_status,
-                    "legal_readiness_status": legal_readiness_status,
-                    "legal_readiness_sha": legal_readiness_sha,
-                    "trace_id": trace_id,
-                }
-                return
         if route.value == "chitchat":
             yield {"type": "status", "message": "Đang soạn câu trả lời…", "stage": "compose"}
             answer = await self.deps.generation.chitchat(query, snapshot.history)
@@ -1166,6 +1101,7 @@ class AgentWorkflowRuntime:
                     claim_verifier=self.deps.claim_verifier,
                     critic_reviewer=getattr(self.deps, "critic_reviewer", None),
                     verification_policy=route_policy,
+                    task_type=result.task_type,
                     enforce_legal_safety_circuit_breaker=self.deps.enforce_legal_safety_circuit_breaker,
                 )
             verification_error = _reason

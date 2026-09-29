@@ -4,14 +4,22 @@ import pytest
 
 from epr_agent.agent.graph import WorkflowDependencies, run_workflow
 from epr_agent.agent.planner import BoundedPlanner
-from epr_agent.domain.models import DocumentRecord
+from epr_agent.agent.understanding import StaticTaskUnderstandingGateway
+from epr_agent.domain.legal import explicit_anchors
+from epr_agent.domain.models import DocumentRecord, TaskType
+from epr_agent.domain.routes import RouteType
+from epr_agent.domain.tasks import TaskUnderstanding
 from epr_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
 from epr_agent.tools.evidence import EvidenceEvaluator
 from epr_agent.tools.generation import StaticGenerationGateway
 from epr_agent.tools.history import ContextSnapshot
 from epr_agent.tools.legal_readiness import SyntheticReadyLegalReadinessGate
 from epr_agent.tools.retrieval import StaticRetrievalGateway
-from epr_agent.tools.verifier import StaticClaimSupportVerifier
+from epr_agent.tools.verifier import (
+    LegalCriticVerdict,
+    StaticClaimSupportVerifier,
+    StaticLegalCriticReviewer,
+)
 
 
 class FakeHistory:
@@ -95,7 +103,7 @@ async def test_legal_lookup_uses_bounded_retrieval_and_verifies_citation():
 
 
 @pytest.mark.asyncio
-async def test_pending_legal_readiness_stops_before_retrieval_or_generation():
+async def test_pending_epr_readiness_is_checked_after_retrieval_and_stops_epr_evidence():
     deps = make_dependencies(
         legal=[legal_doc()],
         legal_readiness=SyntheticReadyLegalReadinessGate(ready=False, manifest_sha256="pending-manifest"),
@@ -112,8 +120,42 @@ async def test_pending_legal_readiness_stops_before_retrieval_or_generation():
     assert state["citation_error"] == "legal_review_pending"
     assert state["legal_readiness_status"] == "pending"
     assert state["legal_readiness_sha"] == "pending-manifest"
-    assert "retrieve_legal" not in state["action_sequence"]
+    assert "retrieve_legal" in state["action_sequence"]
+    assert "compose_answer" not in state["action_sequence"]
     assert state["source"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_pending_epr_readiness_does_not_block_an_unrelated_legal_source():
+    document = legal_doc()
+    document.content = "Người lao động có trình độ cao đẳng được thử việc tối đa sáu mươi ngày. " * 4
+    document.metadata.update(
+        {
+            "Dieu": "Điều 25. Thời gian thử việc",
+            "legal_anchor": "Điều 25",
+            "source": "Bộ luật Lao động số 45/2019/QH14",
+            "source_title": "Bộ luật Lao động số 45/2019/QH14",
+            "Document_Number": "45/2019/QH14",
+            "Corpus_ID": "labor",
+        }
+    )
+    deps = make_dependencies(
+        legal=[document],
+        generation=StaticGenerationGateway("Theo Điều 25, thời gian thử việc tối đa là sáu mươi ngày [1]."),
+        legal_readiness=SyntheticReadyLegalReadinessGate(ready=False, manifest_sha256="pending-manifest"),
+    )
+
+    state = await run_workflow(
+        "Thời gian thử việc tối đa theo Bộ luật Lao động là bao lâu?",
+        user_id="u1",
+        conversation_id="outside-readiness-scope",
+        deps=deps,
+    )
+
+    assert state["legal_readiness_status"] == "pending"
+    assert state["citation_error"] == "ok"
+    assert state["termination_reason"] == "answer_complete"
+    assert state["source"] == "legal"
 
 
 @pytest.mark.asyncio
@@ -269,6 +311,99 @@ async def test_one_citation_repair_is_allowed_then_workflow_finishes():
     assert state["repair_count"] == 1
     assert state["citation_valid"] is True
     assert "repair_answer" in state["action_sequence"]
+
+
+@pytest.mark.asyncio
+async def test_source_version_caveat_survives_a_citation_repair():
+    source = legal_doc()
+    source.metadata.update(
+        {
+            "Document_Number": "08/2022/NĐ-CP",
+            "Current_Law_Support": False,
+            "source_title": "Nghị định số 08/2022/NĐ-CP",
+        }
+    )
+    generation = StaticGenerationGateway(answer_text="Câu trả lời không hợp lệ [99].")
+    deps = make_dependencies(legal=[source], generation=generation)
+    critic = StaticLegalCriticReviewer()
+    deps.critic_reviewer = critic
+
+    state = await run_workflow(
+        "Điều 77 Nghị định 08/2022/NĐ-CP quy định gì?",
+        user_id="u1",
+        conversation_id="source-version-repair",
+        deps=deps,
+    )
+
+    assert state["termination_reason"] == "answer_complete"
+    assert state["evidence_assessment"]["source_version_only"] is True
+    assert state["answer"].endswith("hiệu lực hiện hành.")
+    assert critic.source_version_only_calls == [True]
+
+
+@pytest.mark.asyncio
+async def test_critic_correction_without_citation_is_anchored_and_keeps_source_version_caveat():
+    source = legal_doc()
+    source.metadata.update(
+        {
+            "Document_Number": "08/2022/NĐ-CP",
+            "Current_Law_Support": False,
+            "source_title": "Nghị định số 08/2022/NĐ-CP",
+        }
+    )
+    deps = make_dependencies(legal=[source])
+    deps.critic_reviewer = StaticLegalCriticReviewer(
+        verdict=LegalCriticVerdict(
+            approved=True,
+            corrected_answer="Theo Điều 77, quy định nêu đối tượng và lộ trình thực hiện trách nhiệm tái chế.",
+        )
+    )
+
+    state = await run_workflow(
+        "Điều 77 Nghị định 08/2022/NĐ-CP quy định gì?",
+        user_id="u1",
+        conversation_id="critic-correction-citation",
+        deps=deps,
+    )
+
+    assert state["termination_reason"] == "answer_complete"
+    assert state["citation_valid"] is True
+    assert "Điều 77 [1]" in state["answer"]
+    assert state["answer"].endswith("hiệu lực hiện hành.")
+
+
+@pytest.mark.asyncio
+async def test_evidence_gate_preserves_current_law_intent_removed_by_query_rewrite():
+    source = legal_doc()
+    source.metadata.update(
+        {
+            "Document_Number": "08/2022/NĐ-CP",
+            "Current_Law_Support": False,
+            "source_title": "Nghị định số 08/2022/NĐ-CP",
+        }
+    )
+    deps = make_dependencies(legal=[source])
+    deps.understanding = StaticTaskUnderstandingGateway(
+        TaskUnderstanding(
+            task_type=TaskType.LEGAL_LOOKUP,
+            route=RouteType.LEGAL_LOOKUP,
+            standalone_query="Nghị định 08/2022/NĐ-CP",
+            explicit_anchors=explicit_anchors("Nghị định 08/2022/NĐ-CP hiện còn hiệu lực không?"),
+            confidence=1.0,
+        )
+    )
+
+    state = await run_workflow(
+        "Nghị định 08/2022/NĐ-CP hiện còn hiệu lực không?",
+        user_id="u1",
+        conversation_id="preserve-current-law-intent",
+        deps=deps,
+    )
+
+    assert state["evidence_assessment"]["reason"] == "current_law_status_unverified"
+    assert state["termination_reason"] == "insufficient_evidence"
+    assert "hiệu lực hiện hành" in state["answer"]
+    assert deps.generation.calls == []
 
 
 @pytest.mark.asyncio

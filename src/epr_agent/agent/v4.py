@@ -36,6 +36,7 @@ from epr_agent.domain.epr_rules import (
     follow_up_question,
     legal_issues,
 )
+from epr_agent.domain.legal import parse_required_anchors
 from epr_agent.domain.legal_rules import (
     DOMAIN_REQUIRED_FIELDS,
     UniversalCaseFormResolver,
@@ -73,7 +74,11 @@ from epr_agent.domain.v4 import (
     WorkflowOutcome,
 )
 from epr_agent.domain.verification import VerificationPolicy, VerificationStatus
-from epr_agent.tools.evidence import build_citations, is_unresolved_current_law_source
+from epr_agent.tools.evidence import (
+    build_citations,
+    document_matches_anchor,
+    is_unresolved_current_law_source,
+)
 from epr_agent.tools.legal_readiness import LegalReadinessProvider, ReadinessStatus
 from epr_agent.tools.retrieval import RequiredAnchorParseError
 
@@ -208,16 +213,20 @@ def _hydrate_persisted_case(raw: dict[str, Any] | None) -> dict[str, Any] | None
 
 def _metadata_v4(state: AgentState) -> dict[str, Any]:
     data = _metadata(state)
+    case_state = state.get("case_state") or {}
+    query = str(state.get("standalone_query") or state.get("query") or "")
+    legal_domain = str(case_state.get("legal_domain") or detect_legal_domain(query))
+    is_epr_case = bool(case_state) and legal_domain == "epr"
     data.update(
         {
             "outcome": state.get("outcome", WorkflowOutcome.FAILED.value),
             "result_type": state.get("result_type", ResultType.NONE.value),
             "required_issues": state.get("required_issues", []),
             "covered_issues": state.get("covered_issues", []),
-            "rule_pack_version": EPR_RULE_PACK_VERSION,
-            "rule_id": state.get("rule_id", EPR_RULE_ID),
-            "effective_dates": EPR_EFFECTIVE_DATES,
-            "legal_domain": (state.get("case_state") or {}).get("legal_domain", "epr"),
+            "rule_pack_version": EPR_RULE_PACK_VERSION if is_epr_case else "",
+            "rule_id": state.get("rule_id", EPR_RULE_ID) if is_epr_case else "",
+            "effective_dates": EPR_EFFECTIVE_DATES if is_epr_case else {},
+            "legal_domain": legal_domain,
             "case_fields": state.get("case_fields", []),
             "form_version": (state.get("case_state") or {}).get("form_version", "case-form-v1"),
             "completed_count": (state.get("case_state") or {}).get("completed_count", 0),
@@ -302,38 +311,28 @@ def _terminal_safe_stop(
     return state
 
 
-def _route_readiness_stop(
-    state: AgentState,
-    provider: LegalReadinessProvider | None,
-    *,
-    route: RouteType,
-) -> AgentState | None:
-    """Block a case route before facts or generation when review is pending."""
-
-    if provider is None:
-        return None
-    try:
-        audit = provider.audit()
-    except Exception:  # noqa: BLE001 - an unreadable gate is invalid
-        state["legal_readiness_status"] = ReadinessStatus.INVALID.value
-        state["legal_readiness_sha"] = provider.manifest_sha256
-        reason = "legal_readiness_invalid"
-    else:
-        state["legal_readiness_status"] = audit.status.value
-        state["legal_readiness_sha"] = audit.manifest_sha256
-        if audit.status is ReadinessStatus.READY:
-            return None
-        reason = "legal_readiness_invalid" if audit.status is ReadinessStatus.INVALID else "legal_review_pending"
+def _current_law_support_stop(state: AgentState, *, route: RouteType) -> AgentState:
     return _terminal_safe_stop(
         state,
         route=route,
         outcome=WorkflowOutcome.INSUFFICIENT_EVIDENCE,
         termination=TerminationReason.INSUFFICIENT_EVIDENCE,
-        answer="Tính năng tư vấn pháp lý đang tạm dừng vì bộ căn cứ chưa hoàn tất thẩm định độc lập.",
+        answer=(
+            "Tôi đã tìm thấy văn bản liên quan, nhưng dữ liệu chưa xác nhận nội dung sau sửa đổi "
+            "hoặc hiệu lực hiện hành. Vì vậy tôi chưa thể kết luận nghĩa vụ đang áp dụng. "
+            "Bạn có thể chọn “Tìm nguồn công khai” để đối chiếu nguồn chính thức."
+        ),
         source_scope="legal_corpus",
-        available_actions=[],
-        reason_code=reason,
+        available_actions=[RouteType.RESEARCH_WEB.value],
+        reason_code="current_law_support_unverified",
     )
+
+
+def _matches_required_anchor(document: DocumentRecord, raw_anchor: str) -> bool:
+    """Match an issue anchor against the source address, never body mentions."""
+
+    anchors, invalid = parse_required_anchors([raw_anchor])
+    return not invalid and any(document_matches_anchor(document, anchor) for anchor in anchors)
 
 
 def _documents_readiness_stop(
@@ -641,10 +640,6 @@ class V4WorkflowRuntime(WorkflowRuntime):
             state["route"] = route.value
             return state
 
-        route_block = _route_readiness_stop(state, self.deps.legal_readiness, route=route)
-        if route_block is not None:
-            return route_block
-
         task = TaskType.BUILD_COMPLIANCE_CHECKLIST if route == RouteType.COMPLIANCE_CHECKLIST else TaskType.CASE_ASSESSMENT
         state["route"] = route.value
         state["task_type"] = task.value
@@ -815,11 +810,21 @@ class V4WorkflowRuntime(WorkflowRuntime):
             )
         bundles: dict[str, list[dict[str, Any]]] = {}
         all_documents: dict[str, dict[str, Any]] = {}
+        unresolved_source_seen = False
         for issue, retrieval_result in zip(issues, results, strict=True):
             retrieved_documents: list[DocumentRecord] = [] if isinstance(retrieval_result, BaseException) else list(retrieval_result)
-            selected = [
+            issue_documents = [
                 document
                 for document in retrieved_documents
+                if not issue.required_anchors
+                or any(_matches_required_anchor(document, anchor) for anchor in issue.required_anchors)
+            ]
+            unresolved_source_seen = unresolved_source_seen or any(
+                is_unresolved_current_law_source(document) for document in issue_documents
+            )
+            selected = [
+                document
+                for document in issue_documents
                 if not is_unresolved_current_law_source(document)
             ][:3]
             serialised = documents_to_dict(selected)
@@ -837,14 +842,17 @@ class V4WorkflowRuntime(WorkflowRuntime):
                     break
         state["source"] = "legal" if state["evidence"] else ""
         state["retrieval_actions"] = 1
-        document_block = _documents_readiness_stop(
-            state,
-            self.deps.legal_readiness,
-            route=route,
-            documents=[DocumentRecord.from_dict(document) for document in state["evidence"]],
-        )
-        if document_block is not None:
-            return document_block
+        if unresolved_source_seen and not state["evidence"]:
+            return _current_law_support_stop(state, route=route)
+        if state["evidence"]:
+            document_block = _documents_readiness_stop(
+                state,
+                self.deps.legal_readiness,
+                route=route,
+                documents=[DocumentRecord.from_dict(document) for document in state["evidence"]],
+            )
+            if document_block is not None:
+                return document_block
         state.setdefault("tool_results", []).append({
             "tool": "issue_legal_retrieval",
             "ok": bool(state["evidence"]),
@@ -861,16 +869,10 @@ class V4WorkflowRuntime(WorkflowRuntime):
             bundle_docs = bundles[issue.issue_id]
             matches_by_anchor: dict[str, list[dict[str, Any]]] = {}
             for anchor in issue.required_anchors:
-                anchor_text = anchor.casefold()
                 matches_by_anchor[anchor] = [
                     doc
                     for doc in bundle_docs
-                    if anchor_text in (
-                        str((doc.get("metadata") or {}).get("legal_anchor") or "")
-                        + " " + str((doc.get("metadata") or {}).get("Dieu") or "")
-                        + " " + str((doc.get("metadata") or {}).get("source_title") or "")
-                        + " " + str(doc.get("content") or "")
-                    ).casefold()
+                    if _matches_required_anchor(DocumentRecord.from_dict(doc), anchor)
                 ]
             matching = [doc for values in matches_by_anchor.values() for doc in values]
             ids = list(dict.fromkeys(str(doc.get("document_id") or "") for doc in matching if doc.get("document_id")))
@@ -1022,9 +1024,6 @@ class V4WorkflowRuntime(WorkflowRuntime):
         guessing.
         """
         active = cast(dict[str, Any], state.get("active_case") or {})
-        route_block = _route_readiness_stop(state, self.deps.legal_readiness, route=route)
-        if route_block is not None:
-            return route_block
         known_facts: dict[str, str] = {
             key: value.value
             for key, value in _fact_values(cast(dict[str, Any] | None, active.get("facts"))).items()
@@ -1224,11 +1223,21 @@ class V4WorkflowRuntime(WorkflowRuntime):
             )
         bundles: dict[str, list[dict[str, Any]]] = {}
         all_documents: dict[str, dict[str, Any]] = {}
+        unresolved_source_seen = False
         for issue, retrieval_result in zip(issues, results, strict=True):
             retrieved_documents: list[DocumentRecord] = [] if isinstance(retrieval_result, BaseException) else list(retrieval_result)
-            selected = [
+            issue_documents = [
                 document
                 for document in retrieved_documents
+                if not issue.required_anchors
+                or any(_matches_required_anchor(document, anchor) for anchor in issue.required_anchors)
+            ]
+            unresolved_source_seen = unresolved_source_seen or any(
+                is_unresolved_current_law_source(document) for document in issue_documents
+            )
+            selected = [
+                document
+                for document in issue_documents
                 if not is_unresolved_current_law_source(document)
             ][:3]
             serialised = documents_to_dict(selected)
@@ -1246,14 +1255,17 @@ class V4WorkflowRuntime(WorkflowRuntime):
                     break
         state["source"] = "legal" if state["evidence"] else ""
         state["retrieval_actions"] = 1
-        document_block = _documents_readiness_stop(
-            state,
-            self.deps.legal_readiness,
-            route=route,
-            documents=[DocumentRecord.from_dict(document) for document in state["evidence"]],
-        )
-        if document_block is not None:
-            return document_block
+        if unresolved_source_seen and not state["evidence"]:
+            return _current_law_support_stop(state, route=route)
+        if state["evidence"]:
+            document_block = _documents_readiness_stop(
+                state,
+                self.deps.legal_readiness,
+                route=route,
+                documents=[DocumentRecord.from_dict(document) for document in state["evidence"]],
+            )
+            if document_block is not None:
+                return document_block
         state.setdefault("tool_results", []).append({
             "tool": "issue_legal_retrieval",
             "ok": bool(state["evidence"]),
@@ -1271,16 +1283,10 @@ class V4WorkflowRuntime(WorkflowRuntime):
             if issue.required_anchors:
                 matches_by_anchor: dict[str, list[dict[str, Any]]] = {}
                 for anchor in issue.required_anchors:
-                    anchor_text = anchor.casefold()
                     matches_by_anchor[anchor] = [
                         doc
                         for doc in bundle_docs
-                        if anchor_text in (
-                            str((doc.get("metadata") or {}).get("legal_anchor") or "")
-                            + " " + str((doc.get("metadata") or {}).get("Dieu") or "")
-                            + " " + str((doc.get("metadata") or {}).get("source_title") or "")
-                            + " " + str(doc.get("content") or "")
-                        ).casefold()
+                        if _matches_required_anchor(DocumentRecord.from_dict(doc), anchor)
                     ]
                 matching = [doc for values in matches_by_anchor.values() for doc in values]
                 is_covered = bool(matching) and all(bool(values) for values in matches_by_anchor.values())
@@ -1488,7 +1494,12 @@ class V4WorkflowRuntime(WorkflowRuntime):
         delegated["outcome"] = WorkflowOutcome.COMPLETED.value if delegated.get("termination_reason") in {TerminationReason.ANSWER_COMPLETE.value, TerminationReason.CACHE_HIT.value, TerminationReason.RESEARCH_COMPLETE.value} else (
             WorkflowOutcome.NEEDS_INFORMATION.value if delegated.get("termination_reason") == TerminationReason.AWAITING_USER_INPUT.value else WorkflowOutcome.INSUFFICIENT_EVIDENCE.value if delegated.get("termination_reason") == TerminationReason.INSUFFICIENT_EVIDENCE.value else WorkflowOutcome.OUT_OF_SCOPE.value if delegated.get("termination_reason") == TerminationReason.OUT_OF_SCOPE.value else WorkflowOutcome.FAILED.value
         )
-        delegated["result_type"] = ResultType.LEGAL_ANSWER.value if delegated["outcome"] == WorkflowOutcome.COMPLETED.value else ResultType.NONE.value
+        delegated["result_type"] = (
+            ResultType.LEGAL_ANSWER.value
+            if delegated["outcome"] == WorkflowOutcome.COMPLETED.value
+            and route != RouteType.CHITCHAT
+            else ResultType.NONE.value
+        )
         return delegated
 
     async def run(self, **kwargs: Any) -> AgentState:
