@@ -891,11 +891,13 @@ def _score_breakdown(query: str, doc: Document, is_explicit_match: bool = False)
     if is_explicit_match:
         final_score = min(1.0, final_score * 1.3)
 
-    # Penalize superseded or unresolved law provisions
-    current_support = doc.metadata.get("Current_Law_Support")
-    is_unsupported = current_support is not None and str(current_support).strip().casefold() in {"false", "0", "no", "pending", "unresolved"}
+    # Topical relevance and current-law verification are separate decisions.
+    # Current_Law_Support=False means the provision may only be used as a
+    # caveated source-version answer; EvidenceEvaluator enforces that policy.
+    # Penalizing it here made otherwise relevant EPR chunks disappear before
+    # that evaluator could allow an ordinary, version-scoped lookup.
     is_superseded_status = (doc.metadata.get("Effective_Status") or "").strip().lower() in {"superseded", "expired", "invalid", "het_hieu_luc", "bi_bai_bo"}
-    if is_unsupported or is_superseded_status:
+    if is_superseded_status:
         final_score *= 0.5
 
     return {

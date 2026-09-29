@@ -83,6 +83,35 @@ def test_semantic_trial_period_evidence_beats_lexical_training_distractor(monkey
     assert relevant_score > distractor_score
 
 
+def test_current_law_support_status_does_not_reduce_topical_relevance(monkeypatch) -> None:
+    monkeypatch.setattr(ensemble_retrieval, "_global_idf", {})
+    query = "Tỷ lệ tái chế bắt buộc đối với bao bì được quy định như thế nào?"
+    text = (
+        "Điều 78 quy định tỷ lệ tái chế và quy cách tái chế bắt buộc đối với sản phẩm, bao bì. "
+        "Tỷ lệ tái chế bắt buộc được xác định theo khối lượng sản xuất, nhập khẩu."
+    )
+    metadata = {"Dieu": "Điều 78. Tỷ lệ tái chế", "semantic_score": 0.9}
+    verified = Document(page_content=text, metadata={**metadata, "Current_Law_Support": True})
+    unresolved = Document(page_content=text, metadata={**metadata, "Current_Law_Support": False})
+
+    assert ensemble_retrieval._score_document(query, unresolved) == ensemble_retrieval._score_document(query, verified)
+
+
+def test_explicitly_superseded_source_still_receives_relevance_penalty(monkeypatch) -> None:
+    monkeypatch.setattr(ensemble_retrieval, "_global_idf", {})
+    query = "Tỷ lệ tái chế bắt buộc đối với bao bì được quy định như thế nào?"
+    current = Document(
+        page_content="Điều 78 quy định tỷ lệ tái chế bắt buộc đối với sản phẩm, bao bì.",
+        metadata={"Dieu": "Điều 78", "semantic_score": 0.9},
+    )
+    superseded = Document(
+        page_content=current.page_content,
+        metadata={**current.metadata, "Effective_Status": "superseded"},
+    )
+
+    assert ensemble_retrieval._score_document(query, superseded) < ensemble_retrieval._score_document(query, current)
+
+
 def test_rrf_score_is_not_misread_as_semantic_score(monkeypatch) -> None:
     monkeypatch.setattr(ensemble_retrieval, "_global_idf", {})
     lexical_document = Document(

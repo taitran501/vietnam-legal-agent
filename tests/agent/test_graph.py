@@ -358,15 +358,16 @@ async def test_model_retrieval_variants_are_searched_in_parallel_and_fused_once(
     )
 
     state = await run_workflow(
-        "Quy định EPR về bao bì là gì?",
+        "EPR bao bì chịu trách nhiệm gì?",
         user_id="u1",
         conversation_id="multi-query-retrieval",
         deps=deps,
     )
 
     assert state["termination_reason"] == "answer_complete"
-    assert state["retrieval_query_count"] == 3
+    assert state["retrieval_query_count"] == 4
     assert [query for _, query in deps.retrieval.calls] == [
+        "EPR bao bì chịu trách nhiệm gì?",
         "Quy định EPR về bao bì là gì?",
         "trách nhiệm tái chế bao bì",
         "EPR doanh nghiệp",

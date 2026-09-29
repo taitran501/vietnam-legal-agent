@@ -190,7 +190,10 @@ def _build_retrieval_queries(
         )
         if value
     }
-    for candidate in [standalone_query, *(proposed_queries or [])]:
+    # Keep the user's wording as the retrieval baseline. The standalone form
+    # and model-proposed equivalents add recall for follow-ups and vocabulary
+    # mismatch, but must not replace the original request.
+    for candidate in [original_query, standalone_query, *(proposed_queries or [])]:
         normalized = " ".join(str(candidate or "").split())
         if not normalized:
             continue
@@ -214,7 +217,7 @@ def _build_retrieval_queries(
             continue
         seen.add(key)
         queries.append(normalized[:3000])
-        if len(queries) == 3:
+        if len(queries) == 4:
             break
     return queries
 
