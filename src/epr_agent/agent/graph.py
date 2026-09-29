@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import json
 import logging
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -28,6 +31,7 @@ from epr_agent.domain.models import (
 )
 from epr_agent.domain.routes import RouteType, route_for_task, route_spec
 from epr_agent.domain.tasks import (
+    TaskUnderstanding,
     build_active_case,
     build_follow_up_question,
     deterministic_task_understanding,
@@ -35,6 +39,7 @@ from epr_agent.domain.tasks import (
     is_context_dependent_query,
     merge_facts,
     missing_facts,
+    preserve_explicit_anchors,
 )
 from epr_agent.domain.verification import (
     VerificationPolicy,
@@ -67,16 +72,151 @@ from epr_agent.tools.verifier import (
 logger = logging.getLogger(__name__)
 
 _SOURCE_VERSION_CAVEAT = (
-    "Lưu ý: Phần trả lời chỉ tóm tắt phiên bản văn bản bạn nêu; dữ liệu hiện chưa "
-    "xác nhận nội dung sửa đổi hoặc hiệu lực hiện hành."
+    "Lưu ý: Câu trả lời tóm tắt nội dung trong nguồn được trích dẫn; dữ liệu hiện "
+    "chưa xác nhận các cập nhật hoặc hiệu lực hiện hành."
 )
 
 
 def _append_source_version_caveat(answer: str) -> str:
     cleaned = answer.rstrip()
-    if not cleaned or _SOURCE_VERSION_CAVEAT in cleaned:
+    if not cleaned or _has_source_version_caveat(cleaned):
         return cleaned
     return f"{cleaned}\n\n{_SOURCE_VERSION_CAVEAT}"
+
+
+def _has_source_version_caveat(answer: str) -> bool:
+    text = " ".join((answer or "").casefold().split())
+    if _SOURCE_VERSION_CAVEAT.casefold() in text:
+        return True
+    return bool(
+        re.search(
+            r"(?:chưa|không)\s+(?:thể\s+)?(?:xác nhận|kiểm chứng|đối chiếu|xác minh).{0,100}"
+            r"(?:hiệu lực|quy định|nội dung).{0,45}(?:hiện hành|mới nhất|sửa đổi|cập nhật)"
+            r"|(?:hiệu lực|quy định).{0,35}(?:hiện hành|mới nhất).{0,60}"
+            r"(?:chưa|không)\s+(?:được\s+)?(?:xác nhận|kiểm chứng|đối chiếu|xác minh)",
+            text,
+        )
+    )
+
+
+def _retrieval_document_key(document) -> str:
+    metadata = document.metadata or {}
+    for key in ("_id", "point_id", "chunk_id", "chunkId"):
+        value = metadata.get(key)
+        if value is not None and str(value).strip():
+            return f"{document.source}:{key}:{value}"
+    digest = hashlib.sha256((document.content or "").encode("utf-8")).hexdigest()[:20]
+    return f"{document.source}:{document.document_id}:{digest}"
+
+
+def _merge_multi_query_results(
+    results: list[list[Any]],
+    *,
+    query_indices: list[int] | None = None,
+) -> list[Any]:
+    """Fuse ranked candidate lists while retaining chunk-level identity."""
+
+    reciprocal_rank_constant = 60
+    ranked: dict[str, dict[str, Any]] = {}
+    for result_index, documents in enumerate(results):
+        query_index = query_indices[result_index] if query_indices is not None else result_index
+        query_weight = 2.0 if query_index == 0 else 1.0
+        for rank, document in enumerate(documents):
+            key = _retrieval_document_key(document)
+            entry = ranked.get(key)
+            if entry is None:
+                copied = type(document).from_dict(document.to_dict())
+                entry = {"document": copied, "score": 0.0, "ranks": []}
+                ranked[key] = entry
+            else:
+                copied = entry["document"]
+                for score_key in (
+                    "semantic_score",
+                    "lexical_score",
+                    "combined_score",
+                    "rrf_score",
+                    "rerank_score",
+                ):
+                    incoming_value = (document.metadata or {}).get(score_key)
+                    if incoming_value is None:
+                        continue
+                    try:
+                        incoming = float(incoming_value)
+                    except (TypeError, ValueError):
+                        continue
+                    existing_value = (copied.metadata or {}).get(score_key)
+                    if existing_value is None:
+                        existing = None
+                    else:
+                        try:
+                            existing = float(existing_value)
+                        except (TypeError, ValueError):
+                            existing = None
+                    if existing is None or incoming > existing:
+                        copied.metadata[score_key] = incoming
+                if document.score is not None and (
+                    copied.score is None or document.score > copied.score
+                ):
+                    copied.score = document.score
+            entry["score"] += query_weight / (reciprocal_rank_constant + rank + 1)
+            entry["ranks"].append({"query_index": query_index, "rank": rank + 1})
+
+    ordered = sorted(ranked.values(), key=lambda item: item["score"], reverse=True)
+    documents = []
+    for entry in ordered:
+        document = entry["document"]
+        document.metadata["multi_query_rrf_score"] = entry["score"]
+        document.metadata["multi_query_ranks"] = entry["ranks"]
+        documents.append(document)
+    return documents
+
+
+def _build_retrieval_queries(
+    original_query: str,
+    standalone_query: str,
+    proposed_queries: list[str] | None,
+) -> list[str]:
+    queries: list[str] = []
+    seen: set[str] = set()
+    allowed_anchors = {
+        (field, value.casefold())
+        for anchor in [*explicit_anchors(original_query), *explicit_anchors(standalone_query)]
+        for field, value in (
+            ("document_number", anchor.document_number),
+            ("article", anchor.article),
+            ("clause", anchor.clause),
+            ("point", anchor.point),
+            ("appendix", anchor.appendix),
+        )
+        if value
+    }
+    for candidate in [standalone_query, *(proposed_queries or [])]:
+        normalized = " ".join(str(candidate or "").split())
+        if not normalized:
+            continue
+        normalized = preserve_explicit_anchors(original_query, normalized)
+        candidate_anchors = {
+            (field, value.casefold())
+            for anchor in explicit_anchors(normalized)
+            for field, value in (
+                ("document_number", anchor.document_number),
+                ("article", anchor.article),
+                ("clause", anchor.clause),
+                ("point", anchor.point),
+                ("appendix", anchor.appendix),
+            )
+            if value
+        }
+        if candidate_anchors - allowed_anchors:
+            continue
+        key = normalized.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        queries.append(normalized[:3000])
+        if len(queries) == 3:
+            break
+    return queries
 
 
 def _verification_status_for_reason(reason: str, *, valid: bool) -> VerificationStatus:
@@ -283,7 +423,11 @@ def build_workflow(deps: WorkflowDependencies):
         append_action(state, Action.UNDERSTAND_TASK)
         history = state.get("history", [])
         active_case = state.get("active_case")
-        if deps.understanding is None:
+        precomputed = state.get("precomputed_understanding")
+        state["precomputed_understanding"] = None
+        if precomputed is not None:
+            understanding = TaskUnderstanding.model_validate(precomputed)
+        elif deps.understanding is None:
             understanding = deterministic_task_understanding(state["query"], history, active_case)
         else:
             understanding = await deps.understanding.understand(
@@ -307,8 +451,12 @@ def build_workflow(deps: WorkflowDependencies):
                 "Bạn đang hỏi tiếp về nội dung nào? Hãy nhắc lại tên văn bản, lĩnh vực "
                 "hoặc câu hỏi trước để tôi kiểm tra căn cứ pháp lý chính xác."
             )
-        task = understanding.task_type
         route = RouteType(understanding.route)
+        # The route contract owns product behavior; task_type is a legacy
+        # compatibility field and may disagree in model output. Derive it
+        # from the route so a general lookup cannot accidentally ask for
+        # case-assessment facts.
+        task = route_spec(route).task_type
         # If an active case is ongoing and the model detects topic continuity,
         # continue collecting information for the active case.
         if (
@@ -324,15 +472,7 @@ def build_workflow(deps: WorkflowDependencies):
             route = route_for_task(task)
         elif state.get("mode") == RouteType.RESEARCH_WEB.value:
             route = RouteType.RESEARCH_WEB
-            task = TaskType.LEGAL_LOOKUP
-        elif route == RouteType.OUT_OF_SCOPE:
-            task = TaskType.LEGAL_LOOKUP
-        elif task in {TaskType.CASE_ASSESSMENT, TaskType.BUILD_COMPLIANCE_CHECKLIST, TaskType.CHITCHAT}:
-            route = route_for_task(task)
-        elif route in {RouteType.CASE_ASSESSMENT, RouteType.COMPLIANCE_CHECKLIST, RouteType.CHITCHAT}:
             task = route_spec(route).task_type
-        elif route not in {RouteType.LEGAL_LOOKUP, RouteType.LEGAL_EXPLAIN_COMPARE, RouteType.RESEARCH_WEB, RouteType.OUT_OF_SCOPE}:
-            route = RouteType.LEGAL_LOOKUP
         # A low-confidence structured decision is not allowed to trigger a
         # retrieval.  The deterministic fallback is intentionally confident
         # enough to keep local/offline development usable.
@@ -367,6 +507,8 @@ def build_workflow(deps: WorkflowDependencies):
                     state["legal_readiness_sha"] = ""
         state["is_follow_up"] = understanding.is_follow_up
         state["standalone_query"] = understanding.standalone_query or state["query"].strip()
+        state["retrieval_queries"] = list(understanding.retrieval_queries)
+        state["retrieval_query_count"] = 0
         state["facts"] = facts
         state["missing_facts"] = missing_facts(task, facts)
         if not state.get("clarification_required"):
@@ -492,11 +634,37 @@ def build_workflow(deps: WorkflowDependencies):
         append_action(state, Action.RETRIEVE_LEGAL)
         if not planner.can_retrieve(state):
             state["evidence"] = []
+            state["retrieval_queries"] = []
             return state
         state["retrieval_actions"] = int(state.get("retrieval_actions", 0)) + 1
         started = time.perf_counter()
+        search_queries = _build_retrieval_queries(
+            state.get("query", ""),
+            state.get("standalone_query", ""),
+            state.get("retrieval_queries"),
+        )
+        state["retrieval_queries"] = search_queries
+        state["retrieval_query_count"] = len(search_queries)
         try:
-            docs = await deps.retrieval.legal(state["standalone_query"])
+            search_results = await asyncio.gather(
+                *(deps.retrieval.legal(search_query) for search_query in search_queries),
+                return_exceptions=True,
+            )
+            successful_results = [
+                (index, result)
+                for index, result in enumerate(search_results)
+                if not isinstance(result, BaseException)
+            ]
+            if not successful_results:
+                first_error = next(
+                    (result for result in search_results if isinstance(result, BaseException)),
+                    RuntimeError("all_retrieval_queries_failed"),
+                )
+                raise first_error
+            docs = _merge_multi_query_results(
+                [result for _index, result in successful_results],
+                query_indices=[index for index, _result in successful_results],
+            )
             query_anchors = explicit_anchors(state["standalone_query"])
             expected_articles = {anchor.article.lower() for anchor in query_anchors if anchor.article}
             state["explicit_articles"] = sorted(expected_articles)
@@ -536,6 +704,10 @@ def build_workflow(deps: WorkflowDependencies):
                 ok=True,
                 count=len(docs),
                 metadata={
+                    "query_count": len(search_queries),
+                    "successful_query_count": len(successful_results),
+                    "failed_query_count": len(search_results) - len(successful_results),
+                    "candidate_count_after_fusion": len(docs),
                     "explicit_articles": sorted(expected_articles),
                     "candidates": [
                         {
@@ -544,6 +716,8 @@ def build_workflow(deps: WorkflowDependencies):
                             "dense_score": doc.metadata.get("semantic_score"),
                             "bm25_score": doc.metadata.get("lexical_score"),
                             "rrf_score": doc.metadata.get("rrf_score"),
+                            "multi_query_rrf_score": doc.metadata.get("multi_query_rrf_score"),
+                            "retrieval_query_count": len(doc.metadata.get("multi_query_ranks") or []),
                             "combined_score": doc.metadata.get("combined_score", doc.score),
                             "rerank_score": doc.metadata.get("rerank_score"),
                             "universal_bm25_rank": doc.metadata.get("bm25_rank"),
@@ -556,6 +730,7 @@ def build_workflow(deps: WorkflowDependencies):
             )
         except Exception as exc:  # noqa: BLE001 - retrieval failures must reach safe fallback
             state["evidence"] = []
+            state["retrieval_queries"] = []
             retrieval_error = "required_anchor_parse_failed" if isinstance(exc, RequiredAnchorParseError) else type(exc).__name__
             state["retrieval_error"] = retrieval_error
             _tool_result(state, "legal_retrieval", started, ok=False, error=retrieval_error)
@@ -609,7 +784,9 @@ def build_workflow(deps: WorkflowDependencies):
                 docs,
                 state["task_type"],
                 expected_anchors=[LegalAnchor.model_validate(value) for value in state.get("explicit_anchor_details") or []],
+                relevance_queries=list(state.get("retrieval_queries") or []),
             )
+        state["retrieval_queries"] = []
         state["evidence_assessment"] = assessment.to_dict()
         state["evidence_status"] = "sufficient" if assessment.sufficient else "insufficient"
         if readiness_reason in {"legal_review_pending", "legal_readiness_invalid"}:
@@ -799,6 +976,7 @@ def build_workflow(deps: WorkflowDependencies):
 
         corrected = False
         if valid and policy is VerificationPolicy.LEGAL_CORPUS and deps.critic_reviewer is not None:
+            critic_started = time.perf_counter()
             try:
                 verdict = await deps.critic_reviewer.review(
                     state.get("standalone_query", state.get("query", "")),
@@ -808,6 +986,20 @@ def build_workflow(deps: WorkflowDependencies):
                         (state.get("evidence_assessment") or {}).get("source_version_only")
                     ),
                 )
+                _tool_result(
+                    state,
+                    "legal_critic",
+                    critic_started,
+                    ok=bool(verdict.approved and not verdict.fatal_error),
+                    count=len(docs),
+                    error="" if verdict.approved and not verdict.fatal_error else verdict.reason_code,
+                    metadata={
+                        "reason_code": verdict.reason_code,
+                        "verification_status": verdict.verification_status.value,
+                        "fatal_error": bool(verdict.fatal_error),
+                        "corrected_answer_present": bool((verdict.corrected_answer or "").strip()),
+                    },
+                )
                 if verdict.verification_status is VerificationStatus.VERIFICATION_UNAVAILABLE:
                     valid = False
                     reason = VerificationStatus.VERIFICATION_UNAVAILABLE.value
@@ -816,7 +1008,9 @@ def build_workflow(deps: WorkflowDependencies):
                     valid = False
                     reason = VerificationStatus.INSUFFICIENT_EVIDENCE.value
                     state["verification_status"] = VerificationStatus.INSUFFICIENT_EVIDENCE.value
-                elif verdict.fatal_error or not verdict.approved:
+                elif verdict.fatal_error or (
+                    not verdict.approved and not (verdict.corrected_answer or "").strip()
+                ):
                     valid = False
                     reason = "critic_legal_flaw_rejected"
                     state["verification_status"] = VerificationStatus.UNSUPPORTED_CLAIM.value
@@ -833,7 +1027,7 @@ def build_workflow(deps: WorkflowDependencies):
                 _tool_result(
                     state,
                     "legal_critic",
-                    time.perf_counter(),
+                    critic_started,
                     ok=False,
                     count=len(docs),
                     error=reason,
@@ -1162,6 +1356,7 @@ async def run_workflow(
     deps: WorkflowDependencies,
     trace_id: str | None = None,
     compiled_workflow: Any | None = None,
+    precomputed_understanding: dict[str, Any] | None = None,
 ) -> AgentState:
     """Execute one bounded run and return its complete traceable state."""
 
@@ -1174,6 +1369,8 @@ async def run_workflow(
         deps=deps,
         trace_id=trace_id,
     )
+    if precomputed_understanding is not None:
+        initial["precomputed_understanding"] = precomputed_understanding
     if deps.legal_readiness is not None:
         readiness = deps.legal_readiness.audit()
         initial["legal_readiness_status"] = readiness.status.value

@@ -199,6 +199,9 @@ class AgentState(TypedDict, total=False):
     turn_status: str
     query: str
     standalone_query: str
+    precomputed_understanding: dict[str, Any] | None
+    retrieval_queries: list[str]
+    retrieval_query_count: int
     user_id: str
     conversation_id: str
     legacy_session_id: str

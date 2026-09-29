@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from epr_agent.agent.graph import WorkflowDependencies, run_workflow
+from epr_agent.agent.graph import (
+    WorkflowDependencies,
+    _append_source_version_caveat,
+    _build_retrieval_queries,
+    _merge_multi_query_results,
+    run_workflow,
+)
 from epr_agent.agent.planner import BoundedPlanner
 from epr_agent.agent.understanding import StaticTaskUnderstandingGateway
 from epr_agent.domain.legal import explicit_anchors
@@ -100,6 +106,31 @@ async def test_legal_lookup_uses_bounded_retrieval_and_verifies_citation():
     assert state["citation_valid"] is True
     assert "retrieve_legal" in state["action_sequence"]
     assert state["retrieval_actions"] <= 3
+
+
+@pytest.mark.asyncio
+async def test_route_contract_prevents_mismatched_task_type_from_starting_case_intake():
+    deps = make_dependencies(legal=[legal_doc()])
+    deps.understanding = StaticTaskUnderstandingGateway(
+        TaskUnderstanding(
+            task_type=TaskType.CASE_ASSESSMENT,
+            route=RouteType.LEGAL_LOOKUP,
+            standalone_query="Những loại bao bì nào thuộc trách nhiệm tái chế EPR?",
+            confidence=1.0,
+        )
+    )
+
+    state = await run_workflow(
+        "Những loại bao bì nào thuộc trách nhiệm tái chế EPR?",
+        user_id="u1",
+        conversation_id="route-task-type-mismatch",
+        deps=deps,
+    )
+
+    assert state["route"] == RouteType.LEGAL_LOOKUP.value
+    assert state["task_type"] == TaskType.LEGAL_LOOKUP.value
+    assert state["termination_reason"] == "answer_complete"
+    assert state["action_sequence"][-1] != "ask_user"
 
 
 @pytest.mark.asyncio
@@ -314,6 +345,81 @@ async def test_one_citation_repair_is_allowed_then_workflow_finishes():
 
 
 @pytest.mark.asyncio
+async def test_model_retrieval_variants_are_searched_in_parallel_and_fused_once():
+    deps = make_dependencies(legal=[legal_doc()])
+    deps.understanding = StaticTaskUnderstandingGateway(
+        TaskUnderstanding(
+            task_type=TaskType.LEGAL_LOOKUP,
+            route=RouteType.LEGAL_LOOKUP,
+            standalone_query="Quy định EPR về bao bì là gì?",
+            retrieval_queries=["trách nhiệm tái chế bao bì", "EPR doanh nghiệp"],
+            confidence=1.0,
+        )
+    )
+
+    state = await run_workflow(
+        "Quy định EPR về bao bì là gì?",
+        user_id="u1",
+        conversation_id="multi-query-retrieval",
+        deps=deps,
+    )
+
+    assert state["termination_reason"] == "answer_complete"
+    assert state["retrieval_query_count"] == 3
+    assert [query for _, query in deps.retrieval.calls] == [
+        "Quy định EPR về bao bì là gì?",
+        "trách nhiệm tái chế bao bì",
+        "EPR doanh nghiệp",
+    ]
+    assert len(state["evidence"]) == 1
+    assert state["retrieval_queries"] == []
+
+
+def test_reciprocal_rank_fusion_uses_chunk_identity_across_search_queries():
+    from epr_agent.domain.models import DocumentRecord
+
+    first = DocumentRecord("provision A", {"_id": "chunk-a"}, "source", source="legal")
+    second = DocumentRecord(
+        "provision B", {"_id": "chunk-b", "semantic_score": 0.3}, "source", source="legal"
+    )
+    second_again = DocumentRecord(
+        "provision B", {"_id": "chunk-b", "semantic_score": 0.9}, "source", source="legal"
+    )
+    third = DocumentRecord("provision C", {"_id": "chunk-c"}, "source", source="legal")
+
+    merged = _merge_multi_query_results([[first, second], [second_again, third]])
+
+    assert [document.content for document in merged] == ["provision B", "provision A", "provision C"]
+    assert merged[0].metadata["multi_query_ranks"] == [
+        {"query_index": 0, "rank": 2},
+        {"query_index": 1, "rank": 1},
+    ]
+    assert merged[0].metadata["semantic_score"] == 0.9
+
+
+def test_retrieval_reformulations_preserve_user_anchors_and_drop_new_ones():
+    queries = _build_retrieval_queries(
+        "Điều 77 Nghị định 08/2022/NĐ-CP quy định gì?",
+        "Điều 77 Nghị định 08/2022/NĐ-CP quy định gì?",
+        [
+            "Điều 78 Nghị định 08/2022/NĐ-CP quy định gì?",
+            "nghĩa vụ tái chế theo nghị định này",
+        ],
+    )
+
+    assert len(queries) == 2
+    assert "Điều 77" in queries[1]
+    assert "08/2022/NĐ-CP" in queries[1]
+    assert all("Điều 78" not in query for query in queries)
+
+
+def test_source_version_caveat_is_not_added_twice_when_generation_already_caveats():
+    answer = "Nội dung được trích dẫn. Dữ liệu chưa xác nhận hiệu lực hiện hành."
+
+    assert _append_source_version_caveat(answer) == answer
+
+
+@pytest.mark.asyncio
 async def test_source_version_caveat_survives_a_citation_repair():
     source = legal_doc()
     source.metadata.update(
@@ -339,6 +445,7 @@ async def test_source_version_caveat_survives_a_citation_repair():
     assert state["evidence_assessment"]["source_version_only"] is True
     assert state["answer"].endswith("hiệu lực hiện hành.")
     assert critic.source_version_only_calls == [True]
+    assert "repair_answer" in state["action_sequence"]
 
 
 @pytest.mark.asyncio
@@ -370,6 +477,34 @@ async def test_critic_correction_without_citation_is_anchored_and_keeps_source_v
     assert state["citation_valid"] is True
     assert "Điều 77 [1]" in state["answer"]
     assert state["answer"].endswith("hiệu lực hiện hành.")
+
+
+@pytest.mark.asyncio
+async def test_grounded_critic_correction_is_rechecked_instead_of_discarded():
+    deps = make_dependencies(legal=[legal_doc()], claim_verifier=StaticClaimSupportVerifier(supported=True))
+    deps.critic_reviewer = StaticLegalCriticReviewer(
+        verdict=LegalCriticVerdict(
+            approved=False,
+            fatal_error=False,
+            corrected_answer="Điều 77 quy định nghĩa vụ tái chế bao bì [1].",
+            reason_code="draft_needs_correction",
+        )
+    )
+
+    state = await run_workflow(
+        "Điều 77 quy định gì?",
+        user_id="u1",
+        conversation_id="critic-corrected-answer",
+        deps=deps,
+    )
+
+    assert state["termination_reason"] == "answer_complete"
+    assert state["citation_valid"] is True
+    assert "draft_needs_correction" in {
+        result.get("metadata", {}).get("reason_code")
+        for result in state["tool_results"]
+        if result.get("tool") == "legal_critic"
+    }
 
 
 @pytest.mark.asyncio

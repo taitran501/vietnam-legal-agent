@@ -137,3 +137,11 @@ def test_structured_understanding_has_a_closed_task_surface():
     assert result.missing_facts == ["product_or_packaging"]
     with pytest.raises(ValidationError):
         TaskUnderstanding(task_type="free_form_tool_call")
+
+
+def test_query_plan_cleans_and_bounds_model_generated_retrieval_queries():
+    result = TaskUnderstanding(
+        retrieval_queries=["  EPR về bao bì  ", "epr về bao bì", "nghĩa vụ tái chế", "thêm biến thể"],
+    )
+
+    assert result.retrieval_queries == ["EPR về bao bì", "nghĩa vụ tái chế"]

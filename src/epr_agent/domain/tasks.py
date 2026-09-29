@@ -313,6 +313,7 @@ class QueryPlan(BaseModel):
     route: RouteType = RouteType.LEGAL_LOOKUP
     is_follow_up: bool = False
     standalone_query: str = ""
+    retrieval_queries: list[str] = Field(default_factory=list)
     explicit_anchors: list[LegalAnchor] = Field(default_factory=list)
     legal_topics: list[str] = Field(default_factory=list)
     research_requested: bool = False
@@ -355,6 +356,23 @@ class QueryPlan(BaseModel):
     @classmethod
     def _clean_query(cls, value: object) -> str:
         return " ".join(str(value or "").split())[:3000]
+
+    @field_validator("retrieval_queries", mode="before")
+    @classmethod
+    def _clean_retrieval_queries(cls, values: object) -> list[str]:
+        if not isinstance(values, (list, tuple)):
+            return []
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            query = " ".join(str(value or "").split())[:3000]
+            key = query.casefold()
+            if query and key not in seen:
+                seen.add(key)
+                cleaned.append(query)
+            if len(cleaned) == 2:
+                break
+        return cleaned
 
     @field_validator("missing_facts")
     @classmethod

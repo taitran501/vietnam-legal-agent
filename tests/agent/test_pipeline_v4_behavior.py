@@ -11,8 +11,11 @@ import pytest
 
 from epr_agent.agent.graph import WorkflowDependencies
 from epr_agent.agent.planner import BoundedPlanner
+from epr_agent.agent.understanding import StaticTaskUnderstandingGateway
 from epr_agent.agent.v4 import V4WorkflowRuntime
 from epr_agent.domain.models import DocumentRecord
+from epr_agent.domain.routes import RouteType
+from epr_agent.domain.tasks import TaskUnderstanding
 from epr_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
 from epr_agent.tools.evidence import EvidenceEvaluator
 from epr_agent.tools.generation import StaticGenerationGateway
@@ -133,6 +136,32 @@ async def test_factual_corporate_question_uses_lookup_route_not_case_form():
     assert state["task_type"] == "legal_lookup"
     assert state.get("missing_facts") == []
     assert retrieval.calls == [("legal", state["query"])]
+
+
+@pytest.mark.asyncio
+async def test_v4_reuses_route_understanding_plan_for_delegated_legal_lookup():
+    history = MemoryHistory()
+    app, retrieval = runtime(history)
+    understanding = StaticTaskUnderstandingGateway(
+        TaskUnderstanding(
+            task_type="legal_lookup",
+            route=RouteType.LEGAL_LOOKUP,
+            standalone_query="EPR về bao bì được quy định thế nào?",
+            retrieval_queries=["nghĩa vụ tái chế bao bì", "trách nhiệm EPR"],
+            confidence=1.0,
+        )
+    )
+    app.deps.understanding = understanding
+
+    state = await app.run(
+        query="EPR về bao bì được quy định thế nào?",
+        user_id="v4-user",
+        conversation_id="v4-plan-reuse",
+    )
+
+    assert state["termination_reason"] == "answer_complete"
+    assert understanding.calls == 1
+    assert len(retrieval.calls) == 3
 
 
 @pytest.mark.asyncio

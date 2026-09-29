@@ -21,7 +21,9 @@ def is_document_superseded(doc: DocumentRecord, reference_date: date | None = No
     # 1. Explicit Current_Law_Support flag (from corpus indexing / Qdrant payload)
     current_support = doc.current_law_support
     if current_support is None:
-        raw_val = meta.get("Current_Law_Support") or meta.get("current_law_support")
+        raw_val = meta.get("Current_Law_Support")
+        if raw_val is None:
+            raw_val = meta.get("current_law_support")
         if raw_val is not None:
             current_support = str(raw_val).strip().casefold() not in {"false", "0", "no", "pending", "unresolved"}
 

@@ -78,6 +78,61 @@ def test_evidence_evaluator_allows_an_exact_source_version_lookup_with_a_warning
     assert any("current legal status is unverified" in warning for warning in result.temporal_warnings)
 
 
+def test_generic_lookup_can_be_answered_with_a_caveat_from_one_unresolved_instrument():
+    unresolved = document()
+    unresolved.metadata.update(
+        {
+            "Current_Law_Support": False,
+            "Document_Number": "08/2022/NĐ-CP",
+            "source_title": "Nghị định số 08/2022/NĐ-CP",
+            "semantic_score": 0.9,
+        }
+    )
+    checked_queries: list[str] = []
+
+    def relevant(query, _documents):
+        checked_queries.append(query)
+        return query == "tỷ lệ tái chế bắt buộc"
+
+    result = EvidenceEvaluator(min_chars=20, relevance_checker=relevant).evaluate(
+        "Tỷ lệ tái chế bắt buộc được tính như thế nào?",
+        [unresolved],
+        TaskType.LEGAL_LOOKUP,
+        relevance_queries=["tỷ lệ tái chế bắt buộc"],
+    )
+
+    assert result.sufficient is True
+    assert result.source_version_only is True
+    assert result.relevance_checked is True
+    assert checked_queries == [
+        "Tỷ lệ tái chế bắt buộc được tính như thế nào?",
+        "tỷ lệ tái chế bắt buộc",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("query", "task_type"),
+    [
+        ("Nghị định 08/2022/NĐ-CP hiện còn hiệu lực không?", TaskType.LEGAL_LOOKUP),
+        ("Nghĩa vụ của tôi theo EPR là gì?", TaskType.CASE_ASSESSMENT),
+    ],
+)
+def test_source_version_scoping_does_not_relax_current_status_or_case_advice(query, task_type):
+    unresolved = document()
+    unresolved.metadata.update(
+        {
+            "Current_Law_Support": False,
+            "Document_Number": "08/2022/NĐ-CP",
+            "source_title": "Nghị định số 08/2022/NĐ-CP",
+        }
+    )
+
+    result = EvidenceEvaluator(min_chars=20).evaluate(query, [unresolved], task_type)
+
+    assert result.sufficient is False
+    assert result.source_version_only is False
+
+
 def test_exact_named_article_source_is_not_rejected_by_generic_relevance_score():
     exact = DocumentRecord(
         content=(

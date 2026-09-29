@@ -28,6 +28,12 @@ def test_is_document_superseded_by_flag() -> None:
     )
     assert is_document_superseded(doc_meta) is True
 
+    doc_meta_boolean = DocumentRecord(
+        content="Điều 2 Luật cũ",
+        metadata={"Current_Law_Support": False},
+    )
+    assert is_document_superseded(doc_meta_boolean) is True
+
     # Active doc
     doc_active = DocumentRecord(
         content="Điều 3 Luật mới",

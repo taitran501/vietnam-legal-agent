@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 from urllib.parse import urlparse
 
@@ -33,6 +33,7 @@ class EvidenceEvaluator:
         *,
         expected_articles: set[str] | None = None,
         expected_anchors: list[LegalAnchor] | None = None,
+        relevance_queries: Sequence[str] | None = None,
     ) -> EvidenceAssessment:
         if len(documents) < self.min_docs:
             return EvidenceAssessment(False, "not_enough_docs", len(documents), 0, False)
@@ -79,7 +80,8 @@ class EvidenceEvaluator:
                 temporal_warnings.append(w)
 
         has_unresolved_current_law = any(
-            is_unresolved_current_law_source(document) for document in documents
+            is_unresolved_current_law_source(document) or is_document_superseded(document)
+            for document in documents
         )
         source_version_only = has_unresolved_current_law and is_explicit_source_version_lookup(
             query,
@@ -114,7 +116,7 @@ class EvidenceEvaluator:
             )
         if source_version_only:
             temporal_warnings.append(
-                "Answer is limited to the explicitly named source version; current legal status is unverified."
+                "Answer is limited to the cited source version; current legal status is unverified."
             )
 
         official_web_sources = bool(documents) and all(
@@ -124,23 +126,29 @@ class EvidenceEvaluator:
             for document in documents
         )
 
+        addressed_anchors = expected_anchors or explicit_anchors(query)
         exact_source_address = (
             str(getattr(task_type, "value", task_type)) == TaskType.LEGAL_LOOKUP.value
-            and expected_anchors is not None
-            and len(expected_anchors) > 0
+            and len(addressed_anchors) > 0
             and all(
                 (anchor.document_number or anchor.document_title)
                 and (anchor.article or anchor.appendix)
-                for anchor in expected_anchors
+                for anchor in addressed_anchors
             )
             and not _CURRENT_LAW_QUERY_RE.search(query or "")
         )
-        if self.relevance_checker is not None and not source_version_only and not exact_source_address:
+        if self.relevance_checker is not None and not exact_source_address:
             try:
-                relevant = (
-                    _official_web_relevance(query, documents)
+                checks = list(dict.fromkeys(
+                    text.strip()
+                    for text in [query, *(relevance_queries or [])]
+                    if text and text.strip()
+                )) or [query]
+                relevant = any(
+                    _official_web_relevance(candidate_query, documents)
                     if official_web_sources
-                    else bool(self.relevance_checker(query, documents))
+                    else bool(self.relevance_checker(candidate_query, documents))
+                    for candidate_query in checks
                 )
             except Exception:  # noqa: BLE001 - a failed optional checker is a failed evidence check
                 relevant = False
@@ -162,7 +170,7 @@ class EvidenceEvaluator:
             len(documents),
             total_chars,
             has_metadata,
-            self.relevance_checker is not None and not source_version_only and not exact_source_address,
+            self.relevance_checker is not None and not exact_source_address,
             has_superseded_sources=has_superseded,
             temporal_warnings=temporal_warnings,
             source_version_only=source_version_only,
@@ -481,12 +489,13 @@ def is_explicit_source_version_lookup(
     documents: list[DocumentRecord],
     task_type: str | TaskType,
 ) -> bool:
-    """Allow source-scoped text lookup without claiming the source is current.
+    """Allow ordinary lookup to summarize one unresolved source version.
 
-    This exemption is intentionally limited to ordinary legal lookups that
-    name exactly one instrument and retrieve only that instrument. Case advice
-    and queries asking about current validity still require verified-current
-    evidence.
+    The user may name the source explicitly, or a source version may be
+    inferred from a coherent result set containing only one legal instrument.
+    That permits a scoped, caveated description without asserting current law.
+    Current-status questions, case advice, mixed-source evidence, and article
+    requests that the retrieved text does not cover remain fail-closed.
     """
 
     if str(getattr(task_type, "value", task_type)) != TaskType.LEGAL_LOOKUP.value:
@@ -498,23 +507,40 @@ def is_explicit_source_version_lookup(
         re.sub(r"\s+", "", value).casefold()
         for value in _INSTRUMENT_RE.findall(query or "")
     }
-    if len(requested) != 1 or not documents:
+    if len(requested) > 1 or not documents:
         return False
 
     requested_articles = _article_ids(query)
     found_articles: set[str] = set()
+    source_instrument_sets: list[set[str]] = []
     for document in documents:
         if document.source != "legal":
+            return False
+        if not requested and not (
+            is_unresolved_current_law_source(document) or is_document_superseded(document)
+        ):
             return False
         source_instruments = {
             re.sub(r"\s+", "", value).casefold()
             for value in _INSTRUMENT_RE.findall(_document_instrument_text(document))
         }
-        if not requested.issubset(source_instruments):
+        if len(source_instruments) != 1:
             return False
+        source_instrument_sets.append(source_instruments)
         found_articles.update(_document_article_ids(document))
 
-    return bool(requested_articles) and requested_articles.issubset(found_articles)
+    if any(instruments != source_instrument_sets[0] for instruments in source_instrument_sets[1:]):
+        return False
+    source_instruments = source_instrument_sets[0]
+    if requested and not requested.issubset(source_instruments):
+        return False
+    if not requested:
+        requested_years = set(_YEAR_RE.findall(query or ""))
+        source_years = set().union(*(set(_YEAR_RE.findall(value)) for value in source_instruments))
+        if requested_years and not requested_years.issubset(source_years):
+            return False
+
+    return not requested_articles or requested_articles.issubset(found_articles)
 
 
 def _year_discovery_source_matches(query: str, document: DocumentRecord) -> bool:

@@ -687,6 +687,16 @@ class EvidenceGenerationGateway:
         if not settings.openai_api_key or settings.openai_api_key.startswith("your-"):
             return ""
 
+        from epr_agent.tools.evidence import is_explicit_source_version_lookup
+
+        source_scope_instruction = ""
+        if is_explicit_source_version_lookup(query, documents, TaskType.LEGAL_LOOKUP):
+            source_scope_instruction = (
+                "Phạm vi nguồn: Chỉ mô tả điều khoản trong phiên bản nguồn được truy xuất. "
+                "Nêu rõ đây là nội dung của nguồn đó và hiệu lực hiện hành chưa được xác minh; "
+                "không diễn đạt như kết luận rằng đây chắc chắn là quy định đang áp dụng.\n\n"
+            )
+
         context_parts = []
         for index, document in enumerate(documents[:4], start=1):
             metadata = document.metadata or {}
@@ -703,6 +713,7 @@ class EvidenceGenerationGateway:
         context = "\n".join(context_parts)
         system_prompt = (
             "Bạn là trợ lý tra cứu pháp luật Việt Nam. Trả lời trực tiếp đúng câu hỏi bằng tiếng Việt rõ ràng, ngắn gọn.\n\n"
+            f"{source_scope_instruction}"
             "Chỉ dùng thông tin có trong tài liệu được cung cấp. Gắn chỉ số [n] vào từng nhận định pháp lý và chỉ trích dẫn tài liệu thực sự hỗ trợ nhận định đó. Giữ nguyên điều kiện, ngoại lệ, ngưỡng, thời điểm, đối tượng áp dụng và các lựa chọn thay thế nêu trong nguồn; không biến nghĩa vụ có điều kiện thành nghĩa vụ chung. Khi nguồn dẫn chiếu sang điểm hoặc khoản khác, hãy đọc phần được dẫn chiếu rồi nêu ngắn gọn ngoại lệ ngay trong cùng câu với nghĩa vụ. Nếu không thể xác định ngoại lệ, bỏ nhận định tuyệt đối đó hoặc nói rõ giới hạn. Không tự thêm thủ tục, cơ quan tiếp nhận, giấy tờ, phí, thời hạn, ngoại lệ hoặc hướng xử lý nếu tài liệu không nêu. Không suy đoán hiệu lực hiện hành hay sửa đổi về sau khi nguồn không xác nhận.\n\n"
             "Nếu người dùng chỉ hỏi một điều khoản, tóm tắt đúng phần liên quan trong 1–4 câu; không tạo các mục kết luận, thủ tục hay tài chính nếu không cần. Chỉ dùng tiêu đề khi câu hỏi có nhiều vấn đề cần phân tích. Nếu nguồn không trả lời phần được hỏi, nêu rõ giới hạn đó thay vì suy diễn.\n\n"
             "TÀI LIỆU ĐÃ TRUY XUẤT:\n"

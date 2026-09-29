@@ -1433,10 +1433,12 @@ class V4WorkflowRuntime(WorkflowRuntime):
         _apply_context_metadata(state, snapshot)
         active_case = snapshot.active_case
         understanding_gw = getattr(self.deps, "understanding", None)
+        precomputed_understanding: dict[str, Any] | None = None
         if understanding_gw is not None:
             try:
                 u = await understanding_gw.understand(state.get("query", ""), snapshot.history, "", active_case)
                 route = RouteType(u.route)
+                precomputed_understanding = u.model_dump(mode="json")
             except Exception:  # noqa: BLE001 - fallback to deterministic route classification
                 route = classify_route(state.get("query", ""), snapshot.history, active_case)
         else:
@@ -1468,6 +1470,7 @@ class V4WorkflowRuntime(WorkflowRuntime):
             state["query"], user_id=state["user_id"], conversation_id=state["conversation_id"],
             legacy_session_id=state.get("legacy_session_id", ""), mode=state.get("mode", "auto"), deps=self.deps,
             trace_id=state["trace_id"], compiled_workflow=self._compiled_workflow,
+            precomputed_understanding=precomputed_understanding,
         )
         # The bounded V4 router delegates ordinary legal lookups to the
         # already-accepted V3 graph.  Copy the V4 request descriptor back onto

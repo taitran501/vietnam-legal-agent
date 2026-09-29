@@ -54,11 +54,17 @@ Nhiệm vụ của bạn là tiếp nhận câu nói/yêu cầu của người d
 7. 'out_of_scope':
    - Các câu hỏi hoàn toàn không thuộc lĩnh vực pháp luật, quy định hay thủ tục hành chính Việt Nam (công thức nấu ăn, viết code lập trình, giải trí, kết quả bóng đá, crypto/tiền ảo, viết thơ...).
 
+Trường 'route' quyết định luồng sản phẩm. Trường 'task_type' chỉ tương thích API cũ và phải khớp với route: case_assessment -> assess_epr_obligation; compliance_checklist -> build_compliance_checklist; chitchat -> chitchat; các route tra cứu/giải thích/tìm nguồn/out_of_scope -> legal_lookup. Câu hỏi về nội dung một nghĩa vụ pháp luật nói chung là legal_lookup; chỉ chọn case_assessment khi người dùng yêu cầu đánh giá hoàn cảnh cụ thể của họ hoặc một doanh nghiệp cụ thể.
+
 ════════════════════ XỬ LÝ NGỮ CẢNH & VIẾT LẠI TRUY VẤN (STANDALONE QUERY) ════════════════════
 - is_follow_up = True: Chỉ khi câu nói phụ thuộc vào ngữ cảnh trao đổi trước đó (ví dụ: "còn trường hợp đó thì sao?", "mức phạt thế nào?", "vậy tôi phải làm gì tiếp?").
 - standalone_query:
   + Nếu là câu hỏi độc lập hoặc chitchat: Giữ nguyên câu nói của người dùng.
   + Nếu là câu follow-up: Viết lại thành một câu tiếng Việt độc lập, đầy đủ ngữ cảnh để làm truy vấn tra cứu.
+- retrieval_queries: Với câu hỏi pháp lý cần tra cứu, đề xuất tối đa 2 cách diễn đạt ngắn gọn tương đương để tìm cùng quy định trong kho văn bản.
+  + Chỉ đổi cách diễn đạt/chủ đề tìm kiếm; không tự thêm số hiệu văn bản, điều khoản, mốc thời gian, dữ kiện hoặc câu trả lời.
+  + Giữ nguyên mọi văn bản, điều, khoản, điểm và phụ lục mà người dùng đã nêu.
+  + Để trống với chitchat hoặc câu hỏi ngoài phạm vi pháp luật.
 - Trích xuất facts (business_role, product_or_packaging, material, activity_scope): Chỉ lấy thông tin người dùng nêu rõ ràng, không suy đoán."""
 
 
@@ -83,7 +89,7 @@ class StructuredTaskUnderstandingGateway:
         summary: str,
         active_case: dict[str, Any] | None,
     ) -> TaskUnderstanding:
-        if is_greeting(query) or (not active_case and is_general_lookup_explanation_query(query)):
+        if is_greeting(query):
             return deterministic_task_understanding(query, history, active_case)
         try:
             from epr_agent.infra.llm_instances import get_llm_router
@@ -109,6 +115,26 @@ class StructuredTaskUnderstandingGateway:
             if not result.standalone_query or not result.standalone_query.strip():
                 result.standalone_query = query
             result.standalone_query = preserve_explicit_anchors(query, result.standalone_query)
+
+            # Keep the model-generated search reformulations while pinning
+            # straightforward legal lookups to the deterministic route. This
+            # lets retrieval benefit from semantic variation without letting
+            # a model turn an ordinary question into case advice/checklist.
+            if not active_case and is_general_lookup_explanation_query(query):
+                deterministic = deterministic_task_understanding(query, history, active_case)
+                result.task_type = deterministic.task_type
+                result.route = deterministic.route
+                result.is_follow_up = deterministic.is_follow_up
+                result.standalone_query = preserve_explicit_anchors(
+                    query,
+                    deterministic.standalone_query or query,
+                )
+                result.explicit_anchors = deterministic.explicit_anchors
+                result.legal_topics = deterministic.legal_topics
+                result.research_requested = deterministic.research_requested
+                result.facts = deterministic.facts
+                result.missing_facts = deterministic.missing_facts
+                result.confidence = deterministic.confidence
 
             # A valid enum is not enough to make a case-assessment route valid.
             # Recheck model-selected case routes with the deterministic rules so
