@@ -46,7 +46,7 @@ const STEP_DEFINITIONS: Record<
   search_legal_provisions: {
     label: 'Truy xuất kho văn bản & điều khoản pháp luật',
     icon: 'search',
-    defaultBadge: 'Kho 65.967 văn bản quy phạm',
+    defaultBadge: 'Kho văn bản đã cấu hình',
   },
   retrieve_legal: {
     label: 'Truy xuất căn cứ pháp luật chuyên ngành',

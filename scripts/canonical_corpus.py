@@ -85,14 +85,15 @@ def sha256_file(path: Path) -> str:
 
 
 def appendix_sha256(path: Path) -> str:
-    """Hash Appendix rows while ignoring converter-specific PDF metadata.
+    """Hash Appendix text while ignoring converter-specific layout metadata.
 
-    LibreOffice can produce byte-different PDFs for the same source document
-    across hosts and versions.  ``PDF_SHA256`` records that provenance for
-    inspection, but it must not change the legal corpus identity when the
-    extracted row content and source document are unchanged.
+    LibreOffice and PyMuPDF can change page numbers, bounding boxes, row IDs,
+    and PDF bytes across hosts and versions.  Those values remain in the
+    runtime artifact for citation audits, but corpus identity follows the
+    source document and normalized cell text.
     """
 
+    identity_fields = ("Document_Id", "Điều", "Text", "Cell_Text", "Source_File", "Source_SHA256")
     rows: list[str] = []
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
@@ -100,7 +101,7 @@ def appendix_sha256(path: Path) -> str:
         record = json.loads(line)
         if not isinstance(record, dict):
             raise TypeError(f"{path} must contain one JSON object per line")
-        canonical = {key: value for key, value in record.items() if key != "PDF_SHA256"}
+        canonical = {key: record[key] for key in identity_fields if key in record}
         rows.append(json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
     payload = ("\n".join(rows) + "\n").encode("utf-8") if rows else b""
     return hashlib.sha256(payload).hexdigest()
@@ -644,7 +645,19 @@ def canonical_chunks(
         if end < start or not original or _clean(offset_text) != _clean(original):
             invalid_offsets += 1
             continue
-        parent_seed = "|".join((document.document_id, _article_value(article, "Parent_Dieu", "Điều", "Dieu"), _article_value(article, "Pages")))
+        parent_identity = [
+            document.document_id,
+            _article_value(article, "Parent_Dieu", "Điều", "Dieu"),
+            _article_value(article, "Pages"),
+        ]
+        if article.get("Appendix_Row_Id"):
+            parent_identity.extend(
+                (
+                    str(article.get("Appendix_Table_Id") or ""),
+                    str(article["Appendix_Row_Id"]),
+                )
+            )
+        parent_seed = "|".join(parent_identity)
         parent_id = str(article.get("Parent_Id") or uuid.uuid5(uuid.NAMESPACE_URL, parent_seed))
         chunk_seed = "|".join((parent_id, str(article.get("Chunk_Index", fallback_index)), str(start), str(end), hashlib.sha256(original.encode("utf-8")).hexdigest()[:16]))
         chunk_id = str(uuid.uuid5(uuid.NAMESPACE_URL, chunk_seed))

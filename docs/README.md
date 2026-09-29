@@ -1,10 +1,12 @@
 # Architecture and Operational Documentation
 
-This is the documentation index for Vietnam Legal Agent. The application
-supports preliminary research and assessment across selected Vietnamese legal
-domains: civil/contracts, labor, corporate, land, traffic, and EPR (Environmental
-Producer Responsibility). This documentation does not constitute official legal
-text or formal legal advice.
+This is the documentation index for Vietnam Legal Agent. The code contains
+routes and assessment forms for several Vietnamese legal domains, but the
+default runtime corpus is EPR-focused. The broader Ministry of Justice corpus
+is an optional local preview artifact and is not included in the production
+release. A route or form existing in the code does not mean its legal sources
+are available at runtime. This documentation does not constitute official
+legal text or formal legal advice.
 
 ## Sources of Truth
 

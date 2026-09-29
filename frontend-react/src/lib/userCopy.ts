@@ -141,8 +141,9 @@ export function caseFormErrorMessage(error: unknown): string {
 
 export const safeStopCopy: Record<string, { title: string; message: string }> = {
   out_of_scope: { title: 'Ngoài phạm vi hỗ trợ', message: 'Yêu cầu này không thuộc phạm vi pháp luật mà trợ lý đang hỗ trợ.' },
-  insufficient_evidence: { title: 'Chưa đủ căn cứ để trả lời chắc chắn', message: 'Chưa tìm thấy căn cứ phù hợp đang có hiệu lực cho một hoặc nhiều vấn đề cần kiểm tra.' },
+  insufficient_evidence: { title: 'Chưa đủ căn cứ để trả lời chắc chắn', message: 'Nguồn đã truy xuất chưa trả lời đủ nội dung bạn hỏi.' },
   missing_provision: { title: 'Chưa tìm thấy điều khoản phù hợp', message: 'Chưa tìm thấy điều khoản phù hợp đang có hiệu lực trong các văn bản hiện có.' },
+  current_law_status_unverified: { title: 'Chưa xác minh được hiệu lực hiện hành', message: 'Đã tìm thấy điều khoản, nhưng kho dữ liệu chưa xác nhận tình trạng hiệu lực hoặc các sửa đổi về sau.' },
   incomplete_issue_coverage: { title: 'Chưa đủ căn cứ cho toàn bộ vấn đề', message: 'Chưa tìm thấy căn cứ phù hợp đang có hiệu lực cho một hoặc nhiều vấn đề cần kiểm tra.' },
   failed_citation_verification: { title: 'Chưa kiểm tra được căn cứ', message: 'Trợ lý đã dừng để không trả lời khi chưa kiểm tra được nguồn phù hợp.' },
   stale_corpus: { title: 'Văn bản cần được cập nhật', message: 'Thông tin hiện tại chưa được xác nhận là mới nhất cho các quy định liên quan.' },

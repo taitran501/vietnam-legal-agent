@@ -15,6 +15,14 @@ function renderWelcome(
 }
 
 describe('WelcomeScreen task categories', () => {
+  it('describes the configured legal corpus without claiming an unavailable corpus size', () => {
+    renderWelcome();
+
+    expect(screen.getByText(/theo kho văn bản đang được cấu hình/i)).toBeInTheDocument();
+    expect(screen.getByText(/báo rõ khi chưa tìm thấy nguồn phù hợp/i)).toBeInTheDocument();
+    expect(screen.queryByText(/84\.900/i)).not.toBeInTheDocument();
+  });
+
   it('shows exactly three categories and no sample-question section', () => {
     renderWelcome();
 

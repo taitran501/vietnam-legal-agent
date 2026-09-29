@@ -136,17 +136,21 @@ async def lifespan(app: FastAPI):
         logger.warning("Persistent history init failed: %s", exc)
 
     # 2.5 Warm retrieval indexes asynchronously; readiness still guards requests.
-    warmup_task = asyncio.create_task(_warmup_retrieval_indexes_task())
+    warmup_tasks = [
+        asyncio.create_task(_warmup_retrieval_indexes_task()),
+        asyncio.create_task(_warmup_local_embeddings_task()),
+    ]
 
     yield
 
     # Shutdown
-    if not warmup_task.done():
-        warmup_task.cancel()
-        try:
-            await warmup_task
-        except asyncio.CancelledError:
-            pass
+    for warmup_task in warmup_tasks:
+        if not warmup_task.done():
+            warmup_task.cancel()
+            try:
+                await warmup_task
+            except asyncio.CancelledError:
+                pass
     await close_redis()
     try:
         from epr_agent.retrieval.retrieval import close_qdrant_client
@@ -172,6 +176,32 @@ async def _warmup_retrieval_indexes_task() -> None:
         raise
     except Exception as exc:  # noqa: BLE001 - readiness, not warmup, owns request safety
         logger.warning("Retrieval index warmup failed: %s", exc)
+
+
+async def _warmup_local_embeddings_task() -> None:
+    """Load local embeddings in the background so a user's first lookup is not cold."""
+    settings = get_settings()
+    uses_local_embeddings = (
+        settings.embedding_provider in {"local", "sentence_transformers"}
+        or settings.embedding_profile in {"vnlegal-lal-v1", "vietnamese-legal-embedding-v1", "bge-m3-v1"}
+    )
+    if not uses_local_embeddings:
+        return
+
+    started = asyncio.get_running_loop().time()
+    try:
+
+        def load_and_warm_embeddings() -> None:
+            from epr_agent.infra.llm_instances import get_embeddings
+
+            get_embeddings().embed_query("Khởi tạo truy xuất pháp luật.")
+
+        await asyncio.to_thread(load_and_warm_embeddings)
+        logger.info("Local embedding model warmed in %.1fms", (asyncio.get_running_loop().time() - started) * 1000)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - the first legal request retains the normal retry path
+        logger.warning("Local embedding warmup failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------

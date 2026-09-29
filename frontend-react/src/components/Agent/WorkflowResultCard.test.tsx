@@ -55,6 +55,22 @@ describe('WorkflowResultCard', () => {
     expect(screen.getByText('Chưa đủ căn cứ để trả lời chắc chắn')).toBeInTheDocument();
   });
 
+  it('explains when an article was found but its current status is unverified', () => {
+    render(
+      <WorkflowResultCard
+        workflow={{
+          safe_stop_reason: 'current_law_status_unverified',
+          available_actions: ['research_web'],
+        }}
+        onResearch={vi.fn()}
+        webResearchReady
+      />,
+    );
+
+    expect(screen.getByText('Chưa xác minh được hiệu lực hiện hành')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tìm nguồn công khai' })).toBeInTheDocument();
+  });
+
   it('renders an assessment only for a completed decision', () => {
     render(
       <WorkflowResultCard

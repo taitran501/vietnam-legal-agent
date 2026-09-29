@@ -46,6 +46,14 @@ def test_corpus_hash_and_multi_article_parser_are_stable():
     assert anchors[0].point == "Điểm a"
 
 
+def test_explicit_named_instrument_stays_attached_to_article_anchor():
+    anchors = explicit_anchors("Điều 41 Bộ luật Lao động 2019 quy định gì?")
+
+    assert len(anchors) == 1
+    assert anchors[0].article == "Điều 41"
+    assert anchors[0].document_title == "Bộ luật Lao động 2019"
+
+
 def test_text_source_hash_is_stable_across_checkout_line_endings(tmp_path):
     lf = tmp_path / "law.json"
     crlf = tmp_path / "law-copy.json"
@@ -69,6 +77,63 @@ def test_appendix_hash_ignores_converter_pdf_digest(tmp_path):
     second.write_bytes((json.dumps(row, ensure_ascii=False) + "\r\n").encode("utf-8"))
 
     assert appendix_sha256(first) == appendix_sha256(second)
+
+
+def test_appendix_hash_ignores_converter_page_and_row_layout(tmp_path):
+    first = tmp_path / "first-layout.jsonl"
+    second = tmp_path / "second-layout.jsonl"
+    row = {
+        "Document_Id": "nd-08-2022-nd-cp",
+        "Điều": "Phụ lục XXII",
+        "Text": "1 Bao bì giấy 20%",
+        "Cell_Text": ["1", "Bao bì giấy", "20%"],
+        "Source_File": "data/08_2022_ND-CP_479457.doc",
+        "Source_SHA256": "source-digest",
+        "Source_Page": 192,
+        "Source_BBox": [80.0, 30.0, 530.0, 730.0],
+        "Table_Id": "p192-t0",
+        "Row_Id": "p192-t0-r1",
+        "PDF_SHA256": "converter-a",
+    }
+    first.write_text(json.dumps(row, ensure_ascii=False) + "\n", encoding="utf-8", newline="")
+    row.update(
+        {
+            "Source_Page": 204,
+            "Source_BBox": [82.0, 32.0, 535.0, 735.0],
+            "Table_Id": "p204-t0",
+            "Row_Id": "p204-t0-r8",
+            "PDF_SHA256": "converter-b",
+        }
+    )
+    second.write_bytes((json.dumps(row, ensure_ascii=False) + "\r\n").encode("utf-8"))
+
+    assert appendix_sha256(first) == appendix_sha256(second)
+
+
+def test_duplicate_appendix_rows_receive_distinct_chunk_ids(tmp_path):
+    text = "1. Sản xuất hạt nhựa tái sinh."
+    rows = [
+        {
+            "Document_Id": "nd-08-2022-nd-cp",
+            "Điều": "Phụ lục XXII",
+            "Pages": "194",
+            "Text": text,
+            "Original_Text": text,
+            "Source_Start": 0,
+            "Source_End": len(text),
+            "_Parent_Source_Text": text,
+            "Chunk_Index": 0,
+            "Appendix_Table_Id": "p194-t0",
+            "Appendix_Row_Id": row_id,
+        }
+        for row_id in ("p194-t0-r1", "p194-t0-r6")
+    ]
+
+    chunks, audit = canonical_chunks(rows, appendix_path=tmp_path / "missing-appendix.jsonl")
+
+    assert len(chunks) == 2
+    assert audit.duplicate_chunk_ids == 0
+    assert chunks[0].chunk_id != chunks[1].chunk_id
 
 
 def test_default_appendix_path_prefers_runtime_artifact_and_keeps_legacy_fallback(tmp_path):

@@ -63,11 +63,11 @@ enabled, a missing or invalid extracted file prevents index alias promotion.
 The generated file belongs under `artifacts/appendix_xxii.jsonl`, shared by
 the one-shot indexer and backend Compose services.  It is deliberately ignored
 by Git; the source DOC and extraction code are the reproducible inputs. The
-corpus identity canonicalizes the JSONL rows and ignores only the
-converter-specific `PDF_SHA256` field, which can differ between LibreOffice
-versions. `data/corpus_manifest.json` records the resulting Appendix digest;
-the indexer still requires and validates the actual runtime artifact before
-promoting an alias.
+corpus identity hashes normalized cell text and source identity. It ignores
+converter-specific PDF hashes, page numbers, bounding boxes, and generated row
+IDs; those remain in the runtime artifact for citation audits. The indexer
+still requires and validates the actual runtime artifact before promoting an
+alias.
 
 ## Local checks
 

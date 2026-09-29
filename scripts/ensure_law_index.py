@@ -124,6 +124,24 @@ def _audit(client, collection: str, *, expected_count: int, digest: str, schema:
         raise RuntimeError("index_missing_citation_metadata")
 
 
+def _ensure_collection(client, collection: str, chunks, *, digest: str, schema: str, settings) -> bool:
+    """Build through the active client so local Qdrant storage is never double-opened."""
+
+    from scripts import build_index
+
+    if _matching_collection(
+        client,
+        collection,
+        expected_count=len(chunks),
+        digest=digest,
+        schema=schema,
+        settings=settings,
+    ):
+        return False
+    build_index.upsert_to_qdrant(chunks, client=client)
+    return True
+
+
 def _switch_alias(client, alias: str, target: str) -> str | None:
     # Qdrant alias update is atomic.  Use the REST client model rather than a
     # delete/recreate collection so the old collection remains rollbackable.
@@ -169,8 +187,14 @@ def main() -> None:
         raise RuntimeError("canonical_chunk_audit_failed")
     client = _client(settings)
     try:
-        if not _matching_collection(client, target, expected_count=len(canonical), digest=digest, schema=settings.index_schema_version, settings=settings):
-            build_index.upsert_to_qdrant(canonical)
+        _ensure_collection(
+            client,
+            target,
+            canonical,
+            digest=digest,
+            schema=settings.index_schema_version,
+            settings=settings,
+        )
         _audit(client, target, expected_count=len(canonical), digest=digest, schema=settings.index_schema_version, settings=settings)
         from scripts.canonical_corpus import corpus_readiness_audit
 

@@ -597,21 +597,23 @@ def _stable_point_id(
 # Qdrant upsert
 # ---------------------------------------------------------------------------
 
-def upsert_to_qdrant(chunks) -> None:
+def upsert_to_qdrant(chunks, *, client=None) -> None:
     settings = get_settings()
     from qdrant_client import QdrantClient
     from qdrant_client.models import Distance, HnswConfigDiff, PointStruct, VectorParams
 
-    if settings.use_qdrant_cloud:
-        client = QdrantClient(url=settings.qdrant_cloud_url, api_key=settings.qdrant_api_key)
-        logger.info("Connected to Qdrant Cloud at %s", settings.qdrant_cloud_url)
-    elif settings.qdrant_url:
-        client = QdrantClient(url=settings.qdrant_url)
-        logger.info("Connected to self-hosted Qdrant at %s", settings.qdrant_url)
-    else:
-        local_path = str(ROOT / "qdrant_db")
-        client = QdrantClient(path=local_path)
-        logger.info("Using local Qdrant at %s", local_path)
+    owns_client = client is None
+    if client is None:
+        if settings.use_qdrant_cloud:
+            client = QdrantClient(url=settings.qdrant_cloud_url, api_key=settings.qdrant_api_key)
+            logger.info("Connected to Qdrant Cloud at %s", settings.qdrant_cloud_url)
+        elif settings.qdrant_url:
+            client = QdrantClient(url=settings.qdrant_url)
+            logger.info("Connected to self-hosted Qdrant at %s", settings.qdrant_url)
+        else:
+            local_path = str(ROOT / "qdrant_db")
+            client = QdrantClient(path=local_path)
+            logger.info("Using local Qdrant at %s", local_path)
 
     collection = settings.law_collection
 
@@ -739,6 +741,8 @@ def upsert_to_qdrant(chunks) -> None:
         time.sleep(0.5)
 
     logger.info("✅ Upserted %d canonical chunks into '%s'", total, collection)
+    if owns_client:
+        client.close()
 
 
 # ---------------------------------------------------------------------------

@@ -36,7 +36,7 @@ describe('ReasoningBlock (Deer-Flow Chain of Thought)', () => {
 
     // Steps
     expect(screen.getByText('Truy xuất kho văn bản & điều khoản pháp luật')).toBeInTheDocument();
-    expect(screen.getByText('Kho 65.967 văn bản quy phạm')).toBeInTheDocument();
+    expect(screen.getByText('Kho văn bản đã cấu hình')).toBeInTheDocument();
     expect(screen.getByText('“đơn phương ly hôn”')).toBeInTheDocument();
     expect(screen.getByText('180ms')).toBeInTheDocument();
 

@@ -97,8 +97,8 @@ export function WelcomeScreen({
         </h1>
 
         <p className="mt-2.5 max-w-[580px] text-center text-sm leading-relaxed text-slate-500 sm:text-[15px]">
-          Tra cứu căn cứ pháp lý, tư vấn tình huống thực tế và hướng dẫn thủ tục
-          từ hơn 84.900+ điều luật & Bộ Pháp điển Quốc gia.
+          Tra cứu căn cứ pháp lý và phân tích tình huống thực tế theo kho văn bản
+          đang được cấu hình. Trợ lý sẽ báo rõ khi chưa tìm thấy nguồn phù hợp.
         </p>
 
         <div className="mt-7 w-full max-w-[760px]">

@@ -21,10 +21,32 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 _APPENDIX = re.compile(r"PHỤ\s+LỤC\s+XXII|PHU\s+LUC\s+XXII", re.IGNORECASE)
+_NEXT_APPENDIX = re.compile(r"PHỤ\s+LỤC\s+XXIII|PHU\s+LUC\s+XXIII", re.IGNORECASE)
 
 
 def _compact(value: str) -> str:
     return " ".join(value.replace("\u00a0", " ").split())
+
+
+def _row_text(cells: list[str]) -> str:
+    """Flatten table cells into the same whitespace-normalized text we audit."""
+
+    return _compact(" ".join(cell for cell in cells if cell))
+
+
+def _normalize_pdf_cell(value: str) -> str:
+    """Correct a verified glyph-order error in this source PDF's table text."""
+
+    text = _compact(value)
+    # The rendered Appendix says "flash"; PyMuPDF 1.26 may extract it as
+    # "falsh" because of the source PDF's glyph ordering.
+    return re.sub(r"\bfalsh\b", "flash", text, flags=re.IGNORECASE)
+
+
+def _has_appendix_heading(text: str, pattern: re.Pattern[str]) -> bool:
+    """Match a standalone appendix heading, not an article's cross-reference."""
+
+    return any(pattern.fullmatch(_compact(line)) for line in text.splitlines())
 
 
 def _convert_to_pdf(source: Path, work_dir: Path) -> Path:
@@ -50,7 +72,7 @@ def _appendix_pages(pdf_path: Path) -> tuple[Any, list[int]]:
     except ImportError as exc:  # pragma: no cover - Docker dependency gate
         raise RuntimeError("appendix_extractor_requires_pymupdf") from exc
     pdf = fitz.open(pdf_path)
-    pages = [index for index, page in enumerate(pdf) if _APPENDIX.search(page.get_text("text"))]
+    pages = [index for index, page in enumerate(pdf) if _has_appendix_heading(page.get_text("text"), _APPENDIX)]
     if not pages:
         pdf.close()
         raise RuntimeError("appendix_xxii_heading_not_found")
@@ -60,7 +82,7 @@ def _appendix_pages(pdf_path: Path) -> tuple[Any, list[int]]:
     selected = [start]
     for index in range(start + 1, len(pdf)):
         text = pdf[index].get_text("text")
-        if re.search(r"PHỤ\s+LỤC\s+XXIII|PHU\s+LUC\s+XXIII", text, re.IGNORECASE):
+        if _has_appendix_heading(text, _NEXT_APPENDIX):
             break
         selected.append(index)
     return pdf, selected
@@ -83,8 +105,8 @@ def extract(source: Path, output: Path) -> dict[str, Any]:
                 tables = list(getattr(finder, "tables", []) or [])
                 for table_index, table in enumerate(tables):
                     for row_index, cells in enumerate(table.extract() or []):
-                        cells = [_compact(cell or "") for cell in cells]
-                        text = " | ".join(cell for cell in cells if cell)
+                        cells = [_normalize_pdf_cell(cell or "") for cell in cells]
+                        text = _row_text(cells)
                         if len(text) < 12:
                             continue
                         # PyMuPDF table rows do not expose a stable row bbox in

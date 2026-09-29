@@ -23,10 +23,12 @@ export function WorkflowResultCard({ onOpenSources, onResearch, onExport, webRes
     unavailable_dependency: 'unavailable_dependencies',
     dependency_unavailable: 'unavailable_dependencies',
     stale_corpus: 'stale_corpus',
+    current_law_status_unverified: 'current_law_status_unverified',
+    current_law_support_unverified: 'current_law_status_unverified',
     invalid_fact: 'invalid_or_unresolved_fact',
     unresolved_fact: 'invalid_or_unresolved_fact',
   } as Record<string, string>)[rawStopReason] || rawStopReason;
-  const safeStop = ['insufficient_evidence', 'missing_provision', 'incomplete_issue_coverage', 'failed_citation_verification', 'out_of_scope', 'stale_corpus', 'unavailable_dependencies', 'invalid_or_unresolved_fact'].includes(stopKey);
+  const safeStop = ['insufficient_evidence', 'missing_provision', 'incomplete_issue_coverage', 'failed_citation_verification', 'out_of_scope', 'stale_corpus', 'current_law_status_unverified', 'unavailable_dependencies', 'invalid_or_unresolved_fact'].includes(stopKey);
   const completedDecision = workflow.outcome === 'completed'
     && ['likely_in_scope', 'likely_out_of_scope'].includes(String(workflow.assessment?.status || ''));
   const hasAssessment = (workflow.result_type === 'assessment' && completedDecision)
@@ -45,6 +47,8 @@ export function WorkflowResultCard({ onOpenSources, onResearch, onExport, webRes
   };
   const stopGuidance = stopKey === 'out_of_scope'
     ? 'Bạn có thể thử một câu hỏi pháp luật khác trong phạm vi hỗ trợ.'
+    : stopKey === 'current_law_status_unverified'
+      ? 'Bạn có thể kiểm tra nguồn chính thức bằng nút bên dưới.'
     : stopKey === 'missing_provision'
       ? 'Nếu bạn có tên văn bản hoặc số điều khoản khác, hãy nêu thêm để trợ lý kiểm tra chính xác hơn.'
       : stopKey === 'unavailable_dependencies'

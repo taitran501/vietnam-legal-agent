@@ -2,8 +2,9 @@
 
 Preview mode exists to exercise the complete user journey with a deterministic
 source snapshot. It is not a production bypass and must remain visibly labelled
-in the UI and source drawer. Preview supports all legal domains served by the
-Vietnam Legal Agent.
+in the UI and source drawer. The default indexed snapshot is EPR-focused. A
+broader Ministry of Justice corpus is an optional local preview artifact; it is
+not included in the production release or enabled by default.
 
 ## Start a Preview
 
@@ -23,6 +24,8 @@ The readiness response should report `runtime_mode: preview`,
 `corpus.status: preview_ready`, and `legal_chat.reason:
 preview_snapshot`. A technically invalid corpus, an index mismatch,
 or a database schema mismatch still blocks the relevant capability.
+Preview readiness means the configured snapshot passed technical checks; it
+does not mean every legal domain has an indexed source.
 
 Before starting Compose, copy `.env.example` to `.env`, set
 `POSTGRES_PASSWORD` to a long random value, and set `OPENAI_API_KEY` when live
