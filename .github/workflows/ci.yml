@@ -2,11 +2,17 @@ name: CI
 
 on:
   pull_request:
-  push: {}
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  backend:
+  backend-quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,13 +22,23 @@ jobs:
           cache: pip
       - run: python -m pip install -e ".[dev]"
       - run: python -m pip check
+      - run: ruff check src/epr_agent backend scripts tests
+      - run: mypy src/epr_agent backend
+
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
       - run: python -m scripts.sync_corpus_metadata --check
       - run: python -m pytest -q
       - run: python -m tests.eval.run_eval --suite all
       - run: python tests/eval/agent_harness.py --suite all
       - run: python tests/eval/persona_simulation.py --persona all
-      - run: ruff check src/epr_agent backend scripts tests
-      - run: mypy src/epr_agent backend
 
   frontend:
     runs-on: ubuntu-latest
@@ -93,7 +109,7 @@ jobs:
           fi
 
   e2e:
-    needs: [backend, frontend]
+    needs: [backend, backend-quality, frontend]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

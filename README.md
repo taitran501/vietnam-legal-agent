@@ -197,7 +197,8 @@ The workflow in `.github/workflows/ci.yml` runs on pull requests and pushes to
 
 | Job | Checks |
 | --- | --- |
-| `backend` | Corpus metadata sync, pytest, deterministic route evaluation, Ruff, and mypy. |
+| `backend-quality` | Dependency consistency, Ruff, and mypy. |
+| `backend` | Corpus metadata sync, pytest, deterministic route evaluation, and persona simulation. |
 | `frontend` | `npm ci`, ESLint, Vitest, and the production TypeScript/Vite build. |
 | `pilot-load` | Redis-backed two-worker SSE contract: 50 concurrent turns, saturation, and lease cleanup. |
 | `e2e` | Playwright browser tests after the backend and frontend jobs pass. |
@@ -208,6 +209,11 @@ The workflow in `.github/workflows/ci.yml` runs on pull requests and pushes to
 The CI badge above reports the repository workflow. It does not claim legal
 approval, production readiness, uptime, latency, or the availability of
 external providers.
+
+CI currently validates the application but does not deploy it. A staging
+deployment still needs a selected container host for FastAPI and a configured
+frontend/API origin; production promotion should follow a smoke check against
+that deployed staging environment.
 
 ## Configuration and security
 
