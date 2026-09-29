@@ -640,7 +640,7 @@ def auto_anchor_citations_in_answer(answer: str, documents: list[DocumentRecord]
         return answer
 
     masked = mask_citation_code(answer)
-    existing_indices = set(int(m) for m in _CITATION_RE.findall(masked))
+    existing_indices = {int(m) for m in _CITATION_RE.findall(masked)}
     if existing_indices:
         return answer
 
