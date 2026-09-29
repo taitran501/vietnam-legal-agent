@@ -682,10 +682,10 @@ def build_follow_up_question(task_type: TaskType, missing: list[str]) -> str:
     if not missing:
         return ""
     labels = [FACT_LABELS[name] for name in missing if name in FACT_LABELS]
-    joined = "; ".join(labels)
+    first_missing = labels[0] if labels else "thông tin còn thiếu"
     if task_type == TaskType.BUILD_COMPLIANCE_CHECKLIST:
-        return f"Để lập checklist đúng trường hợp, bạn cho biết thêm {joined} được không?"
-    return f"Để đánh giá nghĩa vụ chính xác, bạn cho biết thêm {joined} được không?"
+        return f"Để lập danh sách đúng trường hợp, trước hết bạn cho biết {first_missing} nhé. Nếu cần thêm thông tin, mình sẽ hỏi tiếp."
+    return f"Để đánh giá chính xác, trước hết bạn cho biết {first_missing} nhé. Nếu cần thêm thông tin, mình sẽ hỏi tiếp."
 
 
 def latest_user_message(history: list[dict[str, Any]] | None) -> str:

@@ -102,13 +102,14 @@ def test_follow_up_is_rewritten_only_when_it_depends_on_context():
     assert rewrite_follow_up("Điều 77 quy định gì?", history, None) == "Điều 77 quy định gì?"
 
 
-def test_follow_up_question_explains_which_facts_are_missing():
+def test_follow_up_question_asks_for_missing_facts_one_at_a_time():
     question = build_follow_up_question(
         TaskType.BUILD_COMPLIANCE_CHECKLIST,
         ["business_role", "material"],
     )
     assert "vai trò" in question
-    assert "vật liệu" in question
+    assert "vật liệu" not in question
+    assert "hỏi tiếp" in question
 
 
 def test_structured_understanding_has_a_closed_task_surface():

@@ -547,7 +547,5 @@ def follow_up_question(missing: list[str]) -> str:
         return "Bạn có thể xác nhận thêm thông tin trường hợp này không?"
     labels = [CASE_FIELD_LABELS.get(key, key) for key in missing]
     if len(missing) == 1:
-        return f"Bạn còn thiếu 1 thông tin để tiếp tục. Hãy điền mục “{labels[0]}” trong biểu mẫu bên dưới."
-    preview = ", ".join(labels[:3])
-    suffix = " và các mục liên quan khác" if len(labels) > 3 else ""
-    return f"Bạn còn thiếu {len(missing)} thông tin để tiếp tục, gồm {preview}{suffix}. Hãy hoàn thiện biểu mẫu bên dưới."
+        return f"Để tiếp tục, bạn cho biết {labels[0]} được không?"
+    return f"Trước hết, bạn cho biết {labels[0]} nhé. Nếu cần thêm thông tin, mình sẽ hỏi tiếp từng câu."
