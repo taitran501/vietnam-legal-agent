@@ -1,13 +1,9 @@
 import type { WorkflowMetadata } from '@/types';
 import { Icon } from '@/components/UI/Icon';
 import { TraceDrawer } from './TraceDrawer';
-import { GuidedCaseCard } from '@/components/Case/GuidedCaseCard';
-import type { CaseState } from '@/types';
 import { displayFactLabel, displayFactValue, safeStopCopy } from '@/lib/userCopy';
 
 interface WorkflowResultCardProps {
-  onOpenCase?: () => void;
-  onContinueCase?: (facts: Record<string, string>, statuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>, taskType: CaseState['task_type']) => Promise<void>;
   onOpenSources?: (focusIndex?: number) => void;
   onResearch?: () => void;
   onExport?: () => void;
@@ -15,7 +11,7 @@ interface WorkflowResultCardProps {
   workflow?: WorkflowMetadata;
 }
 
-export function WorkflowResultCard({ onOpenCase, onContinueCase, onOpenSources, onResearch, onExport, webResearchReady = false, workflow }: WorkflowResultCardProps) {
+export function WorkflowResultCard({ onOpenSources, onResearch, onExport, webResearchReady = false, workflow }: WorkflowResultCardProps) {
   if (!workflow) return null;
   const rawStopReason = workflow.safe_stop_reason || workflow.citation_error || workflow.termination_reason || '';
   const stopKey = ({
@@ -58,7 +54,6 @@ export function WorkflowResultCard({ onOpenCase, onContinueCase, onOpenSources, 
   const hasTrace = import.meta.env.VITE_ENABLE_TRACE_DEBUG === 'true' && Boolean(workflow.trace_id);
   if (!safeStop && !hasAssessment && !hasChecklist && !hasMissingFacts && !hasAssumptions && !hasTrace) return null;
 
-  const taskType = workflow.case_state?.task_type || (workflow.task_type === 'build_compliance_checklist' ? 'build_compliance_checklist' : 'assess_epr_obligation');
   const factsUsed = Object.entries(workflow.case_state?.facts || {}).filter(([, value]) => {
     const raw = typeof value === 'string' ? value : (value as { value?: string })?.value;
     return Boolean(raw);
@@ -68,19 +63,10 @@ export function WorkflowResultCard({ onOpenCase, onContinueCase, onOpenSources, 
   return (
     <section className="mt-5 space-y-3" aria-label="Kết quả xử lý">
       {hasMissingFacts && (
-        onContinueCase ? (
-          <GuidedCaseCard
-            initialCaseState={workflow.case_state}
-            onOpenFullEditor={onOpenCase}
-            onSubmit={onContinueCase}
-            taskType={taskType}
-          />
-        ) : (
-          <div className="rounded-lg border border-[#cad5ec] bg-[#f3f6fc] p-4 text-sm text-[#29354b]">
-            <p className="font-semibold text-[#005c55]">Cần thêm thông tin để tiếp tục</p>
-            <p className="mt-2 leading-6">Còn thiếu: {workflow.missing_facts?.map((fact) => displayFactLabel(fact)).join(', ')}.</p>
-          </div>
-        )
+        <div className="rounded-lg border border-[#cad5ec] bg-[#f3f6fc] p-4 text-sm text-[#29354b]">
+          <p className="font-semibold text-[#005c55]">Cần thêm thông tin để tiếp tục</p>
+          <p className="mt-2 leading-6">Bạn có thể trả lời câu hỏi của trợ lý ngay trong ô chat. Nếu cần thêm dữ kiện, trợ lý sẽ hỏi tiếp.</p>
+        </div>
       )}
 
       {safeStop && (

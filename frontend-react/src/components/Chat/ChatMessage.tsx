@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { CaseState, ChatMessage, SourceDocument } from '@/types';
+import type { ChatMessage, SourceDocument } from '@/types';
 import { formatTimestamp } from '@/lib/formatters';
 import { MarkdownRenderer } from '@/utils/markdown';
 import { MessageActions } from './MessageActions';
@@ -13,8 +13,6 @@ import { Icon } from '@/components/UI/Icon';
 
 interface ChatMessageProps {
   message: ChatMessage;
-  onOpenCase?: () => void;
-  onContinueCase?: (facts: Record<string, string>, statuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>, taskType: CaseState['task_type']) => Promise<void>;
   onResearch?: () => void;
   onExport?: (message: ChatMessage) => void;
   onOpenSources: (documents: SourceDocument[], citations: Array<Record<string, unknown>>, focusIndex?: number, preview?: boolean) => void;
@@ -22,7 +20,7 @@ interface ChatMessageProps {
   webResearchReady: boolean;
 }
 
-export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOpenSources, onRegenerate, onResearch, onExport, webResearchReady }: ChatMessageProps) {
+export function ChatMessageComponent({ message, onOpenSources, onRegenerate, onResearch, onExport, webResearchReady }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
 
@@ -99,8 +97,6 @@ export function ChatMessageComponent({ message, onOpenCase, onContinueCase, onOp
           )}
 
           <WorkflowResultCard
-            onContinueCase={onContinueCase}
-            onOpenCase={onOpenCase}
             onOpenSources={(focusIndex) => onOpenSources(message.documents || [], message.workflow?.citations || [], focusIndex, message.workflow?.preview)}
             onResearch={onResearch}
             onExport={() => onExport?.(message)}

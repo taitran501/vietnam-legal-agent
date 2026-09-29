@@ -11,7 +11,12 @@ test('React consumes the real FastAPI SSE and opens verified legal evidence', as
   await page.getByRole('button', { name: /Xem \d+ nguồn tham khảo/ }).click();
   const drawer = page.getByRole('dialog', { name: 'Nguồn tham khảo' });
   const firstSource = drawer.locator('#source-1');
-  await expect(firstSource.getByRole('heading', { name: 'Nghị định 08/2022/NĐ-CP', exact: true })).toBeVisible();
+  await expect(
+    firstSource.getByRole('heading', {
+      name: 'Nghị định 08/2022/NĐ-CP',
+      exact: true,
+    }),
+  ).toBeVisible();
   await expect(firstSource.getByText('Số: 08/2022/NĐ-CP', { exact: true })).toBeVisible();
   await expect(firstSource.getByText('Điều 77', { exact: true }).first()).toBeVisible();
 });
@@ -34,26 +39,38 @@ test('a user can stop an in-progress SSE response without losing rendered text',
   await input.fill('Điều 77 Nghị định 08/2022 quy định gì về trách nhiệm tái chế bao bì?');
   await input.press('Enter');
 
-  await expect(page.getByTestId('streaming-answer')).toContainText('Điều 77', { timeout: 15000 });
+  await expect(page.getByTestId('streaming-answer')).toContainText('Điều 77', {
+    timeout: 15000,
+  });
   const stop = page.getByRole('button', { name: 'Dừng tạo câu trả lời' });
   await expect(stop).toBeVisible();
   await stop.click();
 
   await expect(stop).not.toBeVisible();
   await expect(page.getByTestId('streaming-answer')).not.toBeVisible();
-  await expect(page.getByText('Đã dừng theo yêu cầu · nội dung chưa hoàn chỉnh', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Đã dừng theo yêu cầu · nội dung chưa hoàn chỉnh', {
+      exact: true,
+    }),
+  ).toBeVisible();
 
   const sessionId = new URL(page.url()).pathname.split('/').pop();
   expect(sessionId).toBeTruthy();
-  await expect.poll(async () => {
-    const response = await page.request.get(`/api/v1/sessions/${sessionId}`);
-    if (!response.ok()) return 'not-ready';
-    const detail = await response.json();
-    return detail.messages.at(-1)?.status;
-  }).toBe('stopped');
+  await expect
+    .poll(async () => {
+      const response = await page.request.get(`/api/v1/sessions/${sessionId}`);
+      if (!response.ok()) return 'not-ready';
+      const detail = await response.json();
+      return detail.messages.at(-1)?.status;
+    })
+    .toBe('stopped');
 
   await page.reload();
-  await expect(page.getByText('Đã dừng theo yêu cầu · nội dung chưa hoàn chỉnh', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Đã dừng theo yêu cầu · nội dung chưa hoàn chỉnh', {
+      exact: true,
+    }),
+  ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Câu trả lời hữu ích' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Tạo lại câu trả lời' })).toHaveCount(0);
 });
@@ -86,58 +103,48 @@ test('an unknown explicit article safe-stops without presenting unrelated source
   await expect(page.getByText(/Điều 77 quy định đối tượng/)).toHaveCount(0);
 });
 
-test('real guided assessment collects dependent facts before one submit', async ({ page }) => {
+test('case assessment starts with free text instead of a long intake form', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Kiểm tra trường hợp của doanh nghiệp' }).click();
-  const form = page.getByRole('region', { name: 'Kiểm tra trường hợp của doanh nghiệp' });
-  await form.getByLabel('Vai trò doanh nghiệp').selectOption('manufacturer');
-  await form.getByLabel('Loại đối tượng').selectOption('commercial_packaging');
-  await form.getByLabel('Nhóm sản phẩm/bao bì').selectOption('bao_bi');
-  await form.getByLabel('Phạm vi đưa ra thị trường').selectOption('vietnam_market');
-  await form.getByLabel('Mục đích sản xuất hoặc nhập khẩu').selectOption('commercial');
-  await form.getByLabel('Nhóm hàng hóa được đóng gói').selectOption('thuc_pham');
-  await form.getByLabel('Doanh thu bán sản phẩm liên quan mỗi năm').fill('40000000000');
-  await form.getByLabel('Bao bì có được doanh nghiệp thu hồi để tái sử dụng không').selectOption('no');
-  await expect(form.getByRole('button', { name: 'Kiểm tra trường hợp' })).toBeEnabled();
-  await form.getByRole('button', { name: 'Kiểm tra trường hợp' }).click();
+  const input = page.getByLabel('Câu hỏi pháp lý');
+  const prompt = 'Tôi sản xuất bao bì nhựa và bán tại Việt Nam. Có phải thực hiện EPR không?';
+  await page.getByRole('button', { name: 'Tư vấn tình huống' }).click();
+  await expect(input).toHaveValue('');
+  await input.fill(prompt);
 
-  await expect(page.getByText('Đánh giá sơ bộ', { exact: true })).toBeVisible();
-  await expect(page.getByText(/Kết quả dựa trên thông tin đã cung cấp và nguồn hiển thị/)).toBeVisible();
+  const requestPromise = page.waitForRequest((request) => request.url().includes('/api/v1/chat') && request.method() === 'POST');
+  await input.press('Enter');
+  const request = await requestPromise;
+  expect(request.postDataJSON().intent_hint).toBe('case_assessment');
+  await expect(page.getByText(prompt, { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Kết quả xử lý' })).toBeVisible({ timeout: 20000 });
+  await expect(page.getByText(/Trước hết, bạn cho biết/)).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Kiểm tra trường hợp của doanh nghiệp' })).toHaveCount(0);
+
+  const followUp = 'Tôi là nhà sản xuất, kinh doanh thương mại, doanh thu khoảng 40 tỷ đồng mỗi năm và không thu hồi bao bì.';
+  const followUpRequestPromise = page.waitForRequest((nextRequest) => nextRequest.url().includes('/api/v1/chat') && nextRequest.method() === 'POST');
+  await input.fill(followUp);
+  await input.press('Enter');
+  const followUpRequest = await followUpRequestPromise;
+  expect(followUpRequest.postDataJSON().query).toBe(followUp);
+  expect(followUpRequest.postDataJSON().intent_hint).toBe('auto');
+  await expect(page.getByText(followUp, { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Câu trả lời hữu ích' })).toHaveCount(2, { timeout: 20000 });
+  await expect(page.getByRole('region', { name: 'Kiểm tra trường hợp của doanh nghiệp' })).toHaveCount(0);
 });
 
-test('guided form explains unresolved reuse branch before submit', async ({ page }) => {
+test('checklist category reaches the agent and asks through chat', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Kiểm tra trường hợp của doanh nghiệp' }).click();
-  const form = page.getByRole('region', { name: 'Kiểm tra trường hợp của doanh nghiệp' });
-  await form.getByLabel('Vai trò doanh nghiệp').selectOption('manufacturer');
-  await form.getByLabel('Loại đối tượng').selectOption('commercial_packaging');
-  await form.getByLabel('Nhóm sản phẩm/bao bì').selectOption('bao_bi');
-  await form.getByLabel('Phạm vi đưa ra thị trường').selectOption('vietnam_market');
-  await form.getByLabel('Mục đích sản xuất hoặc nhập khẩu').selectOption('commercial');
-  await form.getByLabel('Nhóm hàng hóa được đóng gói').selectOption('thuc_pham');
-  await form.getByLabel('Doanh thu bán sản phẩm liên quan mỗi năm').fill('40000000000');
-  await form.getByLabel('Bao bì có được doanh nghiệp thu hồi để tái sử dụng không').selectOption('yes');
-  await form.getByLabel('Tỷ lệ thu hồi và tái sử dụng').fill('80');
+  const input = page.getByLabel('Câu hỏi pháp lý');
+  const prompt = 'Tôi muốn đăng ký hộ kinh doanh. Cần chuẩn bị hồ sơ gì?';
+  await page.getByRole('button', { name: 'Hồ sơ & thủ tục' }).click();
+  await expect(input).toHaveValue('');
+  await input.fill(prompt);
 
-  await expect(form.getByText('Trường hợp có thu hồi và tái sử dụng cần được đối chiếu thêm căn cứ riêng.', { exact: false })).toBeVisible();
-  await expect(form.getByRole('button', { name: 'Kiểm tra trường hợp' })).toBeDisabled();
-  await expect(page).toHaveURL(/\/$/);
-});
-
-test('generic other category is explained instead of opening a doomed turn', async ({ page }) => {
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Kiểm tra trường hợp của doanh nghiệp' }).click();
-  const form = page.getByRole('region', { name: 'Kiểm tra trường hợp của doanh nghiệp' });
-  await form.getByLabel('Vai trò doanh nghiệp').selectOption('manufacturer');
-  await form.getByLabel('Loại đối tượng').selectOption('commercial_packaging');
-  await form.getByLabel('Nhóm sản phẩm/bao bì').selectOption('bao_bi');
-  await form.getByLabel('Phạm vi đưa ra thị trường').selectOption('vietnam_market');
-  await form.getByLabel('Mục đích sản xuất hoặc nhập khẩu').selectOption('commercial');
-  await form.getByLabel('Nhóm hàng hóa được đóng gói').selectOption('other');
-  await form.getByLabel('Doanh thu bán sản phẩm liên quan mỗi năm').fill('40000000000');
-  await form.getByLabel('Bao bì có được doanh nghiệp thu hồi để tái sử dụng không').selectOption('no');
-
-  await expect(form.getByText('Nhóm hàng hóa “Khác” cần được đối chiếu với điều khoản cụ thể.', { exact: false })).toBeVisible();
-  await expect(form.getByRole('button', { name: 'Kiểm tra trường hợp' })).toBeDisabled();
-  await expect(page).toHaveURL(/\/$/);
+  const requestPromise = page.waitForRequest((request) => request.url().includes('/api/v1/chat') && request.method() === 'POST');
+  await input.press('Enter');
+  const request = await requestPromise;
+  expect(request.postDataJSON().intent_hint).toBe('compliance_checklist');
+  await expect(page.getByRole('region', { name: 'Kết quả xử lý' })).toBeVisible({ timeout: 20000 });
+  await expect(page.getByRole('region', { name: 'Kiểm tra trường hợp của doanh nghiệp' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Câu trả lời hữu ích' })).toBeVisible();
 });

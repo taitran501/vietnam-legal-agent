@@ -14,7 +14,6 @@ interface MessageListProps {
   isStreaming: boolean;
   messages: ChatMessage[];
   onOpenCase?: () => void;
-  onContinueCase?: (facts: Record<string, string>, statuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>, taskType: CaseState['task_type']) => Promise<void>;
   onResearch?: (query: string) => void;
   onExport?: (message: ChatMessage) => void;
   onOpenSources: (documents: SourceDocument[], citations: Array<Record<string, unknown>>, focusIndex?: number, preview?: boolean) => void;
@@ -32,7 +31,6 @@ export function MessageList({
   isStreaming,
   messages,
   onOpenCase,
-  onContinueCase,
   onResearch,
   onExport,
   onOpenSources,
@@ -97,8 +95,6 @@ export function MessageList({
             <ChatMessageComponent
               key={`${message.id}-${index}`}
               message={message}
-              onOpenCase={onOpenCase}
-              onContinueCase={message.role === 'assistant' && index === visibleMessages.length - 1 ? onContinueCase : undefined}
               onResearch={message.role === 'assistant' && webResearchReady && message.workflow?.available_actions?.includes('research_web')
                 ? () => onResearch?.(messages[index - 1]?.content || '')
                 : undefined}

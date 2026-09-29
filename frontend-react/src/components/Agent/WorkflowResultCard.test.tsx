@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { WorkflowResultCard } from './WorkflowResultCard';
 
 describe('WorkflowResultCard', () => {
-  it('makes a missing-facts stop visible instead of implying a conclusion', () => {
+  it('asks for missing facts through chat instead of rendering a long form', () => {
     render(
       <WorkflowResultCard
         workflow={{
@@ -15,7 +15,9 @@ describe('WorkflowResultCard', () => {
     );
 
     expect(screen.getByText('Cần thêm thông tin để tiếp tục')).toBeInTheDocument();
-    expect(screen.getByText(/vật liệu hoặc quy cách/i)).toBeInTheDocument();
+    expect(screen.getByText(/trả lời câu hỏi của trợ lý ngay trong ô chat/i)).toBeInTheDocument();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/vật liệu/i)).not.toBeInTheDocument();
   });
 
   it('shows a structured checklist without duplicating the source drawer', () => {
