@@ -97,6 +97,7 @@ class AgentGuardrails:
             return True, "ok", answer, []
 
         import re
+
         from epr_agent.tools.evidence import auto_anchor_citations_in_answer
         answer = auto_anchor_citations_in_answer(answer, docs)
         has_citations = bool(re.search(r"\[\d+\]", answer))
@@ -154,6 +155,18 @@ class AgentGuardrails:
                         False,
                         VerificationStatus.VERIFICATION_UNAVAILABLE.value,
                         "Dịch vụ kiểm chứng căn cứ tạm thời chưa phản hồi.",
+                        citations_dicts,
+                    )
+                support_reason = str(support.reason_code or "").strip().casefold()
+                if support_status is VerificationStatus.INSUFFICIENT_EVIDENCE and support_reason in {
+                    "no_evidence_for_claims",
+                    "no_answer_or_evidence",
+                    "insufficient_evidence",
+                }:
+                    return (
+                        False,
+                        f"claim_support_{support_status.value}",
+                        "Tôi chưa thể xác minh đầy đủ căn cứ của các nhận định pháp lý trong câu trả lời.",
                         citations_dicts,
                     )
                 if not support.supported or support_status is not VerificationStatus.VERIFIED:
