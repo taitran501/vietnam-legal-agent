@@ -23,6 +23,9 @@ class _FakeTavilyClient:
 
 @pytest.mark.asyncio
 async def test_web_research_keeps_only_official_anchor_matching_results(monkeypatch) -> None:
+    async def no_page_text(*_args, **_kwargs) -> str:
+        return ""
+
     settings = SimpleNamespace(
         tavily_api_key="test-token",
         web_official_domains="vanban.chinhphu.vn,vbpl.vn",
@@ -30,6 +33,7 @@ async def test_web_research_keeps_only_official_anchor_matching_results(monkeypa
     )
     monkeypatch.setattr("epr_agent.config.get_settings", lambda: settings)
     monkeypatch.setitem(sys.modules, "tavily", SimpleNamespace(TavilyClient=_FakeTavilyClient))
+    monkeypatch.setattr("epr_agent.tools.generation._fetch_official_page_text", no_page_text)
     _FakeTavilyClient.calls.clear()
     _FakeTavilyClient.results = [
         {
@@ -56,6 +60,7 @@ async def test_web_research_keeps_only_official_anchor_matching_results(monkeypa
     assert document.metadata["authority"] == "official"
     assert document.metadata["source_kind"] == "official_web"
     assert document.metadata["official_url"] == "https://vanban.chinhphu.vn/?docid=205092"
+    assert document.metadata["content_origin"] == "search_result_snippet"
     assert len(document.content) == 220
     assert "Nguồn chính thức ngoài corpus" in answer
     call = _FakeTavilyClient.calls[0]
