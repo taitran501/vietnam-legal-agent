@@ -1,5 +1,5 @@
 import type { SSEEvent } from '@/types';
-import { authorizationHeader, handleUnauthorized } from '@/auth/oidc';
+import { apiFetch } from '@/api/client';
 import type { StreamError, TurnOperation } from '@/types';
 
 export class ChatStreamError extends Error implements StreamError {
@@ -81,17 +81,12 @@ export async function* streamChat(
   mode: 'auto' | 'research_web' = 'auto',
   options: StreamTurnOptions = {},
 ): AsyncGenerator<SSEEvent> {
-  // Use relative URL for Vite proxy, or full URL if needed
-  const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
-  const url = baseUrl ? `${baseUrl}/api/v1/chat` : '/api/v1/chat';
-  
-  const response = await fetch(url, {
+  const response = await apiFetch('/api/v1/chat', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
       'Cache-Control': 'no-cache',
-      ...authorizationHeader(),
     },
     body: JSON.stringify({
       query,
@@ -118,7 +113,6 @@ export async function* streamChat(
   if (!response.ok) {
     const payload = await response.text();
     const event = parseSSEEvent(payload);
-    if (response.status === 401) handleUnauthorized();
     if (event?.type === 'error') throw streamErrorFromEvent(event);
     throw new ChatStreamError({
       code: response.status === 401 ? 'authentication_required' : `http_${response.status}`,

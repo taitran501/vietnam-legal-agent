@@ -20,6 +20,7 @@ import { toast } from '@/state/toastStore';
 import type { CaseState, ChatMessage, ReadinessResponse, SourceDocument } from '@/types';
 import { AUTH_EXPIRED_EVENT, beginLogin, clearAuthSession, completeLogin, getAuthSession, isOidcConfigured, rememberReturnTo } from '@/auth/oidc';
 import { getMe } from '@/api/me';
+import { apiUrl } from '@/api/client';
 import { authFailureCopy, authSessionExpiredCopy, authSignedOutCopy, capabilityUnavailableCopy, taskCopy } from '@/lib/userCopy';
 import { downloadPreliminaryReport } from '@/lib/reportExport';
 
@@ -98,8 +99,7 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
 
   const checkHealth = useCallback(async () => {
     try {
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
-      const response = await fetch(`${baseUrl}/api/v1/ready`);
+      const response = await fetch(apiUrl('/api/v1/ready'));
       const payload = (await response.json().catch(() => null)) as ReadinessResponse | null;
       if (payload?.capabilities || payload?.status) {
         setReadiness(payload);
