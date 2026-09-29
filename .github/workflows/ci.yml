@@ -183,11 +183,11 @@ jobs:
         run: docker compose -f docker-compose.yml -f docker-compose.ci-smoke.yml config --quiet
       - name: Build and start the Compose topology
         run: docker compose -f docker-compose.yml -f docker-compose.ci-smoke.yml up -d --build
-      - name: Verify gateway liveness and preview readiness
+      - name: Verify gateway liveness and safe-degraded preview readiness
         run: |
           set -euo pipefail
           for attempt in $(seq 1 60); do
-            if curl --fail --silent --show-error http://127.0.0.1/api/v1/ready >/dev/null; then
+            if curl --fail --silent --show-error http://127.0.0.1/api/v1/health >/dev/null; then
               break
             fi
             if [ "$attempt" -eq 60 ]; then
@@ -198,7 +198,16 @@ jobs:
             sleep 5
           done
           curl --fail --silent --show-error http://127.0.0.1/api/v1/health
-          curl --fail --silent --show-error http://127.0.0.1/api/v1/ready
+          ready_status=$(curl --silent --show-error --output /tmp/compose-ready.json --write-out '%{http_code}' http://127.0.0.1/api/v1/ready)
+          test "$ready_status" = "503"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path('/tmp/compose-ready.json').read_text())
+          assert payload['status'] == 'not_ready'
+          assert payload['capabilities']['legal_chat']['status'] == 'blocked'
+          PY
           curl --fail --silent --show-error http://127.0.0.1/ | grep -q 'id="root"'
       - name: Tear down Compose topology
         if: always()

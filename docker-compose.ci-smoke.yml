@@ -13,7 +13,7 @@ services:
       RATE_LIMIT_FAIL_OPEN: "true"
       ENABLE_TRACE_DEBUG_API: "false"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/v1/ready || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/v1/health || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 20
