@@ -110,7 +110,7 @@ def test_generic_lookup_can_be_answered_with_a_caveat_from_one_unresolved_instru
     ]
 
 
-def test_source_version_lookup_allows_verified_and_unresolved_chunks_from_one_instrument():
+def test_fund_or_self_recycling_lookup_allows_mixed_status_chunks_from_one_instrument():
     unresolved = document()
     unresolved.metadata.update(
         {
@@ -129,7 +129,7 @@ def test_source_version_lookup_allows_verified_and_unresolved_chunks_from_one_in
     )
 
     result = EvidenceEvaluator(min_chars=20).evaluate(
-        "Doanh nghiệp có thể chọn các hình thức thực hiện trách nhiệm tái chế nào?",
+        "Doanh nghiệp có thể tự tổ chức tái chế hoặc nộp tiền vào quỹ thay thế không?",
         [unresolved, verified],
         TaskType.LEGAL_LOOKUP,
     )
