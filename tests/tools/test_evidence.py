@@ -1,4 +1,5 @@
 import pytest
+from scripts.canonical_corpus import canonical_articles
 
 from epr_agent.domain.legal import LegalAnchor
 from epr_agent.domain.models import DocumentRecord, TaskType
@@ -137,6 +138,61 @@ def test_fund_or_self_recycling_lookup_allows_mixed_status_chunks_from_one_instr
     assert result.sufficient is True
     assert result.source_version_only is True
     assert result.has_superseded_sources is True
+
+
+@pytest.mark.parametrize(
+    ("article_number", "query"),
+    [
+        (77, "Nhà sản xuất, nhập khẩu nào phải thực hiện trách nhiệm tái chế?"),
+        (78, "Tỷ lệ tái chế bắt buộc được xác định ra sao?"),
+        (79, "Doanh nghiệp có thể chọn cách nào để tự tổ chức tái chế?"),
+        (80, "Khi nào phải đăng ký kế hoạch tái chế và báo cáo kết quả?"),
+        (81, "Công thức tính tiền đóng góp tái chế vào quỹ là gì?"),
+        (82, "Tiền trong quỹ được dùng hỗ trợ hoạt động tái chế nào?"),
+        (83, "Nhà sản xuất nào phải đóng góp quỹ hỗ trợ xử lý chất thải?"),
+        (84, "Hạn nộp tiền đóng góp xử lý chất thải là khi nào?"),
+        (85, "Quỹ phải công khai việc sử dụng tiền đóng góp xử lý chất thải thế nào?"),
+        (86, "Thông tin nào về sản phẩm, bao bì cần được công khai?"),
+    ],
+)
+def test_simple_epr_queries_can_use_unresolved_source_versions(article_number: int, query: str):
+    rows, _ = canonical_articles()
+    row = next(
+        item
+        for item in rows
+        if str(item.get("Điều") or "").startswith(f"Điều {article_number}.")
+    )
+    document = DocumentRecord(
+        content=str(row["Text"]),
+        document_id=f"{row['Document_Id']}:{article_number}",
+        score=0.92,
+        source="legal",
+        metadata={
+            "Dieu": row["Điều"],
+            "legal_anchor": row["Điều"],
+            "Document_Number": row["Document_Number"],
+            "source_title": row["Source_Title"],
+            "source": row["Source_Title"],
+            "source_file": row["Source_File"],
+            "Corpus_Version": row["Corpus_Version"],
+            "Corpus_SHA256": row["Corpus_SHA256"],
+            "Embedding_Profile": "epr-evidence-test",
+            "Current_Law_Support": row["Current_Law_Support"],
+            "Effective_Status": row["Effective_Status"],
+            "Amendment_Relationship": row["Amendment_Relationship"],
+        },
+    )
+    evaluator = EvidenceEvaluator(
+        min_chars=20,
+        relevance_checker=legal_relevance_checker(min_rerank_score=0.40),
+    )
+
+    result = evaluator.evaluate(query, [document], TaskType.LEGAL_LOOKUP)
+
+    assert result.sufficient is True, (article_number, result.reason)
+    assert result.source_version_only is True
+    assert result.relevance_checked is True
+    assert any("chưa xác nhận nội dung hiện hành" in warning for warning in result.temporal_warnings)
 
 
 @pytest.mark.parametrize(

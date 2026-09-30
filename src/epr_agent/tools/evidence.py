@@ -16,7 +16,11 @@ from epr_agent.domain.models import (
     EvidenceAssessment,
     TaskType,
 )
-from epr_agent.tools.temporal_guard import get_temporal_warning, is_document_superseded
+from epr_agent.tools.temporal_guard import (
+    get_temporal_warning,
+    is_current_law_support_unresolved,
+    is_document_superseded,
+)
 
 
 class EvidenceEvaluator:
@@ -224,17 +228,8 @@ class EvidenceEvaluator:
 
 
 def is_unresolved_current_law_source(document: DocumentRecord) -> bool:
-    """Reject corpus chunks explicitly marked as not supporting current law."""
-
-    if document.source != "legal":
-        return False
-    metadata = document.metadata or {}
-    value = metadata.get("Current_Law_Support")
-    if value is None:
-        value = metadata.get("current_law_support")
-    if value is None:
-        return False
-    return str(value).strip().casefold() in {"false", "0", "no", "pending", "unresolved"}
+    """Read provision-level coverage without inferring instrument status."""
+    return is_current_law_support_unresolved(document)
 
 
 _RELEVANCE_SCORE_KEYS = (

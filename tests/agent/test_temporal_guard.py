@@ -9,30 +9,34 @@ from epr_agent.tools.evidence import EvidenceEvaluator
 from epr_agent.tools.temporal_guard import (
     filter_and_rank_by_validity,
     get_temporal_warning,
+    is_current_law_support_unresolved,
     is_document_superseded,
 )
 
 
-def test_is_document_superseded_by_flag() -> None:
-    # Explicit False flag
+def test_unresolved_current_law_support_is_not_instrument_supersession() -> None:
+    # False records a provision-level coverage gap, not instrument repeal.
     doc_false = DocumentRecord(
         content="Điều 1 Luật cũ",
         current_law_support=False,
     )
-    assert is_document_superseded(doc_false) is True
+    assert is_document_superseded(doc_false) is False
+    assert is_current_law_support_unresolved(doc_false) is True
 
     # Metadata flag
     doc_meta = DocumentRecord(
         content="Điều 2 Luật cũ",
         metadata={"Current_Law_Support": "false"},
     )
-    assert is_document_superseded(doc_meta) is True
+    assert is_document_superseded(doc_meta) is False
+    assert is_current_law_support_unresolved(doc_meta) is True
 
     doc_meta_boolean = DocumentRecord(
         content="Điều 2 Luật cũ",
         metadata={"Current_Law_Support": False},
     )
-    assert is_document_superseded(doc_meta_boolean) is True
+    assert is_document_superseded(doc_meta_boolean) is False
+    assert is_current_law_support_unresolved(doc_meta_boolean) is True
 
     # Active doc
     doc_active = DocumentRecord(
@@ -40,6 +44,7 @@ def test_is_document_superseded_by_flag() -> None:
         current_law_support=True,
     )
     assert is_document_superseded(doc_active) is False
+    assert is_current_law_support_unresolved(doc_active) is False
 
 
 def test_is_document_superseded_by_status() -> None:
@@ -93,6 +98,27 @@ def test_get_temporal_warning_amendments() -> None:
     assert "nd-05-2025-nd-cp" in warning
 
 
+def test_get_temporal_warning_describes_unresolved_provision_coverage_precisely() -> None:
+    doc = DocumentRecord(
+        content="Điều 79 Nghị định 08/2022/NĐ-CP",
+        document_id="nd-08-2022",
+        source="legal",
+        metadata={
+            "source_title": "Nghị định số 08/2022/NĐ-CP",
+            "Current_Law_Support": False,
+            "Amendment_Resolution_Status": "technically_mapped",
+            "Amendment_Relationship": ["nd-05-2025-nd-cp"],
+        },
+    )
+
+    warning = get_temporal_warning(doc)
+
+    assert warning is not None
+    assert "chưa xác nhận nội dung hiện hành" in warning
+    assert "nd-05-2025-nd-cp" in warning
+    assert "đã bị sửa đổi" not in warning
+
+
 def test_filter_and_rank_by_validity() -> None:
     doc_active = DocumentRecord(content="Điều 1 active", document_id="active-1", current_law_support=True)
     doc_old = DocumentRecord(content="Điều 1 old", document_id="old-1", current_law_support=False)
@@ -102,6 +128,21 @@ def test_filter_and_rank_by_validity() -> None:
     assert ranked[0].document_id == "active-1"
     assert ranked[1].document_id == "old-1"
     assert len(warnings) > 0
+
+
+def test_filter_without_superseded_falls_back_to_unresolved_when_no_verified_source_exists() -> None:
+    unresolved = DocumentRecord(
+        content="Điều 79 Nghị định 08/2022/NĐ-CP",
+        document_id="nd-08-2022",
+        source="legal",
+        current_law_support=False,
+        amendment_relationship=["nd-05-2025-nd-cp"],
+    )
+
+    ranked, warnings = filter_and_rank_by_validity([unresolved], allow_superseded=False)
+
+    assert [doc.document_id for doc in ranked] == ["nd-08-2022"]
+    assert warnings and "chưa xác nhận nội dung hiện hành" in warnings[0]
 
 
 def test_evidence_evaluator_catches_superseded() -> None:
