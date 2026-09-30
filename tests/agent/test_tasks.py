@@ -1,9 +1,9 @@
 import pytest
 from pydantic import ValidationError
 
-from epr_agent.domain.legal import explicit_anchors
-from epr_agent.domain.models import TaskType
-from epr_agent.domain.tasks import (
+from vietnam_legal_agent.domain.legal import explicit_anchors
+from vietnam_legal_agent.domain.models import TaskType
+from vietnam_legal_agent.domain.tasks import (
     ExtractedFacts,
     TaskUnderstanding,
     build_follow_up_question,
@@ -11,116 +11,136 @@ from epr_agent.domain.tasks import (
     classify_task,
     detect_legal_domain,
     extract_facts,
+    is_context_dependent_query,
     is_greeting,
     missing_facts,
+    research_requested,
     rewrite_follow_up,
 )
 
 
-def test_classify_the_three_mvp_tasks():
-    assert classify_task("EPR là gì?") == TaskType.LEGAL_LOOKUP
-    assert classify_task("Tôi là nhà sản xuất bao bì nhựa, có phải thực hiện EPR không?") == TaskType.CASE_ASSESSMENT
-    assert classify_task("Lập checklist tuân thủ EPR cho doanh nghiệp") == TaskType.BUILD_COMPLIANCE_CHECKLIST
-
-
-def test_classify_case_assessment_is_domain_agnostic():
-    assert classify_task("Tôi là nhân viên bị công ty sa thải đột ngột, có được bồi thường không?") == TaskType.CASE_ASSESSMENT
-    assert classify_task("Công ty tôi có nghĩa vụ đăng ký kinh doanh khi bán hàng online không?") == TaskType.CASE_ASSESSMENT
-    assert classify_task("Chủ nhà tăng giá thuê giữa chừng, tôi phải làm gì?") == TaskType.CASE_ASSESSMENT
-    assert classify_task("Doanh nghiệp nhập khẩu bao bì có phải thực hiện EPR không?") == TaskType.CASE_ASSESSMENT
-
-
-def test_classify_general_factual_questions_stay_lookup():
-    assert classify_task("Mức phạt nồng độ cồn hiện hành là bao nhiêu?") == TaskType.LEGAL_LOOKUP
-    assert classify_task("Điều 36 Bộ luật Lao động quy định gì?") == TaskType.LEGAL_LOOKUP
-    assert classify_task("Thời gian thử việc tối đa bao lâu?") == TaskType.LEGAL_LOOKUP
-
-
-def test_factual_corporate_and_instrument_questions_do_not_open_case_forms():
+def test_classifies_general_lookup_case_assessment_and_procedure_requests():
     assert classify_task(
-        "Luật Doanh nghiệp quy định công ty cổ phần cần tối thiểu bao nhiêu cổ đông sáng lập?"
+        "Điều 25 Bộ luật Lao động quy định thời gian thử việc tối đa bao lâu?"
     ) == TaskType.LEGAL_LOOKUP
-    assert classify_route(
-        "Luật Doanh nghiệp quy định công ty cổ phần cần tối thiểu bao nhiêu cổ đông sáng lập?"
-    ).value == "legal_lookup"
-    assert classify_task("Luật số 08/2026/QH16 có hiệu lực từ ngày nào?") == TaskType.LEGAL_LOOKUP
+    assert classify_task(
+        "Tôi bị công ty sa thải đột ngột, có được bồi thường không?"
+    ) == TaskType.CASE_ASSESSMENT
+    assert classify_task(
+        "Các bước đăng ký thành lập công ty TNHH là gì?"
+    ) == TaskType.BUILD_COMPLIANCE_CHECKLIST
 
 
-def test_non_legal_unknown_query_is_closed_before_retrieval():
+def test_case_assessment_classification_spans_ordinary_legal_topics():
+    queries = (
+        "Tôi bị công ty sa thải đột ngột, có được bồi thường không?",
+        "Chủ nhà tăng tiền thuê giữa hợp đồng, tôi phải làm gì?",
+        "Đất nhà tôi bị thu hồi thì có được bồi thường không?",
+        "Cổ đông công ty tôi không được chia cổ tức, tôi nên làm gì?",
+    )
+    assert all(classify_task(query) == TaskType.CASE_ASSESSMENT for query in queries)
+
+
+def test_personal_legal_problems_route_to_assessment_across_domains():
+    queries = (
+        "Công ty cho tôi nghỉ việc đột ngột có đúng luật không?",
+        "Tôi làm thêm giờ nhưng không được trả lương, cần làm gì?",
+        "Chủ nhà giữ tiền cọc sau khi tôi trả nhà, tôi nên làm gì?",
+    )
+    assert all(classify_task(query) == TaskType.CASE_ASSESSMENT for query in queries)
+
+
+def test_request_for_new_official_material_routes_to_web_research():
+    query = "Tìm văn bản chính thức mới về thuế thu nhập cá nhân."
+    assert research_requested(query)
+    assert classify_route(query).value == "research_web"
+
+
+def test_follow_up_detection_uses_word_boundaries_and_same_turn_context():
+    assert not is_context_dependent_query(
+        "Sếp nói thử việc thì không cần trả lương, có đúng không?"
+    )
+    assert not is_context_dependent_query(
+        "Công ty cho tôi nghỉ việc. Việc này có đúng luật không?"
+    )
+    assert is_context_dependent_query("Việc này có đúng luật không?")
+
+
+def test_general_questions_about_rules_stay_on_legal_lookup_route():
+    queries = (
+        "Mức phạt nồng độ cồn hiện hành là bao nhiêu?",
+        "Điều 36 Bộ luật Lao động quy định gì?",
+        "Thời gian thử việc tối đa bao lâu?",
+        "Công ty cổ phần cần tối thiểu bao nhiêu cổ đông?",
+    )
+    for query in queries:
+        assert classify_task(query) == TaskType.LEGAL_LOOKUP
+        assert classify_route(query).value == "legal_lookup"
+
+
+def test_new_question_is_not_captured_by_an_unfinished_prior_assessment():
+    active = {"task_type": "case_assessment", "facts": {"employment_issue": "late wages"}}
+    query = "Luật thừa kế quy định thế nào?"
+
+    assert classify_task(query, active_case=active) is TaskType.LEGAL_LOOKUP
+    assert classify_route(query, active_case=active).value == "legal_lookup"
+
+
+def test_non_legal_and_greeting_routes_are_kept_distinct():
     assert classify_route("Giá Bitcoin hôm nay là bao nhiêu?").value == "out_of_scope"
-
-
-def test_greeting_with_legal_request_is_not_chitchat():
-    assert is_greeting("Xin chào, bạn có thể giúp tôi tra cứu luật không?") is False
-
-
-def test_pure_greetings_and_identity_queries_are_chitchat():
-    assert is_greeting("alo ai vay") is True
+    assert not is_greeting("Xin chào, bạn có thể giúp tôi tra cứu luật không?")
     assert classify_route("alo ai vay").value == "chitchat"
-    assert is_greeting("ai vậy") is True
-    assert classify_route("bạn là ai").value == "chitchat"
-    assert is_greeting("chào bạn") is True
     assert classify_route("chào bạn").value == "chitchat"
 
 
-
-def test_explicit_anchor_parser_supports_law_instrument_numbers():
+def test_explicit_anchor_parser_supports_instrument_numbers():
     anchors = explicit_anchors("Luật số 08/2026/QH16 có hiệu lực từ ngày nào?")
     assert [anchor.document_number for anchor in anchors] == ["08/2026/QH16"]
 
 
-def test_detect_legal_domain_for_supported_areas():
-    assert detect_legal_domain("Tôi bị sa thải trái luật, có được bồi thường không?") == "labor"
-    assert detect_legal_domain("Chủ nhà tăng giá thuê nhà giữa chừng có đúng không?") == "civil_contract"
-    assert detect_legal_domain("Tôi muốn ly hôn đơn phương cần làm gì?") == "marriage_family"
-    assert detect_legal_domain("Cổ đông sở hữu 7% có quyền triệu tập họp không?") == "corporate"
-    assert detect_legal_domain("Đất nhà tôi bị thu hồi thì bồi thường thế nào?") == "land"
+def test_domain_detection_does_not_route_on_a_single_recycling_keyword():
+    assert detect_legal_domain("Giấy phép môi trường đối với cơ sở xử lý chất thải") == "environmental"
+    assert detect_legal_domain("Tôi muốn hỏi một vấn đề pháp luật nói chung") == "general"
     assert detect_legal_domain("Mức phạt nồng độ cồn khi lái xe là bao nhiêu?") == "traffic"
-    assert detect_legal_domain("Công ty tôi có nghĩa vụ tái chế bao bì không?") == "epr"
-    assert detect_legal_domain("Một con mèo có mấy chân?") == "general"
 
 
-def test_extract_facts_does_not_infer_unspecified_values():
-    facts = extract_facts("Tôi là nhà sản xuất bao bì nhựa")
-    assert facts == {
-        "business_role": "nhà sản xuất",
-        "product_or_packaging": "bao bì",
-        "material": "nhựa",
-    }
-    assert missing_facts(TaskType.CASE_ASSESSMENT, {"business_role": "nhà sản xuất"}) == [
-        "product_or_packaging",
-        "material",
-        "activity_scope",
-    ]
+def test_fact_extraction_does_not_apply_fixed_intake_fields():
+    assert extract_facts("Tôi bị công ty chậm trả lương hơn hai tuần") == {}
+    assert missing_facts(TaskType.CASE_ASSESSMENT, {"salary_delay": "hơn hai tuần"}) == []
+    assert build_follow_up_question(TaskType.CASE_ASSESSMENT, []) == ""
 
 
-def test_follow_up_is_rewritten_only_when_it_depends_on_context():
-    history = [{"role": "user", "content": "Bao bì nhựa có phải tái chế không?"}]
+def test_follow_up_rewrite_uses_context_without_changing_standalone_queries():
+    history = [{"role": "user", "content": "Chủ nhà tăng tiền thuê giữa hợp đồng."}]
     rewritten = rewrite_follow_up("Còn trường hợp đó thì sao?", history, None)
-    assert "Bao bì nhựa" in rewritten
-    assert "Còn trường hợp đó" in rewritten
-    assert rewrite_follow_up("Điều 77 quy định gì?", history, None) == "Điều 77 quy định gì?"
+    assert "Chủ nhà tăng tiền thuê" in rewritten
+    query = "Điều 35 Bộ luật Lao động quy định gì?"
+    assert rewrite_follow_up(query, history, None) == query
 
 
-def test_follow_up_question_explains_which_facts_are_missing():
-    question = build_follow_up_question(
-        TaskType.BUILD_COMPLIANCE_CHECKLIST,
-        ["business_role", "material"],
-    )
-    assert "vai trò" in question
-    assert "vật liệu" in question
-
-
-def test_structured_understanding_has_a_closed_task_surface():
+def test_understanding_keeps_open_facts_and_closed_task_types():
     result = TaskUnderstanding(
-        task_type="assess_epr_obligation",
+        task_type="case_assessment",
         is_follow_up=True,
-        standalone_query="Doanh nghiệp sản xuất bao bì nhựa tại Việt Nam có phải thực hiện EPR không?",
-        facts=ExtractedFacts(business_role="nhà sản xuất", material="nhựa"),
-        missing_facts=["product_or_packaging", "unknown"],
+        standalone_query="Tôi bị công ty chậm trả lương hơn hai tuần.",
+        facts=ExtractedFacts(values={"salary_delay": "hơn hai tuần"}),
+        missing_facts=["contract_type"],
         confidence=0.9,
     )
     assert result.task_type == TaskType.CASE_ASSESSMENT
-    assert result.missing_facts == ["product_or_packaging"]
+    assert result.facts.compact() == {"salary_delay": "hơn hai tuần"}
+    assert result.missing_facts == []
     with pytest.raises(ValidationError):
         TaskUnderstanding(task_type="free_form_tool_call")
+
+
+def test_query_plan_cleans_and_bounds_model_generated_retrieval_queries():
+    result = TaskUnderstanding(
+        retrieval_queries=[
+            "  thời gian thử việc  ",
+            "thời gian thử việc",
+            "Điều 25",
+            "thêm biến thể",
+        ],
+    )
+    assert result.retrieval_queries == ["thời gian thử việc", "Điều 25"]

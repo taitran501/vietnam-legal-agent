@@ -19,7 +19,7 @@ async def test_init_and_append_and_read(tmp_path: Path):
         conversation_id = await store.ensure_conversation(
             user_id="u1",
             conversation_id="conv-1",
-            title_seed="Hello EPR",
+            title_seed="Hello law",
         )
         assert conversation_id == "conv-1"
 
@@ -117,11 +117,11 @@ async def test_list_conversations_supports_server_side_title_search(tmp_path: Pa
 
     with patch("backend.history.store._db_path", return_value=db_path):
         await store.init_history_store()
-        await store.ensure_conversation("u-search", "conv-epr", "Nghĩa vụ tái chế")
+        await store.ensure_conversation("u-search", "conv-legal", "Quyền lợi người lao động")
         await store.ensure_conversation("u-search", "conv-other", "Chào hỏi")
-        await store.append_exchange("u-search", "conv-epr", "Điều 77?", "Câu trả lời")
+        await store.append_exchange("u-search", "conv-legal", "Điều 25?", "Câu trả lời")
 
-        results = await store.list_conversations("u-search", search="TÁI CHẾ")
+        results = await store.list_conversations("u-search", search="NGƯỜI LAO ĐỘNG")
 
-    assert [item["id"] for item in results] == ["conv-epr"]
+    assert [item["id"] for item in results] == ["conv-legal"]
     assert results[0]["message_count"] == 2

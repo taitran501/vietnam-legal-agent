@@ -17,9 +17,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-from epr_agent.agent.graph import default_dependencies
-from epr_agent.agent.runtime import AgentWorkflowRuntime
-from epr_agent.eval.replay import (
+from vietnam_legal_agent.agent.graph import default_dependencies
+from vietnam_legal_agent.agent.runtime import AgentWorkflowRuntime
+from vietnam_legal_agent.eval.replay import (
     deterministic_runtime,
     load_cases,
     replay_case,

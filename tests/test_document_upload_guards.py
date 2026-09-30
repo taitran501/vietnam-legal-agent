@@ -20,9 +20,9 @@ from backend.api.upload_validation import (
 from fastapi import FastAPI, HTTPException, Request
 from starlette.testclient import TestClient
 
-from epr_agent.infra import metrics
-from epr_agent.infra.admission import AdmissionLease, AdmissionUnavailable
-from epr_agent.tools.document_parser import DocumentParseResult
+from vietnam_legal_agent.infra import metrics
+from vietnam_legal_agent.infra.admission import AdmissionLease, AdmissionUnavailable
+from vietnam_legal_agent.tools.document_parser import DocumentParseResult
 
 
 class AllowingAdmissionController:

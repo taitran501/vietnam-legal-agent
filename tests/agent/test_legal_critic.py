@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from epr_agent.agent.guardrails import AgentGuardrails
-from epr_agent.domain.models import DocumentRecord
-from epr_agent.tools.verifier import (
+from vietnam_legal_agent.agent.guardrails import AgentGuardrails
+from vietnam_legal_agent.domain.models import DocumentRecord
+from vietnam_legal_agent.tools.verifier import (
     LegalCriticVerdict,
     StaticClaimSupportVerifier,
     StaticLegalCriticReviewer,

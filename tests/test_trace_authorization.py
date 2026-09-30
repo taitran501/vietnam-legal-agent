@@ -9,7 +9,7 @@ from backend.api.principal import Principal
 from backend.api.routes import traces
 from fastapi import HTTPException
 
-from epr_agent.tracing.trace_context import TraceStore
+from vietnam_legal_agent.tracing.trace_context import TraceStore
 
 
 def _request(principal: Principal) -> SimpleNamespace:

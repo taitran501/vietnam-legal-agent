@@ -6,7 +6,7 @@ import asyncio
 import json
 from typing import Any
 
-from epr_agent.eval.replay import (
+from vietnam_legal_agent.eval.replay import (
     config_hash,
     deterministic_runtime,
     git_commit_sha,

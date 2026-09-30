@@ -85,11 +85,9 @@ function workflowFromEvent(event: import('@/types').SSEEvent): WorkflowMetadata 
     embedding_profile: event.embedding_profile,
     evidence_status: event.evidence_status,
     available_actions: event.available_actions,
-    case_state: event.case_state,
     assessment: event.assessment,
     checklist: event.checklist,
     assumptions: event.assumptions,
-    missing_facts: event.missing_facts,
     citations: event.citations,
     evidence_assessment: event.evidence_assessment,
     trace_id: event.trace_id,
@@ -101,15 +99,10 @@ function workflowFromEvent(event: import('@/types').SSEEvent): WorkflowMetadata 
     required_issues: event.required_issues,
     covered_issues: event.covered_issues,
     rule_id: event.rule_id,
-    rule_pack_version: event.rule_pack_version,
     effective_dates: event.effective_dates,
     corpus_as_of_date: event.corpus_as_of_date,
     sources: event.sources,
     replay_metadata: event.replay_metadata,
-    validation_errors: event.validation_errors,
-    form_version: event.form_version,
-    completed_count: event.completed_count,
-    required_count: event.required_count,
     citation_error: event.citation_error,
     safe_stop_reason: event.safe_stop_reason,
     preview: event.preview,
@@ -226,6 +219,8 @@ export function useChatStream() {
             action: event.action || 'unknown',
             label: event.label,
             status: event.status || 'completed',
+            latency_ms: event.latency_ms,
+            details: event.details ?? event.args,
             trace_id: event.trace_id,
           });
         } else if (event.type === 'response_chunk') {
@@ -234,10 +229,6 @@ export function useChatStream() {
           store.appendStreamingContent(chunk);
           store.updateMessage(run.localAssistantId, { status: 'streaming' });
           await waitForNextPaint();
-        } else if (event.type === 'case_update' && event.case_state) {
-          store.setActiveCase(event.case_state);
-        } else if (event.type === 'input_required' && event.case_state) {
-          store.setActiveCase(event.case_state);
         } else if (event.type === 'response_stopped') {
           fullContent = event.text || fullContent;
           const persistedId = event.assistant_message_id
@@ -271,7 +262,6 @@ export function useChatStream() {
             turnId: event.turn_id || turnId,
             status: 'complete',
           });
-          if (event.case_state) store.setActiveCase(event.case_state);
           if ((operation === 'retry' || operation === 'regenerate') && run.options.targetAssistantMessageId) {
             const replaced = useChatStore.getState().messages.find(
               (message) => message.serverMessageId === run.options.targetAssistantMessageId,

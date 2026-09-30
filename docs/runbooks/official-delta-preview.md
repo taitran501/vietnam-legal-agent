@@ -1,7 +1,8 @@
 # Official law delta preview
 
 This preview demonstrates a narrow, provenance-first update path for a newly
-published national law without replacing the production EPR corpus. It currently
+published national law without replacing or overriding the selected multi-domain
+legal corpus. It currently
 contains the official portal metadata and the effective-date clause for
 `08/2026/QH16`.
 
@@ -35,7 +36,7 @@ Only queries that name the exact instrument and ask for supported metadata (for
 example, its issue or effective date) or the indexed effective-date clause are
 served by this delta. An unrelated instrument, a broad year query, or a
 substantive question not covered by the snapshot returns a safe-stop instead of
-borrowing a nearby EPR or universal-corpus result.
+borrowing a nearby provision from an unrelated source.
 
 The production configuration validator rejects this flag. The delta is a
 preview experiment, not a complete legal-text mirror; the current PDF is

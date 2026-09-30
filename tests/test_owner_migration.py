@@ -9,7 +9,7 @@ import pytest
 from backend.api.principal import oidc_user_id
 from scripts import migrate_owners
 
-from epr_agent.infra.persistence import PersistenceStore, sqlite_database_url
+from vietnam_legal_agent.infra.persistence import PersistenceStore, sqlite_database_url
 
 
 @pytest.mark.asyncio

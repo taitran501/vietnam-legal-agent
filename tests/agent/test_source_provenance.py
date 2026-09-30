@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from epr_agent.agent.runtime import _documents_for_api, _source_snapshots
-from epr_agent.tools.retrieval import _to_record
-from epr_agent.tools.source_provenance import (
+from vietnam_legal_agent.agent.runtime import _documents_for_api, _source_snapshots
+from vietnam_legal_agent.tools.retrieval import _to_record
+from vietnam_legal_agent.tools.source_provenance import (
     canonical_source_snapshots,
     normalize_source,
     normalized_document_metadata,
@@ -40,13 +40,14 @@ def test_normalize_source_uses_parent_document_and_keeps_chunk_excerpt() -> None
 def test_normalized_document_metadata_preserves_legacy_fields_without_raw_chunk_headers() -> None:
     item = {
         "document_id": "chunk-1",
-        "page_content": "[CHỦ ĐỀ]: X\n\nNội dung Điều 77",
+        "page_content": "[CHỦ ĐỀ]: X\n\nNội dung Điều 25",
         "metadata": {
-            "parent_id": "law-08",
-            "source": "Nghị định số 08/2022/NĐ-CP",
-            "topic": "Môi trường",
+            "parent_id": "labor-code-2019",
+            "source": "Bộ luật Lao động 2019",
+            "topic": "Lao động",
+            "Document_Number": "45/2019/QH14",
             "official_url": "https://vanban.chinhphu.vn/?docid=205092",
-            "Dieu": "Điều 77",
+            "Dieu": "Điều 25",
             "Pages": "12",
             "Source_Start": 100,
             "Source_End": 140,
@@ -55,15 +56,15 @@ def test_normalized_document_metadata_preserves_legacy_fields_without_raw_chunk_
     snapshot = normalize_source(item, citation_index=2)
     metadata = normalized_document_metadata(snapshot, original=item)
 
-    assert metadata["source_id"] == "law-08"
-    assert metadata["source_title"] == "Nghị định số 08/2022/NĐ-CP"
-    assert metadata["Document_Number"] == "08/2022/NĐ-CP"
-    assert metadata["legal_anchor"] == "Điều 77"
+    assert metadata["source_id"] == "labor-code-2019"
+    assert metadata["source_title"] == "Bộ luật Lao động 2019"
+    assert metadata["Document_Number"] == "45/2019/QH14"
+    assert metadata["legal_anchor"] == "Điều 25"
     assert metadata["Pages"] == "12"
     assert metadata["Source_Start"] == 100
     assert metadata["Source_End"] == 140
-    assert metadata["topic"] == "Môi trường"
-    assert metadata["excerpt"] == "Nội dung Điều 77"
+    assert metadata["topic"] == "Lao động"
+    assert metadata["excerpt"] == "Nội dung Điều 25"
     assert "page_content" not in metadata
 
 
@@ -111,16 +112,17 @@ def test_retrieval_adapter_does_not_use_source_label_as_document_id() -> None:
 
 def test_runtime_api_documents_expose_canonical_parent_and_clean_excerpt() -> None:
     state = {
-        "answer": "Theo Điều 77 [1].",
+        "answer": "Theo Điều 25 [1].",
         "evidence": [
             {
-                "document_id": "chunk-77",
-                "content": "[CHỦ ĐỀ]: Môi trường | [CĂN CỨ VĂN BẢN]: Nghị định số 08/2022/NĐ-CP\n\nĐiều 77 quy định trách nhiệm tái chế.",
+                "document_id": "chunk-25",
+                "content": "[CHỦ ĐỀ]: Lao động | [CĂN CỨ VĂN BẢN]: Bộ luật Lao động 2019\n\nĐiều 25 quy định thời gian thử việc.",
                 "metadata": {
                     "chunk_id": "chunk-77",
-                    "parent_id": "nd-08-2022",
-                    "source": "Nghị định số 08/2022/NĐ-CP",
-                    "Dieu": "Điều 77",
+                    "parent_id": "labor-code-2019",
+                    "source": "Bộ luật Lao động 2019",
+                    "Document_Number": "45/2019/QH14",
+                    "Dieu": "Điều 25",
                     "source_uri": "https://vanban.chinhphu.vn/?docid=205092",
                 },
             }
@@ -131,36 +133,36 @@ def test_runtime_api_documents_expose_canonical_parent_and_clean_excerpt() -> No
     snapshots = _source_snapshots(state)
 
     assert documents[0]["document_id"] == "chunk-77"
-    assert documents[0]["metadata"]["source_id"] == "nd-08-2022"
-    assert documents[0]["metadata"]["Source_Title"] == "Nghị định số 08/2022/NĐ-CP"
-    assert documents[0]["metadata"]["Document_Number"] == "08/2022/NĐ-CP"
-    assert documents[0]["page_content"].startswith("Điều 77")
-    assert snapshots[0]["source_id"] == "nd-08-2022"
+    assert documents[0]["metadata"]["source_id"] == "labor-code-2019"
+    assert documents[0]["metadata"]["Source_Title"] == "Bộ luật Lao động 2019"
+    assert documents[0]["metadata"]["Document_Number"] == "45/2019/QH14"
+    assert documents[0]["page_content"].startswith("Điều 25")
+    assert snapshots[0]["source_id"] == "labor-code-2019"
     assert snapshots[0]["chunk_id"] == "chunk-77"
 
 
 def test_canonical_source_snapshots_group_chunks_and_keep_all_citation_indices() -> None:
     items = [
         {
-            "document_id": "chunk-77-a",
-            "content": "Đoạn đầu Điều 77.",
+            "document_id": "chunk-25-a",
+            "content": "Đoạn đầu Điều 25.",
             "score": 0.62,
             "metadata": {
-                "parent_id": "nd-08-2022",
-                "Document_Number": "08/2022/NĐ-CP",
-                "legal_anchor": "Điều 77",
-                "source_title": "Nghị định số 08/2022/NĐ-CP",
+                "parent_id": "labor-code-2019",
+                "Document_Number": "45/2019/QH14",
+                "legal_anchor": "Điều 25",
+                "source_title": "Bộ luật Lao động 2019",
             },
         },
         {
-            "document_id": "chunk-77-b",
-            "content": "Đoạn chính Điều 77 || trường dữ liệu cũ.",
+            "document_id": "chunk-25-b",
+            "content": "Đoạn chính Điều 25 || trường dữ liệu cũ.",
             "score": 0.91,
             "metadata": {
-                "parent_id": "nd-08-2022",
-                "instrument_number": "08/2022/NĐ-CP",
-                "legal_anchor": "Điều 77",
-                "source_title": "Nghị định số 08/2022/NĐ-CP",
+                "parent_id": "labor-code-2019",
+                "instrument_number": "45/2019/QH14",
+                "legal_anchor": "Điều 25",
+                "source_title": "Bộ luật Lao động 2019",
             },
         },
     ]
@@ -168,37 +170,37 @@ def test_canonical_source_snapshots_group_chunks_and_keep_all_citation_indices()
     snapshots = canonical_source_snapshots(items, citation_indices=[1, 2])
 
     assert len(snapshots) == 1
-    assert snapshots[0]["source_id"] == "nd-08-2022"
+    assert snapshots[0]["source_id"] == "labor-code-2019"
     assert snapshots[0]["citation_index"] == 1
     assert snapshots[0]["citation_indices"] == [1, 2]
-    assert snapshots[0]["chunk_id"] == "chunk-77-b"
-    assert snapshots[0]["excerpt"] == "Đoạn chính Điều 77\n\ntrường dữ liệu cũ."
+    assert snapshots[0]["chunk_id"] == "chunk-25-b"
+    assert snapshots[0]["excerpt"] == "Đoạn chính Điều 25\n\ntrường dữ liệu cũ."
 
 
 def test_runtime_source_snapshots_use_canonical_grouping_for_duplicate_chunks() -> None:
     state = {
-        "answer": "Theo Điều 77 [1] và [2].",
+        "answer": "Theo Điều 25 [1] và [2].",
         "evidence": [
             {
                 "document_id": "chunk-a",
-                "content": "Điều 77 đoạn một.",
+                "content": "Điều 25 đoạn một.",
                 "score": 0.4,
                 "metadata": {
-                    "parent_id": "nd-08-2022",
-                    "Document_Number": "08/2022/NĐ-CP",
-                    "legal_anchor": "Điều 77",
-                    "source_title": "Nghị định số 08/2022/NĐ-CP",
+                    "parent_id": "labor-code-2019",
+                    "Document_Number": "45/2019/QH14",
+                    "legal_anchor": "Điều 25",
+                    "source_title": "Bộ luật Lao động 2019",
                 },
             },
             {
                 "document_id": "chunk-b",
-                "content": "Điều 77 đoạn hai.",
+                "content": "Điều 25 đoạn hai.",
                 "score": 0.8,
                 "metadata": {
-                    "parent_id": "nd-08-2022",
-                    "Document_Number": "08/2022/NĐ-CP",
-                    "legal_anchor": "Điều 77",
-                    "source_title": "Nghị định số 08/2022/NĐ-CP",
+                    "parent_id": "labor-code-2019",
+                    "Document_Number": "45/2019/QH14",
+                    "legal_anchor": "Điều 25",
+                    "source_title": "Bộ luật Lao động 2019",
                 },
             },
         ],

@@ -16,12 +16,12 @@ import math
 from pathlib import Path
 from typing import Any
 
-from epr_agent.config import get_settings
-from epr_agent.domain.legal import explicit_anchors
-from epr_agent.domain.models import DocumentRecord, TaskType
-from epr_agent.evaluation.retrieval_cases import RETRIEVAL_CASES
-from epr_agent.retrieval.retrieval import retrieve_legal_async
-from epr_agent.tools.evidence import EvidenceEvaluator, legal_relevance_checker
+from vietnam_legal_agent.config import get_settings
+from vietnam_legal_agent.domain.legal import explicit_anchors
+from vietnam_legal_agent.domain.models import DocumentRecord, TaskType
+from vietnam_legal_agent.evaluation.retrieval_cases import RETRIEVAL_CASES
+from vietnam_legal_agent.retrieval.retrieval import retrieve_legal_async
+from vietnam_legal_agent.tools.evidence import EvidenceEvaluator, legal_relevance_checker
 
 QUALITY_FLOOR = 0.9375
 

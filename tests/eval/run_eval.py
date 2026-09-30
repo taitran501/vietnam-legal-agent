@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import hashlib
 import json
 import math
 import os
@@ -28,9 +27,6 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-from epr_agent.agent.runtime import stream_chat
-from epr_agent.domain.epr_rules import EPR_RULE_PACK_VERSION
-from epr_agent.domain.tasks import classify_route
 from tests.agent.v4_test_support import NoEvidenceRetrieval
 from tests.agent.v4_test_support import runtime as deterministic_runtime
 from tests.eval.pipeline_v4_manifest import (
@@ -39,6 +35,8 @@ from tests.eval.pipeline_v4_manifest import (
     QUERY_UNDERSTANDING_CASES,
     RETRIEVAL_CASES,
 )
+from vietnam_legal_agent.agent.runtime import stream_chat
+from vietnam_legal_agent.domain.tasks import classify_route
 
 
 def _expected_termination(case: dict[str, Any]) -> str:
@@ -91,7 +89,7 @@ def _retrieval_metrics(case: dict[str, Any], complete: dict[str, Any]) -> dict[s
 def _route_results() -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     for case in QUERY_UNDERSTANDING_CASES:
-        history = [{"role": "user", "content": "Điều 77 quy định trách nhiệm tái chế EPR."}] if case.get("is_follow_up") else []
+        history = [{"role": "user", "content": "Công ty chậm trả lương theo Điều 94 Bộ luật Lao động."}] if case.get("is_follow_up") else []
         actual = classify_route(str(case["query"]), history, None).value
         expected = str(case["expected_route"])
         passed = actual == expected or case.get("expected_behavior") == "clarify_or_safe_stop" and actual in {"out_of_scope", "legal_lookup"}
@@ -175,7 +173,7 @@ async def _run_trajectory(case: dict[str, Any], *, live: bool, live_url: str | N
             conversation_id=conversation_id,
             live=live,
             intent_hint=hint,
-            operation="continue_case",
+            operation="message",
             runtime=deterministic,
             live_url=live_url,
         )
@@ -293,25 +291,19 @@ def _summary(results: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 async def run(suite: str, *, live: bool, limit: int | None) -> dict[str, Any]:
-    live_url = os.getenv("EPR_EVAL_API_BASE_URL", "http://127.0.0.1") if live else None
+    live_url = os.getenv("LEGAL_AGENT_EVAL_API_BASE_URL", "http://127.0.0.1") if live else None
     report: dict[str, Any] = {
         "manifest_version": MANIFEST["version"],
         "pipeline_version": "pipeline-v4",
         "mode": "live" if live else "deterministic",
         "generated_at_utc": datetime.now(UTC).isoformat(),
         "embedding_profile": MANIFEST["embedding_profile"],
-        "rule_pack_version": EPR_RULE_PACK_VERSION,
         "git_sha": _git_sha(),
         "route": {"results": _route_results()},
     }
     if live:
         report["live_base_url"] = live_url
         report["readiness"] = await _live_readiness(live_url)
-        report["appendix_sha256"] = (
-            _file_sha256(ROOT / "artifacts" / "appendix_xxii.jsonl")
-            or _file_sha256(ROOT / "data" / "appendix_xxii.jsonl")
-            or (report["readiness"].get("corpus") or {}).get("appendix_sha256")
-        )
     if suite in {"retrieval", "all"}:
         cases = RETRIEVAL_CASES[:limit]
         results = [await _run_retrieval_case(case, live=live, live_url=live_url) for case in cases]
@@ -356,12 +348,6 @@ def _git_sha() -> str:
         return "unknown"
 
 
-def _file_sha256(path: Path) -> str | None:
-    if not path.exists():
-        return None
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 async def _live_readiness(base_url: str | None) -> dict[str, Any]:
     if not base_url:
         return {"status": "not_configured"}
@@ -380,12 +366,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run the local Pipeline V4 evaluation matrix")
     parser.add_argument("--suite", choices=("retrieval", "e2e", "all"), default="all")
     parser.add_argument("--live", action="store_true", help="Use the real configured runtime")
-    parser.add_argument("--live-url", help="HTTP base URL for the live Docker stack (overrides EPR_EVAL_API_BASE_URL)")
+    parser.add_argument("--live-url", help="HTTP base URL for the live Docker stack (overrides LEGAL_AGENT_EVAL_API_BASE_URL)")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     if args.live_url:
-        os.environ["EPR_EVAL_API_BASE_URL"] = args.live_url
+        os.environ["LEGAL_AGENT_EVAL_API_BASE_URL"] = args.live_url
     report = asyncio.run(run(args.suite, live=args.live, limit=args.limit))
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

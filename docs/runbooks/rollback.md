@@ -11,14 +11,13 @@ backward-compatible columns, keep the database at the current Alembic head;
 otherwise follow the database backup procedure and obtain an explicit database
 owner decision before restoring.
 
-## Qdrant Alias Rollback
+## Corpus Rollback
 
-Use the `rollback_collection` captured by `ensure_law_index` and perform one
-atomic alias update from `law_collection` to that retained immutable collection
-through the approved Qdrant operations job. Verify the target's corpus hash,
-index schema, embedding profile, point count, and citation metadata before the
-switch. Never delete the current or previous collection as part of the alias
-rollback.
+Redeploy the previous application release and restore its matching,
+content-locked SQLite corpus artifact from the approved backup. Verify the
+manifest hash, schema, row count, and source metadata before restarting the
+backend. Preserve the current and previous artifacts until the rollback is
+verified.
 
 After the switch:
 
@@ -26,8 +25,8 @@ After the switch:
 Invoke-RestMethod http://127.0.0.1/api/v1/ready
 ```
 
-Confirm that the response reports the expected corpus and collection metadata,
-then run a legal lookup and source deep-link smoke test.
+Confirm that the response reports the expected corpus metadata, then run
+ordinary legal lookups from more than one domain and verify their source links.
 
 ## Data Rollback
 

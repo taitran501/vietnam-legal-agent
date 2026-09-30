@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from epr_agent.domain.verification import VerificationStatus
-from epr_agent.eval.contracts import (
+from vietnam_legal_agent.domain.verification import VerificationStatus
+from vietnam_legal_agent.eval.contracts import (
     AuthoritativeSource,
     EvalTurn,
     EvaluationCase,
@@ -20,7 +20,7 @@ from epr_agent.eval.contracts import (
     failure_code_for_verification_status,
     load_evaluation_case,
 )
-from epr_agent.eval.evidence_verifier import verify_evaluation_case
+from vietnam_legal_agent.eval.evidence_verifier import verify_evaluation_case
 
 
 def _evaluation_case() -> EvaluationCase:
@@ -156,12 +156,12 @@ def test_verifier_reports_retrieval_and_unsupported_claim_failures() -> None:
 
 @pytest.mark.asyncio
 async def test_ragas_judge_failure_is_not_scored_as_a_pass(monkeypatch: pytest.MonkeyPatch) -> None:
-    from epr_agent.eval.ragas_evaluator import evaluate_ragas_sample
+    from vietnam_legal_agent.eval.ragas_evaluator import evaluate_ragas_sample
 
     def unavailable():
         raise RuntimeError("judge unavailable")
 
-    monkeypatch.setattr("epr_agent.infra.llm_instances.get_llm_smart", unavailable)
+    monkeypatch.setattr("vietnam_legal_agent.infra.llm_instances.get_llm_smart", unavailable)
     result = await evaluate_ragas_sample(
         query="Quy định gì?",
         answer="Theo Điều 1 [1].",
@@ -179,7 +179,7 @@ async def test_ragas_judge_failure_is_not_scored_as_a_pass(monkeypatch: pytest.M
 async def test_ragas_invalid_structured_output_is_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from epr_agent.eval.ragas_evaluator import evaluate_ragas_sample
+    from vietnam_legal_agent.eval.ragas_evaluator import evaluate_ragas_sample
 
     class InvalidJudge:
         def with_structured_output(self, _schema):
@@ -188,7 +188,7 @@ async def test_ragas_invalid_structured_output_is_unavailable(
         async def ainvoke(self, _messages):
             return {"not": "a validated evaluation"}
 
-    monkeypatch.setattr("epr_agent.infra.llm_instances.get_llm_smart", lambda: InvalidJudge())
+    monkeypatch.setattr("vietnam_legal_agent.infra.llm_instances.get_llm_smart", lambda: InvalidJudge())
 
     result = await evaluate_ragas_sample(
         query="Quy định gì?",
@@ -222,7 +222,7 @@ async def test_legacy_ragas_harness_marks_case_exception_unavailable(
         '{"cases": [{"id": "HARNESS-001", "query": "Quy định gì?"}]}',
         encoding="utf-8",
     )
-    monkeypatch.setattr(harness, "EprAgentRunner", FailingRunner)
+    monkeypatch.setattr(harness, "VietnameseLegalAgentRunner", FailingRunner)
 
     summary = await harness.run_benchmark(
         benchmark_file=benchmark,

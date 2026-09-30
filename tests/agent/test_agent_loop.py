@@ -1,4 +1,4 @@
-"""Unit tests for EprAgentRunner cognitive loop."""
+"""Unit tests for the Vietnamese legal agent cognitive loop."""
 
 from __future__ import annotations
 
@@ -7,13 +7,12 @@ import asyncio
 import pytest
 from langchain_core.messages import AIMessage
 
-from epr_agent.agent.agent_loop import AgentRunConfig, EprAgentRunner
-from epr_agent.agent.tool_registry import ToolDependencies, set_tool_dependencies
-from epr_agent.domain.epr_rules import CaseFormResolver
-from epr_agent.domain.models import DocumentRecord
-from epr_agent.tools.evidence import EvidenceEvaluator
-from epr_agent.tools.history import ContextSnapshot, HistoryGateway
-from epr_agent.tools.retrieval import StaticRetrievalGateway
+from vietnam_legal_agent.agent.agent_loop import AgentRunConfig, VietnameseLegalAgentRunner
+from vietnam_legal_agent.agent.tool_registry import ToolDependencies, set_tool_dependencies
+from vietnam_legal_agent.domain.models import DocumentRecord
+from vietnam_legal_agent.tools.evidence import EvidenceEvaluator
+from vietnam_legal_agent.tools.history import ContextSnapshot, HistoryGateway
+from vietnam_legal_agent.tools.retrieval import StaticRetrievalGateway
 
 
 class FakeHistory(HistoryGateway):
@@ -57,11 +56,11 @@ class MockSequenceLLM:
 @pytest.fixture(autouse=True)
 def setup_test_environment():
     sample_doc = DocumentRecord(
-        content="Điều 77 quy định trách nhiệm tái chế bao bì của nhà sản xuất.",
+        content="Điều 25 quy định thời gian thử việc tối đa đối với công việc cần trình độ chuyên môn.",
         document_id="doc-1",
         score=0.9,
         source="legal",
-        metadata={"legal_anchor": "Điều 77", "source": "Luật BVMT"},
+        metadata={"legal_anchor": "Điều 25", "source": "Bộ luật Lao động 2019"},
     )
     deps = ToolDependencies(
         retrieval=StaticRetrievalGateway(legal_documents=[sample_doc]),
@@ -69,7 +68,6 @@ def setup_test_environment():
         generation=FakeGen(),
         cache=FakeCache(),
         history=FakeHistory(),
-        case_resolver=CaseFormResolver(),
     )
     set_tool_dependencies(deps)
     yield
@@ -84,19 +82,19 @@ async def test_agent_single_hop():
             content="",
             tool_calls=[{
                 "name": "search_legal_provisions",
-                "args": {"query": "Điều 77"},
+                "args": {"query": "Điều 25"},
                 "id": "call_1",
             }],
         ),
         # Step 2: LLM observes evidence and produces final answer
-        AIMessage(content="Trách nhiệm tái chế được quy định tại Điều 77 [1]."),
+        AIMessage(content="Thời gian thử việc được quy định tại Điều 25 [1]."),
     ])
 
-    runner = EprAgentRunner(config=AgentRunConfig(max_steps=5), llm=mock_llm)
-    result = await runner.run("Điều 77 quy định gì?")
+    runner = VietnameseLegalAgentRunner(config=AgentRunConfig(max_steps=5), llm=mock_llm)
+    result = await runner.run("Điều 25 quy định gì?")
 
     assert result.termination_reason == "answer_complete"
-    assert "Điều 77" in result.answer
+    assert "Điều 25" in result.answer
     assert result.steps_taken == 2
     assert len(result.trajectory) == 1
     assert result.trajectory[0].tool == "search_legal_provisions"
@@ -109,24 +107,24 @@ async def test_agent_multi_hop():
         # Step 1: Cache check
         AIMessage(
             content="",
-            tool_calls=[{"name": "lookup_answer_cache", "args": {"query": "Điều 77"}, "id": "call_1"}],
+            tool_calls=[{"name": "lookup_answer_cache", "args": {"query": "Điều 25"}, "id": "call_1"}],
         ),
         # Step 2: Search Hop 1
         AIMessage(
             content="",
-            tool_calls=[{"name": "search_legal_provisions", "args": {"query": "Điều 77"}, "id": "call_2"}],
+            tool_calls=[{"name": "search_legal_provisions", "args": {"query": "Điều 25"}, "id": "call_2"}],
         ),
         # Step 3: Search Hop 2 (Nghị định 08)
         AIMessage(
             content="",
-            tool_calls=[{"name": "search_legal_provisions", "args": {"query": "Nghị định 08 Điều 54"}, "id": "call_3"}],
+            tool_calls=[{"name": "search_legal_provisions", "args": {"query": "Bộ luật Lao động Điều 26"}, "id": "call_3"}],
         ),
         # Step 4: Final answer
-        AIMessage(content="Điều 77 Luật BVMT kết hợp Nghị định 08 Điều 54 quy định chi tiết [1]."),
+        AIMessage(content="Điều 25 Bộ luật Lao động 2019 kết hợp Bộ luật Lao động Điều 26 quy định chi tiết [1]."),
     ])
 
-    runner = EprAgentRunner(config=AgentRunConfig(max_steps=5), llm=mock_llm)
-    result = await runner.run("Điều 77 và Nghị định 08?")
+    runner = VietnameseLegalAgentRunner(config=AgentRunConfig(max_steps=5), llm=mock_llm)
+    result = await runner.run("Điều 25 và Nghị định 08?")
 
     assert result.termination_reason == "answer_complete"
     assert result.steps_taken == 4
@@ -139,19 +137,19 @@ async def test_agent_loop_detection():
         # Step 1: Call search
         AIMessage(
             content="",
-            tool_calls=[{"name": "search_legal_provisions", "args": {"query": "Điều 77"}, "id": "call_1"}],
+            tool_calls=[{"name": "search_legal_provisions", "args": {"query": "Điều 25"}, "id": "call_1"}],
         ),
         # Step 2: Try to call the exact same search query again
         AIMessage(
             content="",
-            tool_calls=[{"name": "search_legal_provisions", "args": {"query": "Điều 77"}, "id": "call_2"}],
+            tool_calls=[{"name": "search_legal_provisions", "args": {"query": "Điều 25"}, "id": "call_2"}],
         ),
         # Step 3: Realizes it was denied and finishes
         AIMessage(content="Câu trả lời sau khi bị chặn lặp lại."),
     ])
 
-    runner = EprAgentRunner(config=AgentRunConfig(max_steps=5), llm=mock_llm)
-    result = await runner.run("Điều 77?")
+    runner = VietnameseLegalAgentRunner(config=AgentRunConfig(max_steps=5), llm=mock_llm)
+    result = await runner.run("Điều 25?")
 
     assert len(result.trajectory) == 2
     assert result.trajectory[0].allowed is True
@@ -170,7 +168,7 @@ async def test_agent_budget_exhaustion():
         for i in range(10)
     ])
 
-    runner = EprAgentRunner(config=AgentRunConfig(max_steps=3), llm=infinite_llm)
+    runner = VietnameseLegalAgentRunner(config=AgentRunConfig(max_steps=3), llm=infinite_llm)
     result = await runner.run("Query?")
 
     assert result.termination_reason == "insufficient_evidence"
@@ -184,18 +182,18 @@ async def test_agent_clarification_tool():
             content="",
             tool_calls=[{
                 "name": "ask_user_for_clarification",
-                "args": {"question": "Vật liệu bao bì là gì?", "missing_fields": ["material"]},
+                "args": {"question": "Công ty đã chậm trả lương trong bao lâu?", },
                 "id": "call_1",
             }],
         ),
     ])
 
-    runner = EprAgentRunner(config=AgentRunConfig(max_steps=5), llm=mock_llm)
-    result = await runner.run("Đánh giá nghĩa vụ EPR")
+    runner = VietnameseLegalAgentRunner(config=AgentRunConfig(max_steps=5), llm=mock_llm)
+    result = await runner.run("Công ty chậm trả lương, tôi nên làm gì?")
 
     assert result.termination_reason == "awaiting_user_input"
     assert result.awaiting_user_input is True
-    assert "Vật liệu" in result.answer
+    assert "chậm trả lương" in result.answer
     assert result.steps_taken == 1
 
 
@@ -213,7 +211,7 @@ async def test_agent_emits_tool_result_after_execution():
         AIMessage(content="", tool_calls=[{"name": "probe_tool", "args": {}, "id": "call-1"}]),
         AIMessage(content="Hoàn tất."),
     ])
-    runner = EprAgentRunner(llm=mock_llm, tools=[probe_tool])
+    runner = VietnameseLegalAgentRunner(llm=mock_llm, tools=[probe_tool])
     events = []
     async for event in runner.stream("Kiểm tra"):
         events.append((event, completed))
@@ -235,7 +233,7 @@ async def test_agent_tool_timeout_has_terminal_result_event():
         AIMessage(content="", tool_calls=[{"name": "slow_tool", "args": {}, "id": "call-1"}]),
         AIMessage(content="Không thể hoàn tất."),
     ])
-    runner = EprAgentRunner(config=AgentRunConfig(tool_timeout_s=0.001), llm=mock_llm, tools=[slow_tool])
+    runner = VietnameseLegalAgentRunner(config=AgentRunConfig(tool_timeout_s=0.001), llm=mock_llm, tools=[slow_tool])
     events = [event async for event in runner.stream("Kiểm tra timeout")]
 
     tool_result = next(event for event in events if event["type"] == "agent_tool_result")
@@ -246,7 +244,7 @@ async def test_agent_tool_timeout_has_terminal_result_event():
 @pytest.mark.asyncio
 async def test_agent_checks_durable_cancellation_before_llm_call():
     mock_llm = MockSequenceLLM([AIMessage(content="Không được gọi")])
-    runner = EprAgentRunner(llm=mock_llm)
+    runner = VietnameseLegalAgentRunner(llm=mock_llm)
 
     result = await runner.run("Kiểm tra dừng", is_cancelled=lambda: asyncio.sleep(0, result=True))
 

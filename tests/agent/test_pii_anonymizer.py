@@ -1,6 +1,6 @@
 """Unit tests for PII Anonymizer."""
 
-from epr_agent.infra.pii_anonymizer import (
+from vietnam_legal_agent.infra.pii_anonymizer import (
     anonymize_payload,
     anonymize_text,
     has_pii,
@@ -39,7 +39,7 @@ def test_has_pii_detection():
     assert has_pii("Tôi là Trần Văn A, CCCD 079099123456") is True
     assert has_pii("Số điện thoại 0912345678") is True
     assert has_pii("Email: test@example.com") is True
-    assert has_pii("Nghị định 08/2022/NĐ-CP quy định chi tiết thi hành Luật BVMT") is False
+    assert has_pii("Bộ luật Lao động số 45/2019/QH14") is False
 
 
 def test_anonymize_payload_dict():

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from epr_agent.domain.models import CitationOccurrence, CitationSource, DocumentRecord
-from epr_agent.tools.evidence import (
+from vietnam_legal_agent.domain.models import CitationOccurrence, CitationSource, DocumentRecord
+from vietnam_legal_agent.tools.evidence import (
     extract_citation_sources,
     format_citation_markdown_reference,
     mask_citation_code,
@@ -103,3 +103,37 @@ def test_format_citation_markdown_reference() -> None:
     # Single source
     single_md = format_citation_markdown_reference(sources[0])
     assert single_md == "[Bộ luật Lao động 2019](https://thuvienphapluat.vn/doc1)"
+
+
+def test_auto_anchor_citations_in_answer() -> None:
+    """Test auto-anchoring [1], [2] when LLM prose mentions articles without explicit markers."""
+    from vietnam_legal_agent.tools.evidence import auto_anchor_citations_in_answer
+
+    docs = [
+        DocumentRecord(
+            content="Điều 362. Đơn yêu cầu công nhận thuận tình ly hôn...",
+            metadata={"Dieu": "Điều 362", "Source_Title": "Bộ luật Tố tụng dân sự 2015"},
+            document_id="ttds-362",
+            score=0.95,
+        ),
+        DocumentRecord(
+            content="Điều 81. Việc trông nom, chăm sóc con sau khi ly hôn. Con dưới 36 tháng tuổi được giao cho mẹ...",
+            metadata={"Dieu": "Điều 81", "Source_Title": "Luật Hôn nhân và Gia đình 2014"},
+            document_id="hn-81",
+            score=0.92,
+        ),
+    ]
+
+    raw_answer = (
+        "Thủ tục đơn phương ly hôn:\n"
+        "Nộp đơn yêu cầu: Vợ hoặc chồng cần nộp đơn theo quy định tại khoản 2 Điều 362 của Bộ luật Tố tụng dân sự.\n\n"
+        "Quyền nuôi con dưới 36 tháng tuổi:\n"
+        "Theo quy định tại Điều 81 của Luật Hôn nhân và Gia đình, con dưới 36 tháng tuổi được giao cho mẹ trực tiếp nuôi dưỡng."
+    )
+
+    anchored = auto_anchor_citations_in_answer(raw_answer, docs)
+    # Both [1] and [2] must be inserted at the matching statutory anchor references
+    assert "[1]" in anchored
+    assert "[2]" in anchored
+    assert "Điều 362 [1]" in anchored
+    assert "Điều 81 [2]" in anchored

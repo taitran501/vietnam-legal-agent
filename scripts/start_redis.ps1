@@ -5,10 +5,16 @@
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path -Parent $PSScriptRoot)
 
-Write-Host "Starting Redis (epr_redis)..." -ForegroundColor Cyan
+Write-Host "Starting the legal-agent Redis service..." -ForegroundColor Cyan
 docker compose up -d redis
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+if (-not $env:REDIS_PASSWORD) {
+    Write-Error "Set REDIS_PASSWORD in this PowerShell session before running the health check."
+    exit 1
+}
+
 Write-Host "PING test:" -ForegroundColor Cyan
-docker exec epr_redis redis-cli ping
+docker compose exec -T redis redis-cli -a $env:REDIS_PASSWORD ping
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Write-Host "OK. Backend .env should use: REDIS_URL=redis://localhost:6379/0" -ForegroundColor Green

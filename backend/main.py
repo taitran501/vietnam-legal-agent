@@ -19,9 +19,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from backend.api.auth import APIKeyMiddleware, get_valid_api_keys
 from backend.api.middleware import RateLimiter, RateLimitMiddleware
 from backend.history import init_history_store
-from epr_agent.config import get_settings, validate_production_settings
-from epr_agent.infra import metrics as metrics_module
-from epr_agent.infra.session_store import close_redis, get_redis
+from vietnam_legal_agent.config import get_settings, validate_production_settings
+from vietnam_legal_agent.infra import metrics as metrics_module
+from vietnam_legal_agent.infra.session_store import close_redis, get_redis
 
 logger = logging.getLogger(__name__)
 
@@ -136,25 +136,29 @@ async def lifespan(app: FastAPI):
         logger.warning("Persistent history init failed: %s", exc)
 
     # 2.5 Warm retrieval indexes asynchronously; readiness still guards requests.
-    warmup_task = asyncio.create_task(_warmup_retrieval_indexes_task())
+    warmup_tasks = [
+        asyncio.create_task(_warmup_retrieval_indexes_task()),
+        asyncio.create_task(_warmup_local_embeddings_task()),
+    ]
 
     yield
 
     # Shutdown
-    if not warmup_task.done():
-        warmup_task.cancel()
-        try:
-            await warmup_task
-        except asyncio.CancelledError:
-            pass
+    for warmup_task in warmup_tasks:
+        if not warmup_task.done():
+            warmup_task.cancel()
+            try:
+                await warmup_task
+            except asyncio.CancelledError:
+                pass
     await close_redis()
     try:
-        from epr_agent.retrieval.retrieval import close_qdrant_client
+        from vietnam_legal_agent.retrieval.retrieval import close_qdrant_client
         close_qdrant_client()
     except Exception as exc:  # noqa: BLE001
         logger.warning("Qdrant close failed: %s", exc)
     try:
-        from epr_agent.infra.persistence import close_persistence_stores
+        from vietnam_legal_agent.infra.persistence import close_persistence_stores
 
         await close_persistence_stores()
     except Exception as exc:  # noqa: BLE001 - shutdown must close remaining resources
@@ -165,13 +169,39 @@ async def lifespan(app: FastAPI):
 async def _warmup_retrieval_indexes_task() -> None:
     """Warm retrieval indexes in background without blocking API availability."""
     try:
-        from epr_agent.retrieval.ensemble_retrieval import warmup_retrieval_indexes
+        from vietnam_legal_agent.retrieval.ensemble_retrieval import warmup_retrieval_indexes
 
         await asyncio.to_thread(warmup_retrieval_indexes)
     except asyncio.CancelledError:
         raise
     except Exception as exc:  # noqa: BLE001 - readiness, not warmup, owns request safety
         logger.warning("Retrieval index warmup failed: %s", exc)
+
+
+async def _warmup_local_embeddings_task() -> None:
+    """Load local embeddings in the background so a user's first lookup is not cold."""
+    settings = get_settings()
+    uses_local_embeddings = (
+        settings.embedding_provider in {"local", "sentence_transformers"}
+        or settings.embedding_profile in {"vnlegal-lal-v1", "vietnamese-legal-embedding-v1", "bge-m3-v1"}
+    )
+    if not uses_local_embeddings:
+        return
+
+    started = asyncio.get_running_loop().time()
+    try:
+
+        def load_and_warm_embeddings() -> None:
+            from vietnam_legal_agent.infra.llm_instances import get_embeddings
+
+            get_embeddings().embed_query("Khởi tạo truy xuất pháp luật.")
+
+        await asyncio.to_thread(load_and_warm_embeddings)
+        logger.info("Local embedding model warmed in %.1fms", (asyncio.get_running_loop().time() - started) * 1000)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - the first legal request retains the normal retry path
+        logger.warning("Local embedding warmup failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -230,7 +260,6 @@ app.add_middleware(
 app.add_middleware(metrics_module.MetricsMiddleware)
 
 # Register routers
-from backend.api.routes.case_form import router as case_form_router
 from backend.api.routes.chat import router as chat_router
 from backend.api.routes.documents import router as documents_router
 from backend.api.routes.feedback import router as feedback_router
@@ -241,7 +270,6 @@ from backend.api.routes.traces import router as traces_router
 
 app.include_router(chat_router, prefix="/api/v1")
 app.include_router(documents_router, prefix="/api/v1")
-app.include_router(case_form_router, prefix="/api/v1")
 app.include_router(health_router, prefix="/api/v1")
 app.include_router(sessions_router, prefix="/api/v1")
 app.include_router(feedback_router, prefix="/api/v1")

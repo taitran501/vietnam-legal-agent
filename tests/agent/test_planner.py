@@ -1,5 +1,5 @@
-from epr_agent.agent.planner import AgentBudgetController, BoundedPlanner
-from epr_agent.domain.models import Action
+from vietnam_legal_agent.agent.planner import AgentBudgetController, BoundedPlanner
+from vietnam_legal_agent.domain.models import Action
 
 
 def test_planner_has_closed_action_surface_and_budgets():

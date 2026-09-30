@@ -6,13 +6,13 @@ import asyncio
 
 import pytest
 
-from epr_agent.agent.agent_loop import AgentRunResult, AgentStep
-from epr_agent.agent.runtime import AgentWorkflowRuntime, WorkflowDependencies, get_default_runtime
-from epr_agent.domain.models import DocumentRecord, TerminationReason
-from epr_agent.tools.evidence import EvidenceEvaluator
-from epr_agent.tools.history import ContextSnapshot, HistoryGateway
-from epr_agent.tools.legal_readiness import SyntheticReadyLegalReadinessGate
-from epr_agent.tools.retrieval import StaticRetrievalGateway
+from vietnam_legal_agent.agent.agent_loop import AgentRunResult, AgentStep
+from vietnam_legal_agent.agent.runtime import AgentWorkflowRuntime, WorkflowDependencies, get_default_runtime
+from vietnam_legal_agent.domain.models import DocumentRecord, TerminationReason
+from vietnam_legal_agent.tools.evidence import EvidenceEvaluator
+from vietnam_legal_agent.tools.history import ContextSnapshot, HistoryGateway
+from vietnam_legal_agent.tools.legal_readiness import SyntheticReadyLegalReadinessGate
+from vietnam_legal_agent.tools.retrieval import StaticRetrievalGateway
 
 
 class FakeHistory(HistoryGateway):
@@ -31,7 +31,7 @@ class FakeHistory(HistoryGateway):
 
 
 class FakeGen:
-    async def chitchat(self, query: str, history: list) -> str: return "Xin chào! Tôi có thể giúp gì về EPR?"
+    async def chitchat(self, query: str, history: list) -> str: return "Xin chào! Tôi có thể giúp gì về pháp luật?"
     async def answer(self, *args, **kwargs) -> str: return "Câu trả lời"
     async def web(self, *args, **kwargs) -> tuple: return "web", []
     async def repair(self, *args, **kwargs) -> str: return ""
@@ -75,11 +75,11 @@ class FakeRunner:
 @pytest.fixture
 def agent_deps():
     sample_doc = DocumentRecord(
-        content="Điều 77 quy định trách nhiệm tái chế bao bì của nhà sản xuất, nhập khẩu theo luật môi trường.",
+        content="Điều 328 Bộ luật Dân sự quy định về đặt cọc trong giao dịch dân sự.",
         document_id="doc-1",
         score=0.9,
         source="legal",
-        metadata={"legal_anchor": "Điều 77", "source": "Luật BVMT 2020"},
+        metadata={"legal_anchor": "Điều 328", "source": "Bộ luật Dân sự 2015"},
     )
     history = FakeHistory()
     deps = WorkflowDependencies(
@@ -117,12 +117,29 @@ async def test_agent_runtime_chitchat_bypass(agent_deps):
 
 
 @pytest.mark.asyncio
-async def test_agent_runtime_pending_legal_readiness_stops_before_agent_runner(agent_deps):
-    class RunnerMustNotRun:
-        async def stream(self, query: str, **kwargs):
-            raise AssertionError("legal readiness must stop before agent generation")
-            yield  # pragma: no cover
-
+async def test_pending_corpus_review_blocks_legal_answer_regardless_of_domain(agent_deps):
+    document = DocumentRecord(
+        content="Người lao động có trình độ cao đẳng được thử việc tối đa sáu mươi ngày. " * 3,
+        document_id="labor-25",
+        source="legal",
+        metadata={
+            "legal_anchor": "Điều 25",
+            "source": "Bộ luật Lao động số 45/2019/QH14",
+            "source_title": "Bộ luật Lao động số 45/2019/QH14",
+            "Document_Number": "45/2019/QH14",
+            "Corpus_ID": "labor",
+        },
+    )
+    result = AgentRunResult(
+        answer="Người lao động có trình độ cao đẳng được thử việc tối đa sáu mươi ngày [1].",
+        termination_reason=TerminationReason.ANSWER_COMPLETE.value,
+        trajectory=[AgentStep(1, "search_legal_provisions", {"query": "Điều 25"}, {}, 10.0, True)],
+        evidence=[document.to_dict()],
+        citations=[],
+        source="legal",
+        steps_taken=2,
+        cache_hit=False,
+    )
     deps = WorkflowDependencies(
         history=agent_deps.history,
         cache=agent_deps.cache,
@@ -138,8 +155,8 @@ async def test_agent_runtime_pending_legal_readiness_stops_before_agent_runner(a
 
     events = [
         event
-        async for event in AgentWorkflowRuntime(deps, runner=RunnerMustNotRun()).stream(
-            query="Điều 77 quy định gì?",
+        async for event in AgentWorkflowRuntime(deps, runner=FakeRunner(result)).stream(
+            query="Bộ luật Lao động quy định thời gian thử việc tối đa bao lâu?",
             user_id="u1",
             conversation_id="c1",
         )
@@ -147,6 +164,7 @@ async def test_agent_runtime_pending_legal_readiness_stops_before_agent_runner(a
 
     complete = next(event for event in events if event.get("type") == "response_complete")
     assert complete["source"] == "error"
+    assert complete["termination_reason"] == "citation_verification_failed"
     assert complete["citation_error"] == "legal_review_pending"
     assert complete["legal_readiness_status"] == "pending"
     assert complete["legal_readiness_sha"] == "pending-manifest"
@@ -167,16 +185,16 @@ async def test_agent_runtime_out_of_scope_bypass(agent_deps):
 @pytest.mark.asyncio
 async def test_agent_runtime_successful_stream(agent_deps):
     doc = DocumentRecord(
-        content="Điều 77 quy định trách nhiệm tái chế bao bì của nhà sản xuất, nhập khẩu theo luật môi trường.",
+        content="Điều 328 Bộ luật Dân sự quy định về đặt cọc trong giao dịch dân sự.",
         document_id="doc-1",
-        metadata={"legal_anchor": "Điều 77", "source": "Luật BVMT 2020"},
+        metadata={"legal_anchor": "Điều 328", "source": "Bộ luật Dân sự 2015"},
     )
     result = AgentRunResult(
-        answer="Trách nhiệm tái chế được quy định tại Điều 77 [1].",
+        answer="Quy định về đặt cọc được nêu tại Điều 328 [1].",
         termination_reason=TerminationReason.ANSWER_COMPLETE.value,
-        trajectory=[AgentStep(1, "search_legal_provisions", {"query": "Điều 77"}, {}, 10.0, True)],
+        trajectory=[AgentStep(1, "search_legal_provisions", {"query": "Điều 328"}, {}, 10.0, True)],
         evidence=[doc.to_dict()],
-        citations=[{"index": 1, "document_id": "doc-1", "label": "Điều 77"}],
+        citations=[{"index": 1, "document_id": "doc-1", "label": "Điều 328"}],
         source="legal",
         steps_taken=2,
         cache_hit=False,
@@ -185,7 +203,7 @@ async def test_agent_runtime_successful_stream(agent_deps):
     runtime = AgentWorkflowRuntime(agent_deps, runner=fake_runner)
 
     events = []
-    async for e in runtime.stream(query="Điều 77 quy định gì?", user_id="u1", conversation_id="c1"):
+    async for e in runtime.stream(query="Điều 328 Bộ luật Dân sự quy định gì?", user_id="u1", conversation_id="c1"):
         events.append(e)
 
     # Verify event stream structure
@@ -223,7 +241,7 @@ async def test_agent_runtime_explicit_research_web_uses_web_citation_policy(agen
     events = [
         event
         async for event in AgentWorkflowRuntime(agent_deps, runner=FakeRunner(result)).stream(
-            query="Tra cứu nguồn mới về EPR",
+            query="Tra cứu nguồn mới về quy định chấm dứt hợp đồng lao động",
             mode="research_web",
             user_id="u1",
             conversation_id="c1",
@@ -291,7 +309,7 @@ async def test_agent_runtime_regenerate_empty_query_recovery(agent_deps):
 
 @pytest.mark.asyncio
 async def test_get_default_runtime_feature_flag(monkeypatch):
-    from epr_agent.config import get_settings
+    from vietnam_legal_agent.config import get_settings
 
     get_default_runtime.cache_clear()
     settings = get_settings()
@@ -518,7 +536,7 @@ async def test_agent_runtime_disconnect_finalizes_pending_turn(agent_deps) -> No
     stream = AgentWorkflowRuntime(
         _deps_with_history(agent_deps, history), runner=BlockingRunner()
     ).stream(
-        query="Điều 77 quy định gì?",
+        query="Thời gian thử việc tối đa là bao lâu?",
         user_id="u1",
         conversation_id="c1",
         turn_id="turn-disconnect",
@@ -554,7 +572,7 @@ async def test_agent_runtime_unhandled_failure_finalizes_failed_turn(agent_deps)
 
     with pytest.raises(RuntimeError, match="runner crashed"):
         async for _event in runtime.stream(
-            query="Điều 77 quy định gì?",
+            query="Thời gian thử việc tối đa là bao lâu?",
             user_id="u1",
             conversation_id="c1",
             turn_id="turn-failed",
@@ -566,24 +584,24 @@ async def test_agent_runtime_unhandled_failure_finalizes_failed_turn(agent_deps)
 
 
 def test_cited_evidence_indices_ignores_out_of_range_bracketed_numbers():
-    from epr_agent.agent.runtime import _cited_evidence_indices
+    from vietnam_legal_agent.agent.runtime import _cited_evidence_indices
 
     evidence = [{"document_id": "d1"}, {"document_id": "d2"}, {"document_id": "d3"}]
     # "[2023]" is a year, not a citation; only [2] points at an evidence item.
-    assert _cited_evidence_indices("Nghị định [2023] tại Điều 78 [2].", evidence) == {2}
+    assert _cited_evidence_indices("Bộ luật Lao động [2023] tại Điều 36 [2].", evidence) == {2}
     assert _cited_evidence_indices("Không có trích dẫn.", evidence) == set()
     assert _cited_evidence_indices("", []) == set()
 
 
 def test_documents_for_api_keeps_sources_when_answer_has_non_citation_brackets():
-    from epr_agent.agent.runtime import _documents_for_api
+    from vietnam_legal_agent.agent.runtime import _documents_for_api
 
     evidence = [
-        {"document_id": "d1", "content": "Nội dung 1", "metadata": {"legal_anchor": "Điều 77"}},
-        {"document_id": "d2", "content": "Nội dung 2", "metadata": {"legal_anchor": "Điều 78"}},
+        {"document_id": "d1", "content": "Nội dung 1", "metadata": {"legal_anchor": "Điều 35"}},
+        {"document_id": "d2", "content": "Nội dung 2", "metadata": {"legal_anchor": "Điều 36"}},
     ]
     state = {
-        "answer": "Theo Nghị định 08/2022/NĐ-CP [2023], quy định tại Điều 78 [2].",
+        "answer": "Theo Bộ luật Lao động 2019 [2023], quy định tại Điều 36 [2].",
         "evidence": evidence,
     }
     documents = _documents_for_api(state)
@@ -591,14 +609,14 @@ def test_documents_for_api_keeps_sources_when_answer_has_non_citation_brackets()
 
 
 def test_source_snapshots_keeps_sources_when_answer_has_non_citation_brackets():
-    from epr_agent.agent.runtime import _source_snapshots
+    from vietnam_legal_agent.agent.runtime import _source_snapshots
 
     evidence = [
-        {"document_id": "d1", "content": "Nội dung 1", "metadata": {"legal_anchor": "Điều 77", "Source_Title": "Luật BVMT 2020"}},
-        {"document_id": "d2", "content": "Nội dung 2", "metadata": {"legal_anchor": "Điều 78", "Source_Title": "Nghị định 08/2022/NĐ-CP"}},
+        {"document_id": "d1", "content": "Nội dung 1", "metadata": {"legal_anchor": "Điều 35", "Source_Title": "Bộ luật Lao động 2019"}},
+        {"document_id": "d2", "content": "Nội dung 2", "metadata": {"legal_anchor": "Điều 36", "Source_Title": "Bộ luật Lao động 2019"}},
     ]
     state = {
-        "answer": "Theo Nghị định 08/2022/NĐ-CP [2023], quy định tại Điều 78 [2].",
+        "answer": "Theo Bộ luật Lao động 2019 [2023], quy định tại Điều 36 [2].",
         "evidence": evidence,
     }
     snapshots = _source_snapshots(state)

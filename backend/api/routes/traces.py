@@ -8,8 +8,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from backend.api.principal import Principal, principal_from_request_state
-from epr_agent.config import get_settings
-from epr_agent.tracing.trace_context import get_trace_store
+from vietnam_legal_agent.config import get_settings
+from vietnam_legal_agent.tracing.trace_context import get_trace_store
 
 router = APIRouter(prefix="/traces", tags=["traces"])
 logger = logging.getLogger(__name__)

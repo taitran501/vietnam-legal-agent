@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from epr_agent.eval.replay import load_cases
+from vietnam_legal_agent.eval.replay import load_cases
 
 ROOT = Path(__file__).resolve().parents[1]
 

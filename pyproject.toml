@@ -54,7 +54,7 @@ universal = ["pyarrow>=17,<26"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-epr_agent = ["py.typed"]
+vietnam_legal_agent = ["py.typed"]
 
 [tool.ruff]
 target-version = "py311"
@@ -63,7 +63,7 @@ src = ["src", "tests"]
 
 [tool.mypy]
 python_version = "3.11"
-packages = ["epr_agent", "backend"]
+packages = ["vietnam_legal_agent", "backend"]
 mypy_path = "src:."
 check_untyped_defs = true
 warn_unused_ignores = true

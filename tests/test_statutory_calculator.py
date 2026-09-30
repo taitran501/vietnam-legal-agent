@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from epr_agent.agent.tool_registry import calculate_statutory_amounts
-from epr_agent.domain.legal_rules import calculate_legal_formula
+from vietnam_legal_agent.agent.tool_registry import calculate_statutory_amounts
+from vietnam_legal_agent.domain.legal_rules import calculate_legal_formula
 
 
 def test_overtime_salary_calculation() -> None:

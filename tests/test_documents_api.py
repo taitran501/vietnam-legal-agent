@@ -11,7 +11,7 @@ from backend.api.routes.documents import router
 from fastapi import FastAPI
 from starlette.testclient import TestClient
 
-from epr_agent.infra.admission import AdmissionLease
+from vietnam_legal_agent.infra.admission import AdmissionLease
 
 
 class AllowingAdmissionController:
@@ -83,7 +83,7 @@ class TestUploadDocument:
 
     @patch("backend.api.routes.documents.parse_document_file")
     def test_upload_valid_pdf(self, mock_parse, client: TestClient):
-        from epr_agent.tools.document_parser import DocumentParseResult
+        from vietnam_legal_agent.tools.document_parser import DocumentParseResult
 
         mock_parse.return_value = DocumentParseResult(
             document_id="doc-1",

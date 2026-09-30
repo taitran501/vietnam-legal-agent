@@ -15,16 +15,15 @@ flowchart TB
 
 | Area | Behavior contract | Primary tests | Owner |
 | --- | --- | --- | --- |
-| `CaseFormResolver` | field dependency, normalization, validation, counts | Python unit | domain |
-| `UniversalCaseFormResolver` | multi-domain field schemas, validation, domain routing | Python unit | domain |
-| `/case-form/resolve` | pure response, no conversation side effect | FastAPI contract | API |
-| V4 case execution | one turn, replay, ownership, safe-stop | integration | runtime |
+| Intent understanding | route and task match user intent across legal topics | Python unit / API | domain |
+| Multi-domain retrieval | corpus selection, query retrieval, source provenance | Python unit / API | retrieval |
+| Evidence verification | supported claims, effective status, and citation correctness | Python unit / integration | safety |
+| Conversation persistence | turn order, ownership, reload, and legacy state normalization | integration | platform |
 | Agent trajectory | step budget, tool selection, loop detection, budget controller | Python unit + eval harness | agent |
 | Agent harness | 18 trajectory cases, tool call correctness, budget adherence | eval manifest | agent |
-| Legal domain rules | deterministic evaluation per domain (labor, civil, corporate, land, traffic, EPR) | Python unit | domain |
-| `CaseFieldList` | order, help, errors, conditional fields | Vitest | frontend |
-| `useCaseDraft` | debounce, cancellation, stale response, dirty state | Vitest hook/component | frontend |
-| `GuidedCaseCard` | one submit, retry, preserve draft | Vitest + mocked browser | frontend |
+| Domain routing and retrieval | query understanding, source selection, and evidence validation across legal topics | Python unit / API | domain |
+| Welcome screen | exactly three optional intents, free-text chat, no sample-question form | Vitest | frontend |
+| Ordinary chat | send, stream, stop, retry, and keep user text | Vitest + mocked browser | frontend |
 | source drawer | safe citation deep link and progressive metadata | Vitest + browser | frontend |
 | history/auth | isolation, reload, error/retry | integration + browser | platform |
 
@@ -32,7 +31,10 @@ Every new domain service or user-facing boundary needs a behavior contract and
 an explicitly named test owner. Coverage percentage alone is not a release
 criterion.
 
-## Test counts
+## Historical test counts
+
+The following counts are from the 2026-08 acceptance snapshot and do not
+validate later product-scope changes:
 
 - **574 passing pytest** unit and integration tests (**3 skipped** in the
   acceptance environment)

@@ -12,6 +12,15 @@ LOCK_PATH = ROOT / "data" / "universal_corpus_manifest.json"
 LOCK = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
 CORPUS_DIR = ROOT / "data" / "corpus" / "universal_legal"
 DB_PATH = CORPUS_DIR / "universal_legal.db"
+ARTICLE_SPLIT_PATTERN = re.compile(
+    r"(?m)(?=^(?:###?\s*)?Điều\s+\d+[\w\.]*\.?\s*)"
+)
+
+
+def _split_legal_articles(content: str) -> list[str]:
+    """Split one law at each article heading while preserving the heading."""
+
+    return ARTICLE_SPLIT_PATTERN.split(content)
 
 
 def _sha256(path: Path) -> str:
@@ -161,14 +170,11 @@ def _build_database(input_paths: list[Path]) -> int:
             total_inserted += num_rows
             print(f"Indexed {num_rows} articles from {os.path.basename(ppath)} (Total: {total_inserted:,})")
 
-        # Also index UTS_VLC full laws.
+        # Also index the corrected, content-locked UTS_VLC in-force snapshot.
         uts_parquet = str(input_paths[-1])
-        print("\n=== STEP 3: INDEXING UTS_VLC NATIONAL CODES (318 LAWS) ===")
+        print("\n=== STEP 3: INDEXING UTS_VLC NATIONAL LAWS AND CODES ===")
         vlc_table = pq.read_table(uts_parquet)
         vlc_dict = vlc_table.to_pydict()
-        art_split_pattern = re.compile(
-            r"(?=(?:^|\n)(?:###?\s*)?Điều\s+\d+[\w\.]*\.?\s*)", re.MULTILINE
-        )
         uts_rows = []
         uts_fts = []
 
@@ -176,7 +182,7 @@ def _build_database(input_paths: list[Path]) -> int:
             law_id = vlc_dict["id"][i]
             law_title = vlc_dict["title"][i]
             content = vlc_dict["content"][i]
-            articles = art_split_pattern.split(content)
+            articles = _split_legal_articles(content)
             for idx, art in enumerate(articles[1:], 1):
                 art_clean = art.strip()
                 if not art_clean:
@@ -203,7 +209,7 @@ def _build_database(input_paths: list[Path]) -> int:
         cursor.executemany("INSERT OR REPLACE INTO legal_articles VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);", uts_rows)
         cursor.executemany("INSERT INTO legal_articles_fts VALUES (?, ?, ?, ?, ?, ?, ?);", uts_fts)
         conn.commit()
-        print(f"Indexed {len(uts_rows):,} additional articles from 318 National Laws.")
+        print(f"Indexed {len(uts_rows):,} additional articles from {vlc_table.num_rows} National Laws and Codes.")
 
         final_count = int(cursor.execute("SELECT COUNT(*) FROM legal_articles;").fetchone()[0])
         expected_count = int(LOCK["output"]["expected_rows"])

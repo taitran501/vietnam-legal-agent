@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Drawer } from '@/components/UI/Drawer';
+import { apiFetch } from '@/api/client';
 
 interface TraceSpan {
   span_id: string;
@@ -45,8 +46,7 @@ export function TraceDrawer({ traceId }: { traceId?: string }) {
 
   useEffect(() => {
     if (!open || !traceId || trace) return;
-    const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
-    void fetch(`${baseUrl}/api/v1/traces/${encodeURIComponent(traceId)}`)
+    void apiFetch(`/api/v1/traces/${encodeURIComponent(traceId)}`)
       .then(async (response) => {
         if (!response.ok) throw new Error(response.status === 404 ? 'Trace debug chưa được bật.' : 'Không tải được trace.');
         const payload = (await response.json()) as TraceResponse;
