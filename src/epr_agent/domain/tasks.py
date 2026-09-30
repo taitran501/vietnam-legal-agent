@@ -474,6 +474,7 @@ OWN_CONTEXT_TERMS = (
     "doanh nghiệp tôi",
     "trường hợp của tôi",
     "trường hợp của em",
+    "trường hợp của mình",
     "của công ty tôi",
     "của doanh nghiệp tôi",
     "hợp đồng của tôi",
@@ -485,10 +486,12 @@ CASE_ACTION_TERMS = (
     "có thuộc",
     "phải thực hiện",
     "được hưởng",
+    "bồi thường",
     "có quyền",
     "có nghĩa vụ",
     "đánh giá",
     "xác định",
+    "kiểm tra nghĩa vụ",
     "áp dụng cho",
     "trường hợp",
     "tôi cần làm gì",
@@ -573,6 +576,16 @@ def _is_case_assessment_query(query: str) -> bool:
     has_own_context = bool(re.search(r"(?<!\w)(?:tôi|toi|em|cháu|mình|minh)(?!\w)", raw_q)) or any(
         _fold(term) in q for term in OWN_CONTEXT_TERMS if term not in {"tôi", "mình"}
     )
+    has_concrete_first_person_facts = bool(
+        re.search(
+            r"(?<!\w)(?:tôi|toi|em|cháu|mình|minh|chúng tôi)\s+"
+            r"(?:là|đang|đã|bị|sản xuất|nhập khẩu|kinh doanh|bán|mua|thuê|ký|"
+            r"nắm giữ|sở hữu|thừa kế|tranh chấp)\b",
+            raw_q,
+        )
+    ) or any(
+        _fold(term) in q for term in OWN_CONTEXT_TERMS if term not in {"tôi", "mình"}
+    )
     # EPR has an established business-role phrasing where “doanh nghiệp
     # nhập khẩu/sản xuất ... có phải ...” is already a concrete case request,
     # even when the user omits “tôi”.
@@ -596,10 +609,11 @@ def _is_case_assessment_query(query: str) -> bool:
         return True
     if _contains_any_term(q, CASE_ACTION_TERMS):
         return True
-    # Preserve natural first-person fact descriptions such as “tôi là nhà
-    # sản xuất bao bì” without treating a generic “công ty cổ phần” question
-    # as a case assessment.
-    return _contains_any_term(q, CASE_TOPIC_TERMS)
+    # A first-person pronoun alone is not a case fact: "Tôi có thể tự tái chế
+    # hay thuê đơn vị khác?" asks for the general rule. Preserve personal
+    # descriptions such as "tôi là nhà sản xuất bao bì" and explicit company
+    # ownership, while leaving generic modal questions on legal lookup.
+    return has_concrete_first_person_facts and _contains_any_term(q, CASE_TOPIC_TERMS)
 
 
 def is_greeting(query: str) -> bool:

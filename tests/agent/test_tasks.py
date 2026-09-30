@@ -36,6 +36,13 @@ def test_classify_general_factual_questions_stay_lookup():
     assert classify_task("Thời gian thử việc tối đa bao lâu?") == TaskType.LEGAL_LOOKUP
 
 
+def test_first_person_modal_question_about_a_general_rule_stays_lookup():
+    query = "Tôi có thể tự tái chế hay thuê đơn vị khác để thực hiện trách nhiệm tái chế?"
+
+    assert classify_task(query) == TaskType.LEGAL_LOOKUP
+    assert classify_route(query).value == "legal_lookup"
+
+
 def test_factual_corporate_and_instrument_questions_do_not_open_case_forms():
     assert classify_task(
         "Luật Doanh nghiệp quy định công ty cổ phần cần tối thiểu bao nhiêu cổ đông sáng lập?"

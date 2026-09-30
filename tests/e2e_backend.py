@@ -8,23 +8,30 @@ Only tool adapters are deterministic doubles.
 from __future__ import annotations
 
 import asyncio
+import re
+import sqlite3
 from datetime import UTC, datetime
 from typing import Any
 
 from backend.api.routes import chat as chat_routes
 from backend.api.routes.chat import router as chat_router
 from fastapi import FastAPI, HTTPException
+from scripts.canonical_corpus import canonical_articles
 
 from epr_agent.agent.graph import WorkflowDependencies
 from epr_agent.agent.planner import BoundedPlanner
 from epr_agent.agent.v4 import V4WorkflowRuntime
 from epr_agent.domain.epr_rules import CaseFormResolver
-from epr_agent.domain.legal import explicit_anchors
+from epr_agent.domain.legal import EMBEDDING_PROFILE, explicit_anchors, parse_required_anchors
 from epr_agent.domain.models import AgentState, DocumentRecord
 from epr_agent.domain.v4 import CaseStateV4, FactSource, FactValue
 from epr_agent.infra.admission import AdmissionLease
 from epr_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
-from epr_agent.tools.evidence import EvidenceEvaluator, legal_relevance_checker
+from epr_agent.tools.evidence import (
+    EvidenceEvaluator,
+    document_matches_anchor,
+    legal_relevance_checker,
+)
 from epr_agent.tools.generation import EvidenceGenerationGateway
 from epr_agent.tools.history import ContextSnapshot
 from epr_agent.tools.retrieval import StaticRetrievalGateway
@@ -354,33 +361,75 @@ history = BrowserHistoryGateway()
 chat_routes.cancel_turn_persistent = history.cancel_turn
 
 
-def _legal_document(anchor: str) -> DocumentRecord:
-    title = "Phụ lục XXII - Tỷ lệ và quy cách tái chế" if anchor == "Phụ lục XXII" else "Nghị định 08/2022/NĐ-CP"
-    content = (
-        f"{anchor} quy định đối tượng, lộ trình và trách nhiệm tái chế đối với nhà sản xuất, "
-        "nhập khẩu sản phẩm hoặc bao bì đưa ra thị trường Việt Nam. "
-    ) * 4
-    return DocumentRecord(
-        content=content,
-        metadata={
-            "Dieu": anchor if anchor.startswith("Điều") else "",
-            "Parent_Dieu": anchor if anchor.startswith("Điều") else "",
-            "legal_anchor": anchor,
-            "Document_Number": "08/2022/NĐ-CP",
-            "source": title,
-            "source_title": title,
-            "source_file": "data/08_2022_ND-CP_479457.doc",
-            "Corpus_Version": "browser-e2e-v4",
-            "Corpus_SHA256": "browser-e2e-corpus-v4",
-            "Embedding_Profile": "openai-text-embedding-3-small-v1",
-            "official_url": "https://vanban.chinhphu.vn/?docid=205092&pageid=27160",
-            "effective_status": "active",
-            "corpus_as_of_date": "2026-08-14",
-        },
-        document_id=f"law-{anchor.replace(' ', '-')}",
-        score=0.94,
-        source="legal",
-    )
+def _canonical_legal_documents() -> list[DocumentRecord]:
+    """Load legal articles from the same canonical source used by indexing."""
+
+    records, _audit = canonical_articles()
+    documents: list[DocumentRecord] = []
+    for row_index, row in enumerate(records, start=1):
+        article_title = str(row.get("Điều") or "")
+        article_match = re.match(r"Điều\s+(\d+)\.", article_title)
+        if article_match:
+            article_anchor = f"Điều {int(article_match.group(1))}"
+        else:
+            appendix_anchors = [anchor.appendix for anchor in explicit_anchors(article_title) if anchor.appendix]
+            article_anchor = appendix_anchors[0] if appendix_anchors else article_title
+        if not article_anchor:
+            continue
+
+        number = str(row.get("Document_Number") or "08/2022/NĐ-CP")
+        official_title = str(row.get("Source_Title") or "Nghị định số 08/2022/NĐ-CP")
+        source_uri = str(row.get("Source_URI") or "")
+        effective_from = str(row.get("Effective_From") or "")
+        effective_status = str(row.get("Effective_Status") or "unknown")
+        raw_relationship = row.get("Amendment_Relationship")
+        amendment_relationship = (
+            [str(value) for value in raw_relationship]
+            if isinstance(raw_relationship, (list, tuple))
+            else ([str(raw_relationship)] if raw_relationship else [])
+        )
+        raw_operations = row.get("Amendment_Operations")
+        amendment_operations = list(raw_operations) if isinstance(raw_operations, list) else []
+        current_law_support = bool(row.get("Current_Law_Support"))
+        metadata = {
+            "Dieu": article_anchor if article_anchor.startswith("Điều ") else "",
+            "Parent_Dieu": article_anchor if article_anchor.startswith("Điều ") else "",
+            "legal_anchor": f"{number} | {article_anchor}",
+            "Document_Number": number,
+            "source": "Nghị định 08/2022/NĐ-CP",
+            "source_title": "Nghị định 08/2022/NĐ-CP",
+            "Source_Title": official_title,
+            "source_file": str(row.get("Source_File") or ""),
+            "Source_File": str(row.get("Source_File") or ""),
+            "source_uri": source_uri,
+            "Source_URI": source_uri,
+            "Source_SHA256": str(row.get("Source_SHA256") or ""),
+            "Pages": row.get("Pages"),
+            "Corpus_Version": str(row.get("Corpus_Version") or ""),
+            "Corpus_SHA256": str(row.get("Corpus_SHA256") or ""),
+            "Embedding_Profile": EMBEDDING_PROFILE,
+            "Effective_From": effective_from,
+            "Effective_Status": effective_status,
+            "Amendment_Relationship": amendment_relationship,
+            "Amendment_Resolution_Status": str(row.get("Amendment_Resolution_Status") or ""),
+            "Amendment_Operations": amendment_operations,
+            "Current_Law_Support": current_law_support,
+            "official_url": source_uri,
+        }
+        documents.append(
+            DocumentRecord(
+                content=str(row.get("Text") or ""),
+                metadata=metadata,
+                document_id=f"nd08-2022-canonical-{row_index}",
+                score=0.94,
+                source="legal",
+                effective_from=effective_from or None,
+                effective_status=effective_status,
+                current_law_support=current_law_support,
+                amendment_relationship=amendment_relationship,
+            )
+        )
+    return documents
 
 
 def _corporate_document() -> DocumentRecord:
@@ -420,23 +469,99 @@ def _corporate_document() -> DocumentRecord:
 
 
 class PreviewRetrievalGateway(StaticRetrievalGateway):
-    """Deterministic adapter that refuses cross-domain fixture leakage."""
+    """Deterministic preview retrieval over real corpus text.
+
+    Exact legal addresses use the same structural anchor matcher as production.
+    Natural queries use SQLite FTS5 BM25 over the loaded source text; this keeps
+    browser acceptance repeatable without pretending that it is a production
+    embedding or cross-encoder evaluation.
+    """
 
     _checker = staticmethod(legal_relevance_checker(min_rerank_score=0.40))
+
+    def __init__(self, *, legal_documents: list[DocumentRecord]) -> None:
+        super().__init__(legal_documents=legal_documents)
+        self._fts = sqlite3.connect(":memory:")
+        self._fts.execute(
+            "CREATE VIRTUAL TABLE preview_legal_fts USING fts5(document_id UNINDEXED, body)"
+        )
+        self._fts.executemany(
+            "INSERT INTO preview_legal_fts(document_id, body) VALUES (?, ?)",
+            [
+                (
+                    document.document_id,
+                    " ".join(
+                        (
+                            str(document.metadata.get("legal_anchor") or ""),
+                            str(document.metadata.get("source_title") or ""),
+                            document.content,
+                        )
+                    ),
+                )
+                for document in legal_documents
+            ],
+        )
+        self._documents_by_id = {
+            document.document_id: document for document in legal_documents
+        }
 
     async def legal(self, query):
         documents = await super().legal(query)
         query_text = query.query if hasattr(query, "query") else str(query)
-        if getattr(query, "required_anchors", None) or explicit_anchors(query_text):
-            # Let the graph's explicit instrument/article evaluator report a
-            # precise mismatch rather than hiding all candidates here.
-            return documents
-        return [document for document in documents if self._checker(query_text, [document])]
+        required_anchors = list(getattr(query, "required_anchors", []) or [])
+        if required_anchors:
+            anchors, _invalid = parse_required_anchors(required_anchors)
+        else:
+            anchors = explicit_anchors(query_text)
+        if anchors:
+            exact = [
+                document
+                for document in documents
+                if any(document_matches_anchor(document, anchor) for anchor in anchors)
+            ]
+            # Preserve candidates on a mismatch so the workflow can report a
+            # specific instrument/article conflict instead of a generic miss.
+            return exact or documents
+
+        terms = list(
+            dict.fromkeys(
+                token
+                for token in re.findall(r"[\wÀ-ỹĐđ]+", query_text.casefold())
+                if len(token) >= 3 and not token.isdigit()
+            )
+        )
+        if not terms:
+            return []
+        match_query = " OR ".join(f'"{term}"' for term in terms)
+        try:
+            ranked = self._fts.execute(
+                """
+                SELECT document_id, bm25(preview_legal_fts) AS rank
+                FROM preview_legal_fts
+                WHERE preview_legal_fts MATCH ?
+                ORDER BY rank ASC
+                LIMIT 1
+                """,
+                (match_query,),
+            ).fetchall()
+        except sqlite3.Error:
+            return []
+
+        selected: list[DocumentRecord] = []
+        for document_id, _rank in ranked:
+            document = self._documents_by_id.get(str(document_id))
+            if document is None:
+                continue
+            candidate = DocumentRecord.from_dict(document.to_dict())
+            candidate.score = 0.94
+            candidate.metadata["rerank_score"] = candidate.score
+            if self._checker(query_text, [candidate]):
+                selected.append(candidate)
+        return selected
 
 
 legal_documents = [
-    *[_legal_document(f"Điều {article}") for article in range(77, 93)],
-    _legal_document("Phụ lục XXII"),
+    *_canonical_legal_documents(),
     _corporate_document(),
 ]
 dependencies = WorkflowDependencies(

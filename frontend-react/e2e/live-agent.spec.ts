@@ -18,7 +18,7 @@ test('React consumes the real FastAPI SSE and opens verified legal evidence', as
     }),
   ).toBeVisible();
   await expect(firstSource.getByText('Số: 08/2022/NĐ-CP', { exact: true })).toBeVisible();
-  await expect(firstSource.getByText('Điều 77', { exact: true }).first()).toBeVisible();
+  await expect(firstSource).toContainText('| Điều 77');
 });
 
 test('React paints a verified answer progressively before the SSE completes', async ({ page }) => {
@@ -147,4 +147,89 @@ test('checklist category reaches the agent and asks through chat', async ({ page
   await expect(page.getByRole('region', { name: 'Kết quả xử lý' })).toBeVisible({ timeout: 20000 });
   await expect(page.getByRole('region', { name: 'Kiểm tra trường hợp của doanh nghiệp' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Câu trả lời hữu ích' })).toBeVisible();
+});
+
+test('ordinary EPR questions retrieve canonical articles and render cited answers in chat', async ({ page }) => {
+  test.setTimeout(240_000);
+  const questions = [
+    {
+      article: 77,
+      query: 'Nhà sản xuất, nhập khẩu phải tái chế sản phẩm, bao bì đưa ra thị trường Việt Nam?',
+      answer: 'trách nhiệm tái chế sản phẩm, bao bì',
+    },
+    {
+      article: 78,
+      query: 'Tỷ lệ tái chế bắt buộc là tỷ lệ bao nhiêu trên tổng khối lượng sản phẩm, bao bì trong năm có trách nhiệm?',
+      answer: 'tỷ lệ khối lượng sản phẩm, bao bì tối thiểu',
+    },
+    {
+      article: 79,
+      query: 'Tôi có thể tự tái chế hay thuê đơn vị khác để thực hiện trách nhiệm tái chế?',
+      answer: 'Thuê đơn vị tái chế để thực hiện tái chế',
+    },
+    {
+      article: 80,
+      query: 'Khi nào nhà sản xuất, nhập khẩu phải đăng ký kế hoạch tái chế và báo cáo kết quả?',
+      answer: 'Trước ngày 31 tháng 3 hằng năm',
+    },
+    {
+      article: 81,
+      query: 'Công thức F = R x V x Fs dùng để tính khoản đóng góp tài chính như thế nào?',
+      answer: 'F = R x V x Fs',
+    },
+    {
+      article: 82,
+      query: 'Tiền đóng góp tài chính vào Quỹ được dùng hỗ trợ phân loại, thu gom, vận chuyển và tái chế sản phẩm bao bì nào?',
+      answer: 'hỗ trợ các hoạt động phân loại, thu gom, vận chuyển, tái chế',
+    },
+    {
+      article: 83,
+      query: 'Nhà sản xuất, nhập khẩu có doanh thu dưới 30 tỷ đồng/năm có được miễn đóng góp hỗ trợ xử lý chất thải không?',
+      answer: 'dưới 30 tỷ đồng/năm',
+    },
+    {
+      article: 84,
+      query: 'Trước hạn nào phải kê khai và nộp đủ tiền đóng góp hỗ trợ xử lý chất thải?',
+      answer: 'Trước ngày 20 tháng 4 hằng năm',
+    },
+    {
+      article: 85,
+      query: 'Quỹ phải công khai việc tiếp nhận và sử dụng tiền đóng góp hỗ trợ xử lý chất thải ra sao?',
+      answer: 'công khai, minh bạch, đúng mục đích',
+    },
+    {
+      article: 86,
+      query: 'Nhà sản xuất, nhập khẩu phải công khai những thông tin gì về sản phẩm, bao bì?',
+      answer: 'Thành phần nguyên liệu, nhiên liệu, vật liệu',
+    },
+  ];
+
+  await page.goto('/');
+  const input = page.getByLabel('Câu hỏi pháp lý');
+  const helpful = page.getByRole('button', { name: 'Câu trả lời hữu ích' });
+  const sourceButtons = page.getByRole('button', { name: /Xem \d+ nguồn tham khảo/ });
+  const caveat = 'Lưu ý: Câu trả lời tóm tắt nội dung trong nguồn được trích dẫn; dữ liệu hiện chưa xác nhận các cập nhật hoặc hiệu lực hiện hành.';
+
+  for (const [index, item] of questions.entries()) {
+    await input.fill(item.query);
+    await input.press('Enter');
+
+    const completedTurns = index + 1;
+    await expect(helpful).toHaveCount(completedTurns, { timeout: 30_000 });
+    await expect(page.getByText(item.answer, { exact: false }).last()).toBeVisible();
+    await expect(page.getByText(caveat, { exact: false }).last()).toBeVisible();
+    await expect(sourceButtons).toHaveCount(completedTurns);
+
+    await sourceButtons.last().click();
+    const drawer = page.getByRole('dialog', { name: 'Nguồn tham khảo' });
+    const firstSource = drawer.locator('#source-1');
+    await expect(
+      firstSource.getByRole('heading', {
+        name: 'Nghị định 08/2022/NĐ-CP',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(firstSource).toContainText(`| Điều ${item.article}`);
+    await drawer.getByRole('button', { name: 'Đóng', exact: true }).click();
+  }
 });
