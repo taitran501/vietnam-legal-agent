@@ -509,16 +509,17 @@ def is_explicit_source_version_lookup(
     }
     if len(requested) > 1 or not documents:
         return False
+    if not requested and not any(
+        is_unresolved_current_law_source(document) or is_document_superseded(document)
+        for document in documents
+    ):
+        return False
 
     requested_articles = _article_ids(query)
     found_articles: set[str] = set()
     source_instrument_sets: list[set[str]] = []
     for document in documents:
         if document.source != "legal":
-            return False
-        if not requested and not (
-            is_unresolved_current_law_source(document) or is_document_superseded(document)
-        ):
             return False
         source_instruments = {
             re.sub(r"\s+", "", value).casefold()

@@ -110,6 +110,35 @@ def test_generic_lookup_can_be_answered_with_a_caveat_from_one_unresolved_instru
     ]
 
 
+def test_source_version_lookup_allows_verified_and_unresolved_chunks_from_one_instrument():
+    unresolved = document()
+    unresolved.metadata.update(
+        {
+            "Current_Law_Support": False,
+            "Document_Number": "08/2022/NĐ-CP",
+            "source_title": "Nghị định số 08/2022/NĐ-CP",
+        }
+    )
+    verified = document()
+    verified.metadata.update(
+        {
+            "Current_Law_Support": True,
+            "Document_Number": "08/2022/NĐ-CP",
+            "source_title": "Nghị định số 08/2022/NĐ-CP",
+        }
+    )
+
+    result = EvidenceEvaluator(min_chars=20).evaluate(
+        "Doanh nghiệp có thể chọn các hình thức thực hiện trách nhiệm tái chế nào?",
+        [unresolved, verified],
+        TaskType.LEGAL_LOOKUP,
+    )
+
+    assert result.sufficient is True
+    assert result.source_version_only is True
+    assert result.has_superseded_sources is True
+
+
 @pytest.mark.parametrize(
     ("query", "task_type"),
     [
