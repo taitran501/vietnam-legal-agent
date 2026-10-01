@@ -376,6 +376,15 @@ def _universal_legal_relevance(query: str, document: DocumentRecord) -> bool:
         if named_anchors:
             return True
 
+    # The universal corpus has already ranked these records with its full-text
+    # BM25 index. Requiring a second, token-overlap threshold here rejected
+    # valid paraphrases (for example, a deposit dispute where the statute uses
+    # "đặt cọc" but the question describes the landlord keeping the money).
+    # Keep source-address checks above, then let claim support verification
+    # decide whether the generated answer is actually supported by the source.
+    if (document.metadata or {}).get("bm25_rank") is not None:
+        return True
+
     # An article number alone is not a source address: thousands of laws have
     # an Article 77. Require either a named instrument (checked above) or
     # topical overlap after removing address tokens.
@@ -700,6 +709,7 @@ def filter_universal_retrieval_neighbors(
 _CITATION_RE = re.compile(r"\[(\d+)\]")
 _ARTICLE_RE = re.compile(r"\bđiều\s+(\d+[a-zđ]?)\b", re.IGNORECASE)
 _MARKDOWN_PREFIX_RE = re.compile(r"^\s*(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+)")
+_LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)")
 _LEGAL_CLAIM_SIGNALS = (
     "theo điều",
     "quy định",
@@ -843,9 +853,26 @@ def _document_matches_named_instrument(document: DocumentRecord, document_title:
     return bool(identifying_tokens) and all(token in source_text for token in identifying_tokens)
 
 
+def split_answer_sentences(text: str) -> list[str]:
+    """Split prose for claim-level checks while keeping legal article titles intact."""
+
+    protected = re.sub(
+        r"(?i)\b(điều\s+\d+[a-zđ]?)\.\s+",
+        r"\1<ARTICLE_TITLE_PERIOD> ",
+        text or "",
+    )
+    sentences = re.split(r"(?<=[.!?])\s+(?!\[\d+\])", protected)
+    return [
+        sentence.replace("<ARTICLE_TITLE_PERIOD>", ".").strip()
+        for sentence in sentences
+        if sentence.strip()
+    ]
+
+
 def legal_claim_segments(answer: str) -> list[str]:
     segments: list[str] = []
     in_bibliography = False
+    list_context = ""
     for raw_line in (answer or "").splitlines():
         stripped_raw = raw_line.strip()
         lower_raw = stripped_raw.lower()
@@ -861,16 +888,36 @@ def legal_claim_segments(answer: str) -> list[str]:
             continue
         if not stripped_raw or stripped_raw.startswith("#"):
             continue
+        is_list_item = bool(_LIST_ITEM_RE.match(raw_line))
         line = _MARKDOWN_PREFIX_RE.sub("", raw_line).strip()
-        if not line or line.endswith((":", "：")):
+        if not line:
+            continue
+        if line.endswith((":", "：")):
+            if not is_list_item:
+                list_context = line.rstrip(":： ")[:500]
             continue
         if line.startswith("**") and line.endswith(":**") and len(line) < 50:
             continue
-        lower = line.lower()
-        if any(signal in lower for signal in _NON_CLAIM_SIGNALS):
-            continue
-        if any(signal in lower for signal in _LEGAL_CLAIM_SIGNALS) or _ARTICLE_RE.search(line):
-            segments.append(line)
+        if not is_list_item:
+            list_context = ""
+        # The previous line-level check let one citation validate every
+        # uncited claim on the same paragraph. Verify each sentence separately.
+        for candidate in split_answer_sentences(line):
+            lower = candidate.lower()
+            claim_text = _CITATION_RE.sub("", candidate).strip(" \t.,;:—-")
+            if not re.search(r"[^\W\d_]", claim_text, flags=re.UNICODE):
+                # Corpus extraction sometimes places a clause number and its
+                # citation on their own line (for example, ``1. [1]``). That
+                # is a list marker, not a substantive claim to verify.
+                continue
+            if any(signal in lower for signal in _NON_CLAIM_SIGNALS):
+                continue
+            if (
+                is_list_item
+                or any(signal in lower for signal in _LEGAL_CLAIM_SIGNALS)
+                or _ARTICLE_RE.search(candidate)
+            ):
+                segments.append(f"{list_context}: {candidate}" if is_list_item and list_context else candidate)
     return segments
 
 
@@ -886,6 +933,75 @@ def build_citations(documents: list[DocumentRecord]) -> list[Citation]:
         label = " — ".join(labels) or document.document_id or f"Nguồn {index}"
         citations.append(Citation(index=index, document_id=document.document_id, label=label))
     return citations
+
+
+def strip_citation_placeholders(answer: str) -> str:
+    """Remove model template markers such as ``[n]`` from user-facing text."""
+
+    return re.sub(r"\[\s*n\s*\]", "", answer or "", flags=re.IGNORECASE)
+
+
+def propagate_list_item_citations(answer: str) -> str:
+    """Copy an existing nearby citation to uncited items in the same list.
+
+    Some models cite only the last item in a list even when all items summarize
+    one provision. This repairs citation formatting only; claim support is still
+    checked independently against the retrieved evidence before delivery.
+    """
+
+    if not answer:
+        return answer
+    lines = answer.splitlines()
+    all_indices = list(dict.fromkeys(int(value) for value in _CITATION_RE.findall(answer)))
+    index = 0
+    while index < len(lines):
+        if not _LIST_ITEM_RE.match(lines[index]):
+            index += 1
+            continue
+
+        group: list[int] = [index]
+        cursor = index + 1
+        while cursor < len(lines):
+            if _LIST_ITEM_RE.match(lines[cursor]):
+                group.append(cursor)
+                cursor += 1
+                continue
+            if not lines[cursor].strip():
+                next_item = cursor + 1
+                while next_item < len(lines) and not lines[next_item].strip():
+                    next_item += 1
+                if next_item < len(lines) and _LIST_ITEM_RE.match(lines[next_item]):
+                    group.append(next_item)
+                    cursor = next_item + 1
+                    continue
+            break
+
+        cited_items = {
+            line_index: list(dict.fromkeys(int(value) for value in _CITATION_RE.findall(lines[line_index])))
+            for line_index in group
+            if _CITATION_RE.search(lines[line_index])
+        }
+        for line_index in group:
+            if _CITATION_RE.search(lines[line_index]):
+                continue
+            inherited: list[int] = []
+            if cited_items:
+                nearest_distance = min(abs(line_index - cited_index) for cited_index in cited_items)
+                inherited = list(
+                    dict.fromkeys(
+                        value
+                        for cited_index, values in cited_items.items()
+                        if abs(line_index - cited_index) == nearest_distance
+                        for value in values
+                    )
+                )
+            elif len(all_indices) == 1:
+                inherited = all_indices
+            if inherited:
+                references = " ".join(f"[{value}]" for value in inherited)
+                lines[line_index] = f"{lines[line_index].rstrip()} {references}"
+        index = cursor
+    return "\n".join(lines)
 
 
 def verify_citations(
@@ -1058,7 +1174,7 @@ def auto_anchor_citations_in_answer(answer: str, documents: list[DocumentRecord]
     masked = mask_citation_code(answer)
     existing_indices = {int(m) for m in _CITATION_RE.findall(masked)}
     if existing_indices:
-        return answer
+        return propagate_list_item_citations(answer)
 
     enriched = answer
     anchored_indices: set[int] = set()
@@ -1106,4 +1222,4 @@ def auto_anchor_citations_in_answer(answer: str, documents: list[DocumentRecord]
         else:
             enriched = f"{enriched} [1]"
 
-    return enriched
+    return propagate_list_item_citations(enriched)

@@ -49,6 +49,8 @@ from vietnam_legal_agent.tools.evidence import (
     EvidenceEvaluator,
     auto_anchor_citations_in_answer,
     legal_relevance_checker,
+    propagate_list_item_citations,
+    strip_citation_placeholders,
     verify_citations,
     verify_web_citations,
 )
@@ -120,7 +122,10 @@ def _merge_multi_query_results(
     ranked: dict[str, dict[str, Any]] = {}
     for result_index, documents in enumerate(results):
         query_index = query_indices[result_index] if query_indices is not None else result_index
-        query_weight = 2.0 if query_index == 0 else 1.0
+        # Preserve some recall from the user's wording, but prioritize the
+        # first focused reformulation. Later reformulations add coverage and
+        # must not let a noisy secondary query crowd the direct provision out.
+        query_weight = 2.5 if query_index == 1 else 0.5
         for rank, document in enumerate(documents):
             key = _retrieval_document_key(document)
             entry = ranked.get(key)
@@ -191,9 +196,9 @@ def _build_retrieval_queries(
         )
         if value
     }
-    # Keep the user's wording as the retrieval baseline. The standalone form
-    # and model-proposed equivalents add recall for follow-ups and vocabulary
-    # mismatch, but must not replace the original request.
+    # Keep the user's wording as the retrieval baseline. One model-proposed
+    # formal query can add recall without letting several overlapping
+    # reformulations overwhelm the original request in rank fusion.
     for candidate in [original_query, standalone_query, *(proposed_queries or [])]:
         normalized = " ".join(str(candidate or "").split())
         if not normalized:
@@ -219,7 +224,7 @@ def _build_retrieval_queries(
             continue
         seen.add(key)
         queries.append(normalized[:3000])
-        if len(queries) == 4:
+        if len(queries) == 3:
             break
     return queries
 
@@ -817,6 +822,7 @@ def build_workflow(deps: WorkflowDependencies):
             answer = await deps.generation.answer(task.value, state["standalone_query"], docs, state.get("facts", {}))
             if (state.get("evidence_assessment") or {}).get("source_version_only"):
                 answer = _append_source_version_caveat(answer)
+            answer = propagate_list_item_citations(answer or "")
         state["answer"] = answer or ""
         state["assessment"] = None
         state["checklist"] = []
@@ -826,6 +832,7 @@ def build_workflow(deps: WorkflowDependencies):
     async def verify(state: AgentState) -> AgentState:
         append_action(state, Action.VERIFY_CITATIONS)
         task = TaskType(state["task_type"])
+        state["answer"] = strip_citation_placeholders(state.get("answer", ""))
         if task == TaskType.CHITCHAT:
             state["citation_valid"] = True
             return state
@@ -876,6 +883,7 @@ def build_workflow(deps: WorkflowDependencies):
         # Layer two is deliberately one bounded batch call.  Production legal
         # routes require both verifier dependencies; injected unit tests can
         # opt into the same contract with the explicit dependency flag.
+        claim_support_passed = False
         if valid and policy is VerificationPolicy.LEGAL_CORPUS and deps.claim_verifier is not None:
             started = time.perf_counter()
             try:
@@ -886,6 +894,7 @@ def build_workflow(deps: WorkflowDependencies):
                     reason_code=support.reason_code,
                 )
                 valid = bool(support.supported) and support_status is VerificationStatus.VERIFIED
+                claim_support_passed = valid
                 reason = (
                     "ok"
                     if valid
@@ -927,6 +936,11 @@ def build_workflow(deps: WorkflowDependencies):
                     metadata={"reason": "verifier_exception", "error_type": type(exc).__name__},
                 )
 
+        # Preserve the independently checked draft before asking the critic
+        # for optional refinements. A bad optional rewrite must not erase an
+        # answer that already passed both structural and claim-level checks.
+        verified_answer = state.get("answer", "")
+        verified_citations = list(citations)
         corrected = False
         if valid and policy is VerificationPolicy.LEGAL_CORPUS and deps.critic_reviewer is not None:
             critic_started = time.perf_counter()
@@ -939,17 +953,33 @@ def build_workflow(deps: WorkflowDependencies):
                         (state.get("evidence_assessment") or {}).get("source_version_only")
                     ),
                 )
+                critic_blocks_answer = (
+                    verdict.fatal_error
+                    or (verdict.materially_nonresponsive and not (verdict.corrected_answer or "").strip())
+                    or verdict.verification_status
+                    in {
+                        VerificationStatus.VERIFICATION_UNAVAILABLE,
+                        VerificationStatus.INSUFFICIENT_EVIDENCE,
+                    }
+                    or (
+                        not verdict.approved
+                        and not (verdict.corrected_answer or "").strip()
+                        and not claim_support_passed
+                    )
+                )
                 _tool_result(
                     state,
                     "legal_critic",
                     critic_started,
-                    ok=bool(verdict.approved and not verdict.fatal_error),
+                    ok=not critic_blocks_answer,
                     count=len(docs),
-                    error="" if verdict.approved and not verdict.fatal_error else verdict.reason_code,
+                    error=verdict.reason_code if critic_blocks_answer else "",
                     metadata={
                         "reason_code": verdict.reason_code,
                         "verification_status": verdict.verification_status.value,
                         "fatal_error": bool(verdict.fatal_error),
+                        "materially_nonresponsive": bool(verdict.materially_nonresponsive),
+                        "nonfatal_concern_retained": bool(not verdict.approved and not critic_blocks_answer),
                         "corrected_answer_present": bool((verdict.corrected_answer or "").strip()),
                     },
                 )
@@ -961,18 +991,34 @@ def build_workflow(deps: WorkflowDependencies):
                     valid = False
                     reason = VerificationStatus.INSUFFICIENT_EVIDENCE.value
                     state["verification_status"] = VerificationStatus.INSUFFICIENT_EVIDENCE.value
-                elif verdict.fatal_error or (
-                    not verdict.approved and not (verdict.corrected_answer or "").strip()
-                ):
+                elif verdict.fatal_error:
                     valid = False
                     reason = "critic_legal_flaw_rejected"
                     state["verification_status"] = VerificationStatus.UNSUPPORTED_CLAIM.value
+                elif verdict.materially_nonresponsive and not (verdict.corrected_answer or "").strip():
+                    valid = False
+                    reason = "critic_answer_does_not_address_question"
+                    state["verification_status"] = VerificationStatus.UNSUPPORTED_CLAIM.value
                 elif verdict.corrected_answer and verdict.corrected_answer.strip():
-                    corrected_answer = auto_anchor_citations_in_answer(verdict.corrected_answer, docs)
+                    corrected_answer = strip_citation_placeholders(verdict.corrected_answer)
+                    corrected_answer = auto_anchor_citations_in_answer(corrected_answer, docs)
                     if (state.get("evidence_assessment") or {}).get("source_version_only"):
                         corrected_answer = _append_source_version_caveat(corrected_answer)
                     state["answer"] = corrected_answer
                     corrected = True
+                elif not verdict.approved:
+                    if claim_support_passed:
+                        # Keep a claim-verified answer when the critic raises
+                        # a nonfatal concern but supplies no correction. Do
+                        # not turn a completeness preference into a safe stop.
+                        logger.info(
+                            "Keeping claim-verified answer after nonfatal critic concern: %s",
+                            verdict.reason_code,
+                        )
+                    else:
+                        valid = False
+                        reason = "critic_legal_flaw_rejected"
+                        state["verification_status"] = VerificationStatus.UNSUPPORTED_CLAIM.value
             except Exception as exc:  # noqa: BLE001 - critic outage must stop legal delivery
                 valid = False
                 reason = VerificationStatus.VERIFICATION_UNAVAILABLE.value
@@ -1018,6 +1064,26 @@ def build_workflow(deps: WorkflowDependencies):
                 state["verification_status"] = (
                     VerificationStatus.VERIFIED.value if valid else VerificationStatus.UNSUPPORTED_CLAIM.value
                 )
+            if (
+                not valid
+                and verdict.approved
+                and not verdict.fatal_error
+                and not verdict.materially_nonresponsive
+                and claim_support_passed
+            ):
+                # An approved critic verdict means its rewrite is optional.
+                # If that rewrite fails fresh checks, retain the original draft
+                # only because it already passed the independent claim verifier.
+                logger.info(
+                    "Discarding unsupported optional critic correction; retaining verified draft (%s)",
+                    reason,
+                )
+                state["answer"] = verified_answer
+                citations = verified_citations
+                valid = True
+                reason = "ok"
+                corrected = False
+                state["verification_status"] = VerificationStatus.VERIFIED.value
         state["citation_valid"] = valid
         state["citation_error"] = reason
         state["citations"] = [citation.to_dict() for citation in citations]

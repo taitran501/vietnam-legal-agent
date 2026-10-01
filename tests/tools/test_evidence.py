@@ -8,6 +8,7 @@ from vietnam_legal_agent.tools.evidence import (
     filter_universal_retrieval_neighbors,
     legal_claim_segments,
     legal_relevance_checker,
+    propagate_list_item_citations,
     verify_citations,
 )
 
@@ -42,6 +43,48 @@ def test_evidence_evaluator_requires_document_and_source_metadata():
 
     short = DocumentRecord("x", {}, "bad", source="legal")
     assert evaluator.evaluate("quy định pháp luật", [short], TaskType.LEGAL_LOOKUP).sufficient is False
+
+
+def test_citation_verifier_checks_each_sentence_in_a_paragraph():
+    answer = (
+        "Theo Điều 36, người lao động có quyền chấm dứt hợp đồng [1]. "
+        "Người lao động phải được trả lương trong thời gian này."
+    )
+
+    valid, _citations, reason = verify_citations(answer, [document()], TaskType.LEGAL_LOOKUP)
+
+    assert valid is False
+    assert reason == "legal_claim_without_citation"
+
+
+@pytest.mark.asyncio
+async def test_claim_support_verifier_sends_each_sentence_as_a_separate_claim(monkeypatch):
+    import json
+
+    from vietnam_legal_agent.tools.verifier import ClaimSupportResult, StructuredClaimSupportVerifier
+
+    captured = {}
+
+    class Model:
+        def with_structured_output(self, _schema):
+            return self
+
+        async def ainvoke(self, messages):
+            captured["payload"] = json.loads(messages[1][1].split("\n", 1)[1])
+            return ClaimSupportResult(supported=False, reason_code="unsupported_claims_reported")
+
+    monkeypatch.setattr("vietnam_legal_agent.infra.llm_instances.get_llm_smart", lambda: Model())
+    answer = (
+        "Theo Điều 36, người lao động có quyền chấm dứt hợp đồng [1]. "
+        "Người lao động phải được trả lương trong thời gian này."
+    )
+
+    await StructuredClaimSupportVerifier().verify(answer, [document()])
+
+    claims = captured["payload"]["claims"]
+    assert len(claims) == 2
+    assert claims[0]["citation_indices"] == [1]
+    assert claims[1]["citation_indices"] == []
 
 
 def test_evidence_evaluator_rejects_explicitly_unresolved_current_law_source():
@@ -634,6 +677,33 @@ def test_universal_corpus_relevance_uses_text_when_no_normalized_model_score_exi
     assert result.sufficient is True
 
 
+def test_universal_bm25_candidate_is_not_rejected_for_query_paraphrase():
+    deposit_provision = document()
+    deposit_provision.content = (
+        "Điều 328. Đặt cọc. Trường hợp bên nhận đặt cọc từ chối giao kết, thực hiện hợp đồng, "
+        "thì phải trả cho bên đặt cọc tài sản đặt cọc và một khoản tiền tương đương. "
+    ) * 2
+    deposit_provision.metadata.update(
+        {
+            "corpus_source": "universal_legal",
+            "bm25_rank": -69.9,
+            "legal_anchor": "Điều 328",
+        }
+    )
+    evaluator = EvidenceEvaluator(
+        min_chars=20,
+        relevance_checker=legal_relevance_checker(min_rerank_score=0.40),
+    )
+
+    result = evaluator.evaluate(
+        "Chủ nhà giữ tiền đặt cọc thuê nhà thì xử lý thế nào?",
+        [deposit_provision],
+        TaskType.LEGAL_LOOKUP,
+    )
+
+    assert result.sufficient is True
+
+
 @pytest.mark.parametrize(
     ("query", "unrelated_content"),
     [
@@ -730,6 +800,74 @@ def test_claim_segments_exclude_bibliography_and_disclaimer_lines():
     )
 
     assert segments == ["Theo Điều 36 [1], người sử dụng lao động phải thực hiện nghĩa vụ báo trước."]
+
+
+def test_claim_segments_include_every_numbered_legal_list_item():
+    answer = (
+        "Các quyền cơ bản gồm:\n"
+        "1. Được bảo đảm an toàn về tính mạng, sức khỏe, danh dự, nhân phẩm, uy tín, tài sản [1]\n"
+        "2. Được cung cấp thông tin chính xác, đầy đủ về sản phẩm, hàng hóa, dịch vụ [1]\n"
+        "3. Lựa chọn sản phẩm, hàng hóa, dịch vụ [1]\n"
+        "4. Góp ý kiến với tổ chức, cá nhân kinh doanh [1]"
+    )
+
+    assert legal_claim_segments(answer) == [
+        "Các quyền cơ bản gồm: Được bảo đảm an toàn về tính mạng, sức khỏe, danh dự, nhân phẩm, uy tín, tài sản [1]",
+        "Các quyền cơ bản gồm: Được cung cấp thông tin chính xác, đầy đủ về sản phẩm, hàng hóa, dịch vụ [1]",
+        "Các quyền cơ bản gồm: Lựa chọn sản phẩm, hàng hóa, dịch vụ [1]",
+        "Các quyền cơ bản gồm: Góp ý kiến với tổ chức, cá nhân kinh doanh [1]",
+    ]
+
+
+def test_claim_segments_carry_eligibility_context_into_list_items():
+    segments = legal_claim_segments(
+        "Cổ đông hoặc nhóm cổ đông sở hữu từ 5% tổng số cổ phần phổ thông trở lên có quyền:\n"
+        "1. Yêu cầu triệu tập họp trong trường hợp luật quy định [1]\n"
+        "2. Quyền khác theo quy định của Luật này và Điều lệ công ty [1]"
+    )
+
+    assert len(segments) == 2
+    assert all("sở hữu từ 5% tổng số cổ phần phổ thông trở lên" in claim for claim in segments)
+
+
+def test_citation_verifier_requires_citations_on_each_numbered_list_item():
+    docs = [document()]
+    answer = (
+        "Các quyền gồm:\n"
+        "1. Được cung cấp thông tin đầy đủ [1]\n"
+        "2. Lựa chọn hàng hóa phù hợp"
+    )
+
+    valid, _, reason = verify_citations(answer, docs, TaskType.LEGAL_LOOKUP)
+
+    assert valid is False
+    assert reason == "legal_claim_without_citation"
+
+
+def test_list_item_citation_propagation_fills_missing_citations_from_nearest_sibling():
+    answer = (
+        "Thời hạn phụ thuộc vào loại công việc:\n"
+        "1. Không quá 180 ngày với người quản lý doanh nghiệp.\n"
+        "2. Không quá 60 ngày với công việc cần trình độ cao đẳng trở lên.\n"
+        "3. Không quá 30 ngày với công việc cần trình độ trung cấp.\n"
+        "4. Không quá 06 ngày làm việc với công việc khác [2]."
+    )
+
+    repaired = propagate_list_item_citations(answer)
+
+    assert repaired.count("[2]") == 4
+    assert legal_claim_segments(repaired) == [
+        "Thời hạn phụ thuộc vào loại công việc: Không quá 180 ngày với người quản lý doanh nghiệp. [2]",
+        "Thời hạn phụ thuộc vào loại công việc: Không quá 60 ngày với công việc cần trình độ cao đẳng trở lên. [2]",
+        "Thời hạn phụ thuộc vào loại công việc: Không quá 30 ngày với công việc cần trình độ trung cấp. [2]",
+        "Thời hạn phụ thuộc vào loại công việc: Không quá 06 ngày làm việc với công việc khác [2].",
+    ]
+
+
+def test_claim_segments_ignore_corpus_clause_number_lines_without_claim_text():
+    assert legal_claim_segments(
+        "Theo Điều 25 [1]:\n1. [1]\nQuy định bắt buộc được nêu tại khoản này [1]."
+    ) == ["Quy định bắt buộc được nêu tại khoản này [1]."]
 
 
 def test_citation_verifier_requires_each_legal_claim_to_have_a_source():

@@ -19,11 +19,12 @@ from vietnam_legal_agent.agent.v4 import V4WorkflowRuntime
 from vietnam_legal_agent.domain.models import DocumentRecord
 from vietnam_legal_agent.domain.routes import RouteType
 from vietnam_legal_agent.domain.tasks import TaskUnderstanding
+from vietnam_legal_agent.retrieval.universal_retriever import UniversalLegalRetriever
 from vietnam_legal_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
 from vietnam_legal_agent.tools.evidence import EvidenceEvaluator
-from vietnam_legal_agent.tools.generation import StaticGenerationGateway
+from vietnam_legal_agent.tools.generation import EvidenceGenerationGateway, StaticGenerationGateway
 from vietnam_legal_agent.tools.history import ContextSnapshot
-from vietnam_legal_agent.tools.retrieval import StaticRetrievalGateway
+from vietnam_legal_agent.tools.retrieval import StaticRetrievalGateway, UniversalLegalRetrievalGateway
 
 
 class MemoryHistory:
@@ -174,6 +175,33 @@ async def test_factual_corporate_question_uses_lookup_route_not_case_form():
 
 
 @pytest.mark.asyncio
+async def test_case_understanding_conflict_continues_through_ordinary_lookup():
+    query = "Công ty chậm trả lương thì người lao động có quyền gì?"
+    history = MemoryHistory()
+    app, retrieval = runtime(history)
+    app.deps.understanding = StaticTaskUnderstandingGateway(
+        TaskUnderstanding(
+            task_type="case_assessment",
+            route=RouteType.CASE_ASSESSMENT,
+            standalone_query=query,
+            confidence=1.0,
+        )
+    )
+
+    state = await app.run(
+        query=query,
+        user_id="v4-user",
+        conversation_id="v4-conflicting-understanding",
+    )
+
+    assert state["route"] == RouteType.LEGAL_LOOKUP.value
+    assert state["task_type"] == "legal_lookup"
+    assert state["outcome"] == "completed"
+    assert state["termination_reason"] == "answer_complete"
+    assert retrieval.calls
+
+
+@pytest.mark.asyncio
 async def test_v4_reuses_route_understanding_plan_for_delegated_legal_lookup():
     history = MemoryHistory()
     app, retrieval = runtime(history)
@@ -295,6 +323,46 @@ async def test_environmental_topic_uses_the_general_legal_retriever():
     assert not state.get("covered_issues")
     assert retrieval.calls
     assert all(request.issue_id == "legal_lookup" for request in retrieval.requests)
+
+
+@pytest.mark.asyncio
+async def test_producer_recycling_question_uses_ordinary_legal_chat_and_citations():
+    if not UniversalLegalRetriever().is_available:
+        pytest.skip("Universal legal corpus database is not built in this environment.")
+
+    app, _ = runtime(MemoryHistory())
+    app.deps.retrieval = UniversalLegalRetrievalGateway()
+
+    state = await app.run(
+        query="Nhà sản xuất có trách nhiệm tái chế sản phẩm và bao bì thế nào theo Luật Bảo vệ môi trường?",
+        user_id="v4-user",
+        conversation_id="v4-producer-recycling",
+    )
+
+    assert state["route"] == RouteType.LEGAL_LOOKUP.value
+    assert state["task_type"] == "legal_lookup"
+    assert state["outcome"] == "completed"
+    assert state["result_type"] == "legal_answer"
+    assert state["termination_reason"] == "answer_complete"
+    assert not state.get("safe_stop_reason")
+    assert "Điều 54" in state["answer"]
+    assert state["evidence"]
+    assert state["evidence"][0]["metadata"]["source_article"] == "Điều 54"
+    assert state["citations"]
+
+
+def test_extractive_fallback_skips_oversized_records_without_crashing():
+    oversized = legal_document("Điều 1")
+    oversized.content = "Điều 1. Nội dung sửa đổi và điều kiện áp dụng. " * 500
+    relevant = legal_document("Điều 94")
+
+    answer = EvidenceGenerationGateway._compose_legal_route_answer([oversized, relevant])
+    limited_answer = EvidenceGenerationGateway._compose_legal_route_answer([oversized])
+
+    assert "[2]" in answer
+    assert "[1]" not in answer
+    assert "quá dài để tóm tắt" in limited_answer
+    assert "[1]" in limited_answer
 
 
 @pytest.mark.asyncio

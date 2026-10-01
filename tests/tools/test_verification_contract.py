@@ -28,6 +28,7 @@ def _document() -> DocumentRecord:
 
 def test_route_matrix_owns_verification_policy() -> None:
     assert ROUTE_SPECS[RouteType.LEGAL_LOOKUP].verification_policy is VerificationPolicy.LEGAL_CORPUS
+    assert ROUTE_SPECS[RouteType.LEGAL_LOOKUP].max_evidence == 5
     assert ROUTE_SPECS[RouteType.CASE_ASSESSMENT].verification_policy is VerificationPolicy.LEGAL_CORPUS
     assert ROUTE_SPECS[RouteType.COMPLIANCE_CHECKLIST].verification_policy is VerificationPolicy.LEGAL_CORPUS
     assert ROUTE_SPECS[RouteType.RESEARCH_WEB].verification_policy is VerificationPolicy.WEB
@@ -101,6 +102,168 @@ async def test_structured_verifier_exception_is_unavailable(monkeypatch: pytest.
 
 
 @pytest.mark.asyncio
+async def test_unsegmented_legal_assertion_is_still_sent_to_claim_verifier(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _CapturingModel:
+        def __init__(self) -> None:
+            self.payload = ""
+
+        def with_structured_output(self, _schema):
+            return self
+
+        async def ainvoke(self, messages):
+            self.payload = messages[1][1]
+            return {
+                "supported": False,
+                "unsupported_claim_count": 1,
+                "reason_code": "unsupported_claim",
+            }
+
+    import vietnam_legal_agent.infra.llm_instances
+
+    model = _CapturingModel()
+    monkeypatch.setattr(vietnam_legal_agent.infra.llm_instances, "get_llm_smart", lambda: model)
+    answer = "Người điều khiển xe máy không đội mũ sẽ bị phạt 200.000 đồng [1]."
+
+    result = await StructuredClaimSupportVerifier().verify(answer, [_document()])
+
+    assert "bị phạt 200.000 đồng" in model.payload
+    assert result.supported is False
+    assert result.verification_status is VerificationStatus.UNSUPPORTED_CLAIM
+
+
+@pytest.mark.asyncio
+async def test_verbatim_source_clause_is_not_rejected_as_too_general(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _OverRejectingModel:
+        def with_structured_output(self, _schema):
+            return self
+
+        async def ainvoke(self, _messages):
+            return {
+                "supported": False,
+                "unsupported_claim_count": 1,
+                "unsupported_claim_indices": [1],
+                "reason_code": "Claim 2 is unsupported because the catch-all does not list every right.",
+            }
+
+    import vietnam_legal_agent.infra.llm_instances
+
+    source = DocumentRecord(
+        content=(
+            "Điều 115. Quyền của cổ đông phổ thông. Cổ đông hoặc nhóm cổ đông sở hữu từ "
+            "05% tổng số cổ phần phổ thông trở lên hoặc một tỷ lệ khác nhỏ hơn theo Điều lệ "
+            "có quyền sau đây: d) Quyền khác theo quy định của Luật này và Điều lệ công ty."
+        ),
+        document_id="company-law-115",
+        source="legal",
+        metadata={"legal_anchor": "Điều 115"},
+    )
+    monkeypatch.setattr(vietnam_legal_agent.infra.llm_instances, "get_llm_smart", lambda: _OverRejectingModel())
+    answer = (
+        "Cổ đông hoặc nhóm cổ đông sở hữu từ 5% tổng số cổ phần phổ thông trở lên có quyền:\n"
+        "1. Yêu cầu triệu tập họp Đại hội đồng cổ đông theo điều kiện luật định [1]\n"
+        "2. Quyền khác theo quy định của Luật này và Điều lệ công ty [1]."
+    )
+
+    result = await StructuredClaimSupportVerifier().verify(answer, [source])
+
+    assert result.supported is True
+    assert result.unsupported_claim_count == 0
+    assert result.unsupported_claim_indices == []
+    assert result.reason_code == "explicit_source_match"
+
+
+@pytest.mark.asyncio
+async def test_verifier_reconciles_zero_based_index_for_supported_condition_paraphrase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _OverRejectingModel:
+        def with_structured_output(self, _schema):
+            return self
+
+        async def ainvoke(self, _messages):
+            return {
+                "supported": False,
+                "unsupported_claim_count": 1,
+                "unsupported_claim_indices": [1],
+                "reason_code": "Claim 2 is unsupported because it omits the child's age condition.",
+            }
+
+    import vietnam_legal_agent.infra.llm_instances
+
+    source = DocumentRecord(
+        content=(
+            "Điều 81. Việc trông nom, chăm sóc, nuôi dưỡng, giáo dục con sau khi ly hôn. "
+            "Con của vợ chồng được giao cho một bên trực tiếp nuôi, căn cứ vào quyền lợi về mọi mặt "
+            "của con; nếu con từ đủ 07 tuổi trở lên thì phải xem xét nguyện vọng của con."
+        ),
+        document_id="family-law-81",
+        source="legal",
+        metadata={"legal_anchor": "Điều 81"},
+    )
+    monkeypatch.setattr(vietnam_legal_agent.infra.llm_instances, "get_llm_smart", lambda: _OverRejectingModel())
+    answer = (
+        "Tòa án căn cứ vào các yếu tố sau khi ly hôn:\n"
+        "1. Nếu cha mẹ không thỏa thuận được, Tòa án căn cứ vào quyền lợi mọi mặt của con [1].\n"
+        "2. Nếu con từ đủ 07 tuổi trở lên, Tòa án phải xem xét nguyện vọng của con [1]."
+    )
+
+    result = await StructuredClaimSupportVerifier().verify(answer, [source])
+
+    assert result.supported is True
+    assert result.reason_code == "explicit_source_match"
+    assert result.unsupported_claim_indices == []
+
+
+@pytest.mark.asyncio
+async def test_claim_verifier_receives_each_numbered_list_item(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _CapturingModel:
+        def __init__(self) -> None:
+            self.payload: dict[str, object] = {}
+
+        def with_structured_output(self, _schema):
+            return self
+
+        async def ainvoke(self, messages):
+            import json
+
+            self.payload = json.loads(messages[1][1].removeprefix("Verify this JSON data only:\n"))
+            return {"supported": True, "unsupported_claim_count": 0, "reason_code": "ok"}
+
+    import vietnam_legal_agent.infra.llm_instances
+
+    model = _CapturingModel()
+    monkeypatch.setattr(vietnam_legal_agent.infra.llm_instances, "get_llm_smart", lambda: model)
+    answer = (
+        "Các quyền cơ bản gồm:\n"
+        "1. Được bảo đảm an toàn về tính mạng và sức khỏe [1]\n"
+        "2. Được cung cấp thông tin đầy đủ về hàng hóa [1]\n"
+        "3. Lựa chọn hàng hóa, dịch vụ [1]\n"
+        "4. Góp ý kiến với tổ chức kinh doanh [1]\n"
+        "5. Tham gia xây dựng chính sách bảo vệ người tiêu dùng [1]\n"
+        "6. Yêu cầu bồi thường khi hàng hóa có khuyết tật [1]\n"
+        "7. Khiếu nại, tố cáo, khởi kiện [1]\n"
+        "8. Được tư vấn, hỗ trợ [1]\n"
+        "9. Được bảo vệ khi sử dụng dịch vụ công [1]\n"
+        "10. Thành lập hoặc tham gia tổ chức bảo vệ người tiêu dùng [1]\n"
+        "11. Quyền khác theo quy định của pháp luật [1]"
+    )
+
+    result = await StructuredClaimSupportVerifier().verify(answer, [_document()])
+
+    assert result.supported is True
+    claims = model.payload["claims"]
+    assert isinstance(claims, list)
+    assert len(claims) == 11
+    assert all(item["citation_indices"] == [1] for item in claims)
+
+
+@pytest.mark.asyncio
 async def test_legacy_no_evidence_reason_is_not_promoted_to_supported() -> None:
     class _LegacyVerifier:
         async def verify(self, _answer: str, _documents: list[DocumentRecord]) -> ClaimSupportResult:
@@ -154,12 +317,41 @@ async def test_critic_legacy_unavailable_reason_is_not_promoted_to_approval(
 
 
 @pytest.mark.asyncio
+async def test_nonfatal_critic_concern_is_not_relabelled_as_fatal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _IncompleteAnswerCritic:
+        def with_structured_output(self, _schema):
+            return self
+
+        async def ainvoke(self, _messages):
+            return {
+                "approved": False,
+                "fatal_error": False,
+                "reason_code": "incomplete_answer",
+                "critique": "The answer could use more detail.",
+            }
+
+    monkeypatch.setattr(
+        "vietnam_legal_agent.infra.llm_instances.get_llm_smart",
+        lambda: _IncompleteAnswerCritic(),
+    )
+    verdict = await LegalCriticReviewer().review("q", "Theo Điều 25 [1].", [_document()])
+
+    assert verdict.approved is False
+    assert verdict.fatal_error is False
+    assert verdict.verification_status is VerificationStatus.UNSUPPORTED_CLAIM
+    assert verdict.reason_code == "incomplete_answer"
+
+
+@pytest.mark.asyncio
 async def test_critic_receives_versioned_lookup_scope_and_current_status_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _CapturingModel:
         def __init__(self) -> None:
             self.payloads: list[dict[str, object]] = []
+            self.system_prompts: list[str] = []
 
         def with_structured_output(self, _schema):
             return self
@@ -167,6 +359,7 @@ async def test_critic_receives_versioned_lookup_scope_and_current_status_request
         async def ainvoke(self, messages):
             import json
 
+            self.system_prompts.append(messages[0][1])
             self.payloads.append(json.loads(messages[1][1].partition("\n")[2]))
             return {"approved": True, "reason_code": "ok"}
 
@@ -196,6 +389,8 @@ async def test_critic_receives_versioned_lookup_scope_and_current_status_request
 
     assert model.payloads[0]["source_version_only"] is True
     assert model.payloads[1]["source_version_only"] is False
+    assert all("giới hạn bằng chứng" in prompt for prompt in model.system_prompts)
+    assert all("phải được approved = True" in prompt for prompt in model.system_prompts)
 
 
 @pytest.mark.asyncio

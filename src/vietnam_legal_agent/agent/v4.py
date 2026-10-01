@@ -32,6 +32,7 @@ from vietnam_legal_agent.domain.routes import RouteType
 from vietnam_legal_agent.domain.tasks import (
     classify_route,
     detect_legal_domain,
+    deterministic_task_understanding,
     has_explicit_no_evidence_signal,
     is_context_dependent_query,
     latest_turn_requires_context,
@@ -572,7 +573,11 @@ class V4WorkflowRuntime(WorkflowRuntime):
             route = classify_route(classification_query, snapshot.history, active)
         if route not in {RouteType.CASE_ASSESSMENT, RouteType.COMPLIANCE_CHECKLIST}:
             state["route"] = route.value
-            return state
+            understanding = deterministic_task_understanding(classification_query, snapshot.history, active)
+            return await self._delegate_ordinary(
+                state,
+                precomputed_understanding=understanding.model_dump(mode="json"),
+            )
 
         task = TaskType.BUILD_COMPLIANCE_CHECKLIST if route == RouteType.COMPLIANCE_CHECKLIST else TaskType.CASE_ASSESSMENT
         domain = detect_legal_domain(str(state.get("standalone_query") or state.get("query") or ""))
@@ -677,6 +682,64 @@ class V4WorkflowRuntime(WorkflowRuntime):
         )
         return delegated
 
+    async def _delegate_ordinary(
+        self,
+        state: AgentState,
+        *,
+        precomputed_understanding: dict[str, Any] | None,
+    ) -> AgentState:
+        """Run a non-case turn through the shared legal evidence workflow."""
+
+        delegated = await run_workflow(
+            state["query"],
+            user_id=state["user_id"],
+            conversation_id=state["conversation_id"],
+            legacy_session_id=state.get("legacy_session_id", ""),
+            mode=state.get("mode", "auto"),
+            deps=self.deps,
+            trace_id=state["trace_id"],
+            compiled_workflow=self._compiled_workflow,
+            precomputed_understanding=precomputed_understanding,
+        )
+        delegated["operation"] = state.get("operation", TurnOperation.MESSAGE.value)
+        delegated["intent_hint"] = state.get("intent_hint", "auto")
+        delegated["interaction_source"] = state.get(
+            "interaction_source", InteractionSource.COMPOSER.value
+        )
+        delegated["replay_metadata"] = dict(state.get("replay_metadata") or {})
+        delegated["turn_id"] = state.get("turn_id", "")
+        delegated["user_message_id"] = state.get("user_message_id", "")
+        delegated["assistant_message_id"] = state.get("assistant_message_id", "")
+        delegated["target_assistant_message_id"] = state.get("target_assistant_message_id")
+        delegated["turn_status"] = state.get("turn_status", "pending")
+        delegated["corpus_as_of_date"] = state.get("corpus_as_of_date", "")
+        delegated["preview"] = bool(state.get("preview", False))
+        delegated["rule_id"] = ""
+        delegated["pipeline_version"] = "pipeline-v4"
+        termination = str(delegated.get("termination_reason") or "")
+        delegated["outcome"] = (
+            WorkflowOutcome.COMPLETED.value
+            if termination in {
+                TerminationReason.ANSWER_COMPLETE.value,
+                TerminationReason.CACHE_HIT.value,
+                TerminationReason.RESEARCH_COMPLETE.value,
+            }
+            else WorkflowOutcome.NEEDS_INFORMATION.value
+            if termination == TerminationReason.AWAITING_USER_INPUT.value
+            else WorkflowOutcome.INSUFFICIENT_EVIDENCE.value
+            if termination == TerminationReason.INSUFFICIENT_EVIDENCE.value
+            else WorkflowOutcome.OUT_OF_SCOPE.value
+            if termination == TerminationReason.OUT_OF_SCOPE.value
+            else WorkflowOutcome.FAILED.value
+        )
+        delegated["result_type"] = (
+            ResultType.LEGAL_ANSWER.value
+            if delegated["outcome"] == WorkflowOutcome.COMPLETED.value
+            and delegated.get("route") != RouteType.CHITCHAT.value
+            else ResultType.NONE.value
+        )
+        return delegated
+
     async def _execute(self, **kwargs: Any) -> AgentState:
         state = await self._initial(**kwargs)
         hint = str(state.get("intent_hint") or "auto")
@@ -726,42 +789,10 @@ class V4WorkflowRuntime(WorkflowRuntime):
                 available_actions=[RouteType.RESEARCH_WEB.value],
                 reason_code="explicit_no_evidence_signal",
             )
-        delegated = await run_workflow(
-            state["query"], user_id=state["user_id"], conversation_id=state["conversation_id"],
-            legacy_session_id=state.get("legacy_session_id", ""), mode=state.get("mode", "auto"), deps=self.deps,
-            trace_id=state["trace_id"], compiled_workflow=self._compiled_workflow,
+        return await self._delegate_ordinary(
+            state,
             precomputed_understanding=precomputed_understanding,
         )
-        # The bounded V4 router delegates ordinary legal lookups to the
-        # already-accepted V3 graph.  Copy the V4 request descriptor back onto
-        # that result so replay, retry, regeneration, and persistence retain
-        # the user's original operation instead of silently falling back to
-        # the legacy defaults.
-        delegated["operation"] = state.get("operation", TurnOperation.MESSAGE.value)
-        delegated["intent_hint"] = state.get("intent_hint", "auto")
-        delegated["interaction_source"] = state.get(
-            "interaction_source", InteractionSource.COMPOSER.value
-        )
-        delegated["replay_metadata"] = dict(state.get("replay_metadata") or {})
-        delegated["turn_id"] = state.get("turn_id", "")
-        delegated["user_message_id"] = state.get("user_message_id", "")
-        delegated["assistant_message_id"] = state.get("assistant_message_id", "")
-        delegated["target_assistant_message_id"] = state.get("target_assistant_message_id")
-        delegated["turn_status"] = state.get("turn_status", "pending")
-        delegated["corpus_as_of_date"] = state.get("corpus_as_of_date", "")
-        delegated["preview"] = bool(state.get("preview", False))
-        delegated["rule_id"] = ""
-        delegated["pipeline_version"] = "pipeline-v4"
-        delegated["outcome"] = WorkflowOutcome.COMPLETED.value if delegated.get("termination_reason") in {TerminationReason.ANSWER_COMPLETE.value, TerminationReason.CACHE_HIT.value, TerminationReason.RESEARCH_COMPLETE.value} else (
-            WorkflowOutcome.NEEDS_INFORMATION.value if delegated.get("termination_reason") == TerminationReason.AWAITING_USER_INPUT.value else WorkflowOutcome.INSUFFICIENT_EVIDENCE.value if delegated.get("termination_reason") == TerminationReason.INSUFFICIENT_EVIDENCE.value else WorkflowOutcome.OUT_OF_SCOPE.value if delegated.get("termination_reason") == TerminationReason.OUT_OF_SCOPE.value else WorkflowOutcome.FAILED.value
-        )
-        delegated["result_type"] = (
-            ResultType.LEGAL_ANSWER.value
-            if delegated["outcome"] == WorkflowOutcome.COMPLETED.value
-            and route != RouteType.CHITCHAT
-            else ResultType.NONE.value
-        )
-        return delegated
 
     async def run(self, **kwargs: Any) -> AgentState:
         started = time.perf_counter()

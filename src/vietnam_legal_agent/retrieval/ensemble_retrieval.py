@@ -983,21 +983,26 @@ class CrossEncoderReranker(BaseReranker):
         self.model_name = model_name
         self._model = None
         self.unavailable_reason: str | None = None
+        self._model_lock = threading.Lock()
+        self._predict_lock = threading.Lock()
 
     def _ensure_model(self):
         if self._model is not None:
             return self._model
-        if self.unavailable_reason is not None:
-            raise RuntimeError(self.unavailable_reason)
+        with self._model_lock:
+            if self._model is not None:
+                return self._model
+            if self.unavailable_reason is not None:
+                raise RuntimeError(self.unavailable_reason)
 
-        try:
-            from sentence_transformers import CrossEncoder
-        except Exception as exc:
-            self.unavailable_reason = "sentence-transformers is required for cross-encoder reranking"
-            raise RuntimeError(self.unavailable_reason) from exc
+            try:
+                from sentence_transformers import CrossEncoder
+            except Exception as exc:
+                self.unavailable_reason = "sentence-transformers is required for cross-encoder reranking"
+                raise RuntimeError(self.unavailable_reason) from exc
 
-        self._model = CrossEncoder(self.model_name)
-        return self._model
+            self._model = CrossEncoder(self.model_name)
+            return self._model
 
     def _format_doc(self, doc: Document) -> str:
         header = " ".join(
@@ -1018,7 +1023,11 @@ class CrossEncoderReranker(BaseReranker):
 
         model = self._ensure_model()
         pairs = [(query, self._format_doc(doc)) for doc in docs]
-        raw_scores = model.predict(pairs, show_progress_bar=False)
+        # Avoid concurrent CPU/GPU inference against the same model instance.
+        # Requests already have a bounded timeout and fall back to BM25 when
+        # this lock is busy for too long.
+        with self._predict_lock:
+            raw_scores = model.predict(pairs, show_progress_bar=False)
 
         scored: list[tuple[Document, float]] = []
         for doc, score in zip(docs, raw_scores):

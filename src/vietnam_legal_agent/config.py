@@ -273,7 +273,7 @@ class Settings(BaseSettings):
         description="Number of retrieval candidates sent into reranker",
     )
     rerank_timeout_ms: int = Field(
-        default=1200,
+        default=8000,
         description="Hard timeout for cross-encoder reranking in milliseconds",
     )
     rerank_fallback_on_timeout: bool = Field(

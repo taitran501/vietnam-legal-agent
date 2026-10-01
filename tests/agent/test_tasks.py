@@ -72,6 +72,8 @@ def test_general_questions_about_rules_stay_on_legal_lookup_route():
         "Điều 36 Bộ luật Lao động quy định gì?",
         "Thời gian thử việc tối đa bao lâu?",
         "Công ty cổ phần cần tối thiểu bao nhiêu cổ đông?",
+        "Mua hàng online nhận sản phẩm lỗi thì người mua có quyền gì?",
+        "Khi cha mẹ ly hôn, tòa án căn cứ vào đâu để quyết định người trực tiếp nuôi con?",
     )
     for query in queries:
         assert classify_task(query) == TaskType.LEGAL_LOOKUP
@@ -143,4 +145,4 @@ def test_query_plan_cleans_and_bounds_model_generated_retrieval_queries():
             "thêm biến thể",
         ],
     )
-    assert result.retrieval_queries == ["thời gian thử việc", "Điều 25"]
+    assert result.retrieval_queries == ["thời gian thử việc"]

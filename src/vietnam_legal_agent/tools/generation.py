@@ -13,13 +13,17 @@ import logging
 import re
 import unicodedata
 from html.parser import HTMLParser
-from itertools import pairwise
 from typing import Any, Protocol
 from urllib.parse import parse_qs, parse_qsl, unquote, urlencode, urljoin, urlsplit, urlunsplit
 
 from pydantic import BaseModel, Field
 
 from vietnam_legal_agent.domain.models import DocumentRecord, TaskType
+from vietnam_legal_agent.tools.evidence import (
+    propagate_list_item_citations,
+    split_answer_sentences,
+    verify_citations,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -329,116 +333,6 @@ def _search_duckduckgo_free(query: str, domains: list[str]) -> list[dict[str, An
     return results
 
 
-_NUMBERED_LEGAL_PARAGRAPH_RE = re.compile(r"(?m)^\s*\d{1,2}\.\s+")
-_LEGAL_QUALIFIER_RE = re.compile(r"\b(?:trừ|ngoại trừ)\b", re.IGNORECASE)
-_LEGAL_CROSS_REFERENCE_RE = re.compile(
-    r"\bđiểm\s+([a-z])\s+khoản\s+(\d+)\b|\bkhoản\s+(\d+)\b",
-    re.IGNORECASE,
-)
-_LEGAL_QUALIFIER_STOP_WORDS = {
-    "các", "cho", "có", "của", "đến", "điểm", "điều", "được", "hoặc", "khoản",
-    "không", "là", "một", "này", "nếu", "như", "phải", "quy", "trong", "trừ",
-    "tại", "theo", "thì", "trường", "và", "vào", "về", "với",
-}
-
-
-def _legal_terms(value: str) -> list[str]:
-    return [
-        token
-        for token in re.findall(r"[\wÀ-ỹĐđ]+", value.casefold())
-        if len(token) >= 2 and token not in _LEGAL_QUALIFIER_STOP_WORDS and not token.isdigit()
-    ]
-
-
-def _adjacent_legal_term_pairs(value: str) -> set[str]:
-    terms = _legal_terms(value)
-    return {f"{left} {right}" for left, right in pairwise(terms)}
-
-
-def _answer_preserves_source_exceptions(answer: str, documents: list[DocumentRecord]) -> bool:
-    """Reject a synthesis that states a qualified duty without its exception.
-
-    Cross-referenced exceptions are resolved from the same retrieved document
-    where possible, so a related option in another answer sentence does not
-    accidentally qualify an unconditional duty.
-    """
-
-    answer_sentences = [
-        sentence.strip()
-        for sentence in re.split(r"(?<=[.!?])\s+|[\r\n]+", answer or "")
-        if sentence.strip()
-    ]
-    for document in documents:
-        source = document.content or ""
-        if source.lstrip().startswith("[") and "\n\n" in source:
-            source = source.split("\n\n", 1)[1]
-        paragraph_starts = list(_NUMBERED_LEGAL_PARAGRAPH_RE.finditer(source))
-        paragraphs = (
-            [
-                source[start.end():paragraph_starts[index + 1].start() if index + 1 < len(paragraph_starts) else len(source)].strip()
-                for index, start in enumerate(paragraph_starts)
-            ]
-            if paragraph_starts
-            else [source.strip()]
-        )
-        for paragraph in paragraphs:
-            qualifier = _LEGAL_QUALIFIER_RE.search(paragraph)
-            if qualifier is None:
-                continue
-            duty_text = paragraph[:qualifier.start()]
-            duty = re.search(
-                r"\b(?:phải|có\s+nghĩa\s+vụ|có\s+trách\s+nhiệm)\b(.+)$",
-                duty_text,
-                re.IGNORECASE | re.DOTALL,
-            )
-            duty_terms = set(_legal_terms(duty.group(1) if duty else duty_text))
-            if not duty_terms:
-                continue
-
-            qualifier_text = paragraph[qualifier.start():]
-            reference = _LEGAL_CROSS_REFERENCE_RE.search(qualifier_text)
-            exception_text = qualifier_text
-            reference_label = ""
-            if reference:
-                if reference.group(1):
-                    letter, paragraph_number = reference.group(1).casefold(), reference.group(2)
-                    reference_label = f"điểm {letter} khoản {paragraph_number}"
-                    point_re = re.compile(
-                        rf"(?m)(?<!\w){re.escape(letter)}\)\s*(.+?)(?=\n\s*[a-z]\)\s|\n\s*\d{{1,2}}\.\s|\Z)",
-                        re.IGNORECASE | re.DOTALL,
-                    )
-                    resolved = point_re.search(source)
-                    if resolved:
-                        exception_text = resolved.group(1)
-                else:
-                    reference_label = f"khoản {reference.group(3)}"
-
-            exception_pairs = _adjacent_legal_term_pairs(exception_text)
-            if reference and reference.group(1):
-                resolved_terms = _legal_terms(exception_text)
-                exception_pairs = {
-                    f"{left} {right}"
-                    for left, right in pairwise(resolved_terms[:6])
-                }
-            reference_casefold = reference_label.casefold()
-            duty_sentences = [
-                sentence
-                for sentence in answer_sentences
-                if len(duty_terms.intersection(_legal_terms(sentence))) >= min(2, len(duty_terms))
-            ]
-            for sentence in duty_sentences:
-                sentence_folded = sentence.casefold()
-                has_qualifier = bool(_LEGAL_QUALIFIER_RE.search(sentence))
-                states_referenced_case = bool(reference_casefold and reference_casefold in sentence_folded)
-                states_resolved_exception = any(pair in sentence_folded for pair in exception_pairs)
-                if reference and not (states_referenced_case or states_resolved_exception):
-                    return False
-                if not reference and not has_qualifier:
-                    return False
-
-    return True
-
-
 class GenerationGateway(Protocol):
     async def chitchat(self, query: str, history: list[dict[str, Any]]) -> str: ...
 
@@ -465,7 +359,8 @@ class LegalRouteAnswer(BaseModel):
         answer_lines = ["### Trả lời"]
         for claim in self.claims:
             citations = " ".join(f"[{index}]" for index in claim.evidence_indices)
-            answer_lines.append(f"{claim.text} {citations}".strip())
+            sentences = split_answer_sentences(claim.text) or [claim.text]
+            answer_lines.extend(f"{sentence} {citations}".strip() for sentence in sentences)
 
         answer_lines.extend(["", "### Nguồn tham khảo:"])
         cited_indices = sorted({index for claim in self.claims for index in claim.evidence_indices})
@@ -477,6 +372,9 @@ class LegalRouteAnswer(BaseModel):
             label = f"{anchor} — {title}".rstrip(" —")
             answer_lines.append(f"- [{index}] {label}")
         return "\n\n".join(answer_lines[:1]) + "\n\n" + "\n\n".join(answer_lines[1:])
+
+
+_MAX_EXTRACTIVE_SOURCE_CHARS = 10_000
 
 
 def _as_langchain_documents(documents: list[DocumentRecord]) -> list[Any]:
@@ -531,9 +429,7 @@ class EvidenceGenerationGateway:
         # 1. Primary: Intelligent LLM Legal RAG Synthesis
         synthesized = await self._synthesize_legal_route_answer(query, documents)
         if synthesized:
-            if _answer_preserves_source_exceptions(synthesized, documents):
-                return synthesized
-            logger.info("Legal synthesis omitted a source exception; using extractive answer")
+            return synthesized
 
         # 2. Fallback: Extractive summary
         return self._compose_legal_route_answer(documents)
@@ -649,6 +545,12 @@ class EvidenceGenerationGateway:
 
         if not documents:
             return "Tôi chưa thể xác minh câu trả lời vì chưa có tài liệu hỗ trợ."
+        citation_repaired = propagate_list_item_citations(answer)
+        valid, _citations, _reason = verify_citations(citation_repaired, documents, task_type)
+        if valid:
+            # Prefer the user's direct answer after repairing citation
+            # formatting; the independent claim verifier still checks it.
+            return citation_repaired
         extractive = self._compose_legal_route_answer(documents)
         if extractive:
             return extractive
@@ -706,7 +608,11 @@ class EvidenceGenerationGateway:
             )
 
         context_parts = []
-        for index, document in enumerate(documents[:4], start=1):
+        # Match the route contract: ordinary lookups may pass five sources,
+        # while explain/compare can pass six. Silently truncating at four
+        # dropped the relevant fifth result from synthesis and caused a
+        # false "the corpus does not say" answer.
+        for index, document in enumerate(documents[:6], start=1):
             metadata = document.metadata or {}
             anchor = str(metadata.get("Dieu") or metadata.get("Parent_Dieu") or metadata.get("legal_anchor") or "Điều luật")
             source_title = str(metadata.get("source_title") or metadata.get("source") or metadata.get("law_ref") or "Văn bản pháp luật")
@@ -722,7 +628,9 @@ class EvidenceGenerationGateway:
         system_prompt = (
             "Bạn là trợ lý tra cứu pháp luật Việt Nam. Trả lời trực tiếp đúng câu hỏi bằng tiếng Việt rõ ràng, ngắn gọn.\n\n"
             f"{source_scope_instruction}"
-            "Chỉ dùng thông tin có trong tài liệu được cung cấp. Gắn chỉ số [n] vào từng nhận định pháp lý và chỉ trích dẫn tài liệu thực sự hỗ trợ nhận định đó. Giữ nguyên điều kiện, ngoại lệ, ngưỡng, thời điểm, đối tượng áp dụng và các lựa chọn thay thế nêu trong nguồn; không biến nghĩa vụ có điều kiện thành nghĩa vụ chung. Khi nguồn dẫn chiếu sang điểm hoặc khoản khác, hãy đọc phần được dẫn chiếu rồi nêu ngắn gọn ngoại lệ ngay trong cùng câu với nghĩa vụ. Nếu không thể xác định ngoại lệ, bỏ nhận định tuyệt đối đó hoặc nói rõ giới hạn. Không tự thêm thủ tục, cơ quan tiếp nhận, giấy tờ, phí, thời hạn, ngoại lệ hoặc hướng xử lý nếu tài liệu không nêu. Không suy đoán hiệu lực hiện hành hay sửa đổi về sau khi nguồn không xác nhận.\n\n"
+            "Chỉ dùng thông tin có trong tài liệu được cung cấp. Gắn chỉ số trích dẫn thực tế như [1], [2] theo đúng thứ tự tài liệu ở trên vào từng câu có nhận định pháp lý; mỗi câu pháp lý và từng mục đánh số/gạch đầu dòng cần citation riêng ngay trên mục đó, không dồn citation ở cuối danh sách; tuyệt đối không viết placeholder như [n]. Khi tóm tắt một danh sách, lược bỏ dòng chỉ nói chung rằng còn quyền/nghĩa vụ khác theo luật hoặc điều lệ nếu người dùng không yêu cầu nguyên văn hay liệt kê đầy đủ; không diễn giải dòng khái quát đó thành một quyền hoặc nghĩa vụ cụ thể. Không biến nghĩa vụ của một chủ thể thành quyền hoặc chế tài của chủ thể khác nếu nguồn không nêu quan hệ đó. Giữ nguyên điều kiện, ngoại lệ, ngưỡng, thời điểm, đối tượng áp dụng và các lựa chọn thay thế nêu trong nguồn; không biến nghĩa vụ có điều kiện thành nghĩa vụ chung. Khi nguồn dẫn chiếu sang điểm hoặc khoản khác, hãy đọc phần được dẫn chiếu rồi nêu ngắn gọn ngoại lệ ngay trong cùng câu với nghĩa vụ. Nếu không thể xác định ngoại lệ, bỏ nhận định tuyệt đối đó hoặc nói rõ giới hạn. Không tự thêm thủ tục, cơ quan tiếp nhận, giấy tờ, phí, thời hạn, ngoại lệ hoặc hướng xử lý nếu tài liệu không nêu. Không suy đoán hiệu lực hiện hành hay sửa đổi về sau khi nguồn không xác nhận.\n\n"
+            "Không tự gán vai trò của người dùng hoặc bên còn lại vào thuật ngữ pháp lý trong nguồn. Ví dụ, chỉ gọi ai là bên đặt cọc, bên nhận đặt cọc, người lao động, người sử dụng lao động, bên mua hoặc bên bán khi câu hỏi và tài liệu xác định rõ vai trò đó. Nếu chưa rõ, dùng thuật ngữ pháp lý trung tính và nêu điều kiện áp dụng thay vì đoán.\n\n"
+            "Trước khi soạn, đối chiếu tiêu đề và điều kiện áp dụng của từng nguồn với đúng giai đoạn, thủ tục và tình huống trong câu hỏi. Nếu nguồn nói về một giai đoạn khác (ví dụ thay đổi quyết định sau này thay vì quyết định ban đầu), không dùng quy tắc đó làm câu trả lời chính. Chỉ nêu quy tắc gần kề nếu nói rõ giới hạn áp dụng.\n\n"
             "Nếu người dùng chỉ hỏi một điều khoản, tóm tắt đúng phần liên quan trong 1–4 câu; không tạo các mục kết luận, thủ tục hay tài chính nếu không cần. Chỉ dùng tiêu đề khi câu hỏi có nhiều vấn đề cần phân tích. Nếu nguồn không trả lời phần được hỏi, nêu rõ giới hạn đó thay vì suy diễn.\n\n"
             "TÀI LIỆU ĐÃ TRUY XUẤT:\n"
             f"{context}"
@@ -753,6 +661,7 @@ class EvidenceGenerationGateway:
         """
 
         claims: list[LegalAnswerClaim] = []
+        oversized_indices: list[int] = []
         for index, document in enumerate(documents, start=1):
             metadata = document.metadata or {}
             anchor = str(metadata.get("Dieu") or metadata.get("Parent_Dieu") or metadata.get("legal_anchor") or "văn bản được truy xuất")
@@ -764,6 +673,11 @@ class EvidenceGenerationGateway:
             source_text = " ".join(raw_content.split()).strip()
             if not source_text:
                 continue
+            if len(source_text) > _MAX_EXTRACTIVE_SOURCE_CHARS:
+                oversized_indices.append(index)
+                continue
+            if len(claims) >= 6:
+                continue
             claims.append(
                 LegalAnswerClaim(
                     text=f"Theo {anchor}, văn bản quy định: {source_text}",
@@ -771,6 +685,13 @@ class EvidenceGenerationGateway:
                 )
             )
         if not claims:
+            if oversized_indices:
+                references = " ".join(f"[{index}]" for index in oversized_indices[:6])
+                return (
+                    "Tôi tìm thấy tài liệu liên quan, nhưng phần trích xuất quá dài để tóm tắt "
+                    "chính xác khi bộ tạo câu trả lời không khả dụng. Bạn có thể mở nguồn để xem "
+                    f"nguyên văn: {references}"
+                )
             return ""
         return LegalRouteAnswer(claims=claims).render(documents)
 

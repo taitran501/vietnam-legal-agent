@@ -18,6 +18,7 @@ from vietnam_legal_agent.domain.verification import (
 )
 from vietnam_legal_agent.tools.evidence import (
     is_explicit_source_version_lookup,
+    strip_citation_placeholders,
     verify_citations,
     verify_web_citations,
 )
@@ -63,6 +64,7 @@ class AgentGuardrails:
         """
         if not answer.strip():
             return False, "empty_answer", "Không thể tạo câu trả lời.", []
+        answer = strip_citation_placeholders(answer)
 
         # Convert dict evidence to DocumentRecord if needed
         docs: list[DocumentRecord] = [
@@ -148,6 +150,7 @@ class AgentGuardrails:
         should_run_claim_verifier = claim_verifier is not None and (
             policy is VerificationPolicy.LEGAL_CORPUS or verification_policy is None
         )
+        claim_support_passed = False
         if should_run_claim_verifier and claim_verifier is not None:
             try:
                 support = await claim_verifier.verify(answer, docs)
@@ -175,6 +178,9 @@ class AgentGuardrails:
                         "Tôi chưa thể xác minh đầy đủ căn cứ của các nhận định pháp lý trong câu trả lời.",
                         citations_dicts,
                     )
+                claim_support_passed = bool(
+                    support.supported and support_status is VerificationStatus.VERIFIED
+                )
                 if not support.supported or support_status is not VerificationStatus.VERIFIED:
                     if critic_reviewer is None:
                         has_statutory_basis = any(
@@ -230,17 +236,19 @@ class AgentGuardrails:
                         "Tôi chưa thể xác minh đầy đủ căn cứ của các nhận định pháp lý trong câu trả lời.",
                         citations_dicts,
                     )
-                if critic_verdict.verification_status is VerificationStatus.UNSUPPORTED_CLAIM:
-                    return (
-                        False,
-                        VerificationStatus.UNSUPPORTED_CLAIM.value,
-                        "Câu trả lời chứa nhận định chưa được tài liệu hỗ trợ.",
-                        citations_dicts,
-                    )
                 if (
                     critic_verdict.fatal_error
-                    or not critic_verdict.approved
+                    or (
+                        critic_verdict.materially_nonresponsive
+                        and not (critic_verdict.corrected_answer or "").strip()
+                    )
+                    or (
+                        not critic_verdict.approved
+                        and not (critic_verdict.corrected_answer or "").strip()
+                        and not claim_support_passed
+                    )
                     or critic_verdict.verification_status is not VerificationStatus.VERIFIED
+                    and critic_verdict.verification_status is not VerificationStatus.UNSUPPORTED_CLAIM
                 ):
                     logger.warning("Critic reviewer rejected answer: %s", critic_verdict.critique)
                     return (
@@ -250,7 +258,7 @@ class AgentGuardrails:
                         citations_dicts,
                     )
                 if critic_verdict.corrected_answer and critic_verdict.corrected_answer.strip():
-                    final_answer = critic_verdict.corrected_answer
+                    final_answer = strip_citation_placeholders(critic_verdict.corrected_answer)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Critic reviewer encountered exception: %s", exc)
                 if requires_verification:

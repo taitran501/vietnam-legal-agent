@@ -138,6 +138,7 @@ async def lifespan(app: FastAPI):
     # 2.5 Warm retrieval indexes asynchronously; readiness still guards requests.
     warmup_tasks = [
         asyncio.create_task(_warmup_retrieval_indexes_task()),
+        asyncio.create_task(_warmup_universal_cross_encoder_task()),
         asyncio.create_task(_warmup_local_embeddings_task()),
     ]
 
@@ -176,6 +177,18 @@ async def _warmup_retrieval_indexes_task() -> None:
         raise
     except Exception as exc:  # noqa: BLE001 - readiness, not warmup, owns request safety
         logger.warning("Retrieval index warmup failed: %s", exc)
+
+
+async def _warmup_universal_cross_encoder_task() -> None:
+    """Load the optional universal retranker in the background at startup."""
+    try:
+        from vietnam_legal_agent.tools.retrieval import warmup_universal_cross_encoder
+
+        await asyncio.to_thread(warmup_universal_cross_encoder)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - BM25 remains available if reranker setup fails
+        logger.warning("Universal legal cross-encoder warmup failed: %s", exc)
 
 
 async def _warmup_local_embeddings_task() -> None:

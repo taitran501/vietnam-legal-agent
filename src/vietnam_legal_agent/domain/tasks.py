@@ -177,6 +177,8 @@ FACTUAL_LOOKUP_TERMS = (
     "là gì",
     "áp dụng từ",
     "cần bao nhiêu",
+    "quyền gì",
+    "quyền nào",
 )
 
 ASSESSMENT_TERMS = (
@@ -198,6 +200,8 @@ GENERAL_LOOKUP_CUES = (
     "điều nào quy định",
     "theo điều nào",
     "văn bản nào quy định",
+    "căn cứ vào đâu",
+    "dựa trên tiêu chí nào",
 )
 EXPLICIT_ASSESSMENT_CUES = (
     "có phải",
@@ -331,7 +335,7 @@ class QueryPlan(BaseModel):
             if query and key not in seen:
                 seen.add(key)
                 cleaned.append(query)
-            if len(cleaned) == 2:
+            if len(cleaned) == 1:
                 break
         return cleaned
 

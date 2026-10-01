@@ -272,7 +272,7 @@ def _metadata(state: AgentState) -> dict[str, Any]:
         "corpus_as_of_date": state.get("corpus_as_of_date", ""),
         "preview": bool(state.get("preview", False)),
         "pipeline_version": state.get("pipeline_version", "pipeline-v4"),
-        "termination_reason": state.get("termination_reason", TerminationReason.ERROR.value),
+        "termination_reason": state.get("termination_reason") or TerminationReason.ERROR.value,
         "outcome": state.get("outcome"),
         "result_type": state.get("result_type"),
         "required_issues": state.get("required_issues", []),

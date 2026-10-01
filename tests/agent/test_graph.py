@@ -21,6 +21,7 @@ from vietnam_legal_agent.tools.generation import StaticGenerationGateway
 from vietnam_legal_agent.tools.history import ContextSnapshot
 from vietnam_legal_agent.tools.retrieval import StaticRetrievalGateway
 from vietnam_legal_agent.tools.verifier import (
+    ClaimSupportResult,
     LegalCriticVerdict,
     StaticClaimSupportVerifier,
     StaticLegalCriticReviewer,
@@ -105,6 +106,26 @@ async def test_legal_lookup_uses_bounded_retrieval_and_verifies_citation():
     assert state["citation_valid"] is True
     assert "retrieve_legal" in state["action_sequence"]
     assert state["retrieval_actions"] <= 3
+
+
+@pytest.mark.asyncio
+async def test_graph_removes_model_citation_placeholder_before_delivery():
+    deps = make_dependencies(
+        legal=[legal_doc()],
+        generation=StaticGenerationGateway(
+            answer_text="Điều 25 quy định về thời gian thử việc [n][1]."
+        ),
+    )
+
+    state = await run_workflow(
+        "Điều 25 quy định gì?",
+        user_id="u1",
+        conversation_id="citation-placeholder",
+        deps=deps,
+    )
+
+    assert state["termination_reason"] == "answer_complete"
+    assert state["answer"] == "Điều 25 quy định về thời gian thử việc [1]."
 
 
 @pytest.mark.asyncio
@@ -270,12 +291,11 @@ async def test_model_retrieval_variants_are_searched_in_parallel_and_fused_once(
     )
 
     assert state["termination_reason"] == "answer_complete"
-    assert state["retrieval_query_count"] == 4
+    assert state["retrieval_query_count"] == 3
     assert [query for _, query in deps.retrieval.calls] == [
         "Bộ luật Lao động người lao động chịu trách nhiệm gì?",
         "Quy định Bộ luật Lao động về người lao động là gì?",
         "thời gian thử việc",
-        "Bộ luật Lao động doanh nghiệp",
     ]
     assert len(state["evidence"]) == 1
     assert state["retrieval_queries"] == []
@@ -295,12 +315,33 @@ def test_reciprocal_rank_fusion_uses_chunk_identity_across_search_queries():
 
     merged = _merge_multi_query_results([[first, second], [second_again, third]])
 
-    assert [document.content for document in merged] == ["provision B", "provision A", "provision C"]
+    assert [document.content for document in merged] == ["provision B", "provision C", "provision A"]
     assert merged[0].metadata["multi_query_ranks"] == [
         {"query_index": 0, "rank": 2},
         {"query_index": 1, "rank": 1},
     ]
     assert merged[0].metadata["semantic_score"] == 0.9
+
+
+def test_reciprocal_rank_fusion_prioritizes_a_targeted_legal_rewrite():
+    from vietnam_legal_agent.domain.models import DocumentRecord
+
+    baseline_noise = [
+        DocumentRecord(f"baseline-{index}", {"_id": f"baseline-{index}"}, "source", source="legal")
+        for index in range(1, 4)
+    ]
+    targeted_sources = [
+        DocumentRecord(f"target-{index}", {"_id": f"target-{index}"}, "source", source="legal")
+        for index in range(1, 4)
+    ]
+
+    merged = _merge_multi_query_results([baseline_noise, targeted_sources])
+
+    assert [document.content for document in merged[:3]] == [
+        "target-1",
+        "target-2",
+        "target-3",
+    ]
 
 
 def test_retrieval_reformulations_preserve_user_anchors_and_drop_new_ones():
@@ -411,6 +452,110 @@ async def test_grounded_critic_correction_is_rechecked_instead_of_discarded():
         for result in state["tool_results"]
         if result.get("tool") == "legal_critic"
     }
+
+
+@pytest.mark.asyncio
+async def test_rejected_optional_critic_correction_keeps_previously_verified_answer():
+    original = "Theo Điều 25 [1], người sử dụng lao động phải thực hiện nghĩa vụ theo quy định."
+
+    class FirstPassThenReject:
+        calls = 0
+
+        async def verify(self, answer, documents):
+            self.calls += 1
+            supported = self.calls == 1
+            return ClaimSupportResult(
+                supported=supported,
+                unsupported_claim_count=0 if supported else 1,
+                reason_code="ok" if supported else "unsupported_claim",
+                verification_status="verified" if supported else "unsupported_claim",
+            )
+
+    verifier = FirstPassThenReject()
+    deps = make_dependencies(
+        legal=[legal_doc()],
+        generation=StaticGenerationGateway(answer_text=original),
+        claim_verifier=verifier,
+    )
+    deps.critic_reviewer = StaticLegalCriticReviewer(
+        verdict=LegalCriticVerdict(
+            approved=True,
+            corrected_answer="Theo Điều 25 [1], người lao động chắc chắn được nghỉ ngay không cần báo trước.",
+            reason_code="optional_refinement",
+        )
+    )
+
+    state = await run_workflow(
+        "Điều 25 quy định gì?",
+        user_id="u1",
+        conversation_id="reject-optional-critic-correction",
+        deps=deps,
+    )
+
+    assert verifier.calls == 2
+    assert state["termination_reason"] == "answer_complete"
+    assert state["citation_valid"] is True
+    assert state["verification_status"] == "verified"
+    assert state["answer"] == original
+
+
+@pytest.mark.asyncio
+async def test_nonfatal_critic_concern_keeps_independently_supported_answer():
+    deps = make_dependencies(
+        legal=[legal_doc()],
+        claim_verifier=StaticClaimSupportVerifier(supported=True),
+    )
+    deps.critic_reviewer = StaticLegalCriticReviewer(
+        verdict=LegalCriticVerdict(
+            approved=False,
+            fatal_error=False,
+            verification_status="unsupported_claim",
+            reason_code="incomplete_answer",
+            critique="The answer could include more detail.",
+        )
+    )
+
+    state = await run_workflow(
+        "Điều 25 quy định gì?",
+        user_id="u1",
+        conversation_id="nonfatal-critic-concern",
+        deps=deps,
+    )
+
+    assert state["termination_reason"] == "answer_complete"
+    assert state["citation_valid"] is True
+    critic_result = next(item for item in state["tool_results"] if item.get("tool") == "legal_critic")
+    assert critic_result["ok"] is True
+    assert critic_result["metadata"]["nonfatal_concern_retained"] is True
+
+
+@pytest.mark.asyncio
+async def test_materially_nonresponsive_critic_concern_blocks_wrong_scope_answer():
+    deps = make_dependencies(
+        legal=[legal_doc()],
+        claim_verifier=StaticClaimSupportVerifier(supported=True),
+    )
+    deps.critic_reviewer = StaticLegalCriticReviewer(
+        verdict=LegalCriticVerdict(
+            approved=False,
+            fatal_error=False,
+            materially_nonresponsive=True,
+            verification_status="unsupported_claim",
+            reason_code="answer_does_not_address_question",
+        )
+    )
+
+    state = await run_workflow(
+        "Điều 25 quy định gì?",
+        user_id="u1",
+        conversation_id="nonresponsive-critic-concern",
+        deps=deps,
+    )
+
+    assert state["termination_reason"] == "citation_verification_failed"
+    assert state["citation_error"] == "critic_answer_does_not_address_question"
+    critic_result = next(item for item in state["tool_results"] if item.get("tool") == "legal_critic")
+    assert critic_result["ok"] is False
 
 
 @pytest.mark.asyncio

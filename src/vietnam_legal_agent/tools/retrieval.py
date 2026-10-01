@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import sqlite3
+from functools import lru_cache
 from typing import Any, Protocol
 
 from vietnam_legal_agent.domain.legal import LegalAnchor, explicit_anchors, parse_required_anchors
@@ -12,11 +14,137 @@ from vietnam_legal_agent.domain.models import DocumentRecord
 from vietnam_legal_agent.domain.v4 import RetrievalRequest
 from vietnam_legal_agent.tools.evidence import (
     document_matches_anchor,
-    filter_universal_retrieval_neighbors,
     legal_relevance_checker,
 )
 
 logger = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=1)
+def _get_universal_cross_encoder(model_name: str) -> Any:
+    """Return one lazy cross-encoder instance shared by universal retrieval."""
+
+    from vietnam_legal_agent.retrieval.ensemble_retrieval import CrossEncoderReranker
+
+    return CrossEncoderReranker(model_name)
+
+
+def _universal_rerank_mode(settings: Any, query: str) -> tuple[bool, bool]:
+    """Return whether to score candidates and whether scores may change user order."""
+
+    if not bool(getattr(settings, "enable_cross_encoder_rerank", False)):
+        return False, False
+    if bool(getattr(settings, "cross_encoder_shadow_mode", False)):
+        return True, False
+
+    rollout = max(0, min(100, int(getattr(settings, "cross_encoder_rollout_percent", 0))))
+    if rollout <= 0:
+        return False, False
+    if rollout >= 100:
+        return True, True
+
+    bucket = int(hashlib.sha256(query.casefold().strip().encode("utf-8")).hexdigest()[:8], 16) % 100
+    apply_ranking = bucket < rollout
+    return apply_ranking, apply_ranking
+
+
+async def _rerank_universal_candidates(
+    query: str,
+    candidates: list[dict[str, Any]],
+    *,
+    model_name: str,
+    top_k: int,
+    timeout_ms: int,
+    apply_ranking: bool = True,
+) -> list[dict[str, Any]]:
+    """Score candidates and apply ranking only when the configured rollout allows it."""
+
+    if not candidates:
+        return []
+
+    try:
+        from langchain_core.documents import Document
+
+        reranker = _get_universal_cross_encoder(model_name)
+        if getattr(reranker, "unavailable_reason", None):
+            return candidates[:top_k]
+        rerank_documents = []
+        for index, candidate in enumerate(candidates):
+            metadata = dict(candidate.get("metadata") or {})
+            metadata["Dieu"] = metadata.get("Dieu") or metadata.get("legal_anchor") or ""
+            metadata["_universal_candidate_index"] = index
+            rerank_documents.append(
+                Document(
+                    page_content=str(candidate.get("page_content") or ""),
+                    metadata=metadata,
+                )
+            )
+
+        ranked_documents = await asyncio.wait_for(
+            asyncio.to_thread(reranker.rerank, query, rerank_documents, len(rerank_documents)),
+            timeout=max(0.01, timeout_ms / 1000),
+        )
+        cross_ranks: dict[int, int] = {}
+        cross_scores: dict[int, float] = {}
+        for rank, document in enumerate(ranked_documents, start=1):
+            index = document.metadata.get("_universal_candidate_index")
+            if not isinstance(index, int) or not 0 <= index < len(candidates):
+                continue
+            cross_ranks[index] = rank
+            try:
+                cross_scores[index] = float(document.metadata.get("cross_encoder_score"))
+            except (TypeError, ValueError):
+                pass
+
+        # A shadow run may collect scores, but it must never alter the results
+        # shown to users. In an active rollout, reciprocal-rank fusion keeps
+        # BM25 recall while allowing the cross-encoder to refine ordering.
+        ranked_indices = (
+            sorted(cross_ranks)
+            if not apply_ranking
+            else sorted(
+                cross_ranks,
+                key=lambda index: (
+                    1 / (60 + index + 1) + 1 / (60 + cross_ranks[index]),
+                    -index,
+                ),
+                reverse=True,
+            )
+        )
+        ranked_candidates: list[dict[str, Any]] = []
+        for index in ranked_indices:
+            candidate = dict(candidates[index])
+            candidate_metadata = dict(candidate.get("metadata") or {})
+            candidate_metadata["cross_encoder_rank"] = cross_ranks[index]
+            candidate_metadata["cross_encoder_shadow"] = not apply_ranking
+            if index in cross_scores:
+                candidate_metadata["cross_encoder_score"] = round(cross_scores[index], 6)
+            candidate["metadata"] = candidate_metadata
+            candidate["score"] = cross_scores.get(index)
+            ranked_candidates.append(candidate)
+        return ranked_candidates[:top_k] or candidates[:top_k]
+    except TimeoutError:
+        logger.warning("Universal legal cross-encoder timed out; preserving BM25 order")
+    except Exception as exc:  # noqa: BLE001 - optional reranker must not block legal retrieval
+        logger.warning("Universal legal cross-encoder unavailable; preserving BM25 order: %s", exc)
+    return candidates[:top_k]
+
+
+def warmup_universal_cross_encoder() -> None:
+    """Load the optional reranker before the first legal lookup when enabled."""
+
+    from vietnam_legal_agent.config import get_settings
+
+    settings = get_settings()
+    if not bool(getattr(settings, "enable_cross_encoder_rerank", False)):
+        return
+    model_name = str(getattr(settings, "cross_encoder_model_name", ""))
+    if not model_name:
+        return
+    try:
+        _get_universal_cross_encoder(model_name)._ensure_model()
+    except Exception as exc:  # noqa: BLE001 - BM25 remains available on warmup failure
+        logger.warning("Universal legal cross-encoder warmup unavailable: %s", exc)
 
 
 class RetrievalGateway(Protocol):
@@ -106,6 +234,10 @@ class UniversalLegalRetrievalGateway:
                 logger.warning("Official delta retrieval skipped: %s", exc)
 
         limit = request.top_k if request else 8
+        run_cross_encoder, apply_cross_encoder = _universal_rerank_mode(settings, query_text)
+        universal_limit = limit
+        if run_cross_encoder:
+            universal_limit = max(limit, int(getattr(settings, "rerank_top_n", limit)))
         # A Qdrant collection is only used when the operator explicitly opts
         # in to a general legal collection. The universal corpus is the normal
         # retrieval source.
@@ -168,9 +300,22 @@ class UniversalLegalRetrievalGateway:
                 if universal_retriever.is_available:
                     u_docs = universal_retriever.search(
                         retrieval_query(query),
-                        limit=limit,
+                        limit=universal_limit,
                         required_anchors=query_anchors or None,
                     )
+                    if (
+                        u_docs
+                        and not query_anchors
+                        and run_cross_encoder
+                    ):
+                        u_docs = await _rerank_universal_candidates(
+                            query_text,
+                            u_docs,
+                            model_name=str(getattr(settings, "cross_encoder_model_name", "")),
+                            top_k=limit,
+                            timeout_ms=int(getattr(settings, "rerank_timeout_ms", 1200)),
+                            apply_ranking=apply_cross_encoder,
+                        )
                     for i, u_doc in enumerate(u_docs):
                         u_meta = dict(u_doc.get("metadata", {}))
                         u_meta.setdefault(
@@ -204,11 +349,30 @@ class UniversalLegalRetrievalGateway:
                 logger.debug("Universal legal retrieval skipped: %s", exc)
 
         if universal_records and can_check_relevance:
-            checker = legal_relevance_checker(
-                min_rerank_score=getattr(settings, "min_legal_rerank_score", 0.40)
-            )
-            universal_records = [record for record in universal_records if checker(query_text, [record])]
-            universal_records = filter_universal_retrieval_neighbors(query_text, universal_records)
+            # BM25 already ranks universal-corpus results against the full
+            # query. A second lexical gate and neighbor filter dropped valid
+            # paraphrases before answer generation could inspect their text.
+            # Keep them ranked; explicit source/article mismatches are still
+            # filtered above, and generated claims remain independently
+            # checked against these documents before delivery.
+            unranked_records = [
+                record for record in universal_records
+                if record.metadata.get("bm25_rank") is None
+            ]
+            if unranked_records:
+                checker = legal_relevance_checker(
+                    min_rerank_score=getattr(settings, "min_legal_rerank_score", 0.40)
+                )
+                accepted_ids = {
+                    id(record)
+                    for record in unranked_records
+                    if checker(query_text, [record])
+                }
+                universal_records = [
+                    record
+                    for record in universal_records
+                    if record.metadata.get("bm25_rank") is not None or id(record) in accepted_ids
+                ]
 
         # Reciprocal-rank fusion compares order rather than incompatible
         # vector, reranker, and BM25 score scales.

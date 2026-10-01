@@ -44,7 +44,7 @@ ROUTE_SPECS: dict[RouteType, RouteSpec] = {
         source_scope="none",
         verification_policy=VerificationPolicy.NONE,
     ),
-    RouteType.LEGAL_LOOKUP: RouteSpec(RouteType.LEGAL_LOOKUP, TaskType.LEGAL_LOOKUP, 3, True),
+    RouteType.LEGAL_LOOKUP: RouteSpec(RouteType.LEGAL_LOOKUP, TaskType.LEGAL_LOOKUP, 5, True),
     RouteType.LEGAL_EXPLAIN_COMPARE: RouteSpec(RouteType.LEGAL_EXPLAIN_COMPARE, TaskType.LEGAL_LOOKUP, 6, False),
     RouteType.CASE_ASSESSMENT: RouteSpec(
         RouteType.CASE_ASSESSMENT,
