@@ -44,10 +44,10 @@ def _heuristic_rerank_universal_candidates(
         from vietnam_legal_agent.retrieval.ensemble_retrieval import HeuristicReranker
 
         documents = []
-        for index, candidate in enumerate(candidates):
+        for candidate_index, candidate in enumerate(candidates):
             metadata = dict(candidate.get("metadata") or {})
             metadata["Dieu"] = metadata.get("Dieu") or metadata.get("legal_anchor") or ""
-            metadata["_universal_candidate_index"] = index
+            metadata["_universal_candidate_index"] = candidate_index
             documents.append(
                 Document(
                     page_content=str(candidate.get("page_content") or ""),
@@ -58,10 +58,10 @@ def _heuristic_rerank_universal_candidates(
         ranked_documents = HeuristicReranker().rerank(query, documents, len(documents))
         ranked_candidates: list[dict[str, Any]] = []
         for document in ranked_documents:
-            index = document.metadata.get("_universal_candidate_index")
-            if not isinstance(index, int) or not 0 <= index < len(candidates):
+            ranked_candidate_index = document.metadata.get("_universal_candidate_index")
+            if not isinstance(ranked_candidate_index, int) or not 0 <= ranked_candidate_index < len(candidates):
                 continue
-            candidate = dict(candidates[index])
+            candidate = dict(candidates[ranked_candidate_index])
             candidate_metadata = dict(candidate.get("metadata") or {})
             candidate_metadata["rerank_score"] = document.metadata.get("rerank_score")
             candidate_metadata["heuristic_rerank_score"] = document.metadata.get(

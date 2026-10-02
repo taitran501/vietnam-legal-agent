@@ -5,7 +5,9 @@ from __future__ import annotations
 import importlib
 import json
 import sqlite3
+from email.message import Message
 from pathlib import Path
+from urllib.error import HTTPError
 
 import pytest
 
@@ -77,6 +79,54 @@ def test_universal_index_builder_is_importable_without_running_the_cli() -> None
 
     assert callable(builder.main)
     assert builder.DB_PATH == ROOT / "data" / "corpus" / "universal_legal" / "universal_legal.db"
+
+
+def test_universal_index_download_retries_rate_limits_and_respects_retry_after(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    builder = importlib.import_module("scripts.build_universal_index")
+    destination = tmp_path / "input.parquet"
+    attempts = 0
+    delays: list[float] = []
+
+    def fake_urlretrieve(uri: str, filename: str | Path) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            headers = Message()
+            headers["Retry-After"] = "3"
+            raise HTTPError(uri, 429, "rate limited", headers, None)
+        Path(filename).write_bytes(b"content-locked input")
+
+    monkeypatch.setattr(builder.urllib.request, "urlretrieve", fake_urlretrieve)
+    monkeypatch.setattr(builder.time, "sleep", delays.append)
+
+    builder._download_with_retries("https://example.test/input.parquet", destination)
+
+    assert attempts == 2
+    assert delays == [3.0]
+    assert destination.read_bytes() == b"content-locked input"
+
+
+def test_universal_index_download_does_not_retry_permanent_http_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    builder = importlib.import_module("scripts.build_universal_index")
+    attempts = 0
+
+    def fake_urlretrieve(uri: str, filename: str | Path) -> None:
+        nonlocal attempts
+        attempts += 1
+        raise HTTPError(uri, 404, "not found", Message(), None)
+
+    monkeypatch.setattr(builder.urllib.request, "urlretrieve", fake_urlretrieve)
+
+    with pytest.raises(HTTPError, match="HTTP Error 404"):
+        builder._download_with_retries("https://example.test/missing.parquet", tmp_path / "missing.parquet")
+
+    assert attempts == 1
 
 
 def test_universal_index_builder_splits_once_at_each_article_heading() -> None:
