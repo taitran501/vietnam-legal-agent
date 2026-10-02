@@ -109,6 +109,38 @@ async def test_agent_runtime_input_validation(agent_deps):
 
 
 @pytest.mark.asyncio
+async def test_agent_runtime_does_not_restart_recovery_after_step_budget_is_exhausted(agent_deps):
+    result = AgentRunResult(
+        answer="Tôi chưa thể tìm đủ căn cứ pháp lý để đưa ra kết luận an toàn sau các bước tra cứu.",
+        termination_reason=TerminationReason.INSUFFICIENT_EVIDENCE.value,
+        trajectory=[
+            AgentStep(step, "search_legal_provisions", {"query": f"q{step}"}, {}, 1.0, True)
+            for step in range(5)
+        ],
+        evidence=[],
+        citations=[],
+        source="error",
+        steps_taken=5,
+        cache_hit=False,
+    )
+    runner = FakeRunner(result)
+
+    events = [
+        event
+        async for event in AgentWorkflowRuntime(agent_deps, runner=runner).stream(
+            query="Tôi nghỉ việc nhưng chưa được trả lương, cần làm gì?",
+            user_id="u1",
+            conversation_id="budget-exhausted",
+        )
+    ]
+
+    complete = next(event for event in events if event.get("type") == "response_complete")
+    assert len(runner.calls) == 1
+    assert complete["termination_reason"] == TerminationReason.INSUFFICIENT_EVIDENCE.value
+    assert not any(event.get("stage") == "verify" for event in events)
+
+
+@pytest.mark.asyncio
 async def test_agent_runtime_chitchat_bypass(agent_deps):
     runtime = AgentWorkflowRuntime(agent_deps)
     events = []

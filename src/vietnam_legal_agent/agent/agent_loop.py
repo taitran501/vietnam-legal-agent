@@ -329,6 +329,7 @@ class VietnameseLegalAgentRunner:
         retrieval_queries: list[str] | None = None,
         search_user_query: str | None = None,
         is_cancelled: CancellationCheck | None = None,
+        max_steps: int | None = None,
     ) -> AgentRunResult:
         """Execute the agent loop synchronously and return the complete result."""
         result: AgentRunResult | None = None
@@ -343,6 +344,7 @@ class VietnameseLegalAgentRunner:
             retrieval_queries=retrieval_queries,
             search_user_query=search_user_query,
             is_cancelled=is_cancelled,
+            max_steps=max_steps,
         ):
             if event.get("type") == "agent_complete":
                 result = event["result"]
@@ -373,8 +375,10 @@ class VietnameseLegalAgentRunner:
         retrieval_queries: list[str] | None = None,
         search_user_query: str | None = None,
         is_cancelled: CancellationCheck | None = None,
+        max_steps: int | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Execute the agent loop, streaming step status events and final result."""
+        step_limit = self.config.max_steps if max_steps is None else max(1, min(self.config.max_steps, max_steps))
         trajectory: list[AgentStep] = []
         all_evidence: list[dict[str, Any]] = []
         cache_hit = False
@@ -391,7 +395,7 @@ class VietnameseLegalAgentRunner:
         )
 
         step = 0
-        for step in range(self.config.max_steps):
+        for step in range(step_limit):
             if not self._budget.within_step_budget(step):
                 break
             if is_cancelled is not None and await is_cancelled():
@@ -449,7 +453,7 @@ class VietnameseLegalAgentRunner:
                 if (
                     not all_evidence
                     and not cache_hit
-                    and step < self.config.max_steps - 1
+                    and step < step_limit - 1
                     and (require_legal_evidence is True or legacy_should_search)
                 ):
                     messages.append({

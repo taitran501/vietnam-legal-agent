@@ -589,6 +589,7 @@ class AgentWorkflowRuntime:
             agent_query: str,
             *,
             search_query_hints: list[str] | None = None,
+            max_steps: int | None = None,
         ) -> AsyncIterator[dict[str, Any]]:
             nonlocal current_tool_args, pass_result
             pass_result = None
@@ -603,6 +604,7 @@ class AgentWorkflowRuntime:
                 retrieval_queries=search_query_hints,
                 search_user_query=standalone_query,
                 is_cancelled=turn_cancelled,
+                max_steps=max_steps,
             ):
                 if event.get("type") == "agent_tool_call":
                     tool_name = event.get("tool", "")
@@ -724,7 +726,11 @@ class AgentWorkflowRuntime:
             TerminationReason.INSUFFICIENT_EVIDENCE.value,
         } and (
             source not in {"error", "follow_up"}
-            or (requires_legal_evidence and termination_reason == TerminationReason.INSUFFICIENT_EVIDENCE.value)
+            or (
+                requires_legal_evidence
+                and evidence
+                and termination_reason == TerminationReason.INSUFFICIENT_EVIDENCE.value
+            )
         ):
             s_ver = trace_session.start_span("critic_and_citation_verification")
             yield {
@@ -783,7 +789,15 @@ class AgentWorkflowRuntime:
                     "content_too_short",
                 )
             )
-            if not passed and requires_legal_evidence and retryable_verification_failure and not await turn_cancelled():
+            max_agent_steps = max(1, int(getattr(getattr(self.runner, "config", None), "max_steps", 5)))
+            remaining_steps = max_agent_steps - result.steps_taken
+            if (
+                not passed
+                and requires_legal_evidence
+                and retryable_verification_failure
+                and not await turn_cancelled()
+                and remaining_steps > 0
+            ):
                 previous_searches = [
                     str(step.args.get("query") or "").strip()
                     for step in result.trajectory
@@ -808,7 +822,7 @@ class AgentWorkflowRuntime:
                     "stage": "search_legal_provisions",
                 }
                 s_recovery = trace_session.start_span("agent_evidence_recovery")
-                async for update in run_agent_pass(recovery_query):
+                async for update in run_agent_pass(recovery_query, max_steps=remaining_steps):
                     yield update
                 recovery_result = pass_result
                 s_recovery.close(
@@ -949,6 +963,7 @@ class AgentWorkflowRuntime:
                             recovery_answer = composed_answer
                             recovery_citations = composed_citations
                     if recovery_passed:
+                        recovery_result.steps_taken += result.steps_taken
                         result = recovery_result
                         final_answer = recovery_answer or recovery_result.answer
                         verified_or_fallback = final_answer
