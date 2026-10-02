@@ -294,8 +294,8 @@ async def test_model_retrieval_variants_are_searched_in_parallel_and_fused_once(
     assert state["retrieval_query_count"] == 3
     assert [query for _, query in deps.retrieval.calls] == [
         "Bộ luật Lao động người lao động chịu trách nhiệm gì?",
-        "Quy định Bộ luật Lao động về người lao động là gì?",
         "thời gian thử việc",
+        "Quy định Bộ luật Lao động về người lao động là gì?",
     ]
     assert len(state["evidence"]) == 1
     assert state["retrieval_queries"] == []
@@ -315,7 +315,7 @@ def test_reciprocal_rank_fusion_uses_chunk_identity_across_search_queries():
 
     merged = _merge_multi_query_results([[first, second], [second_again, third]])
 
-    assert [document.content for document in merged] == ["provision B", "provision C", "provision A"]
+    assert [document.content for document in merged] == ["provision B", "provision A", "provision C"]
     assert merged[0].metadata["multi_query_ranks"] == [
         {"query_index": 0, "rank": 2},
         {"query_index": 1, "rank": 1},
@@ -323,7 +323,7 @@ def test_reciprocal_rank_fusion_uses_chunk_identity_across_search_queries():
     assert merged[0].metadata["semantic_score"] == 0.9
 
 
-def test_reciprocal_rank_fusion_prioritizes_a_targeted_legal_rewrite():
+def test_reciprocal_rank_fusion_weights_original_and_rewritten_queries_equally():
     from vietnam_legal_agent.domain.models import DocumentRecord
 
     baseline_noise = [
@@ -336,11 +336,13 @@ def test_reciprocal_rank_fusion_prioritizes_a_targeted_legal_rewrite():
     ]
 
     merged = _merge_multi_query_results([baseline_noise, targeted_sources])
+    by_content = {document.content: document for document in merged}
 
-    assert [document.content for document in merged[:3]] == [
-        "target-1",
-        "target-2",
-        "target-3",
+    assert by_content["baseline-1"].metadata["multi_query_rrf_score"] == (
+        by_content["target-1"].metadata["multi_query_rrf_score"]
+    )
+    assert by_content["target-1"].metadata["multi_query_ranks"] == [
+        {"query_index": 1, "rank": 1}
     ]
 
 
@@ -358,6 +360,22 @@ def test_retrieval_reformulations_preserve_user_anchors_and_drop_new_ones():
     assert "Điều 25" in queries[1]
     assert "Bộ luật Lao động 2019" in queries[1]
     assert all("Điều 26" not in query for query in queries)
+
+
+def test_retrieval_preserves_two_targeted_rewrites_before_normalized_standalone_query():
+    original = "Mua máy giặt bị hỏng, shop từ chối bảo hành thì tôi có quyền gì?"
+    targeted = [
+        "shop từ chối bảo hành máy giặt bị hỏng",
+        "trách nhiệm bảo hành sản phẩm của tổ chức kinh doanh",
+    ]
+
+    queries = _build_retrieval_queries(
+        original,
+        "Quyền của người tiêu dùng khi cửa hàng từ chối bảo hành máy giặt bị lỗi",
+        targeted,
+    )
+
+    assert queries == [original, *targeted]
 
 
 def test_source_version_caveat_is_not_added_twice_when_generation_already_caveats():
@@ -461,7 +479,8 @@ async def test_rejected_optional_critic_correction_keeps_previously_verified_ans
     class FirstPassThenReject:
         calls = 0
 
-        async def verify(self, answer, documents):
+        async def verify(self, answer, documents, *, query=""):
+            _ = query
             self.calls += 1
             supported = self.calls == 1
             return ClaimSupportResult(
@@ -500,6 +519,166 @@ async def test_rejected_optional_critic_correction_keeps_previously_verified_ans
 
 
 @pytest.mark.asyncio
+async def test_unusable_critic_correction_does_not_safe_stop_a_verified_answer():
+    original = "Theo Điều 25 [1], thời gian thử việc phải tuân theo giới hạn luật định."
+    deps = make_dependencies(
+        legal=[legal_doc()],
+        generation=StaticGenerationGateway(answer_text=original),
+        claim_verifier=StaticClaimSupportVerifier(supported=True),
+    )
+    deps.critic_reviewer = StaticLegalCriticReviewer(
+        verdict=LegalCriticVerdict(
+            approved=False,
+            fatal_error=False,
+            materially_nonresponsive=True,
+            verification_status="unsupported_claim",
+            corrected_answer="Theo Điều 25 [9], câu trả lời sửa được đưa ra.",
+            reason_code="critic_rewrite_has_invalid_citation",
+        )
+    )
+
+    state = await run_workflow(
+        "Điều 25 quy định gì?",
+        user_id="u1",
+        conversation_id="unusable-critic-correction",
+        deps=deps,
+    )
+
+    assert state["termination_reason"] == "answer_complete"
+    assert state["citation_valid"] is True
+    assert state["answer"] == original
+
+
+@pytest.mark.asyncio
+async def test_nonfatal_rejected_critic_correction_keeps_previously_verified_answer():
+    original = "Theo Điều 25 [1], thời gian thử việc phải tuân theo giới hạn luật định."
+
+    class FirstPassThenReject:
+        calls = 0
+
+        async def verify(self, answer, documents, *, query=""):
+            _ = query
+            self.calls += 1
+            supported = self.calls == 1
+            return ClaimSupportResult(
+                supported=supported,
+                unsupported_claim_count=0 if supported else 1,
+                reason_code="ok" if supported else "unsupported_claim",
+                verification_status="verified" if supported else "unsupported_claim",
+            )
+
+    verifier = FirstPassThenReject()
+    deps = make_dependencies(
+        legal=[legal_doc()],
+        generation=StaticGenerationGateway(answer_text=original),
+        claim_verifier=verifier,
+    )
+    deps.critic_reviewer = StaticLegalCriticReviewer(
+        verdict=LegalCriticVerdict(
+            approved=False,
+            fatal_error=False,
+            verification_status="verified",
+            corrected_answer=(
+                "Thời gian thử việc tối đa do tính chất công việc quyết định [1].\n\n"
+                "Người lao động chắc chắn được nghỉ ngay không cần báo trước."
+            ),
+            reason_code="nonfatal_optional_refinement",
+        )
+    )
+
+    state = await run_workflow(
+        "Điều 25 quy định gì?",
+        user_id="u1",
+        conversation_id="reject-nonfatal-critic-correction",
+        deps=deps,
+    )
+
+    assert verifier.calls == 2
+    assert state["termination_reason"] == "answer_complete"
+    assert state["citation_valid"] is True
+    assert state["answer"] == original
+
+
+@pytest.mark.asyncio
+async def test_unsupported_critic_correction_cannot_restore_original_answer_when_recheck_fails():
+    original = "Theo Điều 25 [1], người lao động chắc chắn được nghỉ ngay không cần báo trước."
+
+    class FirstPassThenReject:
+        calls = 0
+
+        async def verify(self, answer, documents, *, query=""):
+            _ = answer, query
+            self.calls += 1
+            supported = self.calls == 1
+            return ClaimSupportResult(
+                supported=supported,
+                unsupported_claim_count=0 if supported else 1,
+                reason_code="ok" if supported else "unsupported_claim",
+                verification_status="verified" if supported else "unsupported_claim",
+            )
+
+    verifier = FirstPassThenReject()
+    deps = make_dependencies(
+        legal=[legal_doc()],
+        generation=StaticGenerationGateway(answer_text=original),
+        claim_verifier=verifier,
+    )
+    deps.critic_reviewer = StaticLegalCriticReviewer(
+        verdict=LegalCriticVerdict(
+            approved=False,
+            fatal_error=False,
+            verification_status="unsupported_claim",
+            corrected_answer="Theo Điều 25 [1], nghĩa vụ phải tuân theo quy định.",
+            reason_code="unsupported_legal_claim",
+        )
+    )
+
+    state = await run_workflow(
+        "Điều 25 quy định gì?",
+        user_id="u1",
+        conversation_id="unsupported-critic-correction-rejected",
+        deps=deps,
+    )
+
+    assert verifier.calls == 5
+    assert state["termination_reason"] != "answer_complete"
+    assert state["citation_valid"] is False
+    assert state["answer"] != original
+    assert "chưa thể xác minh" in state["answer"].casefold()
+    generation_repair = next(
+        item for item in state["tool_results"] if item["tool"] == "claim_support_generation_repair"
+    )
+    assert generation_repair["ok"] is False
+
+
+@pytest.mark.asyncio
+async def test_graph_passes_user_question_to_claim_verifier():
+    class CapturingVerifier:
+        query = ""
+
+        async def verify(self, answer, documents, *, query=""):
+            self.query = query
+            return ClaimSupportResult(supported=True, reason_code="ok", verification_status="verified")
+
+    query = "Điều 25 Bộ luật Lao động quy định gì?"
+    verifier = CapturingVerifier()
+    deps = make_dependencies(legal=[legal_doc()], claim_verifier=verifier)
+    deps.critic_reviewer = StaticLegalCriticReviewer(
+        verdict=LegalCriticVerdict(approved=True, reason_code="ok")
+    )
+
+    state = await run_workflow(
+        query,
+        user_id="u1",
+        conversation_id="claim-verifier-query-context",
+        deps=deps,
+    )
+
+    assert state["termination_reason"] == "answer_complete"
+    assert verifier.query == query
+
+
+@pytest.mark.asyncio
 async def test_nonfatal_critic_concern_keeps_independently_supported_answer():
     deps = make_dependencies(
         legal=[legal_doc()],
@@ -509,7 +688,7 @@ async def test_nonfatal_critic_concern_keeps_independently_supported_answer():
         verdict=LegalCriticVerdict(
             approved=False,
             fatal_error=False,
-            verification_status="unsupported_claim",
+            verification_status="verified",
             reason_code="incomplete_answer",
             critique="The answer could include more detail.",
         )
@@ -604,7 +783,188 @@ async def test_claim_support_verifier_can_block_a_structurally_valid_answer():
         deps=deps,
     )
 
-    assert verifier.calls == 2  # initial answer plus the one permitted repair
+    assert verifier.calls == 4  # original, critic correction, and bounded generation repair checks
     assert state["termination_reason"] == "citation_verification_failed"
     assert state["citation_valid"] is False
     assert "claim_support_verifier" in [item["tool"] for item in state["tool_results"]]
+    assert "claim_support_generation_repair" in [item["tool"] for item in state["tool_results"]]
+
+
+@pytest.mark.asyncio
+async def test_claim_verifier_correction_preserves_supported_answer_without_full_safe_stop():
+    class CorrectingVerifier:
+        def __init__(self):
+            self.calls = 0
+
+        async def verify(self, answer, documents, *, query=""):
+            self.calls += 1
+            if self.calls == 1:
+                return ClaimSupportResult(
+                    supported=False,
+                    unsupported_claim_count=1,
+                    unsupported_claim_indices=[1],
+                    reason_code="claim_1_overstates_the_source",
+                    verification_status="unsupported_claim",
+                    corrected_answer="Theo Điều 25 [1], văn bản quy định về thời gian thử việc.",
+                )
+            return ClaimSupportResult(
+                supported=True,
+                reason_code="ok",
+                verification_status="verified",
+            )
+
+    verifier = CorrectingVerifier()
+    deps = make_dependencies(legal=[legal_doc()], claim_verifier=verifier)
+
+    state = await run_workflow(
+        "Điều 25 quy định gì?",
+        user_id="u1",
+        conversation_id="claim-support-correction",
+        deps=deps,
+    )
+
+    assert verifier.calls == 2
+    assert state["termination_reason"] == "answer_complete"
+    assert state["answer"] == "Theo Điều 25 [1], văn bản quy định về thời gian thử việc."
+    assert "repair_answer" not in state["action_sequence"]
+    correction = next(item for item in state["tool_results"] if item["tool"] == "claim_support_correction")
+    assert correction["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_critic_can_repair_claim_rejection_only_after_the_repair_passes_both_checks():
+    class RejectThenAcceptVerifier:
+        def __init__(self):
+            self.calls = 0
+
+        async def verify(self, answer, documents, *, query=""):
+            self.calls += 1
+            if self.calls == 1:
+                return ClaimSupportResult(
+                    supported=False,
+                    unsupported_claim_count=1,
+                    unsupported_claim_indices=[1],
+                    reason_code="claim_1_needs_narrower_wording",
+                    verification_status="unsupported_claim",
+                )
+            return ClaimSupportResult(
+                supported=True,
+                reason_code="ok",
+                verification_status="verified",
+            )
+
+    verifier = RejectThenAcceptVerifier()
+    deps = make_dependencies(
+        legal=[legal_doc()],
+        generation=StaticGenerationGateway(
+            answer_text="Điều 25 quy định đầy đủ quyền lợi của người lao động [1]."
+        ),
+        claim_verifier=verifier,
+    )
+    deps.critic_reviewer = StaticLegalCriticReviewer(
+        verdict=LegalCriticVerdict(
+            approved=False,
+            critique="Nên giữ lại đúng phần văn bản nguồn xác nhận.",
+            reason_code="unsupported_claim",
+            corrected_answer="Tài liệu trích dẫn nêu nội dung về nghĩa vụ và cách thực hiện [1].",
+        )
+    )
+
+    state = await run_workflow(
+        "Điều 25 quy định gì?",
+        user_id="u1",
+        conversation_id="critic-repairs-claim-rejection",
+        deps=deps,
+    )
+
+    assert verifier.calls == 2
+    assert state["termination_reason"] == "answer_complete"
+    assert state["answer"] == "Tài liệu trích dẫn nêu nội dung về nghĩa vụ và cách thực hiện [1]."
+    correction = next(
+        item for item in state["tool_results"] if item["tool"] == "claim_support_critic_correction"
+    )
+    assert correction["ok"] is True
+    assert correction["metadata"]["structural_citations_valid"] is True
+
+
+@pytest.mark.asyncio
+async def test_critic_repair_does_not_bypass_a_second_claim_verification_rejection():
+    verifier = StaticClaimSupportVerifier(supported=False, reason_code="claim_not_supported")
+    deps = make_dependencies(
+        legal=[legal_doc()],
+        claim_verifier=verifier,
+    )
+    deps.critic_reviewer = StaticLegalCriticReviewer(
+        verdict=LegalCriticVerdict(
+            approved=True,
+            critique="Đã soát.",
+            corrected_answer="Điều 25 quy định về quyền lợi người lao động [1].",
+        )
+    )
+
+    state = await run_workflow(
+        "Điều 25 quy định gì?",
+        user_id="u1",
+        conversation_id="critic-repair-still-needs-support",
+        deps=deps,
+    )
+
+    assert state["termination_reason"] == "citation_verification_failed"
+    correction = next(
+        item for item in state["tool_results"] if item["tool"] == "claim_support_critic_correction"
+    )
+    assert correction["ok"] is False
+
+
+@pytest.mark.asyncio
+async def test_generation_repair_is_reverified_before_replacing_an_unsupported_draft():
+    class RejectThenAcceptVerifier:
+        def __init__(self):
+            self.calls = 0
+
+        async def verify(self, answer, documents, *, query=""):
+            self.calls += 1
+            if self.calls == 1:
+                return ClaimSupportResult(
+                    supported=False,
+                    unsupported_claim_count=1,
+                    unsupported_claim_indices=[1],
+                    reason_code="claim_needs_narrower_scope",
+                    verification_status="unsupported_claim",
+                )
+            return ClaimSupportResult(
+                supported=True,
+                reason_code="ok",
+                verification_status="verified",
+            )
+
+    class RepairingGeneration(StaticGenerationGateway):
+        async def repair(self, answer, documents, task_type, *, query=""):
+            self.repair_queries.append(query)
+            return "Theo Điều 25, văn bản quy định về thời gian thử việc [1]."
+
+    verifier = RejectThenAcceptVerifier()
+    generation = RepairingGeneration(answer_text="Bản nháp có nhận định vượt quá nguồn [1].")
+    deps = make_dependencies(
+        legal=[legal_doc()],
+        generation=generation,
+        claim_verifier=verifier,
+    )
+    deps.critic_reviewer = None
+
+    state = await run_workflow(
+        "Điều 25 quy định gì?",
+        user_id="u1",
+        conversation_id="generation-repairs-claim-rejection",
+        deps=deps,
+    )
+
+    assert verifier.calls == 2
+    assert generation.repair_queries == ["Điều 25 quy định gì?"]
+    assert state["termination_reason"] == "answer_complete"
+    assert state["answer"] == "Theo Điều 25, văn bản quy định về thời gian thử việc [1]."
+    repair = next(
+        item for item in state["tool_results"] if item["tool"] == "claim_support_generation_repair"
+    )
+    assert repair["ok"] is True
+    assert repair["metadata"]["structural_citations_valid"] is True

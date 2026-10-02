@@ -713,6 +713,9 @@ _LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)")
 _LEGAL_CLAIM_SIGNALS = (
     "theo điều",
     "quy định",
+    "áp dụng cho",
+    "áp dụng đối với",
+    "quyền",
     "nghĩa vụ",
     "trách nhiệm",
     "phải ",
@@ -724,6 +727,9 @@ _LEGAL_CLAIM_SIGNALS = (
     "xử phạt",
     "đối tượng áp dụng",
     "cần đối chiếu",
+    "khiếu nại",
+    "khởi kiện",
+    "bồi thường",
 )
 _NON_CLAIM_SIGNALS = (
     "không thay thế tư vấn pháp lý",
@@ -861,7 +867,19 @@ def split_answer_sentences(text: str) -> list[str]:
         r"\1<ARTICLE_TITLE_PERIOD> ",
         text or "",
     )
-    sentences = re.split(r"(?<=[.!?])\s+(?!\[\d+\])", protected)
+    # A citation immediately after sentence punctuation belongs to that
+    # sentence. Keep it attached, then split before the next sentence. The
+    # previous negative lookahead avoided splitting before the citation but
+    # accidentally joined the following uncited claim to it as well.
+    protected = re.sub(
+        r"(?<=[.!?])\s+((?:\[\d+\]\s*)+)(?=\S)",
+        r"\1<ANSWER_SENTENCE_BOUNDARY>",
+        protected,
+    )
+    sentences = re.split(
+        r"<ANSWER_SENTENCE_BOUNDARY>|(?<=[.!?])\s+(?!\[\d+\])",
+        protected,
+    )
     return [
         sentence.replace("<ARTICLE_TITLE_PERIOD>", ".").strip()
         for sentence in sentences
@@ -910,11 +928,12 @@ def legal_claim_segments(answer: str) -> list[str]:
                 # citation on their own line (for example, ``1. [1]``). That
                 # is a list marker, not a substantive claim to verify.
                 continue
-            if any(signal in lower for signal in _NON_CLAIM_SIGNALS):
+            has_legal_signal = any(signal in lower for signal in _LEGAL_CLAIM_SIGNALS)
+            if any(signal in lower for signal in _NON_CLAIM_SIGNALS) and not has_legal_signal:
                 continue
             if (
                 is_list_item
-                or any(signal in lower for signal in _LEGAL_CLAIM_SIGNALS)
+                or has_legal_signal
                 or _ARTICLE_RE.search(candidate)
             ):
                 segments.append(f"{list_context}: {candidate}" if is_list_item and list_context else candidate)
@@ -1020,6 +1039,9 @@ def verify_citations(
     if any(index < 1 or index > max_index for index in indices):
         return False, citations, "citation_out_of_range"
 
+    if any(_is_web_document(document) and not _has_web_source(document) for document in documents):
+        return False, citations, "web_source_metadata_missing"
+
     claim_segments = legal_claim_segments(answer)
     for segment in claim_segments:
         segment_indices = [int(value) for value in _CITATION_RE.findall(segment)]
@@ -1046,9 +1068,24 @@ def verify_web_citations(answer: str, documents: list[DocumentRecord]) -> tuple[
         return False, citations, "no_web_evidence"
     if not indices or any(index < 1 or index > len(documents) for index in indices):
         return False, citations, "web_citation_out_of_range"
-    if not all(document.source == "web" and _has_web_source(document) for document in documents):
+    web_documents = [document for document in documents if _is_web_document(document)]
+    if not web_documents:
+        return False, citations, "no_web_evidence"
+    if any(not _has_web_source(document) for document in web_documents):
         return False, citations, "web_source_metadata_missing"
+    if len(web_documents) != len(documents):
+        return verify_citations(answer, documents, TaskType.LEGAL_LOOKUP)
     return True, citations, "ok"
+
+
+def _is_web_document(document: DocumentRecord) -> bool:
+    metadata = document.metadata or {}
+    return bool(
+        document.source == "web"
+        or str(document.document_id or "").startswith("web:")
+        or metadata.get("source") == "web"
+        or metadata.get("source_kind") == "official_web"
+    )
 
 
 def _has_web_source(document: DocumentRecord) -> bool:
@@ -1174,7 +1211,8 @@ def auto_anchor_citations_in_answer(answer: str, documents: list[DocumentRecord]
     masked = mask_citation_code(answer)
     existing_indices = {int(m) for m in _CITATION_RE.findall(masked)}
     if existing_indices:
-        return propagate_list_item_citations(answer)
+        enriched = propagate_list_item_citations(answer)
+        return _anchor_uncited_legal_claims(enriched, documents)
 
     enriched = answer
     anchored_indices: set[int] = set()
@@ -1222,4 +1260,56 @@ def auto_anchor_citations_in_answer(answer: str, documents: list[DocumentRecord]
         else:
             enriched = f"{enriched} [1]"
 
-    return propagate_list_item_citations(enriched)
+    enriched = propagate_list_item_citations(enriched)
+    return _anchor_uncited_legal_claims(enriched, documents)
+
+
+def _anchor_uncited_legal_claims(answer: str, documents: list[DocumentRecord]) -> str:
+    """Add a citation to each uncited legal claim without inventing support.
+
+    Article-specific claims are attached only to a retrieved document that
+    contains that article. Other claims use the first retrieved source and
+    remain subject to the independent semantic claim verifier.
+    """
+
+    if not answer or not documents:
+        return answer
+
+    lines: list[str] = []
+    in_bibliography = False
+    for raw_line in answer.splitlines():
+        lower_line = raw_line.strip().casefold()
+        if (
+            "nguồn tham khảo" in lower_line
+            or "tài liệu tham khảo" in lower_line
+            or lower_line.startswith(("nguồn:", "căn cứ pháp lý:", "# nguồn", "## nguồn", "### nguồn"))
+        ):
+            in_bibliography = True
+        if in_bibliography or not raw_line.strip() or raw_line.lstrip().startswith("#"):
+            lines.append(raw_line)
+            continue
+
+        sentences = split_answer_sentences(raw_line)
+        updated_sentences: list[str] = []
+        for sentence in sentences:
+            if not legal_claim_segments(sentence) or _CITATION_RE.search(sentence):
+                updated_sentences.append(sentence)
+                continue
+
+            mentioned_articles = _article_ids(sentence)
+            citation_index = 1
+            if mentioned_articles:
+                citation_index = next(
+                    (
+                        index
+                        for index, document in enumerate(documents, start=1)
+                        if mentioned_articles & _document_article_ids(document)
+                    ),
+                    0,
+                )
+            if citation_index:
+                updated_sentences.append(f"{sentence.rstrip()} [{citation_index}]")
+            else:
+                updated_sentences.append(sentence)
+        lines.append(" ".join(updated_sentences) if updated_sentences else raw_line)
+    return "\n".join(lines)

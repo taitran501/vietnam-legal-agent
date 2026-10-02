@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import sqlite3
@@ -308,7 +309,10 @@ class UniversalLegalRetriever:
                     if phrase not in matched_phrases:
                         matched_phrases.append(phrase)
 
-        # Generic n-grams are retained as a fallback after domain phrases.
+        # Keep deliberate domain expansions distinct from generic n-grams.
+        # Generic n-grams are useful fallback signals, but must not erase all
+        # of the query's individual content words below.
+        deliberate_phrase_count = len(matched_phrases)
         dynamic_ngrams = LegalQueryExpander.extract_ngrams(query)
         for ng in dynamic_ngrams:
             if ng.lower() not in matched_phrases and ng.lower() not in [k[0] for k in KNOWN_LAW_NAMES]:
@@ -319,12 +323,12 @@ class UniversalLegalRetriever:
         content_words = [
             w for w in raw_words
             if w.lower() not in LEGAL_STOP_WORDS
-            and len(w) > 2
+            and len(w) > 1
             and not w.isdigit()
         ]
 
         phrase_tokens = set()
-        for p in matched_phrases:
+        for p in matched_phrases[:deliberate_phrase_count]:
             for tok in p.split():
                 phrase_tokens.add(tok.lower())
         content_words = [w for w in content_words if w.lower() not in phrase_tokens]
@@ -363,14 +367,95 @@ class UniversalLegalRetriever:
                 phrases.extend(value for value in values if value not in phrases)
         return phrases
 
-    def _extract_search_terms(self, query: str) -> list[str]:
+    def _extract_search_terms(self, query: str, cursor: sqlite3.Cursor | None = None) -> list[str]:
         laws, phrases, words = self._extract_components(query)
         priority_phrases = self._strict_query_phrases(query)
-        all_terms = []
-        for item in laws + priority_phrases + phrases + words:
+        generic_ngrams = {
+            phrase.casefold()
+            for phrase in LegalQueryExpander.extract_ngrams(query)
+        }
+        deliberate_phrases = [phrase for phrase in phrases if phrase.casefold() not in generic_ngrams]
+        all_terms: list[str] = []
+        for item in laws + priority_phrases + deliberate_phrases + words:
             if item and item not in all_terms:
                 all_terms.append(item)
-        return all_terms[:12]
+        if cursor is None:
+            return all_terms[:12]
+
+        # Rank generic terms by corpus document frequency. Long user queries
+        # can produce dozens of overlapping n-grams; choosing the first dozen
+        # is position-biased and can drop the rare event/outcome words that
+        # identify the applicable provision. FTS5 already exposes the corpus
+        # vocabulary and per-term document counts, so use its IDF signal to
+        # preserve the most informative, non-redundant terms.
+        try:
+            cursor.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS temp.universal_legal_vocab "
+                "USING fts5vocab(main, legal_articles_fts, 'row')"
+            )
+            tokens = {
+                token.casefold()
+                for candidate in all_terms
+                for token in re.findall(r"[\wÀ-ỹĐđ]+", candidate, flags=re.UNICODE)
+                if token.casefold() not in LEGAL_STOP_WORDS
+            }
+            frequencies: dict[str, int] = {}
+            token_list = list(tokens)
+            for offset in range(0, len(token_list), 800):
+                batch = token_list[offset : offset + 800]
+                placeholders = ",".join("?" for _ in batch)
+                rows = cursor.execute(
+                    f"SELECT term, doc FROM temp.universal_legal_vocab WHERE term IN ({placeholders})",
+                    batch,
+                ).fetchall()
+                frequencies.update({str(term).casefold(): int(doc_count) for term, doc_count in rows})
+            document_count = max(1, int(cursor.execute("SELECT COUNT(*) FROM legal_articles").fetchone()[0]))
+
+            def idf(token: str) -> float:
+                frequency = frequencies.get(token, 0)
+                return math.log((document_count + 1) / (frequency + 1))
+
+            protected = []
+            for term in laws + priority_phrases + deliberate_phrases:
+                if term and term not in protected:
+                    protected.append(term)
+            selected = protected[:12]
+            covered = {
+                token
+                for term in selected
+                for token in re.findall(r"[\wÀ-ỹĐđ]+", term, flags=re.UNICODE)
+            }
+            remaining = [term for term in all_terms if term not in selected]
+            while remaining and len(selected) < 12:
+                best_index = 0
+                best_score = float("-inf")
+                for index, term in enumerate(remaining):
+                    term_tokens = [
+                        token.casefold()
+                        for token in re.findall(r"[\wÀ-ỹĐđ]+", term, flags=re.UNICODE)
+                        if token.casefold() not in LEGAL_STOP_WORDS
+                    ]
+                    new_tokens = [token for token in term_tokens if token not in covered]
+                    score = (
+                        sum(idf(token) for token in new_tokens) / math.sqrt(len(new_tokens))
+                        if new_tokens
+                        else float("-inf")
+                    )
+                    if score > best_score:
+                        best_index, best_score = index, score
+                term = remaining.pop(best_index)
+                if best_score == float("-inf"):
+                    break
+                selected.append(term)
+                covered.update(
+                    token.casefold()
+                    for token in re.findall(r"[\wÀ-ỹĐđ]+", term, flags=re.UNICODE)
+                )
+            return selected
+        except sqlite3.Error:
+            # A corpus build without FTS5 vocabulary support can still use the
+            # deterministic, bounded candidate order.
+            return all_terms[:12]
 
     @staticmethod
     def _row_matches_anchor(row: tuple[Any, ...], anchor: LegalAnchor) -> bool:
@@ -475,24 +560,6 @@ class UniversalLegalRetriever:
             for anchor in anchors
         )
 
-        laws, phrases, _words = self._extract_components(clean_query)
-        terms = self._extract_search_terms(clean_query)
-        if not terms:
-            terms = re.findall(r"\b[\w\.]+\b", clean_query)[:4]
-
-        # Build Tier 1 (concept phrase) and Tier 2 (broad lexical) queries.
-        tier1_query = None
-        strict_phrases = self._strict_query_phrases(clean_query)
-        if laws and strict_phrases:
-            laws_clause = " OR ".join(f'"{_escape_fts5_term(t)}"' for t in laws)
-            strict_clause = " AND ".join(f'"{_escape_fts5_term(p)}"' for p in strict_phrases)
-            tier1_query = f"({laws_clause}) AND ({strict_clause})"
-        elif laws and phrases:
-            laws_clause = " OR ".join(f'"{_escape_fts5_term(t)}"' for t in laws)
-            phrases_clause = " OR ".join(f'"{_escape_fts5_term(p)}"' for p in phrases)
-            tier1_query = f"({laws_clause}) AND ({phrases_clause})"
-        
-        fts_query = " OR ".join(f'"{_escape_fts5_term(t)}"' for t in terms)
         selected_scope = topic_filter
         if not selected_scope and re.search(
             r"\b(?:lao\s+động|thử\s+việc|tiền\s+lương|trả\s+lương|nghỉ\s+phép)\b",
@@ -517,6 +584,23 @@ class UniversalLegalRetriever:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
+            laws, phrases, _words = self._extract_components(clean_query)
+            terms = self._extract_search_terms(clean_query, cursor)
+            if not terms:
+                terms = re.findall(r"\b[\w\.]+\b", clean_query)[:4]
+
+            # Build Tier 1 (concept phrase) and Tier 2 (broad lexical) queries.
+            tier1_query = None
+            strict_phrases = self._strict_query_phrases(clean_query)
+            if laws and strict_phrases:
+                laws_clause = " OR ".join(f'"{_escape_fts5_term(t)}"' for t in laws)
+                strict_clause = " AND ".join(f'"{_escape_fts5_term(p)}"' for p in strict_phrases)
+                tier1_query = f"({laws_clause}) AND ({strict_clause})"
+            elif laws and phrases:
+                laws_clause = " OR ".join(f'"{_escape_fts5_term(t)}"' for t in laws)
+                phrases_clause = " OR ".join(f'"{_escape_fts5_term(p)}"' for p in phrases)
+                tier1_query = f"({laws_clause}) AND ({phrases_clause})"
+            fts_query = " OR ".join(f'"{_escape_fts5_term(t)}"' for t in terms)
 
             # Execute FTS match with column weights (article_title: 10.0, source_note: 8.0, topic: 5.0)
             # and National Law priority bonus (3.0x multiplier on negative BM25 rank)

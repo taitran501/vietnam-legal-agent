@@ -10,6 +10,7 @@ from vietnam_legal_agent.tools.evidence import (
     legal_relevance_checker,
     propagate_list_item_citations,
     verify_citations,
+    verify_web_citations,
 )
 
 
@@ -802,6 +803,44 @@ def test_claim_segments_exclude_bibliography_and_disclaimer_lines():
     assert segments == ["Theo Điều 36 [1], người sử dụng lao động phải thực hiện nghĩa vụ báo trước."]
 
 
+def test_claim_segments_split_after_sentence_final_citation():
+    answer = (
+        "Theo Điều 10, shop không được từ chối đổi trả hàng giao sai mô tả [1]. "
+        "Bạn có thể khiếu nại đến cơ quan bảo vệ người tiêu dùng hoặc khởi kiện [1]."
+    )
+
+    assert legal_claim_segments(answer) == [
+        "Theo Điều 10, shop không được từ chối đổi trả hàng giao sai mô tả [1].",
+        "Bạn có thể khiếu nại đến cơ quan bảo vệ người tiêu dùng hoặc khởi kiện [1].",
+    ]
+
+
+def test_claim_segments_keep_scope_caveats_that_also_include_user_advice():
+    segments = legal_claim_segments(
+        "Bạn có quyền yêu cầu đổi trả theo quy định này [1]. "
+        "Tuy nhiên, quy định này chỉ áp dụng cho một nhóm giao dịch cụ thể, và bạn nên kiểm tra hợp đồng."
+    )
+
+    assert len(segments) == 2
+    assert "bạn nên kiểm tra hợp đồng" in segments[1].casefold()
+    assert "chỉ áp dụng cho một nhóm giao dịch cụ thể" in segments[1].casefold()
+
+
+def test_claim_segments_include_unanchored_rights_claims_before_a_cited_explanation():
+    answer = (
+        "Bạn có quyền yêu cầu đổi hoặc hoàn tiền nếu hàng giao bị vỡ. "
+        "Theo Điều 36 [1], phạm vi áp dụng phụ thuộc vào điều kiện được nêu trong nguồn."
+    )
+
+    assert legal_claim_segments(answer) == [
+        "Bạn có quyền yêu cầu đổi hoặc hoàn tiền nếu hàng giao bị vỡ.",
+        "Theo Điều 36 [1], phạm vi áp dụng phụ thuộc vào điều kiện được nêu trong nguồn.",
+    ]
+    valid, _, reason = verify_citations(answer, [document()], TaskType.LEGAL_LOOKUP)
+    assert valid is False
+    assert reason == "legal_claim_without_citation"
+
+
 def test_claim_segments_include_every_numbered_legal_list_item():
     answer = (
         "Các quyền cơ bản gồm:\n"
@@ -901,6 +940,52 @@ def test_citation_verifier_accepts_supported_article_claim():
     )
     assert valid is True
     assert reason == "ok"
+
+
+def test_citation_verifier_accepts_mixed_corpus_and_official_web_evidence():
+    web_document = DocumentRecord(
+        content="Trang văn bản chính thức về nghĩa vụ khi chấm dứt hợp đồng lao động.",
+        document_id="web:1:official-labor-source",
+        source="web",
+        metadata={
+            "title": "Cổng văn bản chính thức",
+            "official_url": "https://vbpl.vn/example",
+            "authority": "official",
+            "source_kind": "official_web",
+        },
+    )
+    answer = "Theo Điều 36 [1] và nguồn chính thức [2], cần đối chiếu nghĩa vụ báo trước."
+
+    valid, citations, reason = verify_citations(
+        answer,
+        [document(), web_document],
+        TaskType.LEGAL_LOOKUP,
+    )
+
+    assert valid is True
+    assert reason == "ok"
+    assert len(citations) == 2
+    web_valid, _, web_reason = verify_web_citations(answer, [document(), web_document])
+    assert web_valid is True
+    assert web_reason == "ok"
+
+
+def test_mixed_source_citation_rejects_web_document_without_official_metadata():
+    web_document = DocumentRecord(
+        content="Trích đoạn chưa được xác thực nguồn.",
+        document_id="web:1:untrusted",
+        source="web",
+        metadata={"title": "Nguồn thiếu URL"},
+    )
+
+    valid, _, reason = verify_citations(
+        "Theo Điều 36 [1], cần đối chiếu nghĩa vụ.",
+        [document(), web_document],
+        TaskType.LEGAL_LOOKUP,
+    )
+
+    assert valid is False
+    assert reason == "web_source_metadata_missing"
 
 
 def test_required_article_anchor_does_not_match_a_body_mention_in_another_article():

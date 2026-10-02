@@ -29,6 +29,54 @@ def _get_universal_cross_encoder(model_name: str) -> Any:
     return CrossEncoderReranker(model_name)
 
 
+def _heuristic_rerank_universal_candidates(
+    query: str,
+    candidates: list[dict[str, Any]],
+    top_k: int,
+) -> list[dict[str, Any]]:
+    """Use the local relevance scorer when the optional model cannot rank."""
+
+    if not candidates:
+        return []
+    try:
+        from langchain_core.documents import Document
+
+        from vietnam_legal_agent.retrieval.ensemble_retrieval import HeuristicReranker
+
+        documents = []
+        for index, candidate in enumerate(candidates):
+            metadata = dict(candidate.get("metadata") or {})
+            metadata["Dieu"] = metadata.get("Dieu") or metadata.get("legal_anchor") or ""
+            metadata["_universal_candidate_index"] = index
+            documents.append(
+                Document(
+                    page_content=str(candidate.get("page_content") or ""),
+                    metadata=metadata,
+                )
+            )
+
+        ranked_documents = HeuristicReranker().rerank(query, documents, len(documents))
+        ranked_candidates: list[dict[str, Any]] = []
+        for document in ranked_documents:
+            index = document.metadata.get("_universal_candidate_index")
+            if not isinstance(index, int) or not 0 <= index < len(candidates):
+                continue
+            candidate = dict(candidates[index])
+            candidate_metadata = dict(candidate.get("metadata") or {})
+            candidate_metadata["rerank_score"] = document.metadata.get("rerank_score")
+            candidate_metadata["heuristic_rerank_score"] = document.metadata.get(
+                "heuristic_rerank_score"
+            )
+            candidate_metadata["rerank_fallback"] = "heuristic"
+            candidate["metadata"] = candidate_metadata
+            candidate["score"] = document.metadata.get("rerank_score")
+            ranked_candidates.append(candidate)
+        return ranked_candidates[:top_k] or candidates[:top_k]
+    except Exception:
+        logger.debug("Universal legal heuristic fallback failed", exc_info=True)
+        return candidates[:top_k]
+
+
 def _universal_rerank_mode(settings: Any, query: str) -> tuple[bool, bool]:
     """Return whether to score candidates and whether scores may change user order."""
 
@@ -67,7 +115,11 @@ async def _rerank_universal_candidates(
 
         reranker = _get_universal_cross_encoder(model_name)
         if getattr(reranker, "unavailable_reason", None):
-            return candidates[:top_k]
+            return (
+                _heuristic_rerank_universal_candidates(query, candidates, top_k)
+                if apply_ranking
+                else candidates[:top_k]
+            )
         rerank_documents = []
         for index, candidate in enumerate(candidates):
             metadata = dict(candidate.get("metadata") or {})
@@ -124,10 +176,14 @@ async def _rerank_universal_candidates(
             ranked_candidates.append(candidate)
         return ranked_candidates[:top_k] or candidates[:top_k]
     except TimeoutError:
-        logger.warning("Universal legal cross-encoder timed out; preserving BM25 order")
+        logger.warning("Universal legal cross-encoder timed out; using local heuristic ranking")
     except Exception as exc:  # noqa: BLE001 - optional reranker must not block legal retrieval
-        logger.warning("Universal legal cross-encoder unavailable; preserving BM25 order: %s", exc)
-    return candidates[:top_k]
+        logger.warning("Universal legal cross-encoder unavailable; using local heuristic ranking: %s", exc)
+    return (
+        _heuristic_rerank_universal_candidates(query, candidates, top_k)
+        if apply_ranking
+        else candidates[:top_k]
+    )
 
 
 def warmup_universal_cross_encoder() -> None:

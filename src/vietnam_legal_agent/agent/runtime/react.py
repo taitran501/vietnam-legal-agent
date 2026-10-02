@@ -1,37 +1,32 @@
-"""Streaming presenter for the bounded workflow."""
+"""SSE runtime for the autonomous legal-agent loop."""
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import re
 import time
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from functools import lru_cache
 from typing import Any, cast
 
-from vietnam_legal_agent.agent.graph import (
+from vietnam_legal_agent.agent.workflow.contracts import (
     WorkflowDependencies,
     _verification_status_for_reason,
-    build_workflow,
-    create_initial_state,
-    default_dependencies,
-    run_workflow,
 )
-from vietnam_legal_agent.domain.models import AgentState, DocumentRecord, TaskType, TerminationReason
+from vietnam_legal_agent.domain.models import AgentState, DocumentRecord, TerminationReason
 from vietnam_legal_agent.domain.routes import RouteType, route_spec
-from vietnam_legal_agent.domain.verification import VerificationPolicy, VerificationStatus
-from vietnam_legal_agent.tools.source_provenance import (
-    canonical_source_snapshots,
-    normalize_source,
-    normalized_document_metadata,
-)
+from vietnam_legal_agent.domain.verification import VerificationPolicy
 
 logger = logging.getLogger(__name__)
+
+
+from vietnam_legal_agent.agent.runtime.presentation import (
+    _documents_for_api,
+    _metadata,
+    split_verified_answer_for_stream,
+)
 
 
 @dataclass(slots=True)
@@ -121,359 +116,6 @@ class _AgentTurnLifecycle:
             error_code=error_code,
         )
 
-_ACTION_STATUS = {
-    "validate_input": "Đã kiểm tra nội dung câu hỏi.",
-    "load_context": "Đã nạp lịch sử và trạng thái tình huống.",
-    "understand_task": "Đã hiểu yêu cầu và kiểm tra thông tin đầu vào.",
-    "check_cache": "Đã kiểm tra câu trả lời có thể tái sử dụng.",
-    "answer_cache": "Đã xác minh câu trả lời từ bộ nhớ đệm.",
-    "ask_user": "Cần thêm thông tin trước khi tiếp tục.",
-    "retrieve_legal": "Đã truy xuất tài liệu pháp luật.",
-    "evaluate_evidence": "Đã đánh giá mức độ đầy đủ của bằng chứng.",
-    "retrieve_web": "Đã kiểm tra nguồn pháp luật chính thức trên web.",
-    "compose_answer": "Đã soạn câu trả lời dựa trên bằng chứng.",
-    "verify_citations": "Đã kiểm tra trích dẫn và điều luật.",
-    "repair_answer": "Đã sửa câu trả lời theo nguồn đã truy xuất.",
-    "finish": "Workflow đã hoàn tất.",
-    "safe_stop": "Workflow đã dừng an toàn.",
-}
-
-
-def split_verified_answer_for_stream(answer: str, *, max_chunk_chars: int = 180) -> list[str]:
-    """Split an already verified answer into display-sized SSE chunks.
-
-    The workflow intentionally does not emit legal claims while citation
-    verification is still pending.  Once the verifier has accepted the final
-    answer, this helper preserves the exact text while producing enough
-    bounded chunks for the client to render progressive output.
-    """
-
-    if not answer:
-        return []
-    if max_chunk_chars < 1:
-        raise ValueError("max_chunk_chars must be positive")
-
-    chunks: list[str] = []
-    current = ""
-    for token in re.findall(r"\S+(?:\s+|$)", answer):
-        # A long URL or legal identifier should never block streaming.
-        while len(token) > max_chunk_chars:
-            if current:
-                chunks.append(current)
-                current = ""
-            chunks.append(token[:max_chunk_chars])
-            token = token[max_chunk_chars:]
-        if current and len(current) + len(token) > max_chunk_chars:
-            chunks.append(current)
-            current = token
-        else:
-            current += token
-    if current:
-        chunks.append(current)
-    return chunks
-
-
-def _cited_evidence_indices(answer: str, evidence: list[dict[str, Any]]) -> set[int]:
-    """Return citation indices referenced by an answer, bounded to the evidence range.
-
-    The answer text may contain bracketed numbers that are not citations (for
-    example years like ``[2023]`` or article counts).  Only indices that point
-    at an actual evidence item are treated as citations; anything else would
-    otherwise hide every source from the source drawer.
-    """
-
-    if not evidence:
-        return set()
-    return {
-        int(value)
-        for value in re.findall(r"\[(\d+)\]", answer or "")
-        if 1 <= int(value) <= len(evidence)
-    }
-
-
-def _documents_for_api(state: AgentState) -> list[dict[str, Any]]:
-    documents: list[dict[str, Any]] = []
-    used_indices = _cited_evidence_indices(state.get("answer", ""), list(state.get("evidence", [])))
-    for citation_index, item in enumerate(state.get("evidence", []), start=1):
-        if used_indices and citation_index not in used_indices:
-            continue
-        excerpt_limit = 1200 if item.get("source") == "web" else 2000
-        snapshot = normalize_source(
-            item,
-            citation_index=citation_index,
-            corpus_as_of_date=str(state.get("corpus_as_of_date") or ""),
-            excerpt_limit=excerpt_limit,
-        )
-        safe_metadata = normalized_document_metadata(snapshot, original=item)
-        documents.append(
-            {
-                "page_content": str(snapshot.get("excerpt") or ""),
-                "metadata": safe_metadata,
-                # Keep the chunk id in the legacy field so citation indices and
-                # answer verification remain stable.  The canonical parent
-                # document id is available as metadata.source_id.
-                "document_id": snapshot.get("chunk_id") or item.get("document_id", ""),
-                "score": item.get("score"),
-                "source": snapshot.get("source_kind") or item.get("source", ""),
-            }
-        )
-    return documents
-
-
-def _source_snapshots(state: AgentState) -> list[dict[str, Any]]:
-    used_indices = _cited_evidence_indices(state.get("answer", ""), list(state.get("evidence", [])))
-    evidence = list(state.get("evidence", []))
-    selected = [
-        (citation_index, item)
-        for citation_index, item in enumerate(evidence, start=1)
-        if not used_indices or citation_index in used_indices
-    ]
-    if not selected:
-        return []
-    return canonical_source_snapshots(
-        [item for _, item in selected],
-        citation_indices=[citation_index for citation_index, _ in selected],
-        corpus_as_of_date=str(state.get("corpus_as_of_date") or ""),
-        excerpt_limit=1200 if any(item.get("source") == "web" for _, item in selected) else 2000,
-    )
-
-
-def _metadata(state: AgentState) -> dict[str, Any]:
-    checklist = state.get("checklist", [])
-    history = state.get("history") or []
-    assumptions = [item.get("assumption") for item in checklist if item.get("assumption")]
-    if state.get("assessment"):
-        assumptions.extend(
-            item for item in (state.get("assessment") or {}).get("assumptions", []) if item
-        )
-        if not assumptions:
-            assumptions.append("Kết quả đánh giá là sơ bộ và phụ thuộc vào thông tin doanh nghiệp đã cung cấp.")
-    return {
-        "task_type": state.get("task_type", TaskType.LEGAL_LOOKUP.value),
-        "route": state.get("route", "legal_lookup"),
-        "context_loaded": bool(state.get("context_loaded", False)),
-        "history_messages": int(state.get("history_messages", len(history))),
-        "is_follow_up": bool(state.get("is_follow_up", False)),
-        "standalone_query": state.get("standalone_query", state.get("query", "")),
-        "source_scope": state.get("source_scope", "legal_corpus"),
-        "corpus_version": state.get("corpus_version", ""),
-        "corpus_sha": state.get("corpus_sha", ""),
-        "embedding_profile": state.get("embedding_profile", ""),
-        "evidence_status": state.get("evidence_status", "not_evaluated"),
-        "available_actions": state.get("available_actions", []),
-        "assessment": state.get("assessment"),
-        "checklist": checklist,
-        "assumptions": assumptions,
-        "missing_facts": state.get("missing_facts", []),
-        "citations": state.get("citations", []),
-        "evidence_assessment": state.get("evidence_assessment", {}),
-        "trace_id": state.get("trace_id", ""),
-        "corpus_id": state.get("corpus_id", "vietnamese_law"),
-        "corpus_as_of_date": state.get("corpus_as_of_date", ""),
-        "preview": bool(state.get("preview", False)),
-        "pipeline_version": state.get("pipeline_version", "pipeline-v4"),
-        "termination_reason": state.get("termination_reason") or TerminationReason.ERROR.value,
-        "outcome": state.get("outcome"),
-        "result_type": state.get("result_type"),
-        "required_issues": state.get("required_issues", []),
-        "covered_issues": state.get("covered_issues", []),
-        "assistant_message_id": state.get("assistant_message_id", ""),
-        "sources": state.get("sources") or _source_snapshots(state),
-        "replay_metadata": state.get("replay_metadata") or {},
-        "rule_id": state.get("rule_id", ""),
-        "citation_error": state.get("citation_error", ""),
-        "safe_stop_reason": state.get("safe_stop_reason", ""),
-        "verification_status": state.get("verification_status", ""),
-        "legal_readiness_status": state.get("legal_readiness_status", ""),
-        "legal_readiness_sha": state.get("legal_readiness_sha", ""),
-    }
-
-
-class WorkflowRuntime:
-    def __init__(
-        self,
-        deps: WorkflowDependencies,
-        *,
-        answer_chunk_size: int = 180,
-        answer_chunk_delay_s: float = 0.015,
-    ) -> None:
-        self.deps = deps
-        self.answer_chunk_size = answer_chunk_size
-        self.answer_chunk_delay_s = max(answer_chunk_delay_s, 0.0)
-        # LangGraph compilation is independent of a turn's user data. Cache it
-        # per runtime so repeated messages do not rebuild the same graph.
-        self._compiled_workflow = build_workflow(deps)
-
-    async def _persist(self, state: AgentState, *, started_at: float) -> None:
-        user_id = state["user_id"]
-        conversation_id = state["conversation_id"]
-        answer = state.get("answer", "")
-        try:
-            active_case = state.get("active_case")
-            if state.get("awaiting_user_input") and active_case:
-                saved_case = await self.deps.history.save_case(user_id, conversation_id, active_case)
-                if saved_case is not None:
-                    state["case_state"] = saved_case
-            elif state.get("task_type") in {
-                TaskType.CASE_ASSESSMENT.value,
-                TaskType.BUILD_COMPLIANCE_CHECKLIST.value,
-            }:
-                await self.deps.history.clear_case(user_id, conversation_id)
-                state["case_state"] = {
-                    **dict(state.get("case_state") or {}),
-                    "status": "completed",
-                    "missing_facts": [],
-                }
-
-            assistant_message_id = await self.deps.history.save_exchange(
-                user_id,
-                conversation_id,
-                state["query"],
-                answer,
-                _metadata(state),
-            )
-            if assistant_message_id is not None:
-                state["assistant_message_id"] = str(assistant_message_id)
-            state["sources"] = _source_snapshots(state)
-
-            # Only standalone legal answers from the corpus are reusable.  Case
-            # assessments/checklists and web responses are deliberately excluded.
-            cacheable = (
-                state.get("task_type") == TaskType.LEGAL_LOOKUP.value
-                and state.get("route") == "legal_lookup"
-                and state.get("source") == "legal"
-                and state.get("termination_reason") == TerminationReason.ANSWER_COMPLETE.value
-                and bool(state.get("citation_valid"))
-                and bool((state.get("evidence_assessment") or {}).get("sufficient"))
-                and state.get("verification_status") == VerificationStatus.VERIFIED.value
-            )
-            state["cache_status"] = "stored" if cacheable else "not_cacheable"
-            if cacheable:
-                await self.deps.cache.store(
-                    TaskType.LEGAL_LOOKUP,
-                    state.get("standalone_query", state["query"]),
-                    answer,
-                    evidence=list(state.get("evidence") or []),
-                    citations=list(state.get("citations") or []),
-                    source=str(state.get("source") or ""),
-                    route="legal_lookup",
-                )
-        except Exception as exc:  # noqa: BLE001 - persistence must not lose a verified response
-            # Persistence failures should be observable but must not turn a
-            # verified answer into a server error.
-            logger.warning("Workflow persistence failed for trace=%s: %s", state.get("trace_id"), exc)
-        finally:
-            try:
-                await self.deps.history.record_run(state, started_at, time.perf_counter())
-                logger.info("%s", json.dumps({
-                    "event": "agent_run_completed",
-                    "trace_id": state.get("trace_id"),
-                    "conversation_id": state.get("conversation_id"),
-                    "termination_reason": state.get("termination_reason"),
-                    "actions": state.get("action_sequence"),
-                    "duration_ms": state.get("run_duration_ms"),
-                }, ensure_ascii=False))
-            except Exception as exc:  # noqa: BLE001 - trace persistence is best effort
-                logger.warning("Workflow trace persistence failed: %s", exc)
-
-    async def run(self, **kwargs: Any) -> AgentState:
-        started_at = time.perf_counter()
-        started_wall = datetime.now(UTC)
-        state = await run_workflow(deps=self.deps, compiled_workflow=self._compiled_workflow, **kwargs)
-        from vietnam_legal_agent.config import get_settings
-
-        state["preview"] = get_settings().corpus_runtime_mode == "preview"
-        state["run_started_at"] = started_wall.isoformat()
-        state["run_ended_at"] = datetime.now(UTC).isoformat()
-        state["run_duration_ms"] = round((time.perf_counter() - started_at) * 1000, 2)
-        await self._persist(state, started_at=started_at)
-        return state
-
-    async def stream(self, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
-        yield {"type": "status", "message": "Đang nạp ngữ cảnh cuộc trò chuyện…", "stage": "load_context"}
-        started_at = time.perf_counter()
-        started_wall = datetime.now(UTC)
-        trace_id = str(kwargs.get("trace_id") or "")
-        pipeline_version = "pipeline-v4"
-        try:
-            state = await create_initial_state(deps=self.deps, **kwargs)
-            from vietnam_legal_agent.config import get_settings
-
-            state["preview"] = get_settings().corpus_runtime_mode == "preview"
-            trace_id = state.get("trace_id", "")
-            compiled = self._compiled_workflow
-            step = 0
-            async for update in compiled.astream(state, stream_mode="updates"):
-                for node_state in update.values():
-                    if not isinstance(node_state, dict):
-                        continue
-                    state.update(cast(AgentState, node_state))
-                    action = str(node_state.get("current_action") or "")
-                    if not action:
-                        continue
-                    step += 1
-                    yield {
-                        "type": "workflow_step",
-                        "step": step,
-                        "action": action,
-                        "status": "completed",
-                        "trace_id": trace_id,
-                    }
-                    yield {
-                        "type": "status",
-                        "message": _ACTION_STATUS.get(action, "Đã hoàn tất một bước xử lý."),
-                        "stage": action,
-                    }
-
-            state["run_started_at"] = started_wall.isoformat()
-            state["run_ended_at"] = datetime.now(UTC).isoformat()
-            state["run_duration_ms"] = round((time.perf_counter() - started_at) * 1000, 2)
-            await self._persist(state, started_at=started_at)
-            yield {
-                "type": "status",
-                "message": "Đã hoàn tất kiểm tra nguồn và tạo câu trả lời.",
-                "stage": "complete",
-            }
-            answer = state.get("answer", "")
-            if answer:
-                chunks = split_verified_answer_for_stream(answer, max_chunk_chars=self.answer_chunk_size)
-                yield {
-                    "type": "status",
-                    "message": "Đã xác minh trích dẫn. Đang hiển thị câu trả lời…",
-                    "stage": "streaming",
-                }
-                for index, chunk in enumerate(chunks, start=1):
-                    yield {
-                        "type": "response_chunk",
-                        "chunk": chunk,
-                        "chunk_index": index,
-                        "chunk_count": len(chunks),
-                        "stage": "streaming",
-                    }
-                    # Give the browser a chance to paint each chunk even when
-                    # the server and client are on the same local machine.
-                    if index < len(chunks) and self.answer_chunk_delay_s:
-                        await asyncio.sleep(self.answer_chunk_delay_s)
-            yield {
-                "type": "response_complete",
-                "text": answer,
-                "documents": _documents_for_api(state),
-                "source": state.get("source", "error"),
-                "stage": "complete",
-                **_metadata(state),
-            }
-        except Exception:
-            logger.exception("Bounded workflow failed")
-            yield {
-                "type": "error",
-                "code": "pipeline_error",
-                "message": "Internal server error. Please try again.",
-                "retryable": True,
-                "retry_after_seconds": 2,
-                "trace_id": trace_id,
-                "pipeline_version": pipeline_version,
-            }
-
 
 class AgentWorkflowRuntime:
     """Autonomous Agent runtime implementing the standard SSE streaming contract."""
@@ -527,9 +169,7 @@ class AgentWorkflowRuntime:
                 yield event
         except asyncio.CancelledError:
             try:
-                await lifecycle.finish_interrupted(
-                    status="stopped", error_code="client_disconnected"
-                )
+                await lifecycle.finish_interrupted(status="stopped", error_code="client_disconnected")
             except Exception:
                 logger.exception("Failed to finalize cancelled agent stream", extra={"trace_id": trace_id})
             raise
@@ -537,24 +177,18 @@ class AgentWorkflowRuntime:
             fallback_status = "failed"
             fallback_error_code = "stream_incomplete"
             try:
-                await lifecycle.finish_interrupted(
-                    status=fallback_status, error_code=fallback_error_code
-                )
+                await lifecycle.finish_interrupted(status=fallback_status, error_code=fallback_error_code)
             except Exception:
                 logger.exception("Failed to finalize failed agent stream", extra={"trace_id": trace_id})
             raise
         finally:
             if lifecycle.started and not lifecycle.finalized:
                 try:
-                    await lifecycle.finish_interrupted(
-                        status=fallback_status, error_code=fallback_error_code
-                    )
+                    await lifecycle.finish_interrupted(status=fallback_status, error_code=fallback_error_code)
                 except Exception:
                     logger.exception("Failed to finalize interrupted agent stream", extra={"trace_id": trace_id})
 
-    async def _stream(
-        self, *, lifecycle: _AgentTurnLifecycle, **kwargs: Any
-    ) -> AsyncIterator[dict[str, Any]]:
+    async def _stream(self, *, lifecycle: _AgentTurnLifecycle, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
         query = str(kwargs.get("query") or "").strip()
         user_id = str(kwargs.get("user_id") or "")
         conversation_id = str(kwargs.get("conversation_id") or "")
@@ -609,6 +243,7 @@ class AgentWorkflowRuntime:
                 snapshot.active_case,
             )
         standalone_query = understanding.standalone_query or query
+        retrieval_queries = list(understanding.retrieval_queries or [])
         is_follow_up = bool(understanding.is_follow_up)
         context_dependent_follow_up = is_context_dependent_query(query)
         if context_dependent_follow_up and snapshot.history:
@@ -722,9 +357,7 @@ class AgentWorkflowRuntime:
                     raise RuntimeError("durable fast-path finalization did not complete")
                 return final
             if save_legacy_exchange:
-                await self.deps.history.save_exchange(
-                    user_id, conversation_id, query, answer, metadata
-                )
+                await self.deps.history.save_exchange(user_id, conversation_id, query, answer, metadata)
             return None
 
         try:
@@ -755,9 +388,7 @@ class AgentWorkflowRuntime:
         is_valid, _input_reason = self._guardrails.check_input(query)
         s_val.close(status="ok" if is_valid else "invalid")
         if not is_valid:
-            safe_msg = (
-                "Câu hỏi cần có nội dung và không vượt quá 3.000 ký tự. Bạn hãy gửi lại câu hỏi ngắn gọn hơn."
-            )
+            safe_msg = "Câu hỏi cần có nội dung và không vượt quá 3.000 ký tự. Bạn hãy gửi lại câu hỏi ngắn gọn hơn."
             try:
                 final = await finish_fast_path(
                     safe_msg,
@@ -793,10 +424,7 @@ class AgentWorkflowRuntime:
         if (
             context_dependent_follow_up
             and not snapshot.active_case
-            and (
-                not snapshot.history
-                or latest_turn_requires_context(snapshot.history)
-            )
+            and (not snapshot.history or latest_turn_requires_context(snapshot.history))
         ):
             clarification = (
                 "Câu hỏi tiếp theo chưa cho biết rõ nội dung cần tra cứu. "
@@ -940,9 +568,7 @@ class AgentWorkflowRuntime:
         async def finish_durable_turn(
             *, content: str, status: str, metadata: dict[str, Any], error_code: str | None = None
         ) -> dict[str, Any] | None:
-            return await lifecycle.finish(
-                content=content, status=status, metadata=metadata, error_code=error_code
-            )
+            return await lifecycle.finish(content=content, status=status, metadata=metadata, error_code=error_code)
 
         _tool_status_messages = {
             "search_legal_provisions": "Đang tra cứu kho văn bản pháp luật…",
@@ -956,50 +582,70 @@ class AgentWorkflowRuntime:
         s_loop = trace_session.start_span("agent_cognitive_loop")
         result = None
         current_tool_args: dict[str, Any] = {}
-        async for event in self.runner.stream(
-            standalone_query,
-            history=snapshot.history,
-            active_case=snapshot.active_case,
-            history_summary=snapshot.summary,
-            mode=mode,
-            trace_id=trace_id,
-            is_cancelled=turn_cancelled,
-        ):
-            if event.get("type") == "agent_tool_call":
-                tool_name = event.get("tool", "")
-                current_tool_args = event.get("args") or {}
-                status_message = _tool_status_messages.get(tool_name, "Đang xử lý bước tiếp theo…")
-                yield {
-                    "type": "status",
-                    "message": status_message,
-                    "stage": tool_name,
-                }
-            elif event.get("type") == "agent_tool_result":
-                tool_name = str(event.get("tool") or "")
-                tool_status = str(event.get("status") or "failed")
-                s_tool = trace_session.start_span(f"tool:{tool_name}")
-                s_tool.close(
-                    status="ok" if tool_status == "completed" else tool_status,
-                    extra_attrs={
+        pass_result = None
+        requires_legal_evidence = route_spec(route).verification_policy is VerificationPolicy.LEGAL_CORPUS
+
+        async def run_agent_pass(
+            agent_query: str,
+            *,
+            search_query_hints: list[str] | None = None,
+        ) -> AsyncIterator[dict[str, Any]]:
+            nonlocal current_tool_args, pass_result
+            pass_result = None
+            async for event in self.runner.stream(
+                agent_query,
+                history=snapshot.history,
+                active_case=snapshot.active_case,
+                history_summary=snapshot.summary,
+                mode=mode,
+                trace_id=trace_id,
+                require_legal_evidence=requires_legal_evidence,
+                retrieval_queries=search_query_hints,
+                search_user_query=standalone_query,
+                is_cancelled=turn_cancelled,
+            ):
+                if event.get("type") == "agent_tool_call":
+                    tool_name = event.get("tool", "")
+                    current_tool_args = event.get("args") or {}
+                    status_message = _tool_status_messages.get(tool_name, "Đang xử lý bước tiếp theo…")
+                    yield {
+                        "type": "status",
+                        "message": status_message,
+                        "stage": tool_name,
+                    }
+                elif event.get("type") == "agent_tool_result":
+                    tool_name = str(event.get("tool") or "")
+                    tool_status = str(event.get("status") or "failed")
+                    s_tool = trace_session.start_span(f"tool:{tool_name}")
+                    s_tool.close(
+                        status="ok" if tool_status == "completed" else tool_status,
+                        extra_attrs={
+                            "step": event.get("step", 1),
+                            "latency_ms": event.get("latency_ms", 0.0),
+                            "error_code": event.get("error_code"),
+                        },
+                    )
+                    yield {
+                        "type": "workflow_step",
                         "step": event.get("step", 1),
+                        "action": tool_name,
+                        "status": tool_status,
+                        "label": _tool_status_messages.get(tool_name, "Đã hoàn thành bước."),
                         "latency_ms": event.get("latency_ms", 0.0),
                         "error_code": event.get("error_code"),
-                    },
-                )
-                yield {
-                    "type": "workflow_step",
-                    "step": event.get("step", 1),
-                    "action": tool_name,
-                    "status": tool_status,
-                    "label": _tool_status_messages.get(tool_name, "Đã hoàn thành bước."),
-                    "latency_ms": event.get("latency_ms", 0.0),
-                    "error_code": event.get("error_code"),
-                    "args": current_tool_args,
-                    "trace_id": trace_id,
-                }
-                current_tool_args = {}
-            elif event.get("type") == "agent_complete":
-                result = event.get("result")
+                        "args": current_tool_args,
+                        "trace_id": trace_id,
+                    }
+                    current_tool_args = {}
+                elif event.get("type") == "agent_complete":
+                    pass_result = event.get("result")
+
+        async for update in run_agent_pass(
+            standalone_query,
+            search_query_hints=retrieval_queries,
+        ):
+            yield update
+        result = pass_result
 
         s_loop.close(
             model="gpt-4o-mini",
@@ -1070,18 +716,22 @@ class AgentWorkflowRuntime:
         verification_error = ""
         verification_status = ""
 
-        if (
-            termination_reason in {
-                TerminationReason.ANSWER_COMPLETE.value,
-                TerminationReason.CACHE_HIT.value,
-                TerminationReason.RESEARCH_COMPLETE.value,
-            }
-            and source not in {"error", "follow_up"}
+        route_policy = route_spec(route).verification_policy
+        if termination_reason in {
+            TerminationReason.ANSWER_COMPLETE.value,
+            TerminationReason.CACHE_HIT.value,
+            TerminationReason.RESEARCH_COMPLETE.value,
+            TerminationReason.INSUFFICIENT_EVIDENCE.value,
+        } and (
+            source not in {"error", "follow_up"}
+            or (requires_legal_evidence and termination_reason == TerminationReason.INSUFFICIENT_EVIDENCE.value)
         ):
-            route_policy = route_spec(route).verification_policy
-            requires_legal_evidence = route_policy is VerificationPolicy.LEGAL_CORPUS
             s_ver = trace_session.start_span("critic_and_citation_verification")
-            yield {"type": "status", "message": "Đang xác minh căn cứ pháp lý và thẩm định phản biện…", "stage": "verify"}
+            yield {
+                "type": "status",
+                "message": "Đang xác minh căn cứ pháp lý và thẩm định phản biện…",
+                "stage": "verify",
+            }
             readiness_reason = ""
             if requires_legal_evidence and self.deps.legal_readiness is not None:
                 try:
@@ -1123,6 +773,195 @@ class AgentWorkflowRuntime:
                 status="ok" if passed else "verification_failed",
                 extra_attrs={"passed": passed, "citations_count": len(citations)},
             )
+            retryable_verification_failure = any(
+                marker in str(_reason).casefold()
+                for marker in (
+                    "unsupported_claim",
+                    "insufficient_evidence",
+                    "relevance_check_failed",
+                    "not_enough_docs",
+                    "content_too_short",
+                )
+            )
+            if not passed and requires_legal_evidence and retryable_verification_failure and not await turn_cancelled():
+                previous_searches = [
+                    str(step.args.get("query") or "").strip()
+                    for step in result.trajectory
+                    if step.tool == "search_legal_provisions" and str(step.args.get("query") or "").strip()
+                ]
+                previous_search_context = (
+                    " Các truy vấn đã thử: " + " | ".join(previous_searches[:4]) if previous_searches else ""
+                )
+                recovery_query = (
+                    f"{standalone_query}\n\n"
+                    "Yêu cầu tra cứu lại sau kiểm chứng: câu trả lời trước chưa có căn cứ đủ trực tiếp. "
+                    "Hãy tra cứu lại bằng thuật ngữ pháp lý chính xác cho từng vấn đề người dùng hỏi; "
+                    "nếu câu hỏi gồm quyền lợi và thủ tục, tìm căn cứ cho từng phần riêng. "
+                    "Tránh lặp nguyên truy vấn đã thử nếu tài liệu chưa trả lời câu hỏi. "
+                    "Trả lời phần được nguồn hỗ trợ, nêu điều kiện chưa rõ thay vì suy đoán, "
+                    "và hỏi tối đa một dữ kiện thiết yếu nếu cần."
+                    f"{previous_search_context}"
+                )
+                yield {
+                    "type": "status",
+                    "message": "Đang tra cứu bổ sung phần căn cứ còn thiếu…",
+                    "stage": "search_legal_provisions",
+                }
+                s_recovery = trace_session.start_span("agent_evidence_recovery")
+                async for update in run_agent_pass(recovery_query):
+                    yield update
+                recovery_result = pass_result
+                s_recovery.close(
+                    status=(
+                        "ok"
+                        if recovery_result is not None
+                        and recovery_result.termination_reason
+                        in {
+                            TerminationReason.ANSWER_COMPLETE.value,
+                            TerminationReason.RESEARCH_COMPLETE.value,
+                        }
+                        else "recovery_incomplete"
+                    ),
+                    extra_attrs={
+                        "steps_taken": recovery_result.steps_taken if recovery_result else 0,
+                        "evidence_count": len(recovery_result.evidence) if recovery_result else 0,
+                    },
+                )
+                if recovery_result is not None:
+                    recovery_result.context_loaded = context_loaded
+                    recovery_result.history_messages = history_messages
+                    recovery_result.is_follow_up = is_follow_up
+                    recovery_result.standalone_query = standalone_query
+                if (
+                    recovery_result is not None
+                    and recovery_result.termination_reason
+                    in {
+                        TerminationReason.ANSWER_COMPLETE.value,
+                        TerminationReason.CACHE_HIT.value,
+                        TerminationReason.RESEARCH_COMPLETE.value,
+                    }
+                    and recovery_result.source not in {"error", "follow_up"}
+                ):
+                    recovery_evidence = list(recovery_result.evidence)
+                    recovery_readiness_reason = ""
+                    if self.deps.legal_readiness is not None:
+                        try:
+                            recovery_readiness = self.deps.legal_readiness.audit()
+                            legal_readiness_status = recovery_readiness.status.value
+                            legal_readiness_sha = recovery_readiness.manifest_sha256
+                            recovery_allowed, recovery_gate_reason = self.deps.legal_readiness.allows_documents(
+                                [DocumentRecord.from_dict(document) for document in recovery_evidence]
+                            )
+                            if not recovery_allowed:
+                                recovery_readiness_reason = recovery_gate_reason or recovery_readiness.reason
+                        except Exception:  # noqa: BLE001 - the readiness gate remains fail-closed
+                            recovery_readiness_reason = "legal_readiness_invalid"
+                            legal_readiness_status = "invalid"
+                            legal_readiness_sha = self.deps.legal_readiness.manifest_sha256
+                    if recovery_readiness_reason:
+                        recovery_passed = False
+                        recovery_reason = recovery_readiness_reason
+                        recovery_answer = (
+                            "Tôi chưa thể phát hành câu trả lời vì trạng thái pháp lý của nguồn chưa được xác minh."
+                        )
+                        recovery_citations: list[dict[str, Any]] = []
+                    else:
+                        s_recovery_ver = trace_session.start_span("recovery_critic_and_citation_verification")
+                        (
+                            recovery_passed,
+                            recovery_reason,
+                            recovery_answer,
+                            recovery_citations,
+                        ) = await self._guardrails.check_output(
+                            recovery_result.answer,
+                            recovery_evidence,
+                            query=standalone_query,
+                            require_evidence=True,
+                            claim_verifier=self.deps.claim_verifier,
+                            critic_reviewer=getattr(self.deps, "critic_reviewer", None),
+                            verification_policy=route_policy,
+                            task_type=recovery_result.task_type,
+                            enforce_legal_safety_circuit_breaker=self.deps.enforce_legal_safety_circuit_breaker,
+                        )
+                        s_recovery_ver.close(
+                            status="ok" if recovery_passed else "verification_failed",
+                            extra_attrs={
+                                "passed": recovery_passed,
+                                "citations_count": len(recovery_citations),
+                            },
+                        )
+                    if (
+                        not recovery_passed
+                        and not recovery_readiness_reason
+                        and recovery_evidence
+                        and "unsupported_claim" in str(recovery_reason).casefold()
+                    ):
+                        # The autonomous draft and bounded repair can both add
+                        # claims beyond the retrieved text. Give the existing
+                        # evidence-first answer gateway one final chance to
+                        # compose directly from those documents; its output
+                        # still passes the same citation, claim, and critic
+                        # checks before it can be delivered.
+                        yield {
+                            "type": "status",
+                            "message": "Đang soạn lại câu trả lời trực tiếp từ nguồn đã tra cứu…",
+                            "stage": "compose_evidence_answer",
+                        }
+                        s_compose = trace_session.start_span("evidence_grounded_answer_fallback")
+                        composed_answer = ""
+                        composed_passed = False
+                        composed_reason = ""
+                        composed_citations: list[dict[str, Any]] = []
+                        try:
+                            composed_answer = await self.deps.generation.answer(
+                                route_spec(route).task_type.value,
+                                standalone_query,
+                                [DocumentRecord.from_dict(item) for item in recovery_evidence],
+                                understanding.facts.compact(),
+                            )
+                            if composed_answer.strip():
+                                (
+                                    composed_passed,
+                                    composed_reason,
+                                    composed_answer,
+                                    composed_citations,
+                                ) = await self._guardrails.check_output(
+                                    composed_answer,
+                                    recovery_evidence,
+                                    query=standalone_query,
+                                    require_evidence=True,
+                                    claim_verifier=self.deps.claim_verifier,
+                                    critic_reviewer=getattr(self.deps, "critic_reviewer", None),
+                                    verification_policy=route_policy,
+                                    task_type=route_spec(route).task_type.value,
+                                    enforce_legal_safety_circuit_breaker=self.deps.enforce_legal_safety_circuit_breaker,
+                                )
+                        except Exception as exc:  # noqa: BLE001 - fallback failure keeps the verified stop
+                            composed_reason = f"evidence_answer_fallback_{type(exc).__name__}"
+                            logger.info("Evidence-bound answer fallback unavailable: %s", type(exc).__name__)
+                        s_compose.close(
+                            status="ok" if composed_passed else "verification_failed",
+                            extra_attrs={"passed": composed_passed},
+                        )
+                        if composed_passed:
+                            recovery_passed = True
+                            recovery_reason = composed_reason
+                            recovery_answer = composed_answer
+                            recovery_citations = composed_citations
+                    if recovery_passed:
+                        result = recovery_result
+                        final_answer = recovery_answer or recovery_result.answer
+                        verified_or_fallback = final_answer
+                        termination_reason = recovery_result.termination_reason
+                        citations = recovery_citations
+                        source = recovery_result.source
+                        evidence = recovery_evidence
+                        verification_error = recovery_reason
+                        verification_status = _verification_status_for_reason(
+                            recovery_reason,
+                            valid=True,
+                        ).value
+                        passed = True
             if not passed:
                 final_answer = verified_or_fallback
                 termination_reason = TerminationReason.CITATION_VERIFICATION_FAILED.value
@@ -1337,57 +1176,3 @@ class AgentWorkflowRuntime:
                 "pipeline_version": "pipeline-agent",
             },
         )
-
-
-@lru_cache(maxsize=1)
-def get_default_runtime() -> WorkflowRuntime:
-    # Runtime selection is server-owned. The public request schema has no
-    # pipeline field, so a browser cannot force an experimental workflow.
-    from vietnam_legal_agent.config import get_settings
-
-    version = get_settings().agent_pipeline_version
-    if version == "pipeline-agent":
-        return AgentWorkflowRuntime(default_dependencies())  # type: ignore[return-value]
-    if version == "pipeline-v4":
-        from vietnam_legal_agent.agent.v4 import V4WorkflowRuntime
-
-        return V4WorkflowRuntime(default_dependencies())
-    return WorkflowRuntime(default_dependencies())
-
-
-async def stream_chat(
-    *,
-    query: str,
-    user_id: str,
-    conversation_id: str,
-    legacy_session_id: str = "",
-    mode: str = "auto",
-    operation: str = "message",
-    intent_hint: str = "auto",
-    interaction_source: str = "composer",
-    replay_metadata: dict[str, Any] | None = None,
-    turn_id: str = "",
-    target_assistant_message_id: int | None = None,
-    runtime: WorkflowRuntime | None = None,
-) -> AsyncIterator[dict[str, Any]]:
-    """Public SSE event generator used by the compatibility API route."""
-
-    selected = runtime or get_default_runtime()
-    request_kwargs: dict[str, Any] = {
-        "query": query,
-        "user_id": user_id,
-        "conversation_id": conversation_id,
-        "legacy_session_id": legacy_session_id,
-        "mode": mode,
-    }
-    request_kwargs.update(
-        operation=operation,
-        intent_hint=intent_hint,
-        interaction_source=interaction_source,
-        replay_metadata=replay_metadata or {},
-        turn_id=turn_id,
-        target_assistant_message_id=target_assistant_message_id,
-    )
-    async for event in selected.stream(**request_kwargs):
-        yield event
-

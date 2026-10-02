@@ -9,6 +9,7 @@ from vietnam_legal_agent.agent.tool_registry import (
     ToolDependencies,
     ask_user_for_clarification,
     evaluate_legal_case,
+    get_tool_dependencies,
     load_conversation_context,
     search_legal_provisions,
     search_web_official,
@@ -80,7 +81,8 @@ class FakeGenerationGateway:
             )
         ]
 
-    async def repair(self, answer: str, documents: list, task_type: str) -> str:
+    async def repair(self, answer: str, documents: list, task_type: str, *, query: str = "") -> str:
+        _ = query
         return answer
 
 
@@ -133,6 +135,55 @@ async def test_search_legal_provisions_returns_grounded_results_for_an_ordinary_
     assert result["total_found"] == 1
     assert result["evidence_sufficient"] is True
     assert result["documents"][0]["metadata"]["legal_anchor"] == "Điều 25"
+
+
+@pytest.mark.asyncio
+async def test_search_legal_provisions_fuses_related_queries_without_losing_distinct_evidence():
+    primary_document = DocumentRecord(
+        content="Điều 48 quy định thanh toán các khoản tiền liên quan khi chấm dứt hợp đồng lao động.",
+        document_id="labor-48",
+        source="legal",
+        metadata={
+            "legal_anchor": "Điều 48",
+            "Dieu": "Điều 48",
+            "source": "Bộ luật Lao động 2019",
+        },
+    )
+    related_document = DocumentRecord(
+        content="Tiền lương phải được trả trực tiếp, đầy đủ và đúng hạn cho người lao động.",
+        document_id="labor-94",
+        source="legal",
+        metadata={
+            "legal_anchor": "Điều 94",
+            "Dieu": "Điều 94",
+            "source": "Bộ luật Lao động 2019",
+        },
+    )
+
+    class QueryAwareRetrieval:
+        def __init__(self):
+            self.queries = []
+
+        async def legal(self, request):
+            self.queries.append(request.query)
+            return [related_document] if "đầy đủ" in request.query else [primary_document]
+
+    deps = get_tool_dependencies()
+    retrieval = QueryAwareRetrieval()
+    deps.retrieval = retrieval
+
+    result = await search_legal_provisions(
+        query="thanh toán lương khi chấm dứt hợp đồng lao động",
+        related_queries=["tiền lương phải trả trực tiếp, đầy đủ, đúng hạn"],
+    )
+
+    assert retrieval.queries == [
+        "thanh toán lương khi chấm dứt hợp đồng lao động",
+        "tiền lương phải trả trực tiếp, đầy đủ, đúng hạn",
+    ]
+    assert result["query_count"] == 2
+    assert {doc["document_id"] for doc in result["documents"]} == {"labor-48", "labor-94"}
+    assert result["evidence_sufficient"] is True
 
 
 @pytest.mark.asyncio

@@ -69,7 +69,8 @@ class HarnessGeneration:
     async def web(self, query: str) -> tuple[str, list[DocumentRecord]]:
         return "Kết quả tìm kiếm web", []
 
-    async def repair(self, answer: str, documents: list, task_type: str) -> str:
+    async def repair(self, answer: str, documents: list, task_type: str, *, query: str = "") -> str:
+        _ = query
         return answer
 
 

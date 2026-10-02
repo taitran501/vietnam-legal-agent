@@ -28,7 +28,7 @@ def _document() -> DocumentRecord:
 
 def test_route_matrix_owns_verification_policy() -> None:
     assert ROUTE_SPECS[RouteType.LEGAL_LOOKUP].verification_policy is VerificationPolicy.LEGAL_CORPUS
-    assert ROUTE_SPECS[RouteType.LEGAL_LOOKUP].max_evidence == 5
+    assert ROUTE_SPECS[RouteType.LEGAL_LOOKUP].max_evidence == 8
     assert ROUTE_SPECS[RouteType.CASE_ASSESSMENT].verification_policy is VerificationPolicy.LEGAL_CORPUS
     assert ROUTE_SPECS[RouteType.COMPLIANCE_CHECKLIST].verification_policy is VerificationPolicy.LEGAL_CORPUS
     assert ROUTE_SPECS[RouteType.RESEARCH_WEB].verification_policy is VerificationPolicy.WEB
@@ -134,6 +134,139 @@ async def test_unsegmented_legal_assertion_is_still_sent_to_claim_verifier(
 
 
 @pytest.mark.asyncio
+async def test_structured_verifier_receives_original_question_for_stage_alignment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _CapturingModel:
+        payload = ""
+        system_prompt = ""
+
+        def with_structured_output(self, _schema):
+            return self
+
+        async def ainvoke(self, messages):
+            self.system_prompt = messages[0][1]
+            self.payload = messages[1][1]
+            return {"supported": True, "reason_code": "ok"}
+
+    import vietnam_legal_agent.infra.llm_instances
+
+    model = _CapturingModel()
+    monkeypatch.setattr(vietnam_legal_agent.infra.llm_instances, "get_llm_smart", lambda: model)
+    question = "Ly hôn, tòa quyết định ban đầu ai trực tiếp nuôi con dựa vào yếu tố nào?"
+
+    result = await StructuredClaimSupportVerifier().verify(
+        "Tòa xem xét điều kiện chăm sóc con [1].",
+        [_document()],
+        query=question,
+    )
+
+    assert result.supported is True
+    assert '"user_question": "' + question + '"' in model.payload
+    assert "procedural stage" in model.system_prompt
+    assert "Scope of the legal regime" in model.system_prompt
+    assert "Citation-bound evidence" in model.system_prompt
+    assert "No invented prerequisites" in model.system_prompt
+    assert "Context references" in model.system_prompt
+    assert "Internal consistency" in model.system_prompt
+    assert "Amounts and components" in model.system_prompt
+    assert "the total is twice the original amount" in model.system_prompt
+    assert "a corrected_answer must be in Vietnamese" in model.system_prompt
+    assert "do not infer that the exception is absent just because" in model.system_prompt
+    assert "Apply an explicit numeric or time threshold directly" in model.system_prompt
+    assert "threshold-based duty has not arisen" in model.system_prompt
+    assert "the narrow claim that this threshold-based duty has not arisen is supported" in model.system_prompt
+    assert "this clause does not establish an entitlement on the stated facts" in model.system_prompt
+    assert "M < N" in model.system_prompt
+
+
+@pytest.mark.asyncio
+async def test_verifier_exposes_only_claim_citations_and_does_not_rescue_with_uncited_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _CapturingRejectingModel:
+        def __init__(self) -> None:
+            self.payload: dict[str, object] = {}
+
+        def with_structured_output(self, _schema):
+            return self
+
+        async def ainvoke(self, messages):
+            import json
+
+            self.payload = json.loads(messages[1][1].partition("\n")[2])
+            return {
+                "supported": False,
+                "unsupported_claim_count": 1,
+                "unsupported_claim_indices": [1],
+                "reason_code": "claim 1 has no support in its citation",
+            }
+
+    cited = DocumentRecord(
+        content="Điều 68 quy định việc hoàn trả trong trách nhiệm bồi thường của Nhà nước.",
+        document_id="unrelated-cited-source",
+        source="legal",
+        metadata={"legal_anchor": "Điều 68"},
+    )
+    uncited = DocumentRecord(
+        content="Tiền lương làm thêm giờ vào ngày thường ít nhất bằng 150% tiền lương giờ thực trả.",
+        document_id="relevant-but-uncited-source",
+        source="legal",
+        metadata={"legal_anchor": "Điều 98"},
+    )
+    import vietnam_legal_agent.infra.llm_instances
+
+    model = _CapturingRejectingModel()
+    monkeypatch.setattr(vietnam_legal_agent.infra.llm_instances, "get_llm_smart", lambda: model)
+
+    result = await StructuredClaimSupportVerifier().verify(
+        "Tiền làm thêm giờ vào ngày thường ít nhất bằng 150% tiền lương giờ thực trả [1].",
+        [cited, uncited],
+    )
+
+    assert result.supported is False
+    claim = model.payload["claims"][0]
+    assert claim["citation_indices"] == [1]
+    assert [item["document_id"] for item in claim["cited_evidence"]] == ["unrelated-cited-source"]
+
+
+@pytest.mark.asyncio
+async def test_verifier_keeps_anaphoric_legal_conclusion_with_its_conditions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _CapturingModel:
+        payload = ""
+
+        def with_structured_output(self, _schema):
+            return self
+
+        async def ainvoke(self, messages):
+            import json
+
+            self.payload = json.loads(messages[1][1].partition("\n")[2])
+            return {"supported": True, "reason_code": "ok"}
+
+    import vietnam_legal_agent.infra.llm_instances
+
+    model = _CapturingModel()
+    monkeypatch.setattr(vietnam_legal_agent.infra.llm_instances, "get_llm_smart", lambda: model)
+    answer = (
+        "Nếu bên có nghĩa vụ chậm trả tiền thì phải trả lãi trên số tiền chậm trả [1]. "
+        "Do đó, bên vay phải trả khoản lãi này."
+    )
+
+    await StructuredClaimSupportVerifier().verify(
+        answer,
+        [_document()],
+        query="Khoản vay quá hạn có phải trả lãi không?",
+    )
+
+    assert len(model.payload["claims"]) == 1
+    assert "Nếu bên có nghĩa vụ chậm trả tiền" in model.payload["claims"][0]["text"]
+    assert "Do đó, bên vay phải trả khoản lãi này" in model.payload["claims"][0]["text"]
+
+
+@pytest.mark.asyncio
 async def test_verbatim_source_clause_is_not_rejected_as_too_general(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -174,6 +307,50 @@ async def test_verbatim_source_clause_is_not_rejected_as_too_general(
     assert result.unsupported_claim_count == 0
     assert result.unsupported_claim_indices == []
     assert result.reason_code == "explicit_source_match"
+
+
+@pytest.mark.asyncio
+async def test_verbatim_quote_does_not_rescue_an_unsupported_claim_introducing_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _RejectingModel:
+        def with_structured_output(self, _schema):
+            return self
+
+        async def ainvoke(self, _messages):
+            return {
+                "supported": False,
+                "unsupported_claim_count": 1,
+                "unsupported_claim_indices": [1],
+                "reason_code": "Claim 1 applies a third-party property-return rule to a seller refund.",
+                "verification_status": "unsupported_claim",
+            }
+
+    import vietnam_legal_agent.infra.llm_instances
+
+    source = DocumentRecord(
+        content=(
+            'Điều 582. Quyền yêu cầu người thứ ba hoàn trả. '
+            '"Trường hợp người chiếm hữu, người sử dụng tài sản mà không có căn cứ pháp luật '
+            'đã giao tài sản cho người thứ ba thì khi bị chủ sở hữu, chủ thể có quyền khác '
+            'đối với tài sản yêu cầu hoàn trả, người thứ ba có nghĩa vụ hoàn trả tài sản đó".'
+        ),
+        document_id="civil-code-582",
+        source="legal",
+        metadata={"legal_anchor": "Điều 582"},
+    )
+    monkeypatch.setattr(vietnam_legal_agent.infra.llm_instances, "get_llm_smart", lambda: _RejectingModel())
+    answer = (
+        'Bạn có quyền yêu cầu hoàn trả tiền đã thanh toán nếu bên bán không giao hàng theo thỏa thuận, '
+        'theo Điều 582 Bộ luật Dân sự: "Trường hợp người chiếm hữu, người sử dụng tài sản mà không có '
+        'căn cứ pháp luật đã giao tài sản cho người thứ ba thì khi bị chủ sở hữu, chủ thể có quyền khác '
+        'đối với tài sản yêu cầu hoàn trả, người thứ ba có nghĩa vụ hoàn trả tài sản đó" [1].'
+    )
+
+    result = await StructuredClaimSupportVerifier().verify(answer, [source])
+
+    assert result.supported is False
+    assert result.verification_status is VerificationStatus.UNSUPPORTED_CLAIM
 
 
 @pytest.mark.asyncio
@@ -266,7 +443,14 @@ async def test_claim_verifier_receives_each_numbered_list_item(
 @pytest.mark.asyncio
 async def test_legacy_no_evidence_reason_is_not_promoted_to_supported() -> None:
     class _LegacyVerifier:
-        async def verify(self, _answer: str, _documents: list[DocumentRecord]) -> ClaimSupportResult:
+        async def verify(
+            self,
+            _answer: str,
+            _documents: list[DocumentRecord],
+            *,
+            query: str = "",
+        ) -> ClaimSupportResult:
+            _ = query
             return ClaimSupportResult(supported=False, reason_code="no_evidence_for_claims")
 
     valid, reason, _fallback, _citations = await AgentGuardrails.check_output(
@@ -391,6 +575,7 @@ async def test_critic_receives_versioned_lookup_scope_and_current_status_request
     assert model.payloads[1]["source_version_only"] is False
     assert all("giới hạn bằng chứng" in prompt for prompt in model.system_prompts)
     assert all("phải được approved = True" in prompt for prompt in model.system_prompts)
+    assert all("phạm vi của chủ thể, loại giao dịch" in prompt for prompt in model.system_prompts)
 
 
 @pytest.mark.asyncio
@@ -421,7 +606,14 @@ class _SequenceVerifier:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def verify(self, _answer: str, _documents: list[DocumentRecord]) -> ClaimSupportResult:
+    async def verify(
+        self,
+        _answer: str,
+        _documents: list[DocumentRecord],
+        *,
+        query: str = "",
+    ) -> ClaimSupportResult:
+        _ = query
         self.calls += 1
         return ClaimSupportResult(supported=self.calls == 1)
 

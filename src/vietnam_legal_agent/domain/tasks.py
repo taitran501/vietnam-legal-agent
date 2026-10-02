@@ -83,11 +83,26 @@ def detect_legal_domain(query: str) -> str:
     when no domain has a clear signal.  Used to pick the case engine for the
     closed V4 assessment path; it is a hint, not a hard gate.
     """
-    q = _fold(query)
+    original = unicodedata.normalize("NFC", _normalise(query))
+    has_diacritics = any(
+        unicodedata.combining(char)
+        for char in unicodedata.normalize("NFD", query or "")
+    )
+    q = original if has_diacritics else _fold(query)
     best = "general"
     best_hits = 0
     for domain, signals in LEGAL_DOMAIN_SIGNALS.items():
-        hits = sum(1 for signal in signals if _fold(signal) in q)
+        hits = 0
+        for signal in signals:
+            if not has_diacritics and domain == "marriage_family" and signal in {"vợ", "chồng"}:
+                # Accent folding makes "vỡ" collide with "vợ" and "chóng"
+                # with "chồng". The compound "vợ chồng" remains available
+                # for unaccented queries; these ambiguous single words need
+                # their diacritics or a second family-law signal.
+                continue
+            candidate = unicodedata.normalize("NFC", signal.casefold()) if has_diacritics else _fold(signal)
+            if re.search(rf"(?<!\w){re.escape(candidate)}(?!\w)", q):
+                hits += 1
         if hits > best_hits:
             best, best_hits = domain, hits
     return best

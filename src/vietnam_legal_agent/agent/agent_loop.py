@@ -7,8 +7,10 @@ with explicit step budgets, loop detection, and structured trajectory logging.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
+import re
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
@@ -17,10 +19,93 @@ from typing import Any, cast
 from vietnam_legal_agent.agent.agent_prompt import SYSTEM_PROMPT
 from vietnam_legal_agent.agent.planner import AgentBudgetController
 from vietnam_legal_agent.agent.tool_registry import ALL_AGENT_TOOLS
+from vietnam_legal_agent.domain.legal import explicit_anchors
 from vietnam_legal_agent.domain.models import TerminationReason, documents_from_dict
 from vietnam_legal_agent.tools.evidence import build_citations, extract_citation_sources
 
 logger = logging.getLogger(__name__)
+
+_SEARCH_ARTICLE_REF_RE = re.compile(
+    r"\b(?:điều|khoản|điểm|phụ\s+lục)\s+[\w.-]+",
+    flags=re.IGNORECASE,
+)
+_SEARCH_INSTRUMENT_NUMBER_RE = re.compile(
+    r"\b\d{1,5}/\d{4}/(?:NĐ-CP|TT-[A-ZĐ]+|QH\d+|UBTVQH\d+|QĐ-[A-ZĐ]+)\b",
+    flags=re.IGNORECASE,
+)
+
+
+def _prepare_legal_search_args(
+    user_query: str,
+    tool_args: dict[str, Any],
+    retrieval_queries: list[str] | None = None,
+) -> dict[str, Any]:
+    """Preserve user facts and keep hard retrieval anchors user-authored."""
+
+    prepared = dict(tool_args)
+    search_query = str(prepared.get("query") or "").strip()
+    user_anchors = explicit_anchors(user_query)
+    user_articles = {anchor.article.casefold() for anchor in user_anchors if anchor.article}
+    user_document_numbers = {anchor.document_number.casefold() for anchor in user_anchors if anchor.document_number}
+
+    def keep_user_article(match: re.Match[str]) -> str:
+        return match.group(0) if match.group(0).casefold() in user_articles else " "
+
+    def sanitize_search_text(value: str) -> str:
+        sanitized = _SEARCH_ARTICLE_REF_RE.sub(keep_user_article, value)
+        sanitized = _SEARCH_INSTRUMENT_NUMBER_RE.sub(
+            lambda match: match.group(0)
+            if match.group(0).casefold() in user_document_numbers
+            else " ",
+            sanitized,
+        )
+        sanitized = re.sub(r"\b(?:theo|điều|khoản|điểm)\s*$", "", sanitized, flags=re.IGNORECASE)
+        return " ".join(sanitized.split())
+
+    search_query = sanitize_search_text(search_query)
+    normalized_user_query = " ".join(user_query.split())
+    normalized_search_query = " ".join(search_query.split())
+    # Tool-generated search text commonly repeats the complete user question
+    # after a short legal paraphrase. Keep the paraphrase as its own query so
+    # it cannot vote twice in the retrieval fusion step.
+    if normalized_user_query and normalized_user_query.casefold() in normalized_search_query.casefold():
+        search_query = re.sub(
+            re.escape(normalized_user_query),
+            " ",
+            normalized_search_query,
+            flags=re.IGNORECASE,
+        ).strip()
+    else:
+        search_query = normalized_search_query
+    supplemental_queries = [
+        sanitize_search_text(" ".join(str(item or "").split()))
+        for item in (retrieval_queries or [])[:2]
+    ]
+    if user_anchors:
+        prepared["required_anchors"] = [anchor.key() for anchor in user_anchors]
+    else:
+        prepared.pop("required_anchors", None)
+
+    # Search the user's wording independently. A long query formed by joining
+    # it to the agent's paraphrase dilutes lexical matches, while duplicate
+    # paraphrases can otherwise receive multiple votes during rank fusion.
+    prepared["query"] = user_query.strip()
+    query_parts: list[str] = []
+    seen_queries: set[str] = set()
+    # The structured understanding stage has already produced bounded,
+    # complementary rewrites. Keep those ahead of a fresh ad-hoc tool rewrite
+    # so the latter cannot consume a slot needed by the targeted legal query.
+    for part in [*supplemental_queries, search_query]:
+        normalized = " ".join(part.split())
+        key = normalized.casefold()
+        if normalized and key != normalized_user_query.casefold() and key not in seen_queries:
+            seen_queries.add(key)
+            query_parts.append(normalized)
+    if query_parts:
+        prepared["related_queries"] = query_parts[:2]
+    else:
+        prepared.pop("related_queries", None)
+    return prepared
 
 
 @dataclass
@@ -114,7 +199,54 @@ def _tool_result_status(observation: dict[str, Any]) -> tuple[str, str | None]:
     return "completed", None
 
 
-def _compact_observation_for_agent(tool_name: str, observation: dict[str, Any]) -> dict[str, Any]:
+def _evidence_identity(document: dict[str, Any]) -> str:
+    metadata = dict(document.get("metadata") or {})
+    source = str(document.get("source") or metadata.get("source_kind") or "legal")
+    if source == "web":
+        url = str(metadata.get("official_url") or metadata.get("url") or "").strip().rstrip("/").casefold()
+        if url:
+            return f"web:{url}"
+    document_id = str(
+        document.get("document_id")
+        or metadata.get("chunk_id")
+        or metadata.get("source_document_id")
+        or metadata.get("id")
+        or ""
+    ).strip()
+    if document_id:
+        return f"{source}:{document_id}"
+    content = str(document.get("content") or document.get("page_content") or "").strip()
+    return f"{source}:sha256:{hashlib.sha256(content.encode('utf-8')).hexdigest()}"
+
+
+def _append_evidence_documents(
+    all_evidence: list[dict[str, Any]],
+    documents: list[dict[str, Any]],
+) -> list[int]:
+    """Append distinct evidence and return its stable global citation indices."""
+
+    known_indices = {
+        _evidence_identity(document): index
+        for index, document in enumerate(all_evidence, start=1)
+    }
+    citation_indices: list[int] = []
+    for document in documents:
+        identity = _evidence_identity(document)
+        index = known_indices.get(identity)
+        if index is None:
+            all_evidence.append(document)
+            index = len(all_evidence)
+            known_indices[identity] = index
+        citation_indices.append(index)
+    return citation_indices
+
+
+def _compact_observation_for_agent(
+    tool_name: str,
+    observation: dict[str, Any],
+    *,
+    citation_indices: list[int] | None = None,
+) -> dict[str, Any]:
     """Trim excessive text and verbose metadata from observations to preserve token budget."""
     if not isinstance(observation, dict):
         return observation
@@ -122,7 +254,7 @@ def _compact_observation_for_agent(tool_name: str, observation: dict[str, Any]) 
     # For document retrieval, keep essential statutory identifiers and concise content excerpts
     if "documents" in observation and isinstance(observation["documents"], list):
         compacted_docs = []
-        for doc in observation["documents"][:4]:
+        for local_index, doc in enumerate(observation["documents"][:4]):
             if not isinstance(doc, dict):
                 continue
             content = str(doc.get("content") or doc.get("page_content") or "")[:800]
@@ -141,6 +273,11 @@ def _compact_observation_for_agent(tool_name: str, observation: dict[str, Any]) 
                 "metadata": essential_meta,
                 "document_id": doc.get("document_id", ""),
                 "score": doc.get("score"),
+                "citation_index": (
+                    citation_indices[local_index]
+                    if citation_indices and local_index < len(citation_indices)
+                    else local_index + 1
+                ),
             })
         return {
             **{k: v for k, v in observation.items() if k != "documents"},
@@ -188,6 +325,9 @@ class VietnameseLegalAgentRunner:
         history_summary: str = "",
         mode: str = "auto",
         trace_id: str = "",
+        require_legal_evidence: bool | None = None,
+        retrieval_queries: list[str] | None = None,
+        search_user_query: str | None = None,
         is_cancelled: CancellationCheck | None = None,
     ) -> AgentRunResult:
         """Execute the agent loop synchronously and return the complete result."""
@@ -199,6 +339,9 @@ class VietnameseLegalAgentRunner:
             history_summary=history_summary,
             mode=mode,
             trace_id=trace_id,
+            require_legal_evidence=require_legal_evidence,
+            retrieval_queries=retrieval_queries,
+            search_user_query=search_user_query,
             is_cancelled=is_cancelled,
         ):
             if event.get("type") == "agent_complete":
@@ -226,6 +369,9 @@ class VietnameseLegalAgentRunner:
         history_summary: str = "",
         mode: str = "auto",
         trace_id: str = "",
+        require_legal_evidence: bool | None = None,
+        retrieval_queries: list[str] | None = None,
+        search_user_query: str | None = None,
         is_cancelled: CancellationCheck | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Execute the agent loop, streaming step status events and final result."""
@@ -241,6 +387,7 @@ class VietnameseLegalAgentRunner:
             active_case=active_case,
             history_summary=history_summary,
             mode=mode,
+            retrieval_queries=retrieval_queries,
         )
 
         step = 0
@@ -280,13 +427,30 @@ class VietnameseLegalAgentRunner:
             tool_calls = getattr(response, "tool_calls", None) or []
             if not tool_calls:
                 answer = str(getattr(response, "content", "") or "").strip()
-                # If answering a legal question without any evidence retrieved, nudge agent to search
+                # Routes that require legal evidence must search even if the
+                # model emits a short draft; answer length is not a proxy for
+                # whether the user asked a substantive legal question.
+                legacy_should_search = (
+                    require_legal_evidence is None
+                    and len(answer) > 40
+                    and not any(
+                        w in answer.lower()
+                        for w in (
+                            "xin chào",
+                            "chào bạn",
+                            "hello",
+                            "hi",
+                            "bạn là ai",
+                            "hẹn gặp lại",
+                            "cảm ơn bạn",
+                        )
+                    )
+                )
                 if (
                     not all_evidence
                     and not cache_hit
                     and step < self.config.max_steps - 1
-                    and len(answer) > 40
-                    and not any(w in answer.lower() for w in ("xin chào", "chào bạn", "hello", "hi", "bạn là ai", "hẹn gặp lại", "cảm ơn bạn"))
+                    and (require_legal_evidence is True or legacy_should_search)
                 ):
                     messages.append({
                         "role": "user",
@@ -326,6 +490,12 @@ class VietnameseLegalAgentRunner:
             for tool_call in tool_calls:
                 tool_name = tool_call.get("name", "")
                 tool_args = tool_call.get("args", {}) or {}
+                if tool_name == "search_legal_provisions":
+                    tool_args = _prepare_legal_search_args(
+                        search_user_query or query,
+                        tool_args,
+                        retrieval_queries=retrieval_queries,
+                    )
                 call_id = tool_call.get("id", f"call_{step}_{tool_name}")
 
                 yield {
@@ -407,15 +577,24 @@ class VietnameseLegalAgentRunner:
                     yield {"type": "agent_complete", "result": _cancelled_result(trajectory, all_evidence)}
                     return
 
-                # Track evidence
+                # Give every source a stable global index across all retrieval
+                # calls. Tool-local indexes restart at one and cannot be used
+                # as citations after evidence from multiple searches is joined.
+                citation_indices: list[int] = []
                 if "documents" in observation and isinstance(observation["documents"], list):
-                    all_evidence.extend(observation["documents"])
+                    citation_indices = _append_evidence_documents(
+                        all_evidence,
+                        observation["documents"],
+                    )
                 elif (
                     tool_name == "lookup_answer_cache"
                     and observation.get("hit")
                     and isinstance(observation.get("evidence"), list)
                 ):
-                    all_evidence.extend(observation["evidence"])
+                    citation_indices = _append_evidence_documents(
+                        all_evidence,
+                        observation["evidence"],
+                    )
 
                 # Track cache
                 if tool_name == "lookup_answer_cache" and observation.get("hit"):
@@ -481,7 +660,11 @@ class VietnameseLegalAgentRunner:
                     return
 
                 # Compact observation for message scratchpad to avoid token bloat
-                compacted_obs = _compact_observation_for_agent(tool_name, observation)
+                compacted_obs = _compact_observation_for_agent(
+                    tool_name,
+                    observation,
+                    citation_indices=citation_indices,
+                )
 
                 # Append tool observation to message scratchpad
                 messages.append({
@@ -524,8 +707,27 @@ class VietnameseLegalAgentRunner:
         active_case: dict[str, Any] | None,
         history_summary: str,
         mode: str,
+        retrieval_queries: list[str] | None = None,
     ) -> list[Any]:
         messages: list[Any] = [("system", SYSTEM_PROMPT)]
+        normalized_retrieval_queries = [
+            " ".join(str(item or "").split())[:1000]
+            for item in (retrieval_queries or [])[:2]
+            if " ".join(str(item or "").split())
+        ]
+        if normalized_retrieval_queries:
+            messages.append(
+                (
+                    "system",
+                    (
+                        "<legal_retrieval_query_hints>\n"
+                        "Dùng các cụm dưới đây làm gợi ý cho tool search_legal_provisions; giữ nguyên dữ kiện của người dùng "
+                        "và chỉ dùng chúng để tìm nguồn, không coi chúng là dữ kiện hay kết luận pháp lý.\n"
+                        f"{json.dumps(normalized_retrieval_queries, ensure_ascii=False)}\n"
+                        "</legal_retrieval_query_hints>"
+                    ),
+                )
+            )
         if history or active_case or history_summary:
             context_dict = {
                 "recent_history": [

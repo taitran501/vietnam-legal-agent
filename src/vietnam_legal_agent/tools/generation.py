@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from vietnam_legal_agent.domain.models import DocumentRecord, TaskType
 from vietnam_legal_agent.tools.evidence import (
+    auto_anchor_citations_in_answer,
     propagate_list_item_citations,
     split_answer_sentences,
     verify_citations,
@@ -340,7 +341,14 @@ class GenerationGateway(Protocol):
 
     async def web(self, query: str) -> tuple[str, list[DocumentRecord]]: ...
 
-    async def repair(self, answer: str, documents: list[DocumentRecord], task_type: str) -> str: ...
+    async def repair(
+        self,
+        answer: str,
+        documents: list[DocumentRecord],
+        task_type: str,
+        *,
+        query: str = "",
+    ) -> str: ...
 
 
 class LegalAnswerClaim(BaseModel):
@@ -422,7 +430,10 @@ class EvidenceGenerationGateway:
         if task == TaskType.CHITCHAT:
             return await self.chitchat(query, [])
         if task == TaskType.CASE_ASSESSMENT:
-            return self._compose_assessment(query, facts, documents)
+            synthesized = await self._synthesize_legal_route_answer(query, documents)
+            if synthesized:
+                return synthesized
+            return self._compose_legal_route_answer(documents) or self._compose_assessment(query, facts, documents)
         if task == TaskType.BUILD_COMPLIANCE_CHECKLIST:
             return self._compose_checklist(query, facts, documents)
 
@@ -540,11 +551,27 @@ class EvidenceGenerationGateway:
         lines.append("Các nguồn này nằm ngoài corpus đã duyệt, không được dùng để hoàn tất đánh giá tình huống.")
         return "\n".join(lines), documents
 
-    async def repair(self, answer: str, documents: list[DocumentRecord], task_type: str) -> str:
-        """Return a source-only safe answer when the generated citations fail."""
+    async def repair(
+        self,
+        answer: str,
+        documents: list[DocumentRecord],
+        task_type: str,
+        *,
+        query: str = "",
+    ) -> str:
+        """Regenerate a rejected answer with the original question and evidence."""
 
         if not documents:
             return "Tôi chưa thể xác minh câu trả lời vì chưa có tài liệu hỗ trợ."
+        if query.strip():
+            try:
+                repaired = await self._repair_legal_route_answer(query, answer, documents)
+                repaired = auto_anchor_citations_in_answer(repaired or "", documents)
+                repaired = propagate_list_item_citations(repaired)
+                if repaired.strip():
+                    return repaired
+            except Exception as exc:  # noqa: BLE001 - fall back to source-only text, then final verification
+                logger.warning("Evidence-grounded answer repair failed: %s", type(exc).__name__)
         citation_repaired = propagate_list_item_citations(answer)
         valid, _citations, _reason = verify_citations(citation_repaired, documents, task_type)
         if valid:
@@ -563,6 +590,78 @@ class EvidenceGenerationGateway:
             "Bạn có thể đối chiếu các nguồn sau trước khi đưa ra quyết định:\n"
             + "\n".join(labels)
         )
+
+    @classmethod
+    async def _repair_legal_route_answer(
+        cls,
+        query: str,
+        answer: str,
+        documents: list[DocumentRecord],
+    ) -> str:
+        """Rewrite a rejected answer with the user's question and selected evidence in view."""
+
+        from langchain_core.output_parsers import StrOutputParser
+        from langchain_core.prompts import ChatPromptTemplate
+
+        from vietnam_legal_agent.config import get_settings
+        from vietnam_legal_agent.infra.llm_instances import get_llm_smart
+
+        settings = get_settings()
+        if not settings.openai_api_key or settings.openai_api_key.startswith("your-"):
+            return ""
+
+        context_parts: list[str] = []
+        for index, document in enumerate(documents[:8], start=1):
+            metadata = document.metadata or {}
+            anchor = str(
+                metadata.get("Dieu")
+                or metadata.get("Parent_Dieu")
+                or metadata.get("legal_anchor")
+                or "văn bản được truy xuất"
+            )
+            title = str(metadata.get("source_title") or metadata.get("source") or metadata.get("law_ref") or "")
+            context_parts.append(f"[{index}] {anchor} — {title}\n{(document.content or '')[:8000]}")
+
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    (
+                        "Bạn là trợ lý tra cứu pháp luật Việt Nam đang sửa một bản nháp đã không qua kiểm chứng. "
+                        "Hãy trả lời lại đúng câu hỏi ban đầu, chỉ dựa trên evidence được đưa vào. Bản nháp cũ có thể "
+                        "sai; không cần giữ lại nội dung sai. Đối chiếu đúng chủ thể, sự kiện, giai đoạn thủ tục, "
+                        "điều kiện và kết quả người dùng hỏi. Một quy định cho giai đoạn sau không thay thế quy định "
+                        "cho giai đoạn ban đầu. Nếu evidence không trả lời một phần, nêu rõ giới hạn đó và chỉ trả lời "
+                        "phần có căn cứ; không suy đoán. Với ngưỡng số lượng hoặc thời gian, áp dụng đúng so sánh "
+                        "giữa ngưỡng trong nguồn và dữ kiện câu hỏi; giới hạn kết luận vào điều khoản đó. Không viết "
+                        "kết luận chung rằng không có hoặc có mọi khoản bổ sung khi nguồn chỉ xác nhận một căn cứ; "
+                        "nêu rõ phần nào chưa thể xác định. Gắn citation [n] đúng số evidence vào từng câu pháp lý và "
+                        "từng mục danh sách. Nếu một điều khoản trực tiếp quy định sự kiện và kết quả người dùng hỏi, "
+                        "hãy dùng điều khoản đó làm câu trả lời chính, cite đúng nguồn, và trả lời một lần trong câu "
+                        "ngắn; không nối thêm kết luận 'do đó' chỉ để lặp lại quy tắc. Chỉ kết luận áp dụng cho tình "
+                        "huống người dùng khi đủ điều kiện trong nguồn và dữ kiện họ đã nêu. Không viết [n] placeholder; "
+                        "chỉ dùng chỉ số citation thực tế. Trả về câu "
+                        "trả lời tiếng Việt ngắn gọn, không thêm lời dẫn về quá trình sửa."
+                    ),
+                ),
+                (
+                    "human",
+                    (
+                        "CÂU HỎI NGƯỜI DÙNG:\n{query}\n\n"
+                        "BẢN NHÁP BỊ TỪ CHỐI:\n{answer}\n\n"
+                        "EVIDENCE ĐÃ TRUY XUẤT:\n{context}"
+                    ),
+                ),
+            ]
+        )
+        result = await (prompt | get_llm_smart() | StrOutputParser()).ainvoke(
+            {
+                "query": query[:3000],
+                "answer": (answer or "")[:12000],
+                "context": "\n\n".join(context_parts),
+            }
+        )
+        return str(result or "").strip()
 
     @staticmethod
     def _compose_assessment(query: str, facts: dict[str, str], documents: list[DocumentRecord]) -> str:
@@ -608,11 +707,9 @@ class EvidenceGenerationGateway:
             )
 
         context_parts = []
-        # Match the route contract: ordinary lookups may pass five sources,
-        # while explain/compare can pass six. Silently truncating at four
-        # dropped the relevant fifth result from synthesis and caused a
-        # false "the corpus does not say" answer.
-        for index, document in enumerate(documents[:6], start=1):
+        # Keep the complete route evidence set in synthesis. Truncating here
+        # can discard a directly relevant source selected from a later query.
+        for index, document in enumerate(documents[:8], start=1):
             metadata = document.metadata or {}
             anchor = str(metadata.get("Dieu") or metadata.get("Parent_Dieu") or metadata.get("legal_anchor") or "Điều luật")
             source_title = str(metadata.get("source_title") or metadata.get("source") or metadata.get("law_ref") or "Văn bản pháp luật")
@@ -626,11 +723,14 @@ class EvidenceGenerationGateway:
 
         context = "\n".join(context_parts)
         system_prompt = (
-            "Bạn là trợ lý tra cứu pháp luật Việt Nam. Trả lời trực tiếp đúng câu hỏi bằng tiếng Việt rõ ràng, ngắn gọn.\n\n"
+            "Bạn là trợ lý tra cứu pháp luật Việt Nam. Trả lời trực tiếp đúng câu hỏi bằng tiếng Việt rõ ràng, ngắn gọn; giữ ngôn ngữ người dùng, không chuyển câu trả lời tiếng Việt sang tiếng Anh.\n\n"
             f"{source_scope_instruction}"
-            "Chỉ dùng thông tin có trong tài liệu được cung cấp. Gắn chỉ số trích dẫn thực tế như [1], [2] theo đúng thứ tự tài liệu ở trên vào từng câu có nhận định pháp lý; mỗi câu pháp lý và từng mục đánh số/gạch đầu dòng cần citation riêng ngay trên mục đó, không dồn citation ở cuối danh sách; tuyệt đối không viết placeholder như [n]. Khi tóm tắt một danh sách, lược bỏ dòng chỉ nói chung rằng còn quyền/nghĩa vụ khác theo luật hoặc điều lệ nếu người dùng không yêu cầu nguyên văn hay liệt kê đầy đủ; không diễn giải dòng khái quát đó thành một quyền hoặc nghĩa vụ cụ thể. Không biến nghĩa vụ của một chủ thể thành quyền hoặc chế tài của chủ thể khác nếu nguồn không nêu quan hệ đó. Giữ nguyên điều kiện, ngoại lệ, ngưỡng, thời điểm, đối tượng áp dụng và các lựa chọn thay thế nêu trong nguồn; không biến nghĩa vụ có điều kiện thành nghĩa vụ chung. Khi nguồn dẫn chiếu sang điểm hoặc khoản khác, hãy đọc phần được dẫn chiếu rồi nêu ngắn gọn ngoại lệ ngay trong cùng câu với nghĩa vụ. Nếu không thể xác định ngoại lệ, bỏ nhận định tuyệt đối đó hoặc nói rõ giới hạn. Không tự thêm thủ tục, cơ quan tiếp nhận, giấy tờ, phí, thời hạn, ngoại lệ hoặc hướng xử lý nếu tài liệu không nêu. Không suy đoán hiệu lực hiện hành hay sửa đổi về sau khi nguồn không xác nhận.\n\n"
+            "Chỉ dùng thông tin có trong tài liệu được cung cấp. Gắn chỉ số trích dẫn thực tế như [1], [2] theo đúng thứ tự tài liệu ở trên vào từng câu có nhận định pháp lý; mỗi câu pháp lý và từng mục đánh số/gạch đầu dòng cần citation riêng ngay trên mục đó, không dồn citation ở cuối danh sách; tuyệt đối không viết placeholder như [n]. Khi tóm tắt một danh sách, lược bỏ dòng chỉ nói chung rằng còn quyền/nghĩa vụ khác theo luật hoặc điều lệ nếu người dùng không yêu cầu nguyên văn hay liệt kê đầy đủ; không diễn giải dòng khái quát đó thành một quyền hoặc nghĩa vụ cụ thể. Không biến nghĩa vụ của một chủ thể thành quyền hoặc chế tài của chủ thể khác nếu nguồn không nêu quan hệ đó. Giữ nguyên điều kiện, ngoại lệ, ngưỡng, thời điểm, đối tượng áp dụng và các lựa chọn thay thế nêu trong nguồn; không biến nghĩa vụ có điều kiện thành nghĩa vụ chung. Khi nguồn và câu hỏi đều nêu một ngưỡng số lượng hoặc thời gian, hãy so sánh trực tiếp hai giá trị, kết luận trong phạm vi nghĩa vụ gắn với ngưỡng đó và giữ điều kiện có thể làm thay đổi kết quả. Ví dụ logic: nếu nghĩa vụ chỉ phát sinh từ N ngày trở lên và câu hỏi nêu M ngày với M < N, hãy nói nghĩa vụ gắn với ngưỡng đó chưa phát sinh; không suy rộng thành khẳng định rằng không có biện pháp pháp lý nào khác. Không kết luận chung rằng một bên không phải trả thêm bất kỳ khoản nào nếu nguồn chỉ mô tả một căn cứ; hãy giới hạn kết luận vào căn cứ đã trích dẫn và nói rõ khi nguồn chưa làm rõ căn cứ riêng khác. Khi nguồn dẫn chiếu sang điểm hoặc khoản khác, hãy đọc phần được dẫn chiếu rồi nêu ngắn gọn ngoại lệ ngay trong cùng câu với nghĩa vụ. Nếu không thể xác định ngoại lệ, bỏ nhận định tuyệt đối đó hoặc nói rõ giới hạn. Không tự thêm thủ tục, cơ quan tiếp nhận, giấy tờ, phí, thời hạn, ngoại lệ hoặc hướng xử lý nếu tài liệu không nêu. Không suy đoán hiệu lực hiện hành hay sửa đổi về sau khi nguồn không xác nhận.\n\n"
             "Không tự gán vai trò của người dùng hoặc bên còn lại vào thuật ngữ pháp lý trong nguồn. Ví dụ, chỉ gọi ai là bên đặt cọc, bên nhận đặt cọc, người lao động, người sử dụng lao động, bên mua hoặc bên bán khi câu hỏi và tài liệu xác định rõ vai trò đó. Nếu chưa rõ, dùng thuật ngữ pháp lý trung tính và nêu điều kiện áp dụng thay vì đoán.\n\n"
             "Trước khi soạn, đối chiếu tiêu đề và điều kiện áp dụng của từng nguồn với đúng giai đoạn, thủ tục và tình huống trong câu hỏi. Nếu nguồn nói về một giai đoạn khác (ví dụ thay đổi quyết định sau này thay vì quyết định ban đầu), không dùng quy tắc đó làm câu trả lời chính. Chỉ nêu quy tắc gần kề nếu nói rõ giới hạn áp dụng.\n\n"
+            "Giữ nguyên phạm vi của chủ thể, loại giao dịch, ngành nghề, tư cách pháp lý và điều kiện được nêu trong nguồn; không khái quát quy tắc giới hạn cho một nhóm thành quyền/nghĩa vụ chung. Khi điều khoản dẫn chiếu hoặc quy định mặc định cho trường hợp không có thỏa thuận, đọc đúng nội dung được cung cấp và không tự thêm điều kiện từ quy định khác. Gắn citation vào nguồn trực tiếp hỗ trợ nhận định đó.\n\n"
+            "Với câu hỏi đơn giản về một quyền, nghĩa vụ hoặc kết quả pháp lý, ưu tiên điều khoản trực tiếp quy định sự kiện và kết quả đó. Trả lời bằng quy tắc trực tiếp trong một câu có citation; không thêm một câu kết luận 'do đó' chỉ để lặp lại cùng quy tắc. Chỉ áp dụng quy tắc cho tình huống người dùng khi nguồn nêu đủ điều kiện và dữ kiện họ đã cung cấp đáp ứng các điều kiện ấy.\n\n"
+            "Với khoản tiền gồm nhiều cấu phần, phân biệt khoản hoàn gốc với phần phải trả thêm. Giữ đủ từng cấu phần và nêu đúng tổng số; không lược bỏ khoản tiền bổ sung rồi phủ nhận kết quả tương đương.\n\n"
             "Nếu người dùng chỉ hỏi một điều khoản, tóm tắt đúng phần liên quan trong 1–4 câu; không tạo các mục kết luận, thủ tục hay tài chính nếu không cần. Chỉ dùng tiêu đề khi câu hỏi có nhiều vấn đề cần phân tích. Nếu nguồn không trả lời phần được hỏi, nêu rõ giới hạn đó thay vì suy diễn.\n\n"
             "TÀI LIỆU ĐÃ TRUY XUẤT:\n"
             f"{context}"
@@ -686,7 +786,7 @@ class EvidenceGenerationGateway:
             )
         if not claims:
             if oversized_indices:
-                references = " ".join(f"[{index}]" for index in oversized_indices[:6])
+                references = " ".join(f"[{index}]" for index in oversized_indices[:8])
                 return (
                     "Tôi tìm thấy tài liệu liên quan, nhưng phần trích xuất quá dài để tóm tắt "
                     "chính xác khi bộ tạo câu trả lời không khả dụng. Bạn có thể mở nguồn để xem "
@@ -703,6 +803,7 @@ class StaticGenerationGateway:
         self.answer_text = answer_text
         self.web_text = "Theo nguồn web, nghĩa vụ cần được kiểm tra thêm [1]."
         self.calls: list[str] = []
+        self.repair_queries: list[str] = []
 
     async def chitchat(self, query: str, history: list[dict[str, Any]]) -> str:
         self.calls.append("chitchat")
@@ -737,6 +838,14 @@ class StaticGenerationGateway:
             )
         ]
 
-    async def repair(self, answer: str, documents: list[DocumentRecord], task_type: str) -> str:
+    async def repair(
+        self,
+        answer: str,
+        documents: list[DocumentRecord],
+        task_type: str,
+        *,
+        query: str = "",
+    ) -> str:
         self.calls.append("repair")
+        self.repair_queries.append(query)
         return EvidenceGenerationGateway._compose_legal_route_answer(documents)

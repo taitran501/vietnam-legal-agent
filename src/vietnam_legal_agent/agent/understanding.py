@@ -76,26 +76,19 @@ class _LegalRetrievalQueries(BaseModel):
     queries: list[str] = Field(min_length=1, max_length=2)
 
 
-_RETRIEVAL_QUERY_PROMPT = """Bạn tạo tối đa hai truy vấn nội bộ ngắn, bổ trợ nhau, để tìm đúng điều khoản pháp luật Việt Nam cho câu hỏi.
+_RETRIEVAL_QUERY_PROMPT = """Tạo tối đa hai cụm truy vấn ngắn để tìm quy định pháp luật áp dụng cho câu hỏi. Đây là từ khóa nội bộ, không phải câu trả lời.
 
-Viết một cụm truy vấn ngắn, khác cách nói của người dùng nhưng giữ đúng vấn đề pháp lý, chủ thể, giai đoạn và kết quả họ hỏi. Xác định chế định pháp lý và vai trò theo ý nghĩa của tình huống; không giữ nguyên nhãn khẩu ngữ như "người mua" nếu thuật ngữ pháp luật phù hợp hơn. Ưu tiên thuật ngữ của quyền/nghĩa vụ được hỏi và sự kiện làm phát sinh chúng. Chuyển chi tiết bối cảnh sang khái niệm pháp lý tương ứng khi nó làm thay đổi quy định áp dụng, tránh để cách diễn đạt đời thường kéo truy vấn sang chế định lân cận.
+Giữ nguyên sự kiện, chủ thể, thời điểm, điều kiện và kết quả người dùng hỏi. Dùng thuật ngữ pháp lý thông dụng hoặc tiêu đề chế định khi phù hợp, nhưng không đổi sự kiện sang một vi phạm, quyền hoặc biện pháp khắc phục khác. Không tự thêm kết luận, điều luật, số hiệu văn bản hay dữ kiện.
 
-Ví dụ chuyển đổi:
-- "mua hàng online nhận sản phẩm lỗi, người mua có quyền gì" -> "quyền của người tiêu dùng khi nhận hàng hóa có khuyết tật trong giao dịch từ xa".
-- "bị cho nghỉ việc không báo trước" -> "đơn phương chấm dứt hợp đồng lao động, nghĩa vụ báo trước và quyền của người lao động".
-- "ba mẹ ly hôn thì con ở với ai" -> "giao con cho một bên trực tiếp nuôi khi cha mẹ ly hôn, quyền lợi mọi mặt của con".
-- "Luật bảo vệ quyền lợi người tiêu dùng quy định những quyền cơ bản nào" -> ["quyền của người tiêu dùng trong giao dịch hàng hóa và dịch vụ", "người tiêu dùng quyền an toàn sức khỏe thông tin lựa chọn"].
+Với câu hỏi kể một tình huống, mỗi truy vấn phải giữ được hành vi hoặc sự kiện đang tranh chấp và kết quả người dùng muốn biết. Giữ lại trong ít nhất một truy vấn thuật ngữ cụ thể chỉ hành vi hoặc cơ chế người dùng nêu; không thay nó bằng một vấn đề gần nghĩa rộng hơn (chẳng hạn, không đổi việc bị từ chối bảo hành thành câu hỏi chung về hàng hóa có lỗi). Chuyển cách nói đời thường sang cách diễn đạt pháp lý tương đương, nhưng đừng rút truy vấn thành nhãn lĩnh vực hoặc kênh giao dịch chung chung như "quyền người tiêu dùng" hay "mua hàng online". Nếu hình thức giao dịch có thuật ngữ pháp lý tương ứng, dùng thuật ngữ đó cùng với hành vi đang tranh chấp (ví dụ, đơn hàng online của người tiêu dùng có thể được tra dưới cụm "giao dịch từ xa" hoặc "giao dịch trên không gian mạng"). Nếu câu hỏi nêu một bên chấm dứt hợp đồng trước hạn, giữ cả hành vi chấm dứt và mốc trước hạn trong cụm từ tra cứu.
 
-Nếu câu hỏi hẹp, chỉ trả về một truy vấn. Nếu câu hỏi bao quát nhiều quyền/nghĩa vụ hoặc nhiều căn cứ có thể áp dụng, có thể trả về hai cụm tìm kiếm ngắn khác nhau về từ khóa nhưng cùng nhắm một câu hỏi; một cụm nên dùng tên chế định/tiêu đề pháp lý, cụm kia dùng các khái niệm nội dung phân biệt. Không lặp lại cùng truy vấn bằng cách đổi vài từ.
+Không đổi quan hệ pháp lý hoặc vai trò các bên chỉ vì một từ có nhiều nghĩa gần nhau. Giữ rõ ai trả tiền, ai có nghĩa vụ thực hiện, việc gì chưa được thực hiện và người dùng hỏi kết quả nào; tránh biến nghĩa vụ giữa bên mua và bên bán thành quan hệ vận chuyển, gửi giữ hoặc hoàn trả tài sản của người thứ ba nếu câu hỏi không nêu các quan hệ đó.
 
-Với câu hỏi liệt kê một nhóm quyền/nghĩa vụ, không chỉ lặp lại cụm "quyền cơ bản" hoặc tên luật. Hãy thêm các khái niệm nội dung đặc trưng thường xuất hiện trong chính quy định được hỏi (ví dụ an toàn, thông tin, lựa chọn đối với quyền người tiêu dùng). Không chèn mọi từ khóa liên quan nếu chúng dẫn sang một luật khác.
+Khi câu hỏi kể tình huống và hỏi về một hành vi hoặc kết quả cụ thể, trả về hai truy vấn bổ trợ thay vì gộp mọi chi tiết vào một câu rộng: truy vấn thứ nhất ngắn, giữ gần cách nói và sự kiện của người dùng; truy vấn thứ hai dùng cụm từ pháp lý ngắn nhắm điều khoản vận hành trực tiếp kết quả họ hỏi, trong đúng quan hệ pháp lý và kèm điều kiện phát sinh quyền/nghĩa vụ nếu có. Ở truy vấn thứ hai, ưu tiên chủ thể và động từ nghĩa vụ thường dùng trong chính quy định áp dụng; không tự thêm loại hợp đồng hoặc đổi vai trò các bên chỉ để truy vấn nghe trang trọng hơn. Không lặp lại cùng một cụm từ bằng vài từ đồng nghĩa, không chất chồng từ khóa chung, và không thay kết quả cụ thể người dùng hỏi bằng một trách nhiệm chung trong lĩnh vực đó. Nếu câu hỏi phụ thuộc điều kiện hoặc mốc phát sinh quyền/nghĩa vụ còn chưa rõ, giữ nguyên sự chưa rõ đó thay vì giả định.
 
-Nếu câu hỏi có ngưỡng số hoặc tỷ lệ sở hữu, giữ nguyên con số, chủ thể, mẫu số và điều kiện đạt ngưỡng trong truy vấn. Ưu tiên cách diễn đạt pháp lý cho nhóm đủ điều kiện đó; không làm rơi ngưỡng để trả về quyền chung của một loại tài sản hoặc nhóm chủ thể lân cận. Không tự đổi một loại cổ phần hoặc tư cách chủ thể nếu câu hỏi chưa xác định.
-Ví dụ: "cổ đông sở hữu 5% cổ phần có những quyền gì" -> "quyền của cổ đông hoặc nhóm cổ đông sở hữu từ 5% tổng số cổ phần phổ thông trở lên; quyền của cổ đông phổ thông". Đây là cách giữ nguyên ngưỡng để tìm đúng điều kiện áp dụng, không phải kết luận rằng người hỏi đang sở hữu cổ phần phổ thông.
+Khi câu hỏi hỏi về việc thay đổi một thỏa thuận đang có hiệu lực, tìm cả quy tắc sửa đổi thỏa thuận lẫn điều khoản cụ thể người dùng muốn thay đổi. Không mở rộng sang thủ tục hoặc biện pháp khắc phục nếu câu hỏi và vấn đề pháp lý không yêu cầu.
 
-Không suy ra quyền cụ thể chỉ từ phép chuyển thuật ngữ. Nếu chủ thể hoặc tính chất giao dịch còn mơ hồ, chọn thuật ngữ bao quát và giữ lại chi tiết được nêu; không khẳng định thêm dữ kiện. Nếu người dùng hỏi căn cứ quyết định, tìm chính tiêu chí/chuẩn pháp lý quyết định. Đây chỉ là từ khóa tìm nguồn, không phải câu trả lời.
-
-Không trả lời câu hỏi, không tự đặt điều luật/số hiệu văn bản, không đổi sang quyền/nghĩa vụ của chủ thể khác hoặc vấn đề pháp lý gần kề. Trả về đúng một hoặc hai truy vấn theo schema."""
+Trả về đúng một hoặc hai truy vấn theo schema, không kèm giải thích."""
 
 
 
@@ -185,7 +178,11 @@ class StructuredTaskUnderstandingGateway:
             if not result.research_requested:
                 result.research_requested = (result.route == RouteType.RESEARCH_WEB)
             if (
-                result.route in {RouteType.LEGAL_LOOKUP, RouteType.LEGAL_EXPLAIN_COMPARE}
+                result.route in {
+                    RouteType.LEGAL_LOOKUP,
+                    RouteType.LEGAL_EXPLAIN_COMPARE,
+                    RouteType.CASE_ASSESSMENT,
+                }
                 and not explicit_anchors(result.standalone_query or query)
             ):
                 try:

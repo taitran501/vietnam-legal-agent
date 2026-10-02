@@ -9,10 +9,13 @@ import pytest
 from vietnam_legal_agent.agent.agent_loop import AgentRunResult, AgentStep
 from vietnam_legal_agent.agent.runtime import AgentWorkflowRuntime, WorkflowDependencies, get_default_runtime
 from vietnam_legal_agent.domain.models import DocumentRecord, TerminationReason
+from vietnam_legal_agent.domain.tasks import TaskUnderstanding
+from vietnam_legal_agent.domain.verification import VerificationStatus
 from vietnam_legal_agent.tools.evidence import EvidenceEvaluator
 from vietnam_legal_agent.tools.history import ContextSnapshot, HistoryGateway
 from vietnam_legal_agent.tools.legal_readiness import SyntheticReadyLegalReadinessGate
 from vietnam_legal_agent.tools.retrieval import StaticRetrievalGateway
+from vietnam_legal_agent.tools.verifier import ClaimSupportResult
 
 
 class FakeHistory(HistoryGateway):
@@ -45,8 +48,10 @@ class FakeCache:
 class FakeRunner:
     def __init__(self, result: AgentRunResult) -> None:
         self.result = result
+        self.calls: list[tuple[str, dict]] = []
 
     async def stream(self, query: str, **kwargs):
+        self.calls.append((query, kwargs))
         yield {
             "type": "agent_tool_call",
             "step": 1,
@@ -213,6 +218,218 @@ async def test_agent_runtime_successful_stream(agent_deps):
     assert complete["pipeline_version"] == "pipeline-agent"
     assert "[1]" in complete["text"]
     assert len(complete["documents"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_runtime_passes_understanding_retrieval_queries_to_agent(agent_deps):
+    query = "Tôi thuê trọ, chủ nhà giữ cọc khi tôi chuyển đi sớm, có đúng không?"
+    rewrite = "hợp đồng thuê nhà chấm dứt trước hạn xử lý tiền đặt cọc"
+
+    class FakeUnderstanding:
+        async def understand(self, query, history, summary, active_case):
+            return TaskUnderstanding(
+                task_type="case_assessment",
+                route="case_assessment",
+                standalone_query=query,
+                retrieval_queries=[rewrite],
+            )
+
+    agent_deps.understanding = FakeUnderstanding()
+    result = AgentRunResult(
+        answer="Căn cứ về đặt cọc cần được đối chiếu với hợp đồng [1].",
+        termination_reason=TerminationReason.ANSWER_COMPLETE.value,
+        trajectory=[],
+        evidence=[],
+        citations=[],
+        source="legal",
+        steps_taken=1,
+        cache_hit=False,
+    )
+    runner = FakeRunner(result)
+
+    events = [
+        event
+        async for event in AgentWorkflowRuntime(agent_deps, runner=runner).stream(
+            query=query,
+            user_id="u1",
+            conversation_id="retrieval-query-hints",
+        )
+    ]
+
+    assert any(event.get("type") == "response_complete" for event in events)
+    assert runner.calls[0][1]["retrieval_queries"] == [rewrite]
+
+
+@pytest.mark.asyncio
+async def test_agent_runtime_retrieves_again_after_legal_evidence_failure(agent_deps):
+    query = "Tôi cho bạn vay tiền có giấy viết tay, giờ bạn không trả thì có kiện được không?"
+    supported_document = DocumentRecord(
+        content="Điều 466 quy định bên vay tài sản là tiền phải trả đủ tiền khi đến hạn.",
+        document_id="civil-466",
+        source="legal",
+        metadata={
+            "legal_anchor": "Điều 466",
+            "Dieu": "Điều 466",
+            "source": "Bộ luật Dân sự 2015",
+            "source_title": "Bộ luật Dân sự 2015",
+        },
+    )
+    failed_result = AgentRunResult(
+        answer="Có thể kiện.",
+        termination_reason=TerminationReason.ANSWER_COMPLETE.value,
+        trajectory=[],
+        evidence=[],
+        citations=[],
+        source="legal",
+        steps_taken=1,
+        cache_hit=False,
+    )
+    recovered_result = AgentRunResult(
+        answer="Theo Điều 466, bên vay phải trả đủ tiền khi đến hạn [1].",
+        termination_reason=TerminationReason.ANSWER_COMPLETE.value,
+        trajectory=[AgentStep(1, "search_legal_provisions", {"query": "nghĩa vụ trả nợ"}, {}, 10.0, True)],
+        evidence=[supported_document.to_dict()],
+        citations=[],
+        source="legal",
+        steps_taken=2,
+        cache_hit=False,
+    )
+
+    class SequenceRunner:
+        def __init__(self):
+            self.queries = []
+            self.search_user_queries = []
+
+        async def stream(self, agent_query, **kwargs):
+            self.queries.append(agent_query)
+            self.search_user_queries.append(kwargs.get("search_user_query"))
+            yield {
+                "type": "agent_tool_call",
+                "step": 1,
+                "tool": "search_legal_provisions",
+                "args": {"query": agent_query},
+                "trace_id": kwargs.get("trace_id", ""),
+            }
+            yield {
+                "type": "agent_tool_result",
+                "step": 1,
+                "tool": "search_legal_provisions",
+                "status": "completed",
+                "latency_ms": 10.0,
+                "error_code": None,
+                "trace_id": kwargs.get("trace_id", ""),
+            }
+            yield {
+                "type": "agent_complete",
+                "result": failed_result if len(self.queries) == 1 else recovered_result,
+            }
+
+    runner = SequenceRunner()
+    events = [
+        event
+        async for event in AgentWorkflowRuntime(agent_deps, runner=runner).stream(
+            query=query,
+            user_id="u1",
+            conversation_id="loan-recovery",
+        )
+    ]
+
+    complete = next(event for event in events if event.get("type") == "response_complete")
+    assert complete["source"] == "legal"
+    assert complete["citation_error"] == "ok"
+    assert "Điều 466" in complete["text"]
+    assert len(runner.queries) == 2
+    assert query in runner.queries[1]
+    assert "tra cứu lại" in runner.queries[1]
+    assert runner.search_user_queries == [query, query]
+
+
+@pytest.mark.asyncio
+async def test_agent_runtime_uses_verified_evidence_answer_after_agent_repairs_fail(agent_deps):
+    query = "Công ty giữ lại lương tháng cuối của tôi sau khi nghỉ việc. Tôi phải làm sao?"
+    rewrite = "thanh toán tiền lương khi chấm dứt hợp đồng lao động"
+    document = DocumentRecord(
+        content=(
+            "Trong thời hạn 14 ngày làm việc kể từ ngày chấm dứt hợp đồng lao động, "
+            "hai bên có trách nhiệm thanh toán đầy đủ các khoản tiền có liên quan đến quyền lợi của mỗi bên."
+        ),
+        document_id="labor-48",
+        source="legal",
+        metadata={
+            "legal_anchor": "Điều 48",
+            "Dieu": "Điều 48",
+            "source": "Bộ luật Lao động số 45/2019/QH14",
+            "source_title": "Bộ luật Lao động số 45/2019/QH14",
+        },
+    )
+    failed_result = AgentRunResult(
+        answer="Bạn có thể khởi kiện để đòi lương tháng cuối [1].",
+        termination_reason=TerminationReason.ANSWER_COMPLETE.value,
+        trajectory=[],
+        evidence=[document.to_dict()],
+        citations=[],
+        source="legal",
+        steps_taken=1,
+        cache_hit=False,
+    )
+    agent_deps.understanding = type(
+        "FixedUnderstanding",
+        (),
+        {
+            "understand": lambda self, query, history, summary, active_case: asyncio.sleep(
+                0,
+                result=TaskUnderstanding(
+                    task_type="case_assessment",
+                    route="case_assessment",
+                    standalone_query=query,
+                    retrieval_queries=[rewrite],
+                ),
+            )
+        },
+    )()
+
+    class SequenceClaimVerifier:
+        def __init__(self):
+            self.calls = 0
+
+        async def verify(self, answer, documents, *, query=""):
+            self.calls += 1
+            supported = self.calls >= 3
+            return ClaimSupportResult(
+                supported=supported,
+                unsupported_claim_count=0 if supported else 1,
+                reason_code="ok" if supported else "unsupported_claim",
+                verification_status=(
+                    VerificationStatus.VERIFIED if supported else VerificationStatus.UNSUPPORTED_CLAIM
+                ),
+            )
+
+    class SourceBoundGeneration:
+        async def answer(self, task_type, query, documents, facts):
+            return (
+                "Theo Điều 48, hai bên phải thanh toán đầy đủ các khoản tiền liên quan đến quyền lợi "
+                "của mỗi bên trong 14 ngày làm việc kể từ ngày chấm dứt hợp đồng lao động [1]."
+            )
+
+    agent_deps.claim_verifier = SequenceClaimVerifier()
+    agent_deps.generation = SourceBoundGeneration()
+    runner = FakeRunner(failed_result)
+
+    events = [
+        event
+        async for event in AgentWorkflowRuntime(agent_deps, runner=runner).stream(
+            query=query,
+            user_id="u1",
+            conversation_id="evidence-answer-fallback",
+        )
+    ]
+
+    complete = next(event for event in events if event.get("type") == "response_complete")
+    assert complete["source"] == "legal"
+    assert complete["citation_error"] == "ok"
+    assert "14 ngày làm việc" in complete["text"]
+    assert agent_deps.claim_verifier.calls == 3
+    assert runner.calls[0][1]["retrieval_queries"] == [rewrite]
 
 
 @pytest.mark.asyncio

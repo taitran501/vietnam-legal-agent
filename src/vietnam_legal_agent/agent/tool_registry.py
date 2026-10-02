@@ -7,6 +7,7 @@ observations with error isolation and follow-up guidance.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -111,6 +112,7 @@ def _suggest_followup(query: str, assessment: EvidenceAssessment) -> str | None:
 async def search_legal_provisions(
     query: str,
     required_anchors: list[str] | None = None,
+    related_queries: list[str] | None = None,
     top_k: int = 5,
 ) -> dict[str, Any]:
     """Tìm kiếm điều khoản trong kho văn bản pháp luật đa lĩnh vực.
@@ -120,11 +122,22 @@ async def search_legal_provisions(
 
     Args:
         query: Câu truy vấn pháp lý tiếng Việt cụ thể về nội dung người dùng cần tra cứu.
-        required_anchors: Danh sách Điều/Khoản cần đối chiếu bắt buộc nếu người dùng nêu rõ (ví dụ: ['Điều 12']).
+        required_anchors: Chỉ dùng Điều/Khoản người dùng đã nêu rõ; không tự suy ra số Điều từ tình huống.
+        related_queries: Các truy vấn bổ sung khác cách diễn đạt nhưng cùng nhắm vấn đề người dùng hỏi.
         top_k: Số lượng văn bản trả về (1-8, mặc định 5).
     """
     deps = get_tool_dependencies()
     raw_required_anchors = list(required_anchors or [])
+    search_queries = [query]
+    seen_queries = {query.casefold()}
+    for candidate in related_queries or []:
+        normalized = " ".join(str(candidate or "").split())[:3000]
+        key = normalized.casefold()
+        if normalized and key not in seen_queries:
+            seen_queries.add(key)
+            search_queries.append(normalized)
+        if len(search_queries) >= 3:
+            break
     request = RetrievalRequest(
         route="legal_lookup",
         issue_id="agent_legal_lookup",
@@ -140,7 +153,49 @@ async def search_legal_provisions(
                 query = f"{query} {extra_terms}".strip()
                 request.query = query
         request.required_anchors = [a.article or a.key() for a in parsed_anchors]
-        docs = await deps.retrieval.legal(request)
+        retrieval_requests = [
+            request.model_copy(update={"query": search_query, "issue_id": f"{request.issue_id}:{index}"})
+            for index, search_query in enumerate(search_queries)
+        ]
+        retrieval_results = await asyncio.gather(
+            *(deps.retrieval.legal(retrieval_request) for retrieval_request in retrieval_requests),
+            return_exceptions=True,
+        )
+        successful_results = [
+            (index, result)
+            for index, result in enumerate(retrieval_results)
+            if not isinstance(result, BaseException)
+        ]
+        if not successful_results:
+            first_error = next(
+                (result for result in retrieval_results if isinstance(result, BaseException)),
+                RuntimeError("all_retrieval_queries_failed"),
+            )
+            raise first_error
+        ranked: dict[str, dict[str, Any]] = {}
+        for result_index, result in successful_results:
+            for rank, document in enumerate(result):
+                digest = hashlib.sha256((document.content or "").strip().encode("utf-8")).hexdigest()
+                metadata = document.metadata or {}
+                identity = str(
+                    metadata.get("chunk_id")
+                    or metadata.get("source_document_id")
+                    or document.document_id
+                    or digest
+                )
+                key = f"{document.source}:{identity}:{digest}"
+                entry = ranked.get(key)
+                if entry is None:
+                    entry = {"document": type(document).from_dict(document.to_dict()), "score": 0.0, "ranks": []}
+                    ranked[key] = entry
+                entry["score"] += 1.0 / (60 + rank + 1)
+                entry["ranks"].append({"query_index": result_index, "rank": rank + 1})
+        docs = []
+        for entry in sorted(ranked.values(), key=lambda item: item["score"], reverse=True):
+            document = entry["document"]
+            document.metadata["multi_query_rrf_score"] = entry["score"]
+            document.metadata["multi_query_ranks"] = entry["ranks"]
+            docs.append(document)
         selected = docs[: max(1, min(top_k, 8))]
         assessment = deps.evidence_evaluator.evaluate(
             query,
@@ -148,10 +203,12 @@ async def search_legal_provisions(
             TaskType.LEGAL_LOOKUP,
             expected_articles={anchor.article for anchor in parsed_anchors if anchor.article} or None,
             expected_anchors=parsed_anchors or None,
+            relevance_queries=search_queries,
         )
         return {
             "documents": [d.to_dict() for d in selected],
             "total_found": len(docs),
+            "query_count": len(search_queries),
             "required_anchors": raw_required_anchors,
             "evidence_sufficient": assessment.sufficient,
             "reason": assessment.reason,
@@ -170,6 +227,7 @@ async def search_legal_provisions(
         return {
             "documents": [],
             "total_found": 0,
+            "query_count": len(search_queries),
             "evidence_sufficient": False,
             "required_anchors": raw_required_anchors,
             "reason": reason,

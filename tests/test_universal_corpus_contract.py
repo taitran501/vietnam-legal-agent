@@ -184,3 +184,34 @@ def test_universal_retriever_scopes_natural_labor_query_to_relevant_statute() ->
     assert results
     assert results[0]["metadata"]["Dieu"].startswith("Điều 25")
     assert all(item["metadata"].get("topic") == "Lao động" for item in results)
+
+
+def test_universal_retriever_keeps_rare_event_and_outcome_terms_under_query_cap() -> None:
+    retriever = UniversalLegalRetriever()
+    if not retriever.is_available:
+        pytest.skip("Universal legal corpus database is not built in this environment.")
+
+    query = "quyền đổi trả hoặc hoàn tiền khi hàng giao bị vỡ hoặc có khuyết tật trong giao dịch từ xa"
+    connection = sqlite3.connect(retriever.db_path)
+    try:
+        terms = retriever._extract_search_terms(query, connection.cursor())
+    finally:
+        connection.close()
+
+    assert len(terms) <= 12
+    assert "vỡ" in terms
+    assert "hoàn" in terms or "tiền" in terms
+    assert "khuyết" in terms or "tật" in terms
+
+
+def test_universal_retriever_finds_general_consumer_quality_provision() -> None:
+    retriever = UniversalLegalRetriever()
+    if not retriever.is_available:
+        pytest.skip("Universal legal corpus database is not built in this environment.")
+
+    results = retriever.search(
+        "nghĩa vụ bảo đảm chất lượng và xử lý hàng hóa không đúng chất lượng trong giao dịch mua bán hàng hóa",
+        limit=10,
+    )
+
+    assert any(item["document_id"] == "19/2023/QH15-art-14" for item in results)

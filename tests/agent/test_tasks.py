@@ -106,6 +106,12 @@ def test_domain_detection_does_not_route_on_a_single_recycling_keyword():
     assert detect_legal_domain("Mức phạt nồng độ cồn khi lái xe là bao nhiêu?") == "traffic"
 
 
+def test_domain_detection_distinguishes_vietnamese_accent_collisions():
+    assert detect_legal_domain("Mình mua hàng online nhưng shop giao sản phẩm bị vỡ") == "general"
+    assert detect_legal_domain("Vợ tôi bị bạo lực gia đình") == "marriage_family"
+    assert detect_legal_domain("Vo chong khong thoa thuan duoc viec chia tai san") == "marriage_family"
+
+
 def test_fact_extraction_does_not_apply_fixed_intake_fields():
     assert extract_facts("Tôi bị công ty chậm trả lương hơn hai tuần") == {}
     assert missing_facts(TaskType.CASE_ASSESSMENT, {"salary_delay": "hơn hai tuần"}) == []

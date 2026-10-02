@@ -2,9 +2,44 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
 from langchain_core.documents import Document
 
 from vietnam_legal_agent.retrieval import ensemble_retrieval
+
+
+@pytest.mark.asyncio
+async def test_universal_retrieval_uses_heuristic_ranking_when_cross_encoder_fails(monkeypatch) -> None:
+    from vietnam_legal_agent.tools import retrieval
+
+    class _UnavailableReranker:
+        unavailable_reason = None
+
+        def rerank(self, *_args):
+            raise RuntimeError("model unavailable")
+
+    monkeypatch.setattr(retrieval, "_get_universal_cross_encoder", lambda _name: _UnavailableReranker())
+    candidates = [
+        {
+            "page_content": "Đặt tiền để bảo đảm theo thủ tục tố tụng hình sự.",
+            "metadata": {"legal_anchor": "Điều 122. Đặt tiền để bảo đảm"},
+        },
+        {
+            "page_content": "Bên vay tài sản là tiền phải trả đủ tiền khi đến hạn.",
+            "metadata": {"legal_anchor": "Điều 466. Nghĩa vụ trả nợ của bên vay"},
+        },
+    ]
+
+    ranked = await retrieval._rerank_universal_candidates(
+        "Khoản vay đến hạn mà bên vay không trả nợ thì tôi có quyền yêu cầu trả tiền vay không?",
+        candidates,
+        model_name="test-model",
+        top_k=2,
+        timeout_ms=100,
+    )
+
+    assert ranked[0]["metadata"]["legal_anchor"].startswith("Điều 466")
+    assert all(item["metadata"]["rerank_fallback"] == "heuristic" for item in ranked)
 
 
 def test_cross_encoder_shadow_does_not_mutate_primary_rerank_scores(monkeypatch) -> None:

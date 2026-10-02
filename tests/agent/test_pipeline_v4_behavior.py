@@ -202,6 +202,36 @@ async def test_case_understanding_conflict_continues_through_ordinary_lookup():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("intent_hint", ["auto", "case_assessment"])
+async def test_personal_case_preserves_model_retrieval_rewrite(intent_hint: str):
+    query = "Tôi mua hàng online, shop giao hàng khác hình và từ chối đổi trả thì quyền của tôi là gì?"
+    rewrite = "quyền của người tiêu dùng khi mua hàng online"
+    history = MemoryHistory()
+    app, retrieval = runtime(history)
+    understanding = StaticTaskUnderstandingGateway(
+        TaskUnderstanding(
+            task_type="case_assessment",
+            route=RouteType.CASE_ASSESSMENT,
+            standalone_query=query,
+            retrieval_queries=[rewrite],
+            confidence=1.0,
+        )
+    )
+    app.deps.understanding = understanding
+
+    state = await app.run(
+        query=query,
+        user_id="v4-user",
+        conversation_id=f"v4-case-retrieval-{intent_hint}",
+        intent_hint=intent_hint,
+    )
+
+    assert state["termination_reason"] == "answer_complete"
+    assert understanding.calls == 1
+    assert [search_query for _kind, search_query in retrieval.calls] == [query, rewrite]
+
+
+@pytest.mark.asyncio
 async def test_v4_reuses_route_understanding_plan_for_delegated_legal_lookup():
     history = MemoryHistory()
     app, retrieval = runtime(history)

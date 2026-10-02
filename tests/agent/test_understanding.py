@@ -85,6 +85,54 @@ async def test_general_rights_question_uses_complementary_focused_search_queries
         "quyền người tiêu dùng với hàng hóa có khuyết tật",
         "trách nhiệm khi cung cấp hàng hóa có khuyết tật",
     ]
+    assert "sự kiện, chủ thể, thời điểm, điều kiện và kết quả" in understanding_module._RETRIEVAL_QUERY_PROMPT
+    assert "Dùng thuật ngữ pháp lý thông dụng hoặc tiêu đề chế định khi phù hợp" in understanding_module._RETRIEVAL_QUERY_PROMPT
+    assert "giữ nguyên sự chưa rõ đó thay vì giả định" in understanding_module._RETRIEVAL_QUERY_PROMPT
+    assert "thay đổi một thỏa thuận đang có hiệu lực" in understanding_module._RETRIEVAL_QUERY_PROMPT
+    assert "Giữ lại trong ít nhất một truy vấn thuật ngữ cụ thể" in understanding_module._RETRIEVAL_QUERY_PROMPT
+    assert "không đổi việc bị từ chối bảo hành thành câu hỏi chung về hàng hóa có lỗi" in understanding_module._RETRIEVAL_QUERY_PROMPT
+    assert "chủ thể và động từ nghĩa vụ thường dùng trong chính quy định áp dụng" in understanding_module._RETRIEVAL_QUERY_PROMPT
+    assert "trả về hai truy vấn bổ trợ thay vì gộp mọi chi tiết vào một câu rộng" in understanding_module._RETRIEVAL_QUERY_PROMPT
+    assert "cổ đông" not in understanding_module._RETRIEVAL_QUERY_PROMPT
+
+
+@pytest.mark.asyncio
+async def test_case_assessment_also_gets_a_legal_retrieval_rewrite(monkeypatch):
+    from vietnam_legal_agent.agent import understanding as understanding_module
+
+    query = "Tôi cho bạn vay tiền, có giấy viết tay ghi ngày trả nhưng không ghi lãi. Quá hạn rồi thì bên vay có phải trả lãi chậm trả không?"
+
+    class PlanModel:
+        async def ainvoke(self, _messages):
+            return TaskUnderstanding(
+                task_type="case_assessment",
+                route=RouteType.CASE_ASSESSMENT,
+                standalone_query=query,
+                retrieval_queries=[],
+            )
+
+    class RewriteModel:
+        async def ainvoke(self, _messages):
+            return {
+                "queries": [
+                    "lãi do chậm thực hiện nghĩa vụ trả tiền khi đến hạn",
+                    "nghĩa vụ trả lãi trên khoản tiền chậm trả khi không có thỏa thuận",
+                ]
+            }
+
+    class Router:
+        def with_structured_output(self, schema):
+            return RewriteModel() if schema is understanding_module._LegalRetrievalQueries else PlanModel()
+
+    monkeypatch.setattr("vietnam_legal_agent.infra.llm_instances.get_llm_router", lambda: Router())
+
+    result = await StructuredTaskUnderstandingGateway().understand(query, [], "", None)
+
+    assert result.route is RouteType.CASE_ASSESSMENT
+    assert result.retrieval_queries == [
+        "lãi do chậm thực hiện nghĩa vụ trả tiền khi đến hạn",
+        "nghĩa vụ trả lãi trên khoản tiền chậm trả khi không có thỏa thuận",
+    ]
 
 
 @pytest.mark.asyncio
