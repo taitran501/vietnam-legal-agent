@@ -1,19 +1,16 @@
 import { useEffect, useState } from 'react';
-import type { CaseState, ChatMessage, SourceDocument, StreamError, WorkflowStep } from '@/types';
+import type { ChatMessage, SourceDocument, StreamError, WorkflowStep } from '@/types';
 import { ChatMessageComponent } from './ChatMessage';
 import { TypingIndicator } from './TypingIndicator';
+import { ReasoningBlock } from './ReasoningBlock';
 import { useAutoScroll } from '@/hooks/useAutoScroll';
 import { Icon } from '@/components/UI/Icon';
 import { errorPresentation } from '@/lib/userCopy';
-import { ActiveCaseProgress } from '@/components/Case/ActiveCaseProgress';
 
 interface MessageListProps {
-  activeCase?: CaseState | null;
   error: StreamError | null;
   isStreaming: boolean;
   messages: ChatMessage[];
-  onOpenCase?: () => void;
-  onContinueCase?: (facts: Record<string, string>, statuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>, taskType: CaseState['task_type']) => Promise<void>;
   onResearch?: (query: string) => void;
   onExport?: (message: ChatMessage) => void;
   onOpenSources: (documents: SourceDocument[], citations: Array<Record<string, unknown>>, focusIndex?: number, preview?: boolean) => void;
@@ -26,12 +23,9 @@ interface MessageListProps {
 }
 
 export function MessageList({
-  activeCase,
   error,
   isStreaming,
   messages,
-  onOpenCase,
-  onContinueCase,
   onResearch,
   onExport,
   onOpenSources,
@@ -54,13 +48,6 @@ export function MessageList({
     isStreaming && Boolean(streamingContent) && (last?.role !== 'assistant' || (last.content?.trim() ?? '') === '');
   const displayedError = error ? errorPresentation(error) : null;
 
-  const effectiveCase = activeCase || visibleMessages.slice().reverse().find((m) => m.workflow?.case_state)?.workflow?.case_state;
-  const hasCaseData = Boolean(
-    effectiveCase && (
-      Object.keys(effectiveCase.facts || {}).length > 0
-      || (effectiveCase.missing_facts || []).length > 0
-    ),
-  );
 
   useEffect(() => {
     if (!error?.retryable) {
@@ -83,21 +70,10 @@ export function MessageList({
         ref={containerRef}
       >
         <div className="mx-auto w-full">
-          {hasCaseData && effectiveCase && (
-            <div className="px-4 pt-4 sm:px-6">
-              <ActiveCaseProgress
-                caseState={effectiveCase}
-                onOpenCase={onOpenCase}
-              />
-            </div>
-          )}
-
           {visibleMessages.map((message, index) => (
             <ChatMessageComponent
               key={`${message.id}-${index}`}
               message={message}
-              onOpenCase={onOpenCase}
-              onContinueCase={message.role === 'assistant' && index === visibleMessages.length - 1 ? onContinueCase : undefined}
               onResearch={message.role === 'assistant' && webResearchReady && message.workflow?.available_actions?.includes('research_web')
                 ? () => onResearch?.(messages[index - 1]?.content || '')
                 : undefined}
@@ -124,7 +100,7 @@ export function MessageList({
                 <div className="ml-0 mt-3 sm:ml-[42px]">
                   {workflowSteps.length > 0 && (
                     <div className="mb-3">
-                      <TypingIndicator message={statusMessage} steps={workflowSteps} />
+                      <ReasoningBlock isStreaming statusMessage={statusMessage} steps={workflowSteps} />
                     </div>
                   )}
                   <div data-testid="streaming-answer" className="whitespace-pre-wrap break-words text-[15px] leading-7 text-[#262d2c] typing-cursor sm:text-base">

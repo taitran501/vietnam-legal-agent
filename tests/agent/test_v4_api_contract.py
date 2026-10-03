@@ -7,53 +7,26 @@ from backend.api.schemas import ChatRequest
 from pydantic import ValidationError
 
 
-def test_v4_request_accepts_intent_source_and_case_patch_without_changing_legacy_shape() -> None:
+def test_v4_request_accepts_normal_chat_intent_without_form_payloads() -> None:
     request = ChatRequest(
-        query="  Tôi là nhà sản xuất bao bì nhựa.  ",
+        query="  Tôi bị công ty chậm trả lương.  ",
         conversation_id="conversation-v4",
         intent_hint="case_assessment",
         interaction_source="quick_action",
-        case_patch={"market_placement": "  vietnam_market  ", "empty": "   "},
     )
 
-    assert request.query == "Tôi là nhà sản xuất bao bì nhựa."
+    assert request.query == "Tôi bị công ty chậm trả lương."
     assert request.operation == "message"
     assert request.intent_hint == "case_assessment"
     assert request.interaction_source == "quick_action"
-    assert request.case_patch == {"market_placement": "vietnam_market"}
+    assert "case_patch" not in ChatRequest.model_fields
+    assert "fact_updates" not in ChatRequest.model_fields
 
 
-def test_v4_request_rejects_invalid_operation_and_identifier() -> None:
+def test_v4_request_rejects_removed_form_operation_and_invalid_identifier() -> None:
     with pytest.raises(ValidationError):
-        ChatRequest(query="Điều 77", operation="not-an-operation")
+        ChatRequest(query="Điều 25", operation="continue_case")
     with pytest.raises(ValidationError):
-        ChatRequest(query="Điều 77", conversation_id="conversation/with/slash")
+        ChatRequest(query="Điều 25", conversation_id="conversation/with/slash")
     with pytest.raises(ValidationError):
-        ChatRequest(query="Điều 77", session_id="anonymous")
-
-
-def test_continue_case_can_be_patch_only_for_legacy_clients() -> None:
-    request = ChatRequest(
-        operation="continue_case",
-        conversation_id="conversation-v4",
-        case_patch={"activity_purpose": "kinh doanh thương mại"},
-    )
-
-    assert request.query == ""
-    assert request.operation == "continue_case"
-    assert request.case_patch["activity_purpose"] == "kinh doanh thương mại"
-
-
-def test_typed_fact_updates_validate_confirmation_status() -> None:
-    request = ChatRequest(
-        operation="continue_case",
-        conversation_id="conversation-v4",
-        fact_updates={"annual_revenue_vnd": {"value": "30000000000", "confirmation_status": "user_confirmed"}},
-    )
-    assert request.fact_updates["annual_revenue_vnd"].confirmation_status == "user_confirmed"
-    with pytest.raises(ValidationError):
-        ChatRequest(
-            operation="continue_case",
-            conversation_id="conversation-v4",
-            fact_updates={"annual_revenue_vnd": {"value": "30000000000", "confirmation_status": "guessed"}},
-        )
+        ChatRequest(query="Điều 25", session_id="anonymous")

@@ -70,12 +70,12 @@ def test_natural_smoke_contract_rejects_wrong_domain_source() -> None:
                 "type": "response_complete",
                 "route": "legal_lookup",
                 "termination_reason": "answer_complete",
-                "text": "Theo Điều 77, trách nhiệm tái chế theo Nghị định 08/2022/NĐ-CP [1].",
+                "text": "Theo Điều 260, người lái xe gây tai nạn nghiêm trọng có thể bị xử lý hình sự [1].",
                 "sources": [
                     {
-                        "source_id": "epr-77",
-                        "anchor": "Điều 77",
-                        "instrument_number": "08/2022/NĐ-CP",
+                        "source_id": "traffic-260",
+                        "anchor": "Điều 260",
+                        "instrument_number": "100/2015/QH13",
                     }
                 ],
             }
@@ -84,8 +84,8 @@ def test_natural_smoke_contract_rejects_wrong_domain_source() -> None:
             "route": "legal_lookup",
             "termination_reason": "answer_complete",
             "source_nonempty": True,
-            "instrument_contains": "59/2020/QH14",
-            "answer_not_contains": ["tái chế"],
+            "instrument_contains": "45/2019/QH14",
+            "answer_not_contains": ["người lái xe"],
         },
     )
 

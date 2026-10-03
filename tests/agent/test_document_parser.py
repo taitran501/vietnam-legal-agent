@@ -1,4 +1,4 @@
-from epr_agent.tools.document_parser import (
+from vietnam_legal_agent.tools.document_parser import (
     parse_contract_clauses,
     parse_document_file,
 )

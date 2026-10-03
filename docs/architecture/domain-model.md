@@ -1,58 +1,29 @@
 # Domain model
 
-## Core contracts
+## Legal chat
+
+The user-facing contract is a conversation containing user and assistant
+messages, source snapshots, citations, and an optional structured result. The
+user may ask a direct legal question, describe a personal situation, request a
+procedure, or continue a prior question in the same chat.
 
 ```mermaid
 classDiagram
-    class CaseFormState {
-        +string form_version
-        +TaskType task_type
-        +FormStatus status
-        +map~string,FactValue~ facts
-        +list~CaseField~ fields
-        +list~string~ missing_facts
-        +map~string,string~ validation_errors
-        +int completed_count
-        +int required_count
+    class Turn {
+        +string turn_id
+        +MessageStatus status
+        +string replay_descriptor
+        +int user_message_id
+        +int assistant_message_id
     }
-    class CaseField {
-        +string key
-        +string label
-        +string group
-        +int display_order
-        +FieldKind kind
-        +bool required
-        +Importance importance
-        +bool missing
-        +string value
-        +string help_text
-        +list options
-    }
-    class FactValue {
-        +string value
-        +FactSource source
-        +ConfirmationStatus confirmation_status
-        +bool verified
-    }
-    class CaseStateV4 {
-        +string schema_version
+    class AgentState {
+        +string query
+        +string route
         +string task_type
-        +string legal_domain
-        +string status
-        +map facts
-        +list missing_facts
-        +map issue_states
-        +AssessmentStatus decision_status
-        +list fields
-        +int completed_count
-        +int required_count
-    }
-    class AssessmentResult {
-        +AssessmentStatus status
-        +string conclusion
-        +list reasons
-        +list assumptions
-        +list next_steps
+        +list evidence
+        +list citations
+        +string outcome
+        +string termination_reason
     }
     class SourceSnapshot {
         +string source_id
@@ -62,50 +33,31 @@ classDiagram
         +string excerpt
         +string effective_status
     }
-    class Turn {
-        +string turn_id
-        +MessageStatus status
-        +string replay_descriptor
-        +int user_message_id
-        +int assistant_message_id
+    class AssessmentResult {
+        +string status
+        +string conclusion
+        +list reasons
+        +list assumptions
+        +list next_steps
     }
-
-    CaseFormState o-- CaseField
-    CaseFormState o-- FactValue
-    CaseStateV4 o-- FactValue
-    CaseStateV4 --> AssessmentResult
-    AssessmentResult o-- SourceSnapshot
-    Turn --> CaseStateV4
+    Turn --> AgentState
+    AgentState o-- SourceSnapshot
+    AgentState --> AssessmentResult
 ```
 
-The diagram describes data ownership, not React functions as object-oriented
-classes. `CaseFormState` is the resolver response; `CaseStateV4` is the
-persisted case contract (with a `legal_domain` field for domain routing);
-presentation fields are hydrated without a migration.
+## Conversation facts and legacy state
 
-## Component responsibility
+Some older conversations contain situation facts and task labels. User-provided
+values remain available as conversational context, while retired form fields
+are discarded. A prior assessment does not force unrelated new questions into
+that workflow.
 
-```mermaid
-flowchart LR
-    Card["GuidedCaseCard\nactive inline form"] --> Draft["useCaseDraft\ndraft + debounce + stale guard"]
-    Draft --> Resolver["case-form API\nserver-owned dependency"]
-    Card --> Fields["CaseFieldList\npure renderer"]
-    Editor["CaseFactsPanel\nsecondary full editor"] --> Fields
-    Card --> Result["WorkflowResultCard\noutcome + next steps"]
-    Result --> Sources["Source drawer\nsource snapshot"]
-```
+## Source and verification boundaries
 
-`GuidedCaseCard` owns the primary journey. `CaseFactsPanel` owns save-for-later
-editing only. `CaseFieldList` never performs API calls. `useCaseDraft` does not
-write sensitive draft data to local or session storage.
-
-## CaseFormResolver implementations
-
-There are two resolver implementations:
-
-- **`CaseFormResolver`** (`src/epr_agent/domain/epr_rules.py`): EPR-specific resolver with dedicated EPR field schemas and validation logic.
-- **`UniversalCaseFormResolver`** (`src/epr_agent/domain/legal_rules.py`): Multi-domain resolver used for all other legal domains (labor, civil/contract, marriage & family, corporate, land, traffic, general).
-
-The tool layer routes to the appropriate resolver based on the detected
-`legal_domain`. EPR cases continue to use the legacy `CaseFormResolver` for
-backward compatibility, while all other domains use `UniversalCaseFormResolver`.
+- The multi-domain corpus is the default legal retrieval source in preview.
+- Optional retrieval adapters must use a reviewed multi-domain corpus before
+  they can be enabled alongside the default corpus.
+- Retrieved material supplies evidence; it does not itself certify that every
+  instrument is current or legally reviewed.
+- Production requires a domain-neutral review and promotion gate. The legacy
+  review manifest does not approve the full multi-domain corpus.

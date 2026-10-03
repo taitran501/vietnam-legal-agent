@@ -18,18 +18,18 @@ from backend.api.upload_validation import (
     read_bounded_upload,
     validate_upload_format,
 )
-from epr_agent.config import get_settings
-from epr_agent.infra import metrics
-from epr_agent.infra.admission import AdmissionUnavailable, get_admission_controller
-from epr_agent.tools.contract_redliner import review_contract_clauses_heuristic, review_contract_with_llm
-from epr_agent.tools.document_drafter import (
+from vietnam_legal_agent.config import get_settings
+from vietnam_legal_agent.infra import metrics
+from vietnam_legal_agent.infra.admission import AdmissionUnavailable, get_admission_controller
+from vietnam_legal_agent.tools.contract_redliner import review_contract_clauses_heuristic, review_contract_with_llm
+from vietnam_legal_agent.tools.document_drafter import (
     CourtPetitionPayload,
     draft_court_petition_form_23,
     draft_safe_deposit_agreement,
     generate_docx_bytes,
 )
-from epr_agent.tools.document_parser import parse_document_file
-from epr_agent.tools.legal_calculators import (
+from vietnam_legal_agent.tools.document_parser import parse_document_file
+from vietnam_legal_agent.tools.legal_calculators import (
     calculate_court_fees,
     calculate_illegal_termination_compensation,
     calculate_land_transfer_taxes,

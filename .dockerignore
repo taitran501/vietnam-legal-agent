@@ -27,6 +27,6 @@ tests
 
 # Readiness verifies the tracked signed legal sources inside the image.
 !data/*.pdf
-# The universal corpus is an explicit optional build artifact, not a runtime
-# image input; download and verify it through scripts/build_universal_index.py.
+# The generated multi-domain database is mounted read-only at runtime after
+# downloading and verifying it with scripts/build_universal_index.py.
 data/corpus/universal_legal/*.parquet

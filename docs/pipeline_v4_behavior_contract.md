@@ -1,87 +1,74 @@
 # Pipeline V4 behavior contract
 
-Pipeline V4 is a server-selected, bounded workflow for Vietnamese legal case
-assessment and compliance checklists. It is the default runtime; the browser
-cannot select a runtime. Two alternative runtimes exist but are not the
-default:
+Pipeline V4 is a server-selected workflow for ordinary Vietnamese legal chat.
+The browser can request a response style such as assessing a situation or
+building a checklist, but those choices do not activate a domain-specific rule
+engine or a required-facts form. All legal requests use the same retrieval,
+evidence assessment, generation, and citation verification path.
 
-- `pipeline-v3` is the legacy runtime. Operators can temporarily roll back
-  with `AGENT_PIPELINE_VERSION=pipeline-v3`, but V3 is no longer actively
-  developed and should be used only for migration debugging.
-- `pipeline-agent` is an autonomous agent runtime with tool-calling and
-  multi-step reasoning. Select it with `AGENT_PIPELINE_VERSION=pipeline-agent`.
+## Runtime and corpus
 
-V4 supports assessment across all legal domains handled by the system:
-labor, civil contract, marriage/family, corporate, land, traffic, EPR, and
-general legal lookup.
+The content-locked Ministry of Justice corpus is the only default source for
+legal chat. Qdrant retrieval is disabled by default and cannot silently
+replace the multi-domain corpus. If the corpus database is missing or invalid,
+the service reports it unavailable.
 
-## Turn contract
+Preview mode supports technical and user-flow validation; it does not grant
+legal approval. Production currently rejects the generated universal corpus
+until it is bundled and passes the release and independent legal-review gates.
 
-`POST /api/v1/chat` keeps the legacy `query`, `conversation_id`, `session_id`,
-and `mode` fields.  V4 adds optional `operation`, `intent_hint`,
-`interaction_source`, and `case_patch` fields. `interaction_source=guided_form`
-identifies the inline assessment/checklist form. The legal-lookup quick action
-still writes an editable draft; assessment and checklist actions open the form
-without inventing a company profile or creating a turn.
+## Request contract
 
-For an assessment or checklist, the workflow is:
+`POST /api/v1/chat` accepts the existing `query`, `conversation_id`,
+`session_id`, and `mode` fields. Optional `operation`, `intent_hint`,
+`interaction_source`, and case fact fields remain for client compatibility.
+New turns do not require `/api/v1/case-form/resolve`, a case drawer, or a
+domain-specific list of missing facts. Legacy case state is normalized to the
+general case type when read or updated; user facts remain available as
+conversation context.
 
-While editing, `POST /api/v1/case-form/resolve` computes visible fields,
-validation errors and dynamic counts without persistence. A guided submit then
-uses one durable chat turn:
+The normal workflow is:
 
 ```text
-validate -> load conversation/case -> understand intent -> resolve and merge typed facts
--> return the full form state OR retrieve evidence per legal issue
--> coverage gate -> deterministic decision -> citation verification -> persist
+validate -> load conversation -> understand intent -> retrieve legal sources
+-> assess evidence -> generate answer -> verify citations -> persist
 ```
 
-An assessment cannot show a result card before all required facts and issues
-are covered. Missing facts yield `needs_information` and a guided card that
-names the number of missing items; the runtime does not ask only for the first
-missing key. Incomplete legal coverage yields `insufficient_evidence`. Neither
-state is an answer-complete assessment. Web research is a user-selected action
-and never infers a company fact. PATCH case remains the compatibility/full
-editor path, not a required step before a guided submit.
+Situation assessment and checklist requests are expressed as ordinary legal
+queries. They may receive a concise clarification when a material ambiguity
+prevents a useful answer, but the agent should answer the parts supported by
+the current sources and facts without waiting for a full form.
 
-## Domain routing
+## Domain interpretation
 
-V4 delegates to `detect_legal_domain()` to classify incoming queries into one
-of eight domains: LABOR, CIVIL_CONTRACT, MARRIAGE_FAMILY, CORPORATE, LAND,
-TRAFFIC, EPR, or GENERAL. Domain-specific evaluation logic (e.g.,
-`evaluate_universal_case()` for labor/civil/marriage/corporate/land/traffic)
-is applied downstream; EPR assessments delegate to `evaluate_assessment()`.
+Domain labels are retrieval hints, not separate assessment engines. The query
+and conversation context select relevant sources; a single keyword must not
+force a domain classification. Every legal topic uses the same multi-domain
+retrieval, evidence assessment, generation, and citation verification path.
 
-## Appendix XXII evidence
+## Evidence and answer delivery
 
-The historical short Appendix summaries remain excluded.  The V4 indexer runs
-`scripts.extract_appendix_xxii` to convert the authoritative DOC through
-LibreOffice and extract PDF table rows with source hash, page, table ID, row
-ID, cell text, and bounding box.  The extractor fails closed.  With V4
-enabled, a missing or invalid extracted file prevents index alias promotion.
-
-The generated file belongs under `artifacts/appendix_xxii.jsonl`, shared by
-the one-shot indexer and backend Compose services.  It is deliberately ignored
-by Git; the source DOC and extraction code are the reproducible inputs. The
-corpus identity canonicalizes the JSONL rows and ignores only the
-converter-specific `PDF_SHA256` field, which can differ between LibreOffice
-versions. `data/corpus_manifest.json` records the resulting Appendix digest;
-the indexer still requires and validates the actual runtime artifact before
-promoting an alias.
+- State statutory citations, deadlines, penalties, and legal effects only when
+  retrieved sources support them.
+- Do not use fixed issue coverage requirements, domain-specific rule-pack
+  conclusions, or prewritten checklists as substitutes for retrieved sources.
+- Treat a user's facts as unverified unless a source independently confirms
+  them.
+- Ask for one clarification only when a missing fact blocks the central part
+  of the answer. Otherwise state the assumption and answer what the sources
+  support.
+- If sources do not support an answer, explain what is missing and offer the
+  configured official-source research action when available.
 
 ## Local checks
 
-Use the project virtual environment for backend checks and run the frontend
-tests outside restrictive filesystem sandboxes when required by Vite/esbuild.
-
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q tests/agent tests/tools
+python -m pytest -q tests/agent tests/tools
 Set-Location frontend-react
 npm run test
 npm run build
 ```
 
-Live retrieval metrics, the Appendix extraction audit, Docker smoke test, and
-full Playwright trajectories are separate acceptance evidence.  Do not claim
-those gates pass until the real local services and official source conversion
-have completed.
+Live retrieval, the universal-corpus audit, Docker smoke tests, and full browser
+trajectories are separate acceptance evidence. Do not claim those gates pass
+until the real services and corpus artifact have completed them.

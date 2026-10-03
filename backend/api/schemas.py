@@ -8,18 +8,6 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
-class ChatFactUpdate(BaseModel):
-    """Typed case patch carried through chat and replay metadata."""
-
-    value: str = Field(default="", max_length=240)
-    confirmation_status: Literal["user_confirmed", "document_verified", "unknown"] = "unknown"
-
-    @field_validator("value", mode="before")
-    @classmethod
-    def clean_value(cls, value: object) -> str:
-        return " ".join(str(value or "").split())[:240]
-
-
 class ChatRequest(BaseModel):
     query: str = Field(default="", max_length=3000, description="User's question")
     conversation_id: str = Field(
@@ -34,14 +22,12 @@ class ChatRequest(BaseModel):
         default="auto",
         description="Explicit workflow mode. Web research is never selected automatically.",
     )
-    operation: Literal["message", "continue_case", "retry", "regenerate"] = "message"
+    operation: Literal["message", "retry", "regenerate"] = "message"
     target_assistant_message_id: int | None = Field(default=None, gt=0)
     intent_hint: Literal[
         "auto", "legal_lookup", "legal_explain_compare", "case_assessment", "compliance_checklist"
     ] = "auto"
-    interaction_source: Literal["composer", "quick_action", "case_panel", "guided_form"] = "composer"
-    case_patch: dict[str, str] = Field(default_factory=dict)
-    fact_updates: dict[str, ChatFactUpdate] = Field(default_factory=dict)
+    interaction_source: Literal["composer", "quick_action"] = "composer"
     replay_metadata: dict[str, object] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -53,11 +39,6 @@ class ChatRequest(BaseModel):
             raise ValueError("target_assistant_message_id is required for retry/regenerate")
         if self.operation not in {"retry", "regenerate"} and self.target_assistant_message_id is not None:
             raise ValueError("target_assistant_message_id is only valid for retry/regenerate")
-        self.case_patch = {
-            str(key): " ".join(str(value).split())[:240]
-            for key, value in self.case_patch.items()
-            if str(value).strip()
-        }
         return self
 
     @field_validator("conversation_id", "session_id", "turn_id")
@@ -87,13 +68,6 @@ class ChatRequest(BaseModel):
                 "identifier must contain only letters, numbers, hyphens, or underscores"
             )
         return v
-
-
-class CaseFormResolveRequest(BaseModel):
-    """Pure case-form request used while a user is editing an inline form."""
-
-    task_type: Literal["assess_epr_obligation", "build_compliance_checklist"] = "assess_epr_obligation"
-    fact_updates: dict[str, ChatFactUpdate] = Field(default_factory=dict)
 
 
 class HealthResponse(BaseModel):

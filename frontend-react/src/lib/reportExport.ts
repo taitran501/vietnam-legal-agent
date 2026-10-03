@@ -32,12 +32,6 @@ function documentAnchor(document: SourceDocument): string {
     || 'Chưa có điều/khoản trong metadata';
 }
 
-function factText(value: unknown): string {
-  if (typeof value === 'string') return value;
-  if (value && typeof value === 'object' && 'value' in value) return String((value as { value?: unknown }).value || '');
-  return String(value || '');
-}
-
 export function buildPreliminaryReport({ answer, timestamp, workflow, documents }: PreliminaryReportInput): string {
   const lines = [
     'BÁO CÁO SƠ BỘ',
@@ -75,13 +69,7 @@ export function buildPreliminaryReport({ answer, timestamp, workflow, documents 
     });
   }
 
-  const facts = Object.entries(workflow.case_state?.facts || {}).filter(([, value]) => factText(value).trim());
-  if (facts.length) {
-    lines.push('', '3. Thông tin doanh nghiệp đã cung cấp', '--------------------------------------', 'Các dữ kiện dưới đây do người dùng cung cấp và chưa được xác minh độc lập:');
-    for (const [key, value] of facts) lines.push(`- ${key}: ${factText(value)}`);
-  }
-
-  lines.push('', '4. Căn cứ tham khảo', '--------------------');
+  lines.push('', '3. Căn cứ tham khảo', '--------------------');
   if (documents.length) {
     documents.forEach((document, index) => {
       lines.push(`[${index + 1}] ${documentTitle(document, index)}`);
@@ -108,7 +96,7 @@ export function downloadPreliminaryReport(input: PreliminaryReportInput): void {
   const anchor = document.createElement('a');
   const stamp = input.timestamp.replace(/[^0-9]+/g, '-').replace(/^-|-$/g, '') || 'report';
   anchor.href = url;
-  anchor.download = `epr-bao-cao-so-bo-${stamp}.txt`;
+  anchor.download = `bao-cao-phap-ly-so-bo-${stamp}.txt`;
   anchor.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }

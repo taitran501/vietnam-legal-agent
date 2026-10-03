@@ -1,6 +1,9 @@
-# ADR 0003: Guided Submit Uses an Atomic Chat Turn
+# Historical ADR 0003: Atomic Guided Submit
 
-- **Status:** accepted
-- **Context:** The old flow issued a PATCH to update the profile and then sent `continue_case` separately, adding an extra request, risking synchronization issues, and creating the impression that users had to save multiple times.
-- **Decision:** The guided form sends typed `fact_updates` directly to `/chat`. The backend validates, merges, persists the case, and evaluates it all within a single durable turn. PATCH is reserved only for the full editor / save-for-later flow and backward compatibility.
-- **Consequences:** Replay descriptors must preserve facts and intent; the transaction boundary is clearer; the form must be locked during submission.
+> Superseded. Guided forms and the separate case workspace were removed; users
+> now describe questions and situations through ordinary chat turns. Kept only
+> as a record of the retired design.
+
+- **Status:** superseded
+- **Historical context:** The previous guided flow accepted structured situation facts in the chat request and persisted them with a separate workspace.
+- **Current contract:** Follow-up context is derived from conversation history. Users can ask without filling or saving a form.

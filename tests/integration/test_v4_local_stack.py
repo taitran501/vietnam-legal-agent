@@ -1,7 +1,7 @@
 """Opt-in real-service tests for the Docker V4 stack.
 
-The default pytest command remains deterministic. Set EPR_RUN_INTEGRATION=1
-and EPR_API_BASE_URL when PostgreSQL, Redis, Qdrant and the backend are up.
+The default pytest command remains deterministic. Set RUN_STACK_INTEGRATION=1
+and LEGAL_AGENT_API_BASE_URL when PostgreSQL, Redis, Qdrant and the backend are up.
 """
 
 from __future__ import annotations
@@ -16,15 +16,15 @@ pytestmark = [pytest.mark.integration, pytest.mark.live]
 
 
 def _enabled() -> bool:
-    return os.getenv("EPR_RUN_INTEGRATION", "0").strip() == "1"
+    return os.getenv("RUN_STACK_INTEGRATION", "0").strip() == "1"
 
 
 @pytest.mark.asyncio
 async def test_real_ready_and_v4_sse_contract() -> None:
     if not _enabled():
-        pytest.skip("set EPR_RUN_INTEGRATION=1 to run against the local Docker stack")
+        pytest.skip("set RUN_STACK_INTEGRATION=1 to run against the local Docker stack")
 
-    base_url = os.getenv("EPR_API_BASE_URL", "http://127.0.0.1:8000")
+    base_url = os.getenv("LEGAL_AGENT_API_BASE_URL", "http://127.0.0.1:8000")
     async with httpx.AsyncClient(base_url=base_url, timeout=30.0) as client:
         ready = await client.get("/api/v1/ready")
         assert ready.status_code == 200, ready.text
@@ -35,7 +35,7 @@ async def test_real_ready_and_v4_sse_contract() -> None:
             "POST",
             "/api/v1/chat",
             json={
-                "query": "Điều 77 quy định gì về trách nhiệm tái chế?",
+                "query": "Bộ luật Lao động quy định thời gian thử việc tối đa bao lâu?",
                 "conversation_id": "integration-v4-sse",
                 "intent_hint": "legal_lookup",
             },
@@ -57,16 +57,16 @@ async def test_real_ready_and_v4_sse_contract() -> None:
 @pytest.mark.asyncio
 async def test_real_trace_is_owner_scoped_and_has_v4_decision_events() -> None:
     if not _enabled():
-        pytest.skip("set EPR_RUN_INTEGRATION=1 to run against the local Docker stack")
+        pytest.skip("set RUN_STACK_INTEGRATION=1 to run against the local Docker stack")
     if os.getenv("ENABLE_TRACE_DEBUG_API", "false").lower() != "true":
         pytest.skip("enable ENABLE_TRACE_DEBUG_API=true for trace endpoint assertions")
 
-    base_url = os.getenv("EPR_API_BASE_URL", "http://127.0.0.1:8000")
+    base_url = os.getenv("LEGAL_AGENT_API_BASE_URL", "http://127.0.0.1:8000")
     async with httpx.AsyncClient(base_url=base_url, timeout=30.0) as client:
         async with client.stream(
             "POST",
             "/api/v1/chat",
-            json={"query": "Điều 77 quy định gì?", "conversation_id": "integration-v4-trace", "intent_hint": "legal_lookup"},
+            json={"query": "Điều 25 Bộ luật Lao động quy định gì?", "conversation_id": "integration-v4-trace", "intent_hint": "legal_lookup"},
         ) as response:
             assert response.status_code == 200
             complete = None

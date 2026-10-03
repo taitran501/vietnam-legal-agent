@@ -1,4 +1,4 @@
-from epr_agent.tracing.trace_context import Span, TraceSession, TraceStore
+from vietnam_legal_agent.tracing.trace_context import Span, TraceSession, TraceStore
 
 
 def test_span_lifecycle():

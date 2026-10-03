@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from epr_agent.agent.guardrails import AgentGuardrails
-from epr_agent.domain.models import DocumentRecord
-from epr_agent.tools.verifier import (
+from vietnam_legal_agent.agent.guardrails import AgentGuardrails
+from vietnam_legal_agent.domain.models import DocumentRecord
+from vietnam_legal_agent.tools.verifier import (
     LegalCriticVerdict,
     StaticClaimSupportVerifier,
     StaticLegalCriticReviewer,
@@ -23,6 +23,7 @@ async def test_critic_verdict_schema() -> None:
     )
     assert verdict.approved is True
     assert verdict.fatal_error is False
+    assert verdict.materially_nonresponsive is False
     assert "Điều 115" in verdict.critique
 
 
@@ -48,6 +49,27 @@ async def test_guardrails_check_output_with_critic_approval() -> None:
     assert valid is True
     assert reason == "ok"
     assert "Điều 115" in final_ans
+    assert len(citations) == 1
+
+
+@pytest.mark.asyncio
+async def test_guardrails_removes_model_citation_placeholder_before_delivery() -> None:
+    doc = DocumentRecord(
+        content="Điều 115 quy định quyền của cổ đông phổ thông.",
+        document_id="doc-1",
+        metadata={"legal_anchor": "Điều 115", "source": "Luật Doanh nghiệp 2020"},
+    )
+
+    valid, reason, final_answer, citations = await AgentGuardrails.check_output(
+        "Theo Điều 115, cổ đông có quyền biểu quyết [n][1].",
+        [doc],
+        query="Cổ đông có quyền gì?",
+        require_evidence=True,
+    )
+
+    assert valid is True
+    assert reason == "ok"
+    assert final_answer == "Theo Điều 115, cổ đông có quyền biểu quyết [1]."
     assert len(citations) == 1
 
 
@@ -78,6 +100,36 @@ async def test_guardrails_check_output_with_critic_fatal_rejection() -> None:
     assert valid is False
     assert reason == "critic_legal_flaw_rejected"
     assert "chưa đạt tiêu chuẩn thẩm định" in fallback
+
+
+@pytest.mark.asyncio
+async def test_guardrails_keeps_claim_verified_answer_with_nonfatal_critic_concern() -> None:
+    doc = DocumentRecord(
+        content="Điều 25 quy định thời gian thử việc tối đa theo từng nhóm công việc. " * 3,
+        document_id="doc-1",
+        metadata={"legal_anchor": "Điều 25", "source": "Bộ luật Lao động 2019"},
+    )
+    answer = "Theo Điều 25, thời gian thử việc được giới hạn theo nhóm công việc [1]."
+    valid, reason, final_answer, _citations = await AgentGuardrails.check_output(
+        answer,
+        [doc],
+        query="Điều 25 quy định gì?",
+        require_evidence=True,
+        claim_verifier=StaticClaimSupportVerifier(supported=True),
+        critic_reviewer=StaticLegalCriticReviewer(
+            verdict=LegalCriticVerdict(
+                approved=False,
+                fatal_error=False,
+                verification_status="unsupported_claim",
+                reason_code="incomplete_answer",
+                critique="The answer could include more detail.",
+            )
+        ),
+    )
+
+    assert valid is True
+    assert reason == "ok"
+    assert final_answer == answer
 
 
 @pytest.mark.asyncio

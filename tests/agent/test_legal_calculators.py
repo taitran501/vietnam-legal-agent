@@ -1,4 +1,4 @@
-from epr_agent.tools.legal_calculators import (
+from vietnam_legal_agent.tools.legal_calculators import (
     calculate_court_fees,
     calculate_illegal_termination_compensation,
     calculate_land_transfer_taxes,

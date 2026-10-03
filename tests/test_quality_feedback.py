@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from backend.api.routes.feedback import QualityReviewRequest
 
-from epr_agent.infra.persistence import PersistenceStore, sqlite_database_url
+from vietnam_legal_agent.infra.persistence import PersistenceStore, sqlite_database_url
 
 
 @pytest.mark.asyncio

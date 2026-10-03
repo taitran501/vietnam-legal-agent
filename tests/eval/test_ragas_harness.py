@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from epr_agent.eval.ragas_evaluator import (
+from vietnam_legal_agent.eval.ragas_evaluator import (
     compute_anchor_accuracy,
     compute_context_recall,
 )

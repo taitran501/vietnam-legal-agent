@@ -3,11 +3,10 @@
 [![CI](https://github.com/taitran501/vietnam-legal-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/taitran501/vietnam-legal-agent/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Vietnamese-first software for preliminary legal research, case analysis, and
-compliance preparation across selected legal domains.
+Vietnamese-first software for preliminary legal research across legal domains.
 
-Vietnam Legal Agent helps a user look up a provision, assess a legal situation,
-or prepare an evidence-linked checklist. It is deliberately bounded: answers
+Vietnam Legal Agent lets a user ask ordinary questions, describe a legal
+situation, or request procedural steps in chat. It is deliberately bounded: answers
 are checked against the active repository-managed corpus, user-provided facts
 remain labelled as unverified, and the workflow can stop when evidence or a
 required dependency is missing.
@@ -26,17 +25,17 @@ required dependency is missing.
   the protected `pilot` environment; it is not implied by pull-request CI.
 - There is no hosted public demo in this repository.
 - Production legal capability remains subject to technical corpus integrity,
-  versioned effective-date metadata, deployment configuration, and external
-  operational gates. The repository does not make a human legal-review record
-  a framework or promotion dependency.
+  versioned effective-date metadata, deployment configuration, and a review
+  record tied to the complete selected corpus hash. The current repository does
+  not contain an approval record for production use of the multi-domain corpus.
 
 ## What it does
 
 | Workflow | User-facing result |
 | --- | --- |
 | Legal lookup | A streamed answer with source citations and a source drawer for comparison. |
-| Case assessment | A guided form that asks for the facts required by the selected task and returns a preliminary assessment. Domain routing via `detect_legal_domain()` sends cases to the appropriate rule engine (7 legal domains + general). |
-| Legal/compliance checklist | A guided list of preparation actions linked to the available evidence. |
+| Legal situation | Ordinary chat using facts the user provides; the assistant can ask one material follow-up question. |
+| Procedure request | A concise, source-linked explanation of supported steps. |
 | Autonomous Agent | Dynamic multi-step reasoning (ReAct loop) with tool calling, budget control ($\le 5$ steps), and layman-friendly query handling. |
 | Follow-up and recovery | Continue an active case, stop a turn, retry a failed turn, or regenerate a persisted answer. |
 | Explicit web research | Search configured official domains only when the user selects the research workflow. |
@@ -62,9 +61,12 @@ confident-looking answer:
 
 ## Scope and limitations
 
-The current product focuses on Vietnamese legal research across selected
-domains, including civil/contracts, labor, corporate, land, traffic, and EPR.
-It does not currently provide:
+The multi-domain preview uses the content-locked Ministry of Justice corpus
+for legal chat across topics. An optional Qdrant collection is disabled by
+default. The production image does not include the generated multi-domain
+index until it passes the release and legal-review gates. The current corpus
+does not provide complete coverage of every law or every legal domain. The
+application does not currently provide:
 
 - document upload or OCR in the browser UI;
 - historical-law date selection;
@@ -75,8 +77,9 @@ It does not currently provide:
 
 ## Quick start: Docker Compose
 
-This is the recommended path for the complete local stack: React, FastAPI,
-PostgreSQL, Redis, Qdrant, and the one-shot corpus indexer.
+This is the recommended path for the local stack: React, FastAPI, PostgreSQL,
+Redis, and the multi-domain corpus. Qdrant is an optional retrieval adapter
+and stays disabled by default.
 
 ### Prerequisites
 
@@ -89,6 +92,14 @@ PostgreSQL, Redis, Qdrant, and the one-shot corpus indexer.
 git clone https://github.com/taitran501/vietnam-legal-agent.git
 cd vietnam-legal-agent
 cp .env.example .env
+```
+
+Build and verify the multi-domain corpus before starting Compose:
+
+```bash
+python -m pip install -e ".[universal]"
+python -m scripts.build_universal_index --download
+python -m scripts.build_universal_index --verify-only
 ```
 
 Edit `.env` before starting Compose:
@@ -107,7 +118,7 @@ deployed environment.
 Start and inspect the stack:
 
 ```bash
-docker compose up -d --build
+docker compose -f docker-compose.yml -f docker-compose.universal-preview.yml up -d --build
 docker compose ps -a
 ```
 
@@ -124,7 +135,7 @@ non-production runtime mode and is not a quality or legal-opinion claim.
 Useful commands:
 
 ```bash
-docker compose logs -f backend indexer
+docker compose logs -f backend
 docker compose ps -a
 docker compose down
 ```
@@ -138,8 +149,7 @@ The Compose services are:
 | `backend` | FastAPI API, bounded workflow, persistence, and readiness checks. |
 | `postgres` | Durable conversation, case, feedback, and run storage. |
 | `redis` | Cache, short-lived context, and rate limiting. |
-| `qdrant` | Legal vector storage. |
-| `indexer` | One-shot corpus audit and immutable index preparation. |
+| Local legal corpus | Content-locked multi-domain SQLite corpus mounted read-only by the backend. |
 
 For the complete preview procedure and promotion boundary, see
 [the local-preview runbook](docs/runbooks/local-preview.md).
@@ -154,11 +164,11 @@ From the repository root, install the development dependencies in a Python
 3.11 environment:
 
 ```bash
-python -m pip install -e ".[dev]"
-python -m scripts.sync_corpus_metadata --check
+python -m pip install -e ".[dev,universal]"
+python -m scripts.build_universal_index --download --verify-only
 python -m pytest -q
-ruff check src/epr_agent backend scripts tests
-mypy src/epr_agent backend
+ruff check src/vietnam_legal_agent backend scripts tests
+mypy src/vietnam_legal_agent backend
 python -m tests.eval.run_eval --suite all
 ```
 
@@ -185,8 +195,8 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-The adapter validates the browser contract, SSE handling, persistence-shaped
-flows, source and case panels, feedback, retries, and safe stops. It is not
+The adapter validates the browser contract, SSE handling, conversation
+history, source display, feedback, retries, and safe stops. It is not
 evidence that a production provider, credential, network policy, or legal
 approval is available.
 
@@ -197,7 +207,8 @@ The workflow in `.github/workflows/ci.yml` runs on pull requests and pushes to
 
 | Job | Checks |
 | --- | --- |
-| `backend` | Corpus metadata sync, pytest, deterministic route evaluation, Ruff, and mypy. |
+| `backend-quality` | Dependency consistency, Ruff, and mypy. |
+| `backend` | Corpus metadata sync, pytest, deterministic route evaluation, and persona simulation. |
 | `frontend` | `npm ci`, ESLint, Vitest, and the production TypeScript/Vite build. |
 | `pilot-load` | Redis-backed two-worker SSE contract: 50 concurrent turns, saturation, and lease cleanup. |
 | `e2e` | Playwright browser tests after the backend and frontend jobs pass. |
@@ -208,6 +219,11 @@ The workflow in `.github/workflows/ci.yml` runs on pull requests and pushes to
 The CI badge above reports the repository workflow. It does not claim legal
 approval, production readiness, uptime, latency, or the availability of
 external providers.
+
+CI currently validates the application but does not deploy it. A staging
+deployment still needs a selected container host for FastAPI and a configured
+frontend/API origin; production promotion should follow a smoke check against
+that deployed staging environment.
 
 ## Configuration and security
 
@@ -224,10 +240,10 @@ Important settings include:
 | `AGENT_PIPELINE_VERSION` | `pipeline-v4` for deterministic bounded workflow; `pipeline-agent` for autonomous ReAct agent loop. |
 | `DATABASE_URL` | PostgreSQL connection; local development may use `HISTORY_DB_PATH` when unset. |
 | `POSTGRES_PASSWORD` | Required by Compose; there is no insecure default. |
-| `QDRANT_URL` / `USE_QDRANT_CLOUD` | Self-hosted or Qdrant Cloud vector storage. |
+| `QDRANT_URL` / `USE_QDRANT_CLOUD` | Optional vector retrieval adapter for a general legal corpus. |
 | `REDIS_URL` | Cache and request-protection backend. |
 | `ENFORCE_LEGAL_SAFETY_CIRCUIT_BREAKER` | Production safety contract; verifier/critic outages fail closed. Must remain `true` in production. |
-| `ENFORCE_LEGAL_READINESS_GATE` / `LEGAL_READINESS_MANIFEST_PATH` | Independent legal-review gate and manifest for the bounded EPR scope. Pending review blocks legal answers but does not stop process startup. |
+| `ENFORCE_LEGAL_READINESS_GATE` / `LEGAL_READINESS_MANIFEST_PATH` | The current review manifest covers only a legacy narrow source. Production is blocked until the multi-domain corpus has a domain-neutral legal review. |
 | `ENABLE_OFFICIAL_DELTA_RETRIEVAL` / `OFFICIAL_DELTA_MANIFEST_PATH` | Preview-only exact-instrument lookup for the small official-law delta; disabled by default. |
 | `AGENT_MAX_IN_FLIGHT_TURNS` / `AGENT_ADMISSION_WAIT_SECONDS` | Deployment-wide agent-turn admission (`50` / `2s` by default). |
 | `AGENT_LEASE_TTL_SECONDS` / `AGENT_LEASE_HEARTBEAT_SECONDS` | Redis lease lifetime and heartbeat for long-running turns (`300s` / `30s`). |
@@ -252,10 +268,9 @@ Common API routes are:
 | --- | --- | --- |
 | `GET` | `/api/v1/health` | Process liveness. |
 | `GET` | `/api/v1/ready` | Dependency, corpus, and capability readiness. |
-| `POST` | `/api/v1/chat` | Stream a question or guided-workflow turn over SSE. |
+| `POST` | `/api/v1/chat` | Stream a natural-language legal question over SSE. |
 | `POST` | `/api/v1/documents/upload` | API-only preview for bounded PDF, DOCX, or UTF-8 TXT parsing; no browser upload UI is included. |
 | `GET` | `/api/v1/sessions` | List conversations owned by the current principal. |
-| `GET/PATCH` | `/api/v1/sessions/{id}/case` | Read or save guided case facts. |
 | `PUT` | `/api/v1/conversations/{id}/messages/{message_id}/feedback` | Save answer feedback. |
 
 Document upload is an API-only preview capability. It accepts a maximum file
@@ -277,16 +292,15 @@ The code and contracts are organised as follows:
 
 ```text
 backend/          FastAPI routes, authentication, configuration, and adapters
-src/epr_agent/    Domain models, workflow, autonomous agent, retrieval, evidence, and persistence
-frontend-react/   React UI, SSE client, guided forms, and browser tests
+src/vietnam_legal_agent/    Domain models, workflow, autonomous agent, retrieval, evidence, and persistence
+frontend-react/   React UI, SSE client, ordinary chat, and browser tests
 scripts/          Corpus synchronization, audit, and indexing utilities
-data/             Corpus manifests, rule pack, and checked-in fixtures
+data/             Multi-domain corpus manifest and versioned evaluation fixtures
 docs/             Architecture, behavior contracts, runbooks, and acceptance notes
 tests/            Unit, contract, integration, evaluation harness, and API tests
 ```
 
-The `src/epr_agent/` namespace is retained for backward compatibility; the
-product supports all legal domains, not just EPR.
+`src/vietnam_legal_agent/` is the primary package namespace for the product.
 
 Start with [docs/README.md](docs/README.md) for the documentation map,
 [the system overview](docs/architecture/system-overview.md),
@@ -299,76 +313,23 @@ replay checks event ordering, trace/context continuity, source payloads, and
 failure artifacts. Fixtures are engineering inputs and never require a legal
 reviewer or become legal ground truth.
 
-## Historical benchmark artifact (not promotion evidence)
+## Evaluation
 
-The repository contains a 50-case exploratory benchmark across six legal
-domains. The checked-in report was generated on **2026-08-19** against the
-`vietnam_legal_collection_v1` collection with the configured
-`darklethelong/vnlegal-lal` embedding model. Cross-encoder reranking is
-configured in shadow mode by default (`CROSS_ENCODER_ROLLOUT_PERCENT=0`), so
-the report must not be read as proof that reranking is active for users.
-
-The report is a reproducibility reference, not a current quality or production
-claim. It predates the replay/evidence contract and reports only a 10%
-LLM-judge gate pass rate, 28% statutory-anchor accuracy, 4.85s average
-retrieval latency, and 8.18s average end-to-end latency. See the raw
-[historical report](data/eval/ragas_benchmark_results.json) and use the
-[replay/evaluation control plane](docs/evaluation/replay-and-triage.md) for
-promotion evidence.
-
-### 1. Retrieval & Ranking Benchmark (50 Statutory Scenarios)
-
-| Metric | Score | Description |
-| :--- | :---: | :--- |
-| **Hit Rate @ 1 (P@1)** | **54.0%** | Relevant statutory provision ranked #1 |
-| **Hit Rate @ 3 (Top-3)** | **66.0%** | Target provision retrieved in Top 3 |
-| **Hit Rate @ 5 (Top-5)** | **68.0%** | Target provision retrieved in Top 5 |
-| **Hit Rate @ 10 (Top-10)** | **80.0%** | Target provision retrieved in Top 10 |
-| **MRR @ 10** | **0.6189** | Mean Reciprocal Rank across all 50 queries |
-| **NDCG @ 3** | **0.5596** | Normalized Discounted Cumulative Gain @ 3 |
-| **NDCG @ 10** | **0.6447** | Normalized Discounted Cumulative Gain @ 10 |
-| **Average retrieval latency (historical report)** | **4.85s** | Environment-specific dense + BM25 benchmark measurement |
-
-### 2. RAGAS Framework Evaluation (End-to-End Legal QA)
-
-Evaluated via LLM-as-a-Judge and statutory citation verification across all 50 scenarios:
-
-| RAGAS Dimension | Score | Description |
-| :--- | :---: | :--- |
-| **Faithfulness (Độ trung thực)** | **83.5%** | Factual claims in the answer supported by retrieved statutory evidence |
-| **Answer Relevance (Độ trúng đích)** | **90.0%** | Direct semantic & legal alignment with the user's inquiry |
-| **Context Precision (Độ chính xác ngữ cảnh)** | **28.5%** | Proportion of top-k retrieved documents containing essential legal grounds |
-| **Context Recall (Độ bao phủ căn cứ)** | **52.0%** | Proportion of expected statutory anchors found in retrieved context |
-| **Statutory Anchor Accuracy** | **28.0%** | Expected statutory anchors present in the generated answer |
-| **Composite RAGAS Score** | **65.0%** | Weighted multi-dimensional legal assistance quality score |
-| **LLM-judge gate pass rate** | **10.0%** | Historical exploratory gate; not a promotion threshold |
-
-### 3. Domain Performance Breakdown (50 Scenarios across 6 Domains)
-
-| Legal Domain | Scenarios | Hit Rate @ 3 | MRR @ 10 | NDCG @ 10 | Faithfulness | Relevance | Composite RAGAS |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Civil & Contracts (Dân sự & Hợp đồng)** | 10 | **80.0%** | **0.7500** | **0.7502** | **93.0%** | **100.0%** | **70.7%** |
-| **Labor & Employment (Lao động & Việc làm)** | 10 | **80.0%** | **0.7367** | **0.7869** | **90.8%** | **97.0%** | **69.8%** |
-| **Corporate & Commercial (Doanh nghiệp & TM)** | 8 | **75.0%** | **0.6875** | **0.6880** | **100.0%** | **100.0%** | **69.1%** |
-| **Marriage & Family (Hôn nhân & Gia đình)** | 7 | **85.7%** | **0.8095** | **0.8217** | **100.0%** | **100.0%** | **74.6%** |
-| **Land & Real Estate (Đất đai & Bất động sản)** | 8 | **37.5%** | **0.3637** | **0.4513** | **69.1%** | **80.0%** | **63.2%** |
-| **Environmental & EPR (Môi trường & EPR)** | 7 | **28.6%** | **0.2857** | **0.2857** | **40.7%** | **55.7%** | **37.9%** |
-
-To reproduce the benchmark locally:
-```bash
-python scripts/run_full_benchmark_and_ragas.py
-```
+The deterministic evaluation fixtures cover legal chat across several
+ordinary domains and verify workflow, source, and citation contracts. They are
+engineering checks, not legal ground truth or a claim of production quality.
+A provider-backed evaluation with reviewed examples is still required before
+making quality or production-readiness claims.
 
 ## Production boundary
 
 A passing build or local preview is not a production release. Before enabling
 production legal capability, the release process must independently verify:
 
-- PostgreSQL, Qdrant, Redis, OpenAI, authentication, HTTPS origins, and
+- PostgreSQL, Redis, OpenAI, authentication, HTTPS origins, and
   request-protection settings;
-- source, amendment, rule-pack, corpus, and immutable-index consistency;
-- versioned source metadata, amendment/rule-pack consistency, and effective-date
-  metadata for the corpus and immutable index;
+- source-manifest hashes, corpus consistency, and versioned effective-date
+  metadata;
 - migrations, ownership isolation, readiness, rollback, monitoring, and
   authenticated browser/API smoke tests.
 

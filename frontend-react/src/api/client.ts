@@ -1,8 +1,25 @@
 import axios, { type AxiosInstance, type AxiosError } from 'axios';
 import { authorizationHeader, handleUnauthorized } from '@/auth/oidc';
 
-// Default to same-origin so Vite dev proxy handles /api consistently.
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+// Leave this empty when the frontend host proxies /api to the backend. Set it
+// to the backend origin only when the deployment intentionally uses separate
+// frontend and API origins.
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+
+export function apiUrl(path: string): string {
+  return `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  for (const [name, value] of Object.entries(authorizationHeader())) {
+    headers.set(name, value);
+  }
+
+  const response = await fetch(apiUrl(path), { ...init, headers });
+  if (response.status === 401) handleUnauthorized();
+  return response;
+}
 
 /**
  * Create configured Axios instance

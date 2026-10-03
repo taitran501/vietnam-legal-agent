@@ -3,11 +3,11 @@ export interface AuthSession {
   expiresAt: number;
 }
 
-const SESSION_KEY = 'epr-oidc-session';
-const STATE_KEY = 'epr-oidc-state';
-const VERIFIER_KEY = 'epr-oidc-verifier';
-const RETURN_TO_KEY = 'epr-oidc-return-to';
-export const AUTH_EXPIRED_EVENT = 'epr-auth-expired';
+const SESSION_KEY = 'vietnam-legal-agent-oidc-session';
+const STATE_KEY = 'vietnam-legal-agent-oidc-state';
+const VERIFIER_KEY = 'vietnam-legal-agent-oidc-verifier';
+const RETURN_TO_KEY = 'vietnam-legal-agent-oidc-return-to';
+export const AUTH_EXPIRED_EVENT = 'vietnam-legal-agent-auth-expired';
 
 function issuer(): string {
   return String(import.meta.env.VITE_OIDC_ISSUER || '').replace(/\/$/, '');

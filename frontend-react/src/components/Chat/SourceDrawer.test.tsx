@@ -11,13 +11,13 @@ describe('SourceDrawer', () => {
       <SourceDrawer
         documents={[
           {
-            page_content: 'Nhà sản xuất, nhập khẩu có trách nhiệm tái chế sản phẩm, bao bì.',
+            page_content: 'Người lao động có trình độ cao đẳng được thử việc tối đa sáu mươi ngày.',
             document_id: 'law-77',
             score: 0.91,
             source: 'legal',
             metadata: {
-              Dieu: 'Điều 77',
-              source: 'Nghị định 08/2022/NĐ-CP',
+              Dieu: 'Điều 25',
+              source: 'Bộ luật Lao động 2019',
               official_url: 'https://vanban.chinhphu.vn/?docid=205092&pageid=27160',
             },
           },
@@ -28,8 +28,8 @@ describe('SourceDrawer', () => {
     );
 
     expect(screen.getByRole('dialog', { name: 'Nguồn tham khảo' })).toBeInTheDocument();
-    expect(screen.getByText('Nghị định 08/2022/NĐ-CP')).toBeInTheDocument();
-    expect(screen.getByText(/Điều 77/)).toBeInTheDocument();
+    expect(screen.getByText('Bộ luật Lao động 2019')).toBeInTheDocument();
+    expect(screen.getByText(/Điều 25/)).toBeInTheDocument();
     expect(screen.queryByText(/Chưa có trong metadata/)).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Mở nguồn/i })).toHaveAttribute('href', 'https://vanban.chinhphu.vn/?docid=205092&pageid=27160');
     expect(screen.queryByText(/Thông tin được cập nhật đến/)).not.toBeInTheDocument();
@@ -119,13 +119,13 @@ describe('SourceDrawer', () => {
       <SourceDrawer
         documents={[
           {
-            page_content: 'Tài liệu đính kèm || 08/2022/NĐ-CP || Điều 77 quy định trách nhiệm tái chế.',
+            page_content: 'Tài liệu đính kèm || 45/2019/QH14 || Điều 25 quy định thời gian thử việc.',
             document_id: 'chunk-77',
             metadata: {
-              source_id: 'nd-08-2022',
-              Source_Title: 'Nghị định số 08/2022/NĐ-CP',
-              Document_Number: '08/2022/NĐ-CP',
-              legal_anchor: 'Điều 77',
+              source_id: 'labor-code-45-2019',
+              Source_Title: 'Bộ luật Lao động 2019',
+              Document_Number: '45/2019/QH14',
+              legal_anchor: 'Điều 25',
             },
           },
         ]}
@@ -135,9 +135,9 @@ describe('SourceDrawer', () => {
     );
 
     expect(screen.getByText(/Tài liệu đính kèm/)).toBeInTheDocument();
-    const marks = screen.getAllByText('Điều 77');
+    const marks = screen.getAllByText('Điều 25');
     expect(marks.some((el) => el.tagName === 'MARK')).toBe(true);
-    expect(screen.getByText(/quy định trách nhiệm tái chế/)).toBeInTheDocument();
+    expect(screen.getByText(/quy định thời gian thử việc/)).toBeInTheDocument();
     expect(screen.queryByText(/\|\|/)).not.toBeInTheDocument();
   });
 

@@ -4,12 +4,12 @@ from types import SimpleNamespace
 
 import pytest
 
-import epr_agent.config
-import epr_agent.retrieval.retrieval
-from epr_agent.domain.legal import explicit_anchors
-from epr_agent.retrieval.official_delta import DEFAULT_MANIFEST_PATH, OfficialDeltaRetriever
-from epr_agent.tools.retrieval import QdrantLegalRetrievalGateway
-from epr_agent.tools.source_provenance import canonical_source_snapshots
+import vietnam_legal_agent.config
+import vietnam_legal_agent.retrieval.retrieval
+from vietnam_legal_agent.domain.legal import explicit_anchors
+from vietnam_legal_agent.retrieval.official_delta import DEFAULT_MANIFEST_PATH, OfficialDeltaRetriever
+from vietnam_legal_agent.tools.retrieval import UniversalLegalRetrievalGateway
+from vietnam_legal_agent.tools.source_provenance import canonical_source_snapshots
 
 
 def test_official_delta_matches_exact_instrument_and_effective_date() -> None:
@@ -82,7 +82,7 @@ def test_official_delta_fails_closed_for_unknown_or_unsupported_queries(query: s
 @pytest.mark.asyncio
 async def test_gateway_uses_exact_official_delta_before_qdrant(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        epr_agent.config,
+        vietnam_legal_agent.config,
         "get_settings",
         lambda: SimpleNamespace(
             enable_official_delta_retrieval=True,
@@ -98,9 +98,9 @@ async def test_gateway_uses_exact_official_delta_before_qdrant(monkeypatch: pyte
     async def _must_not_call_qdrant(*_args, **_kwargs):
         raise AssertionError("exact official delta should be checked before Qdrant")
 
-    monkeypatch.setattr(epr_agent.retrieval.retrieval, "retrieve_legal_async", _must_not_call_qdrant)
+    monkeypatch.setattr(vietnam_legal_agent.retrieval.retrieval, "retrieve_legal_async", _must_not_call_qdrant)
 
-    records = await QdrantLegalRetrievalGateway().legal(
+    records = await UniversalLegalRetrievalGateway().legal(
         "Luật số 08/2026/QH16 có hiệu lực từ ngày nào?"
     )
 
@@ -111,7 +111,7 @@ async def test_gateway_uses_exact_official_delta_before_qdrant(monkeypatch: pyte
 @pytest.mark.asyncio
 async def test_gateway_fails_closed_for_covered_but_unsupported_query(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        epr_agent.config,
+        vietnam_legal_agent.config,
         "get_settings",
         lambda: SimpleNamespace(
             enable_official_delta_retrieval=True,
@@ -127,9 +127,9 @@ async def test_gateway_fails_closed_for_covered_but_unsupported_query(monkeypatc
     async def _must_not_call_qdrant(*_args, **_kwargs):
         raise AssertionError("covered unsupported query must not fall through to Qdrant")
 
-    monkeypatch.setattr(epr_agent.retrieval.retrieval, "retrieve_legal_async", _must_not_call_qdrant)
+    monkeypatch.setattr(vietnam_legal_agent.retrieval.retrieval, "retrieve_legal_async", _must_not_call_qdrant)
 
-    records = await QdrantLegalRetrievalGateway().legal(
+    records = await UniversalLegalRetrievalGateway().legal(
         "Luật số 08/2026/QH16 quy định chi tiết toàn bộ nội dung gì?"
     )
 

@@ -2,11 +2,17 @@ name: CI
 
 on:
   pull_request:
-  push: {}
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  backend:
+  backend-quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,13 +22,24 @@ jobs:
           cache: pip
       - run: python -m pip install -e ".[dev]"
       - run: python -m pip check
-      - run: python -m scripts.sync_corpus_metadata --check
+      - run: ruff check src/vietnam_legal_agent backend scripts tests
+      - run: mypy src/vietnam_legal_agent backend
+
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -e ".[dev,universal]"
+      - name: Build the content-locked multi-domain corpus
+        run: python -m scripts.build_universal_index --download --rebuild
       - run: python -m pytest -q
       - run: python -m tests.eval.run_eval --suite all
       - run: python tests/eval/agent_harness.py --suite all
       - run: python tests/eval/persona_simulation.py --persona all
-      - run: ruff check src/epr_agent backend scripts tests
-      - run: mypy src/epr_agent backend
 
   frontend:
     runs-on: ubuntu-latest
@@ -93,7 +110,7 @@ jobs:
           fi
 
   e2e:
-    needs: [backend, frontend]
+    needs: [backend, backend-quality, frontend]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -163,15 +180,21 @@ jobs:
           cp .env.example .env
           sed -i 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=ci-smoke-password/' .env
           sed -i 's/^REDIS_PASSWORD=.*/REDIS_PASSWORD=ci-smoke-password/' .env
+      - name: Prepare an empty corpus mount for blocked-readiness smoke
+        run: |
+          mkdir -p data/corpus/universal_legal
+          touch data/corpus/universal_legal/universal_legal.db
       - name: Validate Compose configuration
         run: docker compose -f docker-compose.yml -f docker-compose.ci-smoke.yml config --quiet
+      - name: Validate opt-in universal preview configuration
+        run: docker compose -f docker-compose.yml -f docker-compose.universal-preview.yml config --quiet
       - name: Build and start the Compose topology
         run: docker compose -f docker-compose.yml -f docker-compose.ci-smoke.yml up -d --build
-      - name: Verify gateway liveness and preview readiness
+      - name: Verify gateway liveness and safe-degraded preview readiness
         run: |
           set -euo pipefail
           for attempt in $(seq 1 60); do
-            if curl --fail --silent --show-error http://127.0.0.1/api/v1/ready >/dev/null; then
+            if curl --fail --silent --show-error http://127.0.0.1/api/v1/health >/dev/null; then
               break
             fi
             if [ "$attempt" -eq 60 ]; then
@@ -182,7 +205,16 @@ jobs:
             sleep 5
           done
           curl --fail --silent --show-error http://127.0.0.1/api/v1/health
-          curl --fail --silent --show-error http://127.0.0.1/api/v1/ready
+          ready_status=$(curl --silent --show-error --output /tmp/compose-ready.json --write-out '%{http_code}' http://127.0.0.1/api/v1/ready)
+          test "$ready_status" = "503"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path('/tmp/compose-ready.json').read_text())
+          assert payload['status'] == 'not_ready'
+          assert payload['capabilities']['legal_chat']['status'] == 'blocked'
+          PY
           curl --fail --silent --show-error http://127.0.0.1/ | grep -q 'id="root"'
       - name: Tear down Compose topology
         if: always()

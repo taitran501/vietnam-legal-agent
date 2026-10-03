@@ -1,9 +1,6 @@
 # Local and Staging Preview
 
-Preview mode exists to exercise the complete user journey with a deterministic
-source snapshot. It is not a production bypass and must remain visibly labelled
-in the UI and source drawer. Preview supports all legal domains served by the
-Vietnam Legal Agent.
+Preview mode exercises legal chat against a content-locked, multi-domain corpus. It does not approve the corpus for production.
 
 ## Start a Preview
 
@@ -13,50 +10,33 @@ From the repository root:
 $env:CORPUS_RUNTIME_MODE = "preview"
 # Only for an isolated local preview without OIDC/API-key setup:
 $env:REQUIRE_AUTH = "false"
-python -m scripts.sync_corpus_metadata --check
-python -m scripts.audit_corpus
-docker compose up -d --build
+python -m pip install -e ".[dev,universal]"
+python -m scripts.build_universal_index --download --rebuild
+python -m scripts.build_universal_index --verify-only
+docker compose -f docker-compose.yml -f docker-compose.universal-preview.yml up -d --build
 Invoke-RestMethod http://127.0.0.1/api/v1/ready
 ```
 
-The readiness response should report `runtime_mode: preview`,
-`corpus.status: preview_ready`, and `legal_chat.reason:
-preview_snapshot`. A technically invalid corpus, an index mismatch,
-or a database schema mismatch still blocks the relevant capability.
+Readiness must report `runtime_mode: preview`, `retrieval_sources.universal_legal.status: ready`, and a ready `legal_chat` capability. A missing or invalid corpus artifact blocks legal chat. The generated SQLite database is mounted read-only and is not copied into the application image.
 
-Before starting Compose, copy `.env.example` to `.env`, set
-`POSTGRES_PASSWORD` to a long random value, and set `OPENAI_API_KEY` when live
-generation or indexing is required. Compose has no database-password fallback.
-The `REQUIRE_AUTH=false` override above is local-only and must not be reused in
-staging or production.
+Before starting Compose, copy `.env.example` to `.env`, set `POSTGRES_PASSWORD` to a long random value, and set `OPENAI_API_KEY` when live generation or corpus indexing is required. Compose has no database password fallback. The `REQUIRE_AUTH=false` override is local-only.
 
-CI uses `docker-compose.ci-smoke.yml` to boot this same topology with a
-deterministic, successful indexer placeholder. It verifies the gateway, backend
-health, preview readiness, and frontend response without requiring a paid
-provider or making a legal-ground-truth claim.
+CI boots the same topology with an empty corpus mount to verify that the backend reports blocked legal-chat readiness while health and the frontend remain available. This checks degraded startup without calling a paid provider.
 
-For deterministic browser work without paid providers, use the local test
-backend and Vite app:
+## Browser and Chat Preview
+
+The deterministic browser backend uses source-grounded fixtures from employment, civil, consumer, administrative, criminal, family, corporate, and public information law. Run the browser suite from `frontend-react`:
 
 ```powershell
-Start-Process -WindowStyle Hidden powershell -ArgumentList `
-  "-NoProfile", "-Command", "python -m uvicorn tests.e2e_backend:app --host 127.0.0.1 --port 8010"
-Set-Location frontend-react
-$env:VITE_API_PROXY_TARGET = "http://127.0.0.1:8010"
-npm.cmd run dev -- --host 127.0.0.1 --port 4175
+npm ci
+npm run test:e2e
 ```
 
-The deterministic backend is a browser-test adapter. It validates the real
-FastAPI chat routes, SSE client, React rendering, durable in-memory turn
-contract, source drawer, case drawer, and feedback controls; it is not evidence
-that the production Qdrant or official web provider is available.
+The browser suite launches its own test API and Vite server. It checks ordinary legal chat, evidence display, multi-turn context, feedback, stop/retry flows, and mobile/tablet layouts. Its fixtures are test data; they do not represent a production legal-quality or current-law certification.
 
-## Natural-language smoke replay
+## Natural-language Smoke Replay
 
-The structured smoke fixture replays common Vietnamese prompts against the same
-deterministic backend used by browser acceptance. It checks route, termination,
-follow-up context metadata, retrieval phases, and canonical source snapshots;
-generated prose is intentionally not compared verbatim.
+The structured smoke fixture checks ordinary Vietnamese prompts, routing, termination, context handling, and source provenance. Generated prose is not compared byte-for-byte.
 
 With the deterministic backend running on port 8010:
 
@@ -66,20 +46,8 @@ python scripts/run_natural_language_smoke.py `
   --report artifacts/natural-language-smoke.json
 ```
 
-The report is a local preview diagnostic, not a live-provider or legal-ground-
-truth promotion gate. A failed case should be debugged from its trace ID and
-structured failure reason before any browser feedback is filed.
+Use a failed turn's trace ID and structured reason to locate the faulty stage.
 
 ## Promotion Boundary
 
-Do not set preview mode in production. The production readiness gate requires
-the canonical manifest/rule-pack/index hashes and complete source and amendment
-technical checks. The canonical sync command only refreshes deterministic
-source metadata:
-
-```powershell
-python -m scripts.sync_corpus_metadata --check
-```
-
-Use `--write` only as an explicit maintainer action after changing source
-files, then review the resulting diff and rerun the complete release checks.
+Do not enable preview mode in production. Production promotion requires a content-locked corpus build and verification, a domain-neutral review decision, and a release artifact for the exact corpus hash. Technical reproducibility does not establish legal completeness or approval.

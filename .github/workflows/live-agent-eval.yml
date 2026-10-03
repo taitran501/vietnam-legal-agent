@@ -27,11 +27,9 @@ jobs:
           --health-retries 20
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      QDRANT_CLOUD_URL: ${{ secrets.QDRANT_CLOUD_URL }}
-      QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
       REDIS_URL: redis://127.0.0.1:6379/0
-      USE_QDRANT_CLOUD: "true"
-      LAW_COLLECTION: ${{ vars.PILOT_LAW_COLLECTION }}
+      ENABLE_QDRANT_RETRIEVAL: "false"
+      ENABLE_UNIVERSAL_RETRIEVAL: "true"
       AGENT_PIPELINE_VERSION: pipeline-agent
       CORPUS_RUNTIME_MODE: preview
       REQUIRE_AUTH: "false"
@@ -46,12 +44,9 @@ jobs:
       - name: Validate pilot provider configuration
         run: |
           test -n "$OPENAI_API_KEY"
-          test -n "$QDRANT_CLOUD_URL"
-          test -n "$QDRANT_API_KEY"
-          test -n "$LAW_COLLECTION"
-      - run: python -m pip install -e ".[dev]"
-      - name: Verify checked-in corpus metadata contract
-        run: python -m scripts.sync_corpus_metadata --check
+      - run: python -m pip install -e ".[dev,universal]"
+      - name: Build the pinned multi-domain corpus
+        run: python -m scripts.build_universal_index --download --rebuild
       - name: Run 50-case live autonomous runtime gate
         run: |
           python -m scripts.run_live_agent_eval \

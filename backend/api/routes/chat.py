@@ -22,13 +22,13 @@ from fastapi import APIRouter, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
 from backend.api.principal import principal_from_request_state
-from backend.api.routes.health import readiness_payload
+from backend.api.routes.health import chat_admission_readiness
 from backend.api.schemas import ChatRequest
 from backend.history import cancel_turn as cancel_turn_persistent
-from epr_agent.api.routes import stream_chat_events as agentic_stream_chat
-from epr_agent.config import get_settings
-from epr_agent.infra import metrics
-from epr_agent.infra.admission import AdmissionUnavailable, get_admission_controller
+from vietnam_legal_agent.api.routes import stream_chat_events as agentic_stream_chat
+from vietnam_legal_agent.config import get_settings
+from vietnam_legal_agent.infra import metrics
+from vietnam_legal_agent.infra.admission import AdmissionUnavailable, get_admission_controller
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -56,29 +56,7 @@ async def chat(request: Request, body: ChatRequest):
     user_id = principal.id
     trace_id = str(uuid.uuid4())
     runtime = getattr(request.app.state, "workflow_runtime", None)
-    typed_case_patch = {
-        key: value.value
-        for key, value in body.fact_updates.items()
-        if value.value.strip()
-    }
-    typed_fact_updates = {
-        key: value.model_dump(mode="json")
-        for key, value in body.fact_updates.items()
-    }
-    # Keep the legacy string patch for one compatibility release, but pass
-    # typed updates separately so confirmation status survives into V4 state.
-    case_patch = {**body.case_patch, **typed_case_patch}
-
-    readiness, _ = await readiness_payload()
-    history_capability = readiness.get("capabilities", {}).get("history", {})
-    dependencies = readiness.get("dependencies", {})
-    infrastructure_reason = ""
-    if history_capability.get("status") != "ready":
-        infrastructure_reason = str(history_capability.get("reason") or "database_unavailable")
-    elif dependencies.get("database") not in {None, "ok"}:
-        infrastructure_reason = "database_unavailable"
-    elif dependencies.get("openai") not in {None, "ok"}:
-        infrastructure_reason = "provider_unavailable"
+    admission_state, infrastructure_reason = await chat_admission_readiness()
     # Legal corpus/readiness is intentionally not part of this admission
     # check.  The workflow itself safe-stops legal routes while allowing
     # chitchat, history, auth, and feedback to remain available.
@@ -102,7 +80,7 @@ async def chat(request: Request, body: ChatRequest):
                         "retry_after_seconds": 30 if retryable else None,
                         "trace_id": trace_id,
                         "pipeline_version": "pipeline-v4",
-                        "readiness": readiness,
+                        "readiness": admission_state,
                     },
                     ensure_ascii=False,
                 )
@@ -123,8 +101,6 @@ async def chat(request: Request, body: ChatRequest):
         "intent": body.intent_hint,
         "operation": body.operation,
         "interaction_source": body.interaction_source,
-        "case_patch": case_patch,
-        "fact_updates": typed_fact_updates,
     })
 
     def _capacity_error(code: str, message: str) -> dict[str, str]:
@@ -198,8 +174,6 @@ async def chat(request: Request, body: ChatRequest):
                 operation=body.operation,
                 intent_hint=body.intent_hint,
                 interaction_source=body.interaction_source,
-                case_patch=case_patch,
-                fact_updates=typed_fact_updates,
                 replay_metadata=replay_descriptor,
                 turn_id=turn_id,
                 target_assistant_message_id=body.target_assistant_message_id,
@@ -207,8 +181,8 @@ async def chat(request: Request, body: ChatRequest):
             ):
                 if heartbeat_task is not None and heartbeat_task.done():
                     heartbeat_task.result()
-                # Readiness is the authoritative runtime gate for this request.
-                event["preview"] = bool(readiness.get("preview"))
+                # Runtime mode is UI metadata; corpus gates run in the workflow.
+                event["preview"] = bool(admission_state.get("preview"))
                 event_type = str(event.get("type") or "")
                 if event_type == "error":
                     code = str(event.get("code") or "pipeline_error")

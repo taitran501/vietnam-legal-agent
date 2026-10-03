@@ -126,7 +126,7 @@ async def run_e2e_system_test():
             # ------------------------------------------------------------------
             # TEST 4: Multi-Turn Context Follow-Up (Turn 2 - Labor Law Follow-up)
             # ------------------------------------------------------------------
-            print("\n[TEST 4/5] 🔄 Testing Turn 2: Contextual Follow-up with Case Patching...", flush=True)
+            print("\n[TEST 4/5] 🔄 Testing Turn 2: Ordinary Conversational Follow-up...", flush=True)
             turn2_query = "Nếu công ty sau khi thành lập muốn đơn phương chấm dứt hợp đồng với người lao động không hoàn thành nhiệm vụ thì cần thời hạn báo trước bao lâu?"
             print(f"   User Query: \"{turn2_query}\"", flush=True)
             
@@ -134,10 +134,6 @@ async def run_e2e_system_test():
                 "conversation_id": conversation_id,
                 "query": turn2_query,
                 "mode": "auto",
-                "case_patch": {
-                    "enterprise_type": "Công ty cổ phần",
-                    "dispute_nature": "Đơn phương chấm dứt hợp đồng lao động"
-                }
             }
             
             t_turn2 = time.time()

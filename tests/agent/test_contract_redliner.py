@@ -1,5 +1,5 @@
-from epr_agent.tools.contract_redliner import review_contract_clauses_heuristic
-from epr_agent.tools.document_parser import parse_contract_clauses
+from vietnam_legal_agent.tools.contract_redliner import review_contract_clauses_heuristic
+from vietnam_legal_agent.tools.document_parser import parse_contract_clauses
 
 
 def test_contract_redliner_heuristic_violations():

@@ -1,0 +1,14 @@
+# Local preview mode for the content-locked multi-domain Ministry of Justice corpus.
+services:
+  backend:
+    environment:
+      CORPUS_RUNTIME_MODE: preview
+      ENABLE_UNIVERSAL_RETRIEVAL: "true"
+      UNIVERSAL_CORPUS_DB_PATH: /app/data/corpus/universal_legal/universal_legal.db
+    volumes:
+      - type: bind
+        source: ${UNIVERSAL_CORPUS_HOST_PATH:-./data/corpus/universal_legal/universal_legal.db}
+        target: /app/data/corpus/universal_legal/universal_legal.db
+        read_only: true
+        bind:
+          create_host_path: false

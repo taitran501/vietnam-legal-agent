@@ -29,48 +29,30 @@ sys.path.insert(0, str(ROOT))
 # Test Queries - Comprehensive Coverage
 # ---------------------------------------------------------------------------
 
+_benchmark = json.loads(
+    (ROOT / "data" / "eval" / "golden_legal_benchmark.json").read_text(encoding="utf-8")
+)
+_domain_cases: dict[str, dict[str, str]] = {}
+for _case in _benchmark.get("cases", []):
+    _domain_cases.setdefault(
+        str(_case.get("domain") or "general"),
+        {"id": str(_case["id"]), "query": str(_case["query"]), "type": "legal_qa"},
+    )
+
 TEST_QUERIES = [
-    # CHITCHAT (5 cases)
     {"id": "chat_01", "query": "Xin chào", "type": "chitchat"},
     {"id": "chat_02", "query": "Bạn là ai?", "type": "chitchat"},
     {"id": "chat_03", "query": "Cảm ơn bạn", "type": "chitchat"},
     {"id": "chat_04", "query": "Tạm biệt", "type": "chitchat"},
     {"id": "chat_05", "query": "Bạn có thể làm gì?", "type": "chitchat"},
-    
-    # Common legal questions (5 cases; FAQ is evaluation-only, never a route)
-    {"id": "common_01", "query": "Các đối tượng nào phải thực hiện trách nhiệm tái chế?", "type": "legal_common"},
-    {"id": "common_02", "query": "Bao bì thương phẩm là gì?", "type": "legal_common"},
-    {"id": "common_03", "query": "Khi nào nhà sản xuất phải bắt đầu thực hiện trách nhiệm tái chế?", "type": "legal_common"},
-    {"id": "common_04", "query": "Trường hợp nào không phải thực hiện trách nhiệm tái chế?", "type": "legal_common"},
-    {"id": "common_05", "query": "Dầu nhớt có phải tái chế bắt buộc không?", "type": "legal_common"},
-    
-    # LEGAL - Explicit article numbers (5 cases)
-    {"id": "legal_01", "query": "Điều 77 quy định gì?", "type": "legal_explicit"},
-    {"id": "legal_02", "query": "Điều 80 nói về gì?", "type": "legal_explicit"},
-    {"id": "legal_03", "query": "Điều 81 quy định gì?", "type": "legal_explicit"},
-    {"id": "legal_04", "query": "Điều 78 có nội dung gì?", "type": "legal_explicit"},
-    {"id": "legal_05", "query": "Điều 79 quy định những gì?", "type": "legal_explicit"},
-    
-    # LEGAL - Keyword-based (5 cases)
-    {"id": "legal_kw_01", "query": "Điều kiện cơ sở tái chế", "type": "legal_keyword"},
-    {"id": "legal_kw_02", "query": "Xử phạt vi phạm nghĩa vụ", "type": "legal_keyword"},
-    {"id": "legal_kw_03", "query": "Đăng ký kế hoạch tái chế", "type": "legal_keyword"},
-    {"id": "legal_kw_04", "query": "Tỷ lệ tái chế bao bì", "type": "legal_keyword"},
-    {"id": "legal_kw_05", "query": "Hệ số đóng góp tài chính", "type": "legal_keyword"},
-    
-    # CACHE HITS - Same queries repeated (5 cases)
-    {"id": "cache_01", "query": "Các đối tượng nào phải thực hiện trách nhiệm tái chế?", "type": "cache_hit"},
-    {"id": "cache_02", "query": "Xin chào", "type": "cache_hit"},
-    {"id": "cache_03", "query": "Điều 77 quy định gì?", "type": "cache_hit"},
-    {"id": "cache_04", "query": "Bao bì thương phẩm là gì?", "type": "cache_hit"},
-    {"id": "cache_05", "query": "Điều kiện cơ sở tái chế", "type": "cache_hit"},
+    *_domain_cases.values(),
 ]
 
 
 async def clear_all_caches():
     """Clear only the legal-only answer cache for a clean benchmark run."""
     try:
-        from epr_agent.infra.session_store import get_redis
+        from vietnam_legal_agent.infra.session_store import get_redis
         r = await get_redis()
         exact_keys = await r.keys("legal:answer:v3:*")
         if exact_keys:
@@ -131,7 +113,7 @@ async def run_single_query(test_case: dict, clear_cache_before: bool = True) -> 
     stage_events = []
     
     try:
-        from epr_agent.agent.runtime import stream_chat
+        from vietnam_legal_agent.agent.runtime import stream_chat
         async for event in stream_chat(
             query=query,
             user_id="performance-local",

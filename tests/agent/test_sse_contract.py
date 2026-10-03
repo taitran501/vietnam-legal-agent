@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import pytest
 
-from epr_agent.agent.graph import WorkflowDependencies
-from epr_agent.agent.planner import BoundedPlanner
-from epr_agent.agent.runtime import WorkflowRuntime
-from epr_agent.domain.models import DocumentRecord
-from epr_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
-from epr_agent.tools.evidence import EvidenceEvaluator
-from epr_agent.tools.generation import StaticGenerationGateway
-from epr_agent.tools.history import ContextSnapshot
-from epr_agent.tools.retrieval import StaticRetrievalGateway
+from vietnam_legal_agent.agent.graph import WorkflowDependencies
+from vietnam_legal_agent.agent.planner import BoundedPlanner
+from vietnam_legal_agent.agent.runtime import WorkflowRuntime
+from vietnam_legal_agent.domain.models import DocumentRecord
+from vietnam_legal_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
+from vietnam_legal_agent.tools.evidence import EvidenceEvaluator
+from vietnam_legal_agent.tools.generation import StaticGenerationGateway
+from vietnam_legal_agent.tools.history import ContextSnapshot
+from vietnam_legal_agent.tools.retrieval import StaticRetrievalGateway
 
 
 class HistoryDouble:
@@ -36,13 +36,13 @@ class HistoryDouble:
 @pytest.mark.asyncio
 async def test_stream_preserves_legacy_events_and_adds_workflow_metadata():
     doc = DocumentRecord(
-        content="Nội dung điều luật EPR đủ dài để tạo câu trả lời có nguồn. " * 4,
+        content="Điều 25 quy định thời gian thử việc tối đa theo nhóm công việc. " * 4,
         metadata={
-            "Dieu": "Điều 77", "source": "Nghị định 08/2022/NĐ-CP", "source_file": "data/08_2022_ND-CP_479457.doc",
-            "Corpus_Version": "epr-law-structure-v2", "Corpus_SHA256": "a" * 64,
-            "Embedding_Profile": "openai-text-embedding-3-small-v1", "legal_anchor": "Điều 77",
+            "Dieu": "Điều 25", "source": "Bộ luật Lao động 2019", "source_file": "universal-corpus",
+            "Corpus_Version": "multi-domain-law-v2", "Corpus_SHA256": "a" * 64,
+            "Embedding_Profile": "openai-text-embedding-3-small-v1", "legal_anchor": "Điều 25",
         },
-        document_id="law-77",
+        document_id="law-25",
         source="legal",
     )
     deps = WorkflowDependencies(
@@ -51,7 +51,7 @@ async def test_stream_preserves_legacy_events_and_adds_workflow_metadata():
         retrieval=StaticRetrievalGateway(legal_documents=[doc]),
         evidence=EvidenceEvaluator(min_chars=20),
         generation=StaticGenerationGateway(
-            "Theo Điều 77 [1], nhà sản xuất và nhập khẩu phải đối chiếu trách nhiệm tái chế. " * 8
+            "Theo Điều 25 [1], thời gian thử việc tối đa phụ thuộc vào nhóm công việc. " * 8
         ),
         planner=BoundedPlanner(),
     )
@@ -59,7 +59,7 @@ async def test_stream_preserves_legacy_events_and_adds_workflow_metadata():
     events = [
         event
         async for event in WorkflowRuntime(deps, answer_chunk_delay_s=0).stream(
-            query="EPR về bao bì là gì?",
+            query="Điều 25 Bộ luật Lao động quy định thời gian thử việc tối đa bao lâu?",
             user_id="u",
             conversation_id="c",
         )

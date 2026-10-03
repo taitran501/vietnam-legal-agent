@@ -35,24 +35,17 @@ class GoldenCase:
     expect_any: tuple[str, ...]
 
 
+_golden_benchmark = json.loads(
+    (ROOT / "data" / "eval" / "golden_legal_benchmark.json").read_text(encoding="utf-8")
+)
 GOLDEN_CASES: list[GoldenCase] = [
-    GoldenCase("sản phẩm nào bắt buộc phải tái chế theo luật", ("phụ lục xxii", "tái chế", "ắc quy", "dầu nhớt", "bao bì")),
-    GoldenCase("điều 77 quy định gì", ("điều 77", "đối tượng", "trách nhiệm")),
-    GoldenCase("điều 78 quy định gì", ("điều 78", "tỷ lệ tái chế", "quy cách")),
-    GoldenCase("điều 79 nói về gì", ("điều 79", "chi phí tái chế", "f")),
-    GoldenCase("tỷ lệ tái chế dầu nhớt là bao nhiêu", ("dầu nhớt", "100%", "phụ lục xxii")),
-    GoldenCase("tỷ lệ tái chế ắc quy là bao nhiêu", ("ắc quy", "80%", "phụ lục xxii")),
-    GoldenCase("bao bì pet cứng có tỷ lệ tái chế bao nhiêu", ("pet", "22%", "phụ lục xxii")),
-    GoldenCase("đối tượng nào phải thực hiện trách nhiệm tái chế", ("đối tượng", "nhà sản xuất", "nhập khẩu", "điều 77")),
-    GoldenCase("lộ trình thực hiện trách nhiệm tái chế", ("lộ trình", "điều 77")),
-    GoldenCase("quy cách tái chế bắt buộc là gì", ("quy cách tái chế", "điều 78")),
-    GoldenCase("chi phí tái chế được xác định như thế nào", ("chi phí tái chế", "điều 79", "f")),
-    GoldenCase("phụ lục xxii quy định những nhóm sản phẩm nào", ("phụ lục xxii", "sản phẩm", "bao bì")),
-    GoldenCase("nhà sản xuất có thể tự tổ chức tái chế hay đóng quỹ", ("điều 81", "đóng góp", "quỹ")),
-    GoldenCase("đóng góp tài chính hỗ trợ tái chế quy định ở điều nào", ("điều 81", "đóng góp tài chính", "quỹ")),
-    GoldenCase("hội đồng epr quốc gia ở điều nào", ("điều 88", "hội đồng epr")),
+    GoldenCase(
+        query=str(case["query"]),
+        expect_any=tuple(str(anchor).casefold() for anchor in case.get("expected_anchors", [])),
+    )
+    for case in _golden_benchmark.get("cases", [])
+    if case.get("query") and case.get("expected_anchors")
 ]
-
 
 @dataclass
 class QueryRow:
@@ -87,7 +80,7 @@ def _iter_collections(raw: str) -> list[str]:
 async def _run_one(collection: str) -> CollectionScore:
     os.environ["LAW_COLLECTION"] = collection
     # Import after LAW_COLLECTION override so settings picks current collection.
-    from epr_agent.retrieval.retrieval import retrieve_legal_async  # noqa: WPS433
+    from vietnam_legal_agent.retrieval.retrieval import retrieve_legal_async  # noqa: WPS433
 
     await retrieve_legal_async(GOLDEN_CASES[0].query)
 

@@ -10,7 +10,7 @@ import os
 from fastapi import FastAPI, Request
 from sse_starlette.sse import EventSourceResponse
 
-from epr_agent.infra.admission import AdmissionUnavailable, RedisAdmissionController
+from vietnam_legal_agent.infra.admission import AdmissionUnavailable, RedisAdmissionController
 
 app = FastAPI(title="Pilot admission load target")
 admission = RedisAdmissionController(key_prefix="pilot-load")

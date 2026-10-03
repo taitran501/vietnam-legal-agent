@@ -7,10 +7,7 @@ import { WelcomeScreen } from '@/components/Onboarding/WelcomeScreen';
 import { Sidebar } from '@/components/Layout/Sidebar';
 import { Header } from '@/components/Layout/Header';
 import { ToastContainer } from '@/components/UI/Toast';
-import { Drawer } from '@/components/UI/Drawer';
 import { Icon } from '@/components/UI/Icon';
-import { CaseFactsPanel } from '@/components/Case/CaseFactsPanel';
-import { GuidedCaseCard } from '@/components/Case/GuidedCaseCard';
 import { useChatStream } from '@/hooks/useChatStream';
 import { useSessions } from '@/hooks/useSessions';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -18,24 +15,11 @@ import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useChatStore } from '@/state/chatStore';
 import { useAuthStore } from '@/state/authStore';
 import { toast } from '@/state/toastStore';
-import type { CaseFormState, CaseState, ChatMessage, ReadinessResponse, SourceDocument } from '@/types';
-import {
-  AUTH_EXPIRED_EVENT,
-  beginLogin,
-  clearAuthSession,
-  completeLogin,
-  getAuthSession,
-  isOidcConfigured,
-  rememberReturnTo,
-} from '@/auth/oidc';
+import type { ChatMessage, ReadinessResponse, SourceDocument } from '@/types';
+import { AUTH_EXPIRED_EVENT, beginLogin, clearAuthSession, completeLogin, getAuthSession, isOidcConfigured, rememberReturnTo } from '@/auth/oidc';
 import { getMe } from '@/api/me';
-import {
-  authFailureCopy,
-  authSessionExpiredCopy,
-  authSignedOutCopy,
-  capabilityUnavailableCopy,
-  taskCopy,
-} from '@/lib/userCopy';
+import { apiUrl } from '@/api/client';
+import { authFailureCopy, authSessionExpiredCopy, authSignedOutCopy } from '@/lib/userCopy';
 import { downloadPreliminaryReport } from '@/lib/reportExport';
 
 interface OpenSources {
@@ -51,17 +35,8 @@ interface WorkspaceProps {
 
 let pendingLocalSessionId: string | null = null;
 
-type GuidedDraftSnapshot = {
-  taskType: CaseState['task_type'];
-  facts: Record<string, string>;
-  statuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>;
-  formState: CaseFormState | null;
-  dirty: boolean;
-};
-
 function capabilityStatus(readiness: ReadinessResponse | null, name: keyof ReadinessResponse['capabilities']) {
-  return readiness?.capabilities?.[name]?.status
-    || (readiness?.status === 'ready' ? 'ready' : 'blocked');
+  return readiness?.capabilities?.[name]?.status || (readiness?.status === 'ready' ? 'ready' : 'blocked');
 }
 
 function readinessMessage(readiness: ReadinessResponse | null, offline: boolean): string {
@@ -79,10 +54,6 @@ function readinessMessage(readiness: ReadinessResponse | null, offline: boolean)
 function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('legal-sidebar') === 'collapsed');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [caseDrawerOpen, setCaseDrawerOpen] = useState(false);
-  const [guidedTask, setGuidedTask] = useState<CaseState['task_type'] | null>(null);
-  const [guidedDraft, setGuidedDraft] = useState<GuidedDraftSnapshot | null>(null);
-  const [caseDirty, setCaseDirty] = useState(false);
   const [openSources, setOpenSources] = useState<OpenSources | null>(null);
   const [readiness, setReadiness] = useState<ReadinessResponse | null>(null);
   const [readinessOffline, setReadinessOffline] = useState(false);
@@ -93,23 +64,10 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
   const { sendMessage, stopGeneration, regenerateResponse, retryLastTurn } = useChatStream();
   const { loadSession, cancelSessionLoad } = useSessions({ autoLoad: false });
   const me = useAuthStore((state) => state.me);
-  const {
-    messages,
-    isStreaming,
-    streamingContent,
-    statusMessage,
-    activeSessionId,
-    activeCase,
-    workflowSteps,
-    error,
-    composerDraft,
-    sessionLoadStatus,
-    sessionLoadError,
-    setComposerDraft,
-  } = useChatStore();
+  const { messages, isStreaming, streamingContent, statusMessage, activeSessionId, workflowSteps, error, composerDraft, sessionLoadStatus, sessionLoadError, setComposerDraft } =
+    useChatStore();
 
   const legalReady = !readinessOffline && capabilityStatus(readiness, 'legal_chat') === 'ready';
-  const caseReady = !readinessOffline && capabilityStatus(readiness, 'case_workflow') === 'ready';
   const webReady = !readinessOffline && capabilityStatus(readiness, 'web_research') === 'ready';
   const preview = Boolean(readiness?.preview || readiness?.runtime_mode === 'preview');
   const headerReadiness: 'ready' | 'preview' | 'blocked' | 'preparing' | 'offline' = readinessOffline
@@ -123,10 +81,10 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
           : 'blocked';
 
   const intentLabels: Record<string, string> = {
-    legal_lookup: 'Kiểm tra tính hợp pháp & Nghĩa vụ',
+    legal_lookup: 'Tra cứu quy định pháp luật',
     legal_explain_compare: 'Giải thích hoặc so sánh',
-    case_assessment: 'Kiểm tra trường hợp',
-    compliance_checklist: 'Hướng dẫn hồ sơ & Thủ tục',
+    case_assessment: 'Tư vấn tình huống',
+    compliance_checklist: 'Hồ sơ & thủ tục',
     protect_rights: 'Bảo vệ quyền lợi & Tranh chấp',
   };
 
@@ -136,9 +94,8 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
 
   const checkHealth = useCallback(async () => {
     try {
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
-      const response = await fetch(`${baseUrl}/api/v1/ready`);
-      const payload = await response.json().catch(() => null) as ReadinessResponse | null;
+      const response = await fetch(apiUrl('/api/v1/ready'));
+      const payload = (await response.json().catch(() => null)) as ReadinessResponse | null;
       if (payload?.capabilities || payload?.status) {
         setReadiness(payload);
         setReadinessOffline(false);
@@ -156,22 +113,21 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
     return () => window.clearInterval(interval);
   }, [checkHealth]);
 
-  const loadConversationFromRoute = useCallback(async (sessionId: string) => {
-    const result = await loadSession(sessionId);
-    if (result === 'not_found') {
-      toast.info('Cuộc trò chuyện không tồn tại hoặc bạn không có quyền truy cập.');
-      navigate('/', { replace: true });
-    }
-  }, [loadSession, navigate]);
+  const loadConversationFromRoute = useCallback(
+    async (sessionId: string) => {
+      const result = await loadSession(sessionId);
+      if (result === 'not_found') {
+        toast.info('Cuộc trò chuyện không tồn tại hoặc bạn không có quyền truy cập.');
+        navigate('/', { replace: true });
+      }
+    },
+    [loadSession, navigate],
+  );
 
   useLayoutEffect(() => {
     setOpenSources(null);
-    setCaseDrawerOpen(false);
-    setCaseDirty(false);
     const current = useChatStore.getState();
     if (!conversationId) {
-      setGuidedTask(null);
-      setGuidedDraft(null);
       cancelSessionLoad();
       if (current.activeTurn) stopGeneration();
       current.clearChat();
@@ -183,8 +139,6 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
       pendingLocalSessionId = null;
       return;
     }
-    setGuidedTask(null);
-    setGuidedDraft(null);
     void loadConversationFromRoute(conversationId);
     return cancelSessionLoad;
   }, [cancelSessionLoad, conversationId, loadConversationFromRoute, stopGeneration]);
@@ -204,111 +158,21 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
     void sendMessage(query, sessionId, 'auto', {
       operation: 'message',
       intentHint: composerDraft.intent as 'auto' | 'legal_lookup' | 'legal_explain_compare' | 'case_assessment' | 'compliance_checklist',
-      interactionSource: composerDraft.interactionSource as 'composer' | 'quick_action' | 'case_panel' | 'guided_form',
+      interactionSource: composerDraft.interactionSource as 'composer' | 'quick_action',
     });
-    setComposerDraft({ text: '', intent: 'auto', interactionSource: 'composer' });
-  };
-
-  const handlePrefill = (text: string, intent: string) => {
-    setComposerDraft({ text, intent, interactionSource: 'quick_action' });
-  };
-
-  const handleGuidedDraftChange = useCallback((facts: Record<string, string>, statuses: GuidedDraftSnapshot['statuses'], formState: CaseFormState | null, dirty: boolean) => {
-    if (!guidedTask) return;
-    setGuidedDraft({ taskType: guidedTask, facts, statuses, formState, dirty });
-  }, [guidedTask]);
-
-  const handleRecoveryDraftChange = useCallback((facts: Record<string, string>, statuses: GuidedDraftSnapshot['statuses'], formState: CaseFormState | null, dirty: boolean) => {
-    setGuidedDraft((current) => current ? { ...current, facts, statuses, formState, dirty } : current);
-  }, []);
-
-  const handleStartGuidedCase = (taskType: CaseState['task_type']) => {
-    if (!caseReady) {
-      toast.info('Chức năng này chưa sẵn sàng. Bạn vẫn có thể dùng tra cứu quy định.');
-      return;
-    }
-    setGuidedTask(taskType);
-    setGuidedDraft(null);
-    setComposerDraft({ text: '', intent: taskType === 'build_compliance_checklist' ? 'compliance_checklist' : 'case_assessment', interactionSource: 'guided_form' });
-  };
-
-  const submitGuidedCase = async (
-    facts: Record<string, string>,
-    confirmationStatuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'>,
-    taskType: CaseState['task_type'],
-  ) => {
-    if (!caseReady) throw new Error('Chức năng xử lý trường hợp hiện chưa sẵn sàng.');
-    let sessionId = activeSessionId;
-    if (!sessionId) {
-      sessionId = crypto.randomUUID();
-      pendingLocalSessionId = sessionId;
-      useChatStore.getState().setActiveSession(sessionId);
-      navigate(`/conversations/${sessionId}`);
-    }
-    const completed = await sendMessage(
-      taskCopy[taskType].turnPrompt,
-      sessionId,
-      'auto',
-      {
-        operation: activeCase ? 'continue_case' : 'message',
-        intentHint: taskType === 'build_compliance_checklist' ? 'compliance_checklist' : 'case_assessment',
-        interactionSource: 'guided_form',
-        factUpdates: Object.fromEntries(Object.entries(facts).map(([key, value]) => [key, {
-          value,
-          confirmation_status: confirmationStatuses[key] || 'user_confirmed',
-        }])),
-      },
-    );
-    if (!completed) {
-      throw new Error('Câu trả lời bị gián đoạn. Bạn có thể giữ nguyên thông tin và thử lại.');
-    }
-    setGuidedTask(null);
-    setGuidedDraft(null);
-    setCaseDrawerOpen(false);
-    setCaseDirty(false);
-  };
-
-  const handleContinueCase = (
-    facts: Record<string, string>,
-    confirmationStatuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'> = {},
-    taskType: CaseState['task_type'] = 'assess_epr_obligation',
-  ) => {
-    if (!activeSessionId || !caseReady) return;
-    const prompt = taskCopy[taskType].turnPrompt;
-    void sendMessage(prompt, activeSessionId, 'auto', {
-      operation: 'continue_case',
-      intentHint: taskType === 'build_compliance_checklist' ? 'compliance_checklist' : 'case_assessment',
-      interactionSource: 'case_panel',
-      casePatch: facts,
-      factUpdates: Object.fromEntries(Object.entries(facts).map(([key, value]) => [key, {
-        value,
-        confirmation_status: confirmationStatuses[key] || 'user_confirmed',
-      }])),
-      onAccepted: () => {
-        setCaseDirty(false);
-        setCaseDrawerOpen(false);
-      },
+    setComposerDraft({
+      text: '',
+      intent: 'auto',
+      interactionSource: 'composer',
     });
   };
 
-  const closeCaseDrawer = useCallback((): boolean => {
-    if (caseDirty && !window.confirm('Bỏ các thay đổi chưa lưu?')) return false;
-    setCaseDirty(false);
-    setCaseDrawerOpen(false);
-    return true;
-  }, [caseDirty]);
-
-  const closeGuidedCase = useCallback((): boolean => {
-    if (guidedDraft?.dirty && !window.confirm('Bỏ các thông tin chưa gửi?')) return false;
-    setGuidedTask(null);
-    setGuidedDraft(null);
-    setComposerDraft({ text: '', intent: 'auto', interactionSource: 'composer' });
-    return true;
-  }, [guidedDraft?.dirty, setComposerDraft]);
+  const handleSelectIntent = (intent: string) => {
+    setComposerDraft({ intent });
+  };
 
   const handleNewSession = () => {
     setOpenSources(null);
-    if (!closeCaseDrawer() || !closeGuidedCase()) return;
     if (isStreaming) stopGeneration();
     useChatStore.getState().clearChat();
     navigate('/');
@@ -324,17 +188,19 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
       toast.info('Tìm nguồn chính thức bên ngoài kho văn bản hiện chưa khả dụng.');
       return;
     }
-    void sendMessage(query, activeSessionId, 'research_web', { operation: 'message' });
+    void sendMessage(query, activeSessionId, 'research_web', {
+      operation: 'message',
+    });
   };
 
-  const handleOpenSources = (
-    documents: SourceDocument[],
-    citations: Array<Record<string, unknown>>,
-    focusIndex?: number,
-    answerPreview?: boolean,
-  ) => {
+  const handleOpenSources = (documents: SourceDocument[], citations: Array<Record<string, unknown>>, focusIndex?: number, answerPreview?: boolean) => {
     if (documents.length || citations.length) {
-      setOpenSources({ documents, citations, focusIndex, preview: answerPreview ?? preview });
+      setOpenSources({
+        documents,
+        citations,
+        focusIndex,
+        preview: answerPreview ?? preview,
+      });
     }
   };
 
@@ -353,108 +219,86 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
 
   const sharedSidebarProps = {
     onSelectSession: (sessionId: string) => {
-      if (!closeCaseDrawer()) return;
       navigate(`/conversations/${sessionId}`);
     },
     onClearAll: handleNewSession,
     onNewSession: handleNewSession,
   };
 
-  const conversationBody = sessionLoadStatus === 'loading' && Boolean(conversationId) ? (
-    <div className="flex min-h-0 flex-1 items-center justify-center p-6" role="status">
-      <div className="text-center text-sm text-[#667085]">
-        <span className="mx-auto block h-6 w-6 animate-spin rounded-full border-2 border-[#80d5cb] border-t-[#006a63]" />
-        <p className="mt-3">Đang tải cuộc trò chuyện…</p>
+  const conversationBody =
+    sessionLoadStatus === 'loading' && Boolean(conversationId) ? (
+      <div className="flex min-h-0 flex-1 items-center justify-center p-6" role="status">
+        <div className="text-center text-sm text-[#667085]">
+          <span className="mx-auto block h-6 w-6 animate-spin rounded-full border-2 border-[#80d5cb] border-t-[#006a63]" />
+          <p className="mt-3">Đang tải cuộc trò chuyện…</p>
+        </div>
       </div>
-    </div>
-  ) : sessionLoadStatus === 'error' && Boolean(conversationId) ? (
-    <div className="flex min-h-0 flex-1 items-center justify-center p-6" role="alert">
-      <div className="max-w-md rounded-xl border border-[#f0b7b2] bg-[#fff0ef] p-5 text-center text-[#7f1d1d]">
-        <Icon className="mx-auto" name="alert" size={24} />
-        <p className="mt-3 text-sm font-semibold">Không thể tải cuộc trò chuyện</p>
-        <p className="mt-1 text-sm leading-6">{sessionLoadError}</p>
-        <button className="mt-4 rounded-md bg-[#ba1a1a] px-3 py-2 text-xs font-semibold text-white" onClick={() => conversationId && void loadConversationFromRoute(conversationId)} type="button">
-          Thử lại
-        </button>
+    ) : sessionLoadStatus === 'error' && Boolean(conversationId) ? (
+      <div className="flex min-h-0 flex-1 items-center justify-center p-6" role="alert">
+        <div className="max-w-md rounded-xl border border-[#f0b7b2] bg-[#fff0ef] p-5 text-center text-[#7f1d1d]">
+          <Icon className="mx-auto" name="alert" size={24} />
+          <p className="mt-3 text-sm font-semibold">Không thể tải cuộc trò chuyện</p>
+          <p className="mt-1 text-sm leading-6">{sessionLoadError}</p>
+          <button className="mt-4 rounded-md bg-[#ba1a1a] px-3 py-2 text-xs font-semibold text-white" onClick={() => conversationId && void loadConversationFromRoute(conversationId)} type="button">
+            Thử lại
+          </button>
+        </div>
       </div>
-    </div>
-  ) : messages.length === 0 && !isStreaming ? (
-    <WelcomeScreen
-      caseDisabled={!caseReady}
-      caseDisabledReason={capabilityUnavailableCopy(readiness?.capabilities?.case_workflow?.reason, readinessOffline)}
-      disabled={!legalReady}
-      guidedTask={guidedTask}
-      isStreaming={isStreaming}
-      onSendPrompt={handleSend}
-      onPrefillPrompt={handlePrefill}
-      onStop={stopGeneration}
-      onStartCase={handleStartGuidedCase}
-      onGuidedSubmit={submitGuidedCase}
-      onCancelGuided={closeGuidedCase}
-      onGuidedDraftChange={handleGuidedDraftChange}
-      draftText={composerDraft.text}
-      onDraftChange={(text) => setComposerDraft({ text, interactionSource: 'composer' })}
-      intentLabel={intentLabels[composerDraft.intent]}
-      onClearIntent={() => setComposerDraft({ intent: 'auto', interactionSource: 'composer' })}
-    />
-  ) : (
-    <>
-      <MessageList
-        activeCase={activeCase}
-        error={error}
+    ) : messages.length === 0 && !isStreaming ? (
+      <WelcomeScreen
+        disabled={!legalReady}
         isStreaming={isStreaming}
-        messages={messages}
-        onContinueCase={caseReady ? submitGuidedCase : undefined}
-        onOpenCase={activeCase ? () => setCaseDrawerOpen(true) : undefined}
-        onResearch={handleResearch}
-        onOpenSources={handleOpenSources}
-        onExport={handleExportReport}
-        webResearchReady={webReady}
-        onRegenerate={handleRegenerate}
-        onRetry={() => void retryLastTurn()}
-        statusMessage={statusMessage}
-        streamingContent={streamingContent}
-        workflowSteps={workflowSteps}
+        onSendPrompt={handleSend}
+        onSelectIntent={handleSelectIntent}
+        onStop={stopGeneration}
+        draftText={composerDraft.text}
+        onDraftChange={(text) => setComposerDraft({ text, interactionSource: 'composer' })}
+        intentLabel={intentLabels[composerDraft.intent]}
+        onClearIntent={() => setComposerDraft({ intent: 'auto', interactionSource: 'composer' })}
       />
-      {guidedTask && guidedDraft?.formState && error && !isStreaming && (
-        <div className="shrink-0 border-t border-[#d9e1df] bg-[#fcfcfa] px-3 py-3 sm:px-6">
-          <div className="mx-auto max-w-[820px]">
-            <p className="mb-2 text-xs font-semibold text-[#53615e]">Bạn có thể sửa thông tin rồi thử lại:</p>
-            <GuidedCaseCard
-              initialCaseState={guidedDraft.formState}
-              onDraftChange={handleRecoveryDraftChange}
-              onSubmit={submitGuidedCase}
-              taskType={guidedDraft.taskType}
+    ) : (
+      <>
+        <MessageList
+          error={error}
+          isStreaming={isStreaming}
+          messages={messages}
+          onResearch={handleResearch}
+          onOpenSources={handleOpenSources}
+          onExport={handleExportReport}
+          webResearchReady={webReady}
+          onRegenerate={handleRegenerate}
+          onRetry={() => void retryLastTurn()}
+          statusMessage={statusMessage}
+          streamingContent={streamingContent}
+          workflowSteps={workflowSteps}
+        />
+        <div className="shrink-0 border-t border-[#d9e1df] bg-[#fcfcfa]/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:px-6">
+          <div className="mx-auto flex max-w-[820px] justify-center">
+            <ChatInput
+              disabled={!legalReady}
+              isStreaming={isStreaming}
+              onSend={handleSend}
+              onStop={stopGeneration}
+              value={composerDraft.text}
+              onValueChange={(text) => setComposerDraft({ text, interactionSource: 'composer' })}
+              intentLabel={intentLabels[composerDraft.intent]}
+              onClearIntent={() =>
+                setComposerDraft({
+                  intent: 'auto',
+                  interactionSource: 'composer',
+                })
+              }
             />
           </div>
         </div>
-      )}
-      <div className="shrink-0 border-t border-[#d9e1df] bg-[#fcfcfa]/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:px-6">
-        <div className="mx-auto flex max-w-[820px] justify-center">
-          <ChatInput
-            disabled={!legalReady}
-            isStreaming={isStreaming}
-            onSend={handleSend}
-            onStop={stopGeneration}
-            value={composerDraft.text}
-            onValueChange={(text) => setComposerDraft({ text, interactionSource: 'composer' })}
-            intentLabel={intentLabels[composerDraft.intent]}
-            onClearIntent={() => setComposerDraft({ intent: 'auto', interactionSource: 'composer' })}
-          />
-        </div>
-      </div>
-    </>
-  );
+      </>
+    );
 
   return (
     <div className="flex h-[100dvh] min-h-0 overflow-hidden bg-[#fcfcfa] text-[#181c1c]">
       {(isDesktop || isTablet) && (
         <div className={`flex h-full shrink-0 overflow-hidden transition-[width] duration-200 ease-out ${isTablet || sidebarCollapsed ? 'w-16' : 'w-[264px]'}`}>
-          <Sidebar
-            {...sharedSidebarProps}
-            collapsed={isTablet || sidebarCollapsed}
-            onToggle={isTablet ? () => setMobileSidebarOpen(true) : () => setSidebarCollapsed((value) => !value)}
-          />
+          <Sidebar {...sharedSidebarProps} collapsed={isTablet || sidebarCollapsed} onToggle={isTablet ? () => setMobileSidebarOpen(true) : () => setSidebarCollapsed((value) => !value)} />
         </div>
       )}
 
@@ -469,18 +313,18 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-[#fcfcfa]">
         <Header
-          hasActiveCase={Boolean(activeCase)}
           me={me}
           readiness={headerReadiness}
           onLogout={onLogout}
-          onOpenCase={() => setCaseDrawerOpen(true)}
           onOpenMobileNav={() => setMobileSidebarOpen(true)}
         />
         {!legalReady && !preview && (
           <div className="flex shrink-0 items-center justify-center gap-2 border-b border-[#ead6b8] bg-[#fff8ea] px-4 py-2 text-center text-xs text-[#714b18]" role="status">
             <Icon name="wifiOff" size={15} />
             {readinessMessage(readiness, readinessOffline)}
-            <button className="rounded border border-[#d8b77c] px-2 py-1 font-medium hover:bg-[#fff0cf]" onClick={() => void checkHealth()} type="button">Thử lại</button>
+            <button className="rounded border border-[#d8b77c] px-2 py-1 font-medium hover:bg-[#fff0cf]" onClick={() => void checkHealth()} type="button">
+              Thử lại
+            </button>
           </div>
         )}
 
@@ -495,21 +339,6 @@ function LegalAssistantWorkspace({ onLogout }: WorkspaceProps) {
         onClose={() => setOpenSources(null)}
         preview={Boolean(openSources?.preview)}
       />
-
-      <Drawer
-        description="Bảng này chỉ xuất hiện khi bạn muốn đánh giá một tình huống pháp lý hoặc tạo danh sách việc cần làm."
-        isOpen={caseDrawerOpen && Boolean(activeCase)}
-        onClose={closeCaseDrawer}
-        title="Thông tin tình huống"
-      >
-        <CaseFactsPanel
-          caseState={activeCase}
-          conversationId={activeSessionId}
-          onCaseChange={(caseState) => useChatStore.getState().setActiveCase(caseState)}
-          onContinue={handleContinueCase}
-          onDirtyChange={setCaseDirty}
-        />
-      </Drawer>
 
       <ToastContainer />
     </div>
@@ -599,11 +428,7 @@ export default function App() {
         <section className="w-full max-w-md rounded-2xl border border-[#d9e1df] bg-white p-7 shadow-sm">
           <h1 className="text-lg font-semibold">Trợ lý Pháp luật Việt Nam</h1>
           <p className="mt-2 text-sm text-[#667085]">
-            {authState === 'loading'
-              ? 'Đang kiểm tra phiên đăng nhập…'
-              : authState === 'signed_out'
-                ? authExpired ? authSessionExpiredCopy : authSignedOutCopy
-                : authError || authFailureCopy}
+            {authState === 'loading' ? 'Đang kiểm tra phiên đăng nhập…' : authState === 'signed_out' ? (authExpired ? authSessionExpiredCopy : authSignedOutCopy) : authError || authFailureCopy}
           </p>
           {authState !== 'loading' && (
             <button className="mt-5 rounded-lg bg-[#0f766e] px-4 py-2 text-sm font-semibold text-white" onClick={() => void login()} type="button">

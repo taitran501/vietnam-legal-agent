@@ -13,8 +13,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from epr_agent.config import get_settings
-from epr_agent.infra.persistence import get_persistence_store, sqlite_database_url
+from vietnam_legal_agent.config import get_settings
+from vietnam_legal_agent.infra.persistence import get_persistence_store, sqlite_database_url
 
 
 def _database_url() -> str:
