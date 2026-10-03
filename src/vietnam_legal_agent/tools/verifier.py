@@ -385,7 +385,25 @@ Nguyên tắc Phê duyệt:
 - Chế độ source_version_only: Khi payload đánh dấu true, bộ bằng chứng chỉ giới hạn ở một phiên bản nguồn và người dùng không hỏi hiệu lực hiện hành. Đối chiếu câu trả lời với chính nguồn đó; yêu cầu nêu rõ căn cứ được trích dẫn và chưa xác minh hiệu lực hiện hành. Không từ chối chỉ vì có văn bản sửa đổi sau này. Vẫn từ chối nếu câu trả lời mô tả sai nội dung nguồn hoặc khẳng định quá phạm vi nguồn.
 - Khi source_version_only là false, hãy thẩm định các nhận định về hiệu lực như bình thường. Nếu evidence chưa xác nhận hiệu lực hiện hành thì câu trả lời nêu rõ chưa xác minh được hiệu lực không phải lỗi pháp lý.
 - Nếu payload có `claim_verifier_feedback`, hãy dùng nó như các nhận định cần kiểm tra lại: đối chiếu từng nhận định với đúng tài liệu và dữ kiện câu hỏi, rồi sửa hoặc lược bỏ phần không được hỗ trợ trong `corrected_answer`. Feedback không thay thế việc đọc nguồn, nhưng không được bỏ qua nhận định bị gắn cờ. Giữ lại mọi phần khác đã được nguồn hỗ trợ; nếu nguồn trả lời trực tiếp một quy tắc, hãy nêu quy tắc đó trong phạm vi chính xác của nguồn thay vì từ chối toàn bộ câu hỏi.
+- Mỗi tài liệu có `citation_index` giữ nguyên số trích dẫn trong câu trả lời. Nếu viết `corrected_answer`, chỉ dùng đúng các số `citation_index` được cung cấp; không đánh lại số theo thứ tự tài liệu trong payload.
 """
+
+
+def _critic_evidence_documents(
+    answer: str,
+    documents: list[DocumentRecord],
+    *,
+    limit: int = 6,
+) -> list[tuple[int, DocumentRecord]]:
+    """Keep cited evidence in the critic's bounded payload before other results."""
+
+    selected_indices: list[int] = []
+    for raw_index in _CITATION_RE.findall(answer):
+        index = int(raw_index) - 1
+        if 0 <= index < len(documents) and index not in selected_indices:
+            selected_indices.append(index)
+    selected_indices.extend(index for index in range(len(documents)) if index not in selected_indices)
+    return [(index + 1, documents[index]) for index in selected_indices[:limit]]
 
 
 class LegalCriticReviewer:
@@ -425,6 +443,7 @@ class LegalCriticReviewer:
             from vietnam_legal_agent.infra.llm_instances import get_llm_smart
 
             model = get_llm_smart().with_structured_output(LegalCriticVerdict)
+            selected_evidence = _critic_evidence_documents(answer, documents)
             payload = {
                 "user_query": query,
                 "draft_answer": answer,
@@ -432,6 +451,7 @@ class LegalCriticReviewer:
                 "claim_verifier_feedback": verification_feedback or {},
                 "legal_evidence": [
                     {
+                        "citation_index": citation_index,
                         "document_id": doc.document_id,
                         "source": str((doc.metadata or {}).get("source") or doc.source),
                         "legal_anchor": _anchor(doc),
@@ -441,7 +461,7 @@ class LegalCriticReviewer:
                         "amendment_relationship": doc.amendment_relationship or (doc.metadata or {}).get("Amendment_Relationship"),
                         "text": doc.content[:2000],
                     }
-                    for doc in documents[:6]
+                    for citation_index, doc in selected_evidence
                 ],
             }
 

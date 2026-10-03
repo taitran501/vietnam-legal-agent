@@ -164,6 +164,68 @@ async def test_guardrails_reanchors_supported_critic_correction_without_citation
 
 
 @pytest.mark.asyncio
+async def test_guardrails_keeps_verified_draft_when_nonfatal_critic_correction_fails():
+    class Critic:
+        async def review(
+            self,
+            query,
+            answer,
+            documents,
+            *,
+            source_version_only=False,
+            verification_feedback=None,
+        ):
+            _ = query, answer, documents, source_version_only, verification_feedback
+            return LegalCriticVerdict(
+                approved=False,
+                fatal_error=False,
+                materially_nonresponsive=False,
+                verification_status="unsupported_claim",
+                corrected_answer="Điều 25 quy định tối đa 180 ngày cho mọi công việc [1].",
+                reason_code="critic_optional_correction",
+            )
+
+    class CorrectionFailsVerifier:
+        calls = 0
+
+        async def verify(self, answer, documents, *, query=""):
+            _ = documents, query
+            self.calls += 1
+            supported = self.calls == 1
+            return ClaimSupportResult(
+                supported=supported,
+                unsupported_claim_count=0 if supported else 1,
+                unsupported_claim_indices=[] if supported else [1],
+                reason_code="ok" if supported else "unsupported_correction",
+            )
+
+    document = DocumentRecord(
+        content="Điều 25 quy định thời gian thử việc tối đa theo từng nhóm công việc.",
+        document_id="labor-25",
+        metadata={"legal_anchor": "Điều 25", "Dieu": "Điều 25", "source": "Bộ luật Lao động 2019"},
+    )
+    answer = "Thời gian thử việc tối đa phụ thuộc vào nhóm công việc theo Điều 25 [1]."
+    verifier = CorrectionFailsVerifier()
+
+    valid, reason, final_answer, citations = await AgentGuardrails().check_output(
+        answer,
+        [document],
+        query="Thời gian thử việc tối đa là bao lâu?",
+        claim_verifier=verifier,
+        critic_reviewer=Critic(),
+        verification_policy=VerificationPolicy.LEGAL_CORPUS,
+        task_type=TaskType.LEGAL_LOOKUP,
+        enforce_legal_safety_circuit_breaker=True,
+    )
+
+    assert valid is True
+    assert reason == "ok"
+    assert final_answer == answer
+    assert citations[0]["document_id"] == "labor-25"
+    assert verifier.calls == 2
+
+
+@pytest.mark.asyncio
 async def test_guardrails_passes_unsupported_claim_to_critic_for_targeted_repair():
     class Critic:
         received_feedback = None

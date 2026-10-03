@@ -579,6 +579,44 @@ async def test_critic_receives_versioned_lookup_scope_and_current_status_request
 
 
 @pytest.mark.asyncio
+async def test_critic_payload_prioritizes_cited_evidence_and_preserves_citation_indices(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _CapturingModel:
+        def __init__(self) -> None:
+            self.payload: dict[str, object] = {}
+
+        def with_structured_output(self, _schema):
+            return self
+
+        async def ainvoke(self, messages):
+            import json
+
+            self.payload = json.loads(messages[1][1].partition("\n")[2])
+            return {"approved": True, "reason_code": "ok"}
+
+    import vietnam_legal_agent.infra.llm_instances
+
+    model = _CapturingModel()
+    monkeypatch.setattr(vietnam_legal_agent.infra.llm_instances, "get_llm_smart", lambda: model)
+    documents = [
+        DocumentRecord(
+            content=f"Nguồn pháp lý {index}.",
+            document_id=f"source-{index}",
+            metadata={"source_title": f"Nguồn {index}"},
+        )
+        for index in range(1, 9)
+    ]
+
+    await LegalCriticReviewer().review("Câu hỏi", "Câu trả lời theo nguồn [8].", documents)
+
+    legal_evidence = model.payload["legal_evidence"]
+    assert len(legal_evidence) == 6
+    assert legal_evidence[0]["document_id"] == "source-8"
+    assert legal_evidence[0]["citation_index"] == 8
+
+
+@pytest.mark.asyncio
 async def test_guardrails_pass_source_version_scope_to_critic() -> None:
     document = _document()
     document.metadata.update({
@@ -619,7 +657,7 @@ class _SequenceVerifier:
 
 
 @pytest.mark.asyncio
-async def test_corrected_answer_is_rechecked_without_repeating_critic() -> None:
+async def test_unsupported_optional_correction_keeps_the_verified_draft() -> None:
     verifier = _SequenceVerifier()
     critic = StaticLegalCriticReviewer(
         verdict=LegalCriticVerdict(
@@ -628,8 +666,9 @@ async def test_corrected_answer_is_rechecked_without_repeating_critic() -> None:
         )
     )
 
-    valid, reason, _fallback, _citations = await AgentGuardrails.check_output(
-        "Bản nháp theo Điều 25 [1].",
+    draft = "Bản nháp theo Điều 25 [1]."
+    valid, reason, final_answer, _citations = await AgentGuardrails.check_output(
+        draft,
         [_document()],
         query="Điều 25?",
         require_evidence=True,
@@ -639,6 +678,7 @@ async def test_corrected_answer_is_rechecked_without_repeating_critic() -> None:
         enforce_legal_safety_circuit_breaker=True,
     )
 
-    assert valid is False
-    assert reason == "corrected_answer_unsupported_claim"
+    assert valid is True
+    assert reason == "ok"
+    assert final_answer == draft
     assert verifier.calls == 2

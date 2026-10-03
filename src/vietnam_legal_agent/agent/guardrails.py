@@ -145,6 +145,7 @@ class AgentGuardrails:
         else:
             valid, citations, reason = verify_citations(answer, docs, TaskType.LEGAL_LOOKUP)
         citations_dicts = [c.to_dict() for c in citations]
+        verified_draft_citations = list(citations_dicts)
 
         if not valid:
             # If the answer contains valid citation references to retrieved docs, but only minor segment tag omissions occurred
@@ -225,6 +226,7 @@ class AgentGuardrails:
 
         # 3. Legal Critic Reviewer audit (Peer reviewer agent)
         final_answer = answer
+        can_keep_verified_draft = False
         should_run_critic = critic_reviewer is not None and docs and (
             policy is VerificationPolicy.LEGAL_CORPUS or verification_policy is None
         )
@@ -236,6 +238,11 @@ class AgentGuardrails:
                     docs,
                     source_version_only=source_version_only,
                     verification_feedback=verifier_feedback,
+                )
+                can_keep_verified_draft = bool(
+                    claim_support_passed
+                    and not critic_verdict.fatal_error
+                    and not critic_verdict.materially_nonresponsive
                 )
                 if critic_verdict.verification_status is VerificationStatus.VERIFICATION_UNAVAILABLE:
                     return (
@@ -303,6 +310,9 @@ class AgentGuardrails:
             if not corrected_valid:
                 if corrected_reason in ("legal_claim_without_citation", "article_reference_not_in_evidence") and citations_dicts:
                     corrected_valid = True
+                elif can_keep_verified_draft:
+                    logger.info("Discarding an unverified nonfatal critic correction; retaining the verified draft")
+                    return True, "ok", answer, verified_draft_citations
                 else:
                     return (
                         False,
@@ -314,6 +324,9 @@ class AgentGuardrails:
                 try:
                     corrected_support = await claim_verifier.verify(final_answer, docs, query=query)
                 except Exception:  # noqa: BLE001 - corrected output must not bypass verification
+                    if can_keep_verified_draft:
+                        logger.info("Keeping the verified draft after correction verification failed")
+                        return True, "ok", answer, verified_draft_citations
                     return (
                         False,
                         VerificationStatus.VERIFICATION_UNAVAILABLE.value,
@@ -326,6 +339,9 @@ class AgentGuardrails:
                     reason_code=corrected_support.reason_code,
                 )
                 if corrected_status is VerificationStatus.VERIFICATION_UNAVAILABLE:
+                    if can_keep_verified_draft:
+                        logger.info("Keeping the verified draft after correction verification became unavailable")
+                        return True, "ok", answer, verified_draft_citations
                     return (
                         False,
                         VerificationStatus.VERIFICATION_UNAVAILABLE.value,
@@ -333,6 +349,9 @@ class AgentGuardrails:
                         citations_dicts,
                     )
                 if not corrected_support.supported or corrected_status is not VerificationStatus.VERIFIED:
+                    if can_keep_verified_draft:
+                        logger.info("Discarding an unsupported nonfatal critic correction; retaining the verified draft")
+                        return True, "ok", answer, verified_draft_citations
                     # If the draft itself failed claim verification, one bounded
                     # repair retry gives the critic the exact failed correction
                     # as well as the verifier's claim-level feedback. The retry
