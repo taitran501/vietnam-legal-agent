@@ -97,7 +97,7 @@ def build_legal_retrieval_chain(gateway: RetrievalGateway) -> Any:
     """
 
     from langchain.chains import create_retrieval_chain
-    from langchain_core.runnables import RunnableLambda
+    from langchain_core.runnables import Runnable, RunnableLambda
 
     from vietnam_legal_agent.tools.generation import EvidenceGenerationGateway
 
@@ -105,6 +105,7 @@ def build_legal_retrieval_chain(gateway: RetrievalGateway) -> Any:
     official_web_retriever = OfficialWebRetriever(gateway=EvidenceGenerationGateway(), k=5)
     source_ensemble = EnsembleRetriever(
         retrievers=[corpus_retriever, official_web_retriever],
+        weights=[0.5, 0.5],
         id_key="document_id",
     )
 
@@ -150,7 +151,7 @@ def build_legal_retrieval_chain(gateway: RetrievalGateway) -> Any:
                 break
         return unique
 
-    retriever = RunnableLambda(retrieve_bounded)
+    retriever: Runnable[dict[str, Any], list[Document]] = RunnableLambda(retrieve_bounded)
     return create_retrieval_chain(
         retriever,
         EvidenceGenerationGateway.legal_document_chain(),
