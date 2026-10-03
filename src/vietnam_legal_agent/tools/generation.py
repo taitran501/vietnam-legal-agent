@@ -681,70 +681,83 @@ class EvidenceGenerationGateway:
         return EvidenceGenerationGateway._compose_legal_route_answer(documents)
 
     @classmethod
+    def legal_document_chain(cls) -> Any:
+        """Create LangChain's standard Stuff Documents chain for legal answers."""
+        from langchain.chains.combine_documents import create_stuff_documents_chain
+        from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
+
+        from vietnam_legal_agent.infra.llm_instances import get_llm_smart
+
+        system_prompt = (
+            "Bạn là trợ lý tra cứu pháp luật Việt Nam. Trả lời trực tiếp đúng câu hỏi bằng tiếng Việt rõ ràng, ngắn gọn; giữ ngôn ngữ người dùng. "
+            "Chỉ dùng thông tin trong tài liệu được cung cấp. Mỗi nhận định pháp lý và từng mục danh sách phải có citation thực tế [n] theo thứ tự tài liệu; không viết placeholder. "
+            "Khi tóm tắt danh sách, không biến dòng khái quát về quyền/nghĩa vụ thành nội dung cụ thể. Không biến nghĩa vụ của một chủ thể thành quyền hoặc chế tài của chủ thể khác. "
+            "Giữ nguyên điều kiện, ngoại lệ, ngưỡng, thời điểm, đối tượng áp dụng và lựa chọn thay thế trong nguồn; không biến nghĩa vụ có điều kiện thành nghĩa vụ chung. "
+            "Khi nguồn và câu hỏi nêu ngưỡng số lượng hoặc thời gian, so sánh trực tiếp hai giá trị, giới hạn kết luận vào nghĩa vụ gắn với ngưỡng đó, và không suy rộng thành khẳng định không có biện pháp nào khác. "
+            "Không kết luận chung rằng một bên không phải trả thêm bất kỳ khoản nào nếu nguồn chỉ mô tả một căn cứ. Khi nguồn dẫn chiếu sang điểm hoặc khoản khác, đọc đúng phần được cung cấp và nêu ngoại lệ; nếu không xác định được, nói rõ giới hạn. "
+            "Không tự thêm thủ tục, cơ quan tiếp nhận, giấy tờ, phí, thời hạn hoặc hướng xử lý nếu tài liệu không nêu. Không suy đoán hiệu lực hiện hành hoặc sửa đổi về sau khi nguồn không xác nhận. "
+            "Nếu người dùng hỏi về một phiên bản cụ thể, chỉ mô tả nội dung phiên bản được truy xuất và nói rõ hiệu lực hiện hành chưa được xác minh nếu nguồn không xác nhận.\n\n"
+            "Nếu không có tài liệu nào được truy xuất, nói rõ chưa tìm được nguồn phù hợp và không đưa ra kết luận pháp lý.\n\n"
+            "Không tự gán vai trò của người dùng hoặc bên còn lại. Chỉ gọi ai là bên đặt cọc, bên nhận đặt cọc, người lao động, người sử dụng lao động, bên mua hoặc bên bán khi câu hỏi và tài liệu xác định rõ vai trò đó. "
+            "Đối chiếu tiêu đề, chủ thể, điều kiện và giai đoạn áp dụng của từng nguồn với câu hỏi; không dùng quy tắc của giai đoạn khác làm câu trả lời chính. "
+            "Với câu hỏi đơn giản về một quyền, nghĩa vụ hoặc kết quả, ưu tiên điều khoản trực tiếp và trả lời ngắn gọn; không lặp lại cùng quy tắc. "
+            "Nếu nguồn không trả lời một phần, nêu rõ giới hạn thay vì suy diễn.\n\n"
+            "TÀI LIỆU ĐÃ TRUY XUẤT:\n{context}"
+        )
+        prompt = ChatPromptTemplate.from_messages(
+            [("system", system_prompt), ("human", "{input}")]
+        )
+        document_prompt = PromptTemplate.from_template(
+            "--- TÀI LIỆU [{citation_index}] ---\n"
+            "Điều khoản: {legal_anchor}\nNguồn: {source_title}\nNội dung:\n{page_content}"
+        )
+        return create_stuff_documents_chain(
+            get_llm_smart(),
+            prompt,
+            document_prompt=document_prompt,
+        )
+
+    @classmethod
     async def _synthesize_legal_route_answer(cls, query: str, documents: list[DocumentRecord]) -> str:
-        """Synthesize a structured, high-readability legal advisory answer using LLM RAG."""
+        """Synthesize an answer with LangChain's standard Stuff Documents chain."""
         if not documents:
             return ""
 
-        from langchain_core.output_parsers import StrOutputParser
-        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_core.documents import Document
 
         from vietnam_legal_agent.config import get_settings
-        from vietnam_legal_agent.infra.llm_instances import get_llm_smart
 
         settings = get_settings()
         if not settings.openai_api_key or settings.openai_api_key.startswith("your-"):
             return ""
 
-        from vietnam_legal_agent.tools.evidence import is_explicit_source_version_lookup
-
-        source_scope_instruction = ""
-        if is_explicit_source_version_lookup(query, documents, TaskType.LEGAL_LOOKUP):
-            source_scope_instruction = (
-                "Phạm vi nguồn: Chỉ mô tả điều khoản trong phiên bản nguồn được truy xuất. "
-                "Nêu rõ đây là nội dung của nguồn đó và hiệu lực hiện hành chưa được xác minh; "
-                "không diễn đạt như kết luận rằng đây chắc chắn là quy định đang áp dụng.\n\n"
-            )
-
-        context_parts = []
-        # Keep the complete route evidence set in synthesis. Truncating here
-        # can discard a directly relevant source selected from a later query.
+        context_documents: list[Document] = []
         for index, document in enumerate(documents[:8], start=1):
-            metadata = document.metadata or {}
+            metadata = dict(document.metadata or {})
             anchor = str(metadata.get("Dieu") or metadata.get("Parent_Dieu") or metadata.get("legal_anchor") or "Điều luật")
             source_title = str(metadata.get("source_title") or metadata.get("source") or metadata.get("law_ref") or "Văn bản pháp luật")
-            raw_content = document.content or ""
-            if "\n\n" in raw_content:
-                parts = raw_content.split("\n\n", 1)
+            content = document.content or ""
+            if "\n\n" in content:
+                parts = content.split("\n\n", 1)
                 if parts[0].startswith("[") and "]" in parts[0]:
-                    raw_content = parts[1]
-            content = " ".join(raw_content.split())[:4500]
-            context_parts.append(f"--- TÀI LIỆU [{index}] ---\nĐiều khoản: {anchor}\nNguồn: {source_title}\nNội dung:\n{content}\n")
-
-        context = "\n".join(context_parts)
-        system_prompt = (
-            "Bạn là trợ lý tra cứu pháp luật Việt Nam. Trả lời trực tiếp đúng câu hỏi bằng tiếng Việt rõ ràng, ngắn gọn; giữ ngôn ngữ người dùng, không chuyển câu trả lời tiếng Việt sang tiếng Anh.\n\n"
-            f"{source_scope_instruction}"
-            "Chỉ dùng thông tin có trong tài liệu được cung cấp. Gắn chỉ số trích dẫn thực tế như [1], [2] theo đúng thứ tự tài liệu ở trên vào từng câu có nhận định pháp lý; mỗi câu pháp lý và từng mục đánh số/gạch đầu dòng cần citation riêng ngay trên mục đó, không dồn citation ở cuối danh sách; tuyệt đối không viết placeholder như [n]. Khi tóm tắt một danh sách, lược bỏ dòng chỉ nói chung rằng còn quyền/nghĩa vụ khác theo luật hoặc điều lệ nếu người dùng không yêu cầu nguyên văn hay liệt kê đầy đủ; không diễn giải dòng khái quát đó thành một quyền hoặc nghĩa vụ cụ thể. Không biến nghĩa vụ của một chủ thể thành quyền hoặc chế tài của chủ thể khác nếu nguồn không nêu quan hệ đó. Giữ nguyên điều kiện, ngoại lệ, ngưỡng, thời điểm, đối tượng áp dụng và các lựa chọn thay thế nêu trong nguồn; không biến nghĩa vụ có điều kiện thành nghĩa vụ chung. Khi nguồn và câu hỏi đều nêu một ngưỡng số lượng hoặc thời gian, hãy so sánh trực tiếp hai giá trị, kết luận trong phạm vi nghĩa vụ gắn với ngưỡng đó và giữ điều kiện có thể làm thay đổi kết quả. Ví dụ logic: nếu nghĩa vụ chỉ phát sinh từ N ngày trở lên và câu hỏi nêu M ngày với M < N, hãy nói nghĩa vụ gắn với ngưỡng đó chưa phát sinh; không suy rộng thành khẳng định rằng không có biện pháp pháp lý nào khác. Không kết luận chung rằng một bên không phải trả thêm bất kỳ khoản nào nếu nguồn chỉ mô tả một căn cứ; hãy giới hạn kết luận vào căn cứ đã trích dẫn và nói rõ khi nguồn chưa làm rõ căn cứ riêng khác. Khi nguồn dẫn chiếu sang điểm hoặc khoản khác, hãy đọc phần được dẫn chiếu rồi nêu ngắn gọn ngoại lệ ngay trong cùng câu với nghĩa vụ. Nếu không thể xác định ngoại lệ, bỏ nhận định tuyệt đối đó hoặc nói rõ giới hạn. Không tự thêm thủ tục, cơ quan tiếp nhận, giấy tờ, phí, thời hạn, ngoại lệ hoặc hướng xử lý nếu tài liệu không nêu. Không suy đoán hiệu lực hiện hành hay sửa đổi về sau khi nguồn không xác nhận.\n\n"
-            "Không tự gán vai trò của người dùng hoặc bên còn lại vào thuật ngữ pháp lý trong nguồn. Ví dụ, chỉ gọi ai là bên đặt cọc, bên nhận đặt cọc, người lao động, người sử dụng lao động, bên mua hoặc bên bán khi câu hỏi và tài liệu xác định rõ vai trò đó. Nếu chưa rõ, dùng thuật ngữ pháp lý trung tính và nêu điều kiện áp dụng thay vì đoán.\n\n"
-            "Trước khi soạn, đối chiếu tiêu đề và điều kiện áp dụng của từng nguồn với đúng giai đoạn, thủ tục và tình huống trong câu hỏi. Nếu nguồn nói về một giai đoạn khác (ví dụ thay đổi quyết định sau này thay vì quyết định ban đầu), không dùng quy tắc đó làm câu trả lời chính. Chỉ nêu quy tắc gần kề nếu nói rõ giới hạn áp dụng.\n\n"
-            "Giữ nguyên phạm vi của chủ thể, loại giao dịch, ngành nghề, tư cách pháp lý và điều kiện được nêu trong nguồn; không khái quát quy tắc giới hạn cho một nhóm thành quyền/nghĩa vụ chung. Khi điều khoản dẫn chiếu hoặc quy định mặc định cho trường hợp không có thỏa thuận, đọc đúng nội dung được cung cấp và không tự thêm điều kiện từ quy định khác. Gắn citation vào nguồn trực tiếp hỗ trợ nhận định đó.\n\n"
-            "Với câu hỏi đơn giản về một quyền, nghĩa vụ hoặc kết quả pháp lý, ưu tiên điều khoản trực tiếp quy định sự kiện và kết quả đó. Trả lời bằng quy tắc trực tiếp trong một câu có citation; không thêm một câu kết luận 'do đó' chỉ để lặp lại cùng quy tắc. Chỉ áp dụng quy tắc cho tình huống người dùng khi nguồn nêu đủ điều kiện và dữ kiện họ đã cung cấp đáp ứng các điều kiện ấy.\n\n"
-            "Với khoản tiền gồm nhiều cấu phần, phân biệt khoản hoàn gốc với phần phải trả thêm. Giữ đủ từng cấu phần và nêu đúng tổng số; không lược bỏ khoản tiền bổ sung rồi phủ nhận kết quả tương đương.\n\n"
-            "Nếu người dùng chỉ hỏi một điều khoản, tóm tắt đúng phần liên quan trong 1–4 câu; không tạo các mục kết luận, thủ tục hay tài chính nếu không cần. Chỉ dùng tiêu đề khi câu hỏi có nhiều vấn đề cần phân tích. Nếu nguồn không trả lời phần được hỏi, nêu rõ giới hạn đó thay vì suy diễn.\n\n"
-            "TÀI LIỆU ĐÃ TRUY XUẤT:\n"
-            f"{context}"
-        )
-
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", system_prompt),
-            ("human", "{question}"),
-        ])
+                    content = parts[1]
+            metadata.update(
+                citation_index=index,
+                legal_anchor=anchor,
+                source_title=source_title,
+            )
+            context_documents.append(
+                Document(
+                    page_content=" ".join(content.split())[:4500],
+                    metadata=metadata,
+                )
+            )
 
         try:
-            chain = prompt | get_llm_smart() | StrOutputParser()
-            answer = await asyncio.to_thread(chain.invoke, {"question": query})
-            return (answer or "").strip()
+            answer = await cls.legal_document_chain().ainvoke(
+                {"input": query, "context": context_documents}
+            )
+            return str(answer or "").strip()
         except Exception:
             logger.debug("Legal RAG synthesis failed, falling back to extractive answer", exc_info=True)
             return ""

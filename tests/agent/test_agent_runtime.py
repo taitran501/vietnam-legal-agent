@@ -154,6 +154,55 @@ async def test_agent_runtime_chitchat_bypass(agent_deps):
 
 
 @pytest.mark.asyncio
+async def test_plain_legal_lookup_uses_standard_rag_without_starting_react(agent_deps):
+    from langchain_core.documents import Document
+
+    class FakeRagChain:
+        async def ainvoke(self, inputs):
+            assert inputs["input"] == "Thời gian thử việc tối đa là bao lâu?"
+            return {
+                "answer": "Thời gian thử việc tối đa phụ thuộc vào tính chất công việc [1].",
+                "context": [
+                    Document(
+                        page_content="Điều 25 quy định thời gian thử việc tối đa theo từng loại công việc.",
+                        metadata={
+                            "document_id": "labor-25",
+                            "document_source": "legal",
+                            "Dieu": "Điều 25",
+                            "legal_anchor": "Điều 25",
+                            "source_title": "Bộ luật Lao động 2019",
+                            "citation_index": 1,
+                        },
+                    )
+                ],
+            }
+
+    class PassingGuardrails:
+        def check_input(self, _query):
+            return True, ""
+
+        async def check_output(self, answer, evidence, **kwargs):
+            return True, "", answer, [{"index": 1, "document_id": "labor-25"}]
+
+    runtime = AgentWorkflowRuntime(agent_deps, guardrails=PassingGuardrails())
+    runtime._legal_rag_chain = FakeRagChain()
+    events = [
+        event
+        async for event in runtime.stream(
+            query="Thời gian thử việc tối đa là bao lâu?",
+            user_id="u1",
+            conversation_id="standard-rag",
+        )
+    ]
+
+    complete = next(event for event in events if event.get("type") == "response_complete")
+    assert complete["source"] == "legal"
+    assert complete["documents"]
+    assert any(event.get("action") == "retrieve_legal" for event in events)
+    assert not any(event.get("stage") == "agent_cognitive_loop" for event in events)
+
+
+@pytest.mark.asyncio
 async def test_pending_corpus_review_blocks_legal_answer_regardless_of_domain(agent_deps):
     document = DocumentRecord(
         content="Người lao động có trình độ cao đẳng được thử việc tối đa sáu mươi ngày. " * 3,

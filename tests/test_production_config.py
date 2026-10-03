@@ -70,6 +70,8 @@ def test_general_legal_corpus_is_the_default_runtime_source() -> None:
     assert settings.enable_universal_retrieval is True
     assert settings.corpus_id == "vietnamese_law"
     assert settings.enable_qdrant_retrieval is False
+    assert settings.cross_encoder_shadow_mode is False
+    assert settings.web_official_domains == "chinhphu.vn,vbpl.vn"
 
 
 def test_broad_corpus_requires_legal_review_before_production() -> None:

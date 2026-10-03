@@ -20,11 +20,16 @@ flowchart TD
     Stop --> History
 ```
 
-The default local preview uses the content-locked Ministry of Justice
-multi-domain corpus for every legal topic. Optional retrieval adapters remain
-disabled unless an operator selects a separately reviewed, multi-domain
-collection. Production requires legal review of the selected corpus and a
-promoted release artifact.
+Ordinary legal lookup uses LangChain's two-step RAG pattern: retrieve, then
+generate from the retrieved documents. The original user question and up to
+two supplemental search queries from the existing intent-understanding step
+go to the legal corpus retriever. LangChain's `EnsembleRetriever` applies
+reciprocal-rank fusion across those corpus result lists, then combines them
+with results from the allowlisted official-web retriever. The corpus gateway
+remains the owner of its established per-query ranking;
+`create_retrieval_chain` passes the fused documents to the standard
+stuff-documents answer chain. Production requires legal review of the selected
+corpus and a promoted release artifact.
 
 ## Runtime boundaries
 
@@ -43,7 +48,8 @@ promoted release artifact.
 The current ReAct registry contains five tools:
 
 1. `search_legal_provisions` retrieves legal text and relevant anchors.
-2. `search_web_official` searches allowlisted official legal sources.
+2. `search_web_official` searches allowlisted official legal sources when the
+   autonomous workflow needs an additional source.
 3. `lookup_answer_cache` checks verified answers within corpus identity.
 4. `load_conversation_context` loads recent messages and persisted context.
 5. `ask_user_for_clarification` asks a short question when a material fact is

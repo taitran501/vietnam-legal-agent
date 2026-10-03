@@ -182,7 +182,7 @@ class Settings(BaseSettings):
     # ── Tavily (optional web search) ─────────────────────────────────────────
     tavily_api_key: str | None = Field(default=None)
     web_official_domains: str = Field(
-        default="vanban.chinhphu.vn,vbpl.vn",
+        default="chinhphu.vn,vbpl.vn",
         description="Comma-separated official domains permitted as web evidence",
     )
     web_excerpt_max_chars: int = Field(default=1200, ge=200, le=4000)
@@ -281,7 +281,7 @@ class Settings(BaseSettings):
         description="Fallback to heuristic rerank when cross-encoder times out/errors",
     )
     cross_encoder_shadow_mode: bool = Field(
-        default=True,
+        default=False,
         description="Run cross-encoder in shadow mode without impacting user ranking",
     )
     cross_encoder_rollout_percent: int = Field(

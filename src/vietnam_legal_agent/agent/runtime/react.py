@@ -137,6 +137,7 @@ class AgentWorkflowRuntime:
 
         self._guardrails = guardrails or AgentGuardrails()
         self._runner = runner
+        self._legal_rag_chain: Any | None = None
 
     @property
     def runner(self) -> Any:
@@ -147,6 +148,14 @@ class AgentWorkflowRuntime:
                 config=AgentRunConfig(max_steps=5, max_search_calls=4, max_web_calls=1)
             )
         return self._runner
+
+    @property
+    def legal_rag_chain(self) -> Any:
+        if self._legal_rag_chain is None:
+            from vietnam_legal_agent.agent.runtime.rag import build_legal_retrieval_chain
+
+            self._legal_rag_chain = build_legal_retrieval_chain(self.deps.retrieval)
+        return self._legal_rag_chain
 
     async def stream(self, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
         trace_id = str(kwargs.get("trace_id") or uuid.uuid4())
@@ -579,7 +588,9 @@ class AgentWorkflowRuntime:
             "ask_user_for_clarification": "Đang soạn câu hỏi làm rõ thông tin…",
         }
 
-        s_loop = trace_session.start_span("agent_cognitive_loop")
+        standard_lookup_route = route in {RouteType.LEGAL_LOOKUP, RouteType.LEGAL_EXPLAIN_COMPARE}
+        use_standard_rag = self._runner is None and standard_lookup_route
+        s_loop = trace_session.start_span("two_step_legal_rag" if use_standard_rag else "agent_cognitive_loop")
         result = None
         current_tool_args: dict[str, Any] = {}
         pass_result = None
@@ -642,12 +653,75 @@ class AgentWorkflowRuntime:
                 elif event.get("type") == "agent_complete":
                     pass_result = event.get("result")
 
-        async for update in run_agent_pass(
-            standalone_query,
-            search_query_hints=retrieval_queries,
-        ):
-            yield update
-        result = pass_result
+        if use_standard_rag:
+            from vietnam_legal_agent.agent.agent_loop import AgentRunResult, AgentStep
+            from vietnam_legal_agent.agent.runtime.rag import records_from_retrieved_documents
+            from vietnam_legal_agent.tools.evidence import (
+                auto_anchor_citations_in_answer,
+                build_citations,
+                extract_citation_sources,
+            )
+
+            yield {
+                "type": "status",
+                "message": "Đang tra cứu nguồn pháp luật và soạn câu trả lời…",
+                "stage": "retrieve_legal",
+                "trace_id": trace_id,
+            }
+            rag_started = time.perf_counter()
+            rag_output = await self.legal_rag_chain.ainvoke(
+                {
+                    "input": standalone_query,
+                    "retrieval_queries": retrieval_queries,
+                }
+            )
+            records = records_from_retrieved_documents(list(rag_output.get("context") or []))
+            answer = str(rag_output.get("answer") or "").strip()
+            if records:
+                answer = auto_anchor_citations_in_answer(answer, records)
+            result = AgentRunResult(
+                answer=answer,
+                termination_reason=(
+                    TerminationReason.ANSWER_COMPLETE.value
+                    if records and answer
+                    else TerminationReason.INSUFFICIENT_EVIDENCE.value
+                ),
+                trajectory=[
+                    AgentStep(
+                        step=1,
+                        tool="retrieve_legal",
+                        args={"query": standalone_query},
+                        observation={"ok": bool(records), "document_count": len(records)},
+                        latency_ms=round((time.perf_counter() - rag_started) * 1000, 2),
+                        allowed=True,
+                    )
+                ],
+                evidence=[record.to_dict() for record in records],
+                citations=[item.to_dict() for item in build_citations(records)],
+                citation_sources=[item.to_dict() for item in extract_citation_sources(answer, records)],
+                source="legal",
+                steps_taken=1,
+                cache_hit=False,
+                task_type=route_spec(route).task_type.value,
+                route=route.value,
+            )
+            yield {
+                "type": "workflow_step",
+                "step": 1,
+                "action": "retrieve_legal",
+                "status": "completed" if records else "insufficient_evidence",
+                "label": "Đã tra cứu và soạn câu trả lời từ tài liệu pháp luật.",
+                "latency_ms": result.trajectory[0].latency_ms,
+                "args": {"query": standalone_query},
+                "trace_id": trace_id,
+            }
+        else:
+            async for update in run_agent_pass(
+                standalone_query,
+                search_query_hints=retrieval_queries,
+            ):
+                yield update
+            result = pass_result
 
         s_loop.close(
             model="gpt-4o-mini",
@@ -789,10 +863,15 @@ class AgentWorkflowRuntime:
                     "content_too_short",
                 )
             )
-            max_agent_steps = max(1, int(getattr(getattr(self.runner, "config", None), "max_steps", 5)))
+            max_agent_steps = (
+                0
+                if use_standard_rag
+                else max(1, int(getattr(getattr(self.runner, "config", None), "max_steps", 5)))
+            )
             remaining_steps = max_agent_steps - result.steps_taken
             if (
                 not passed
+                and not use_standard_rag
                 and requires_legal_evidence
                 and retryable_verification_failure
                 and not await turn_cancelled()
