@@ -248,6 +248,7 @@ PERSONAL_CONFLICT_CUES = (
     "đơn phương",
     "không thực hiện",
     "gây thiệt hại",
+    "không báo trước",
 )
 PERSONAL_ADVICE_CUES = (
     "nên làm gì",
@@ -461,18 +462,9 @@ OWN_CONTEXT_TERMS = (
 )
 
 CASE_ACTION_TERMS = (
+    # Retain questions about whether an obligation applies after the user has
+    # described concrete facts (for example, an overdue private loan).
     "có phải",
-    "có thuộc",
-    "phải thực hiện",
-    "được hưởng",
-    "bồi thường",
-    "có quyền",
-    "có nghĩa vụ",
-    "đánh giá",
-    "xác định",
-    "kiểm tra nghĩa vụ",
-    "áp dụng cho",
-    "trường hợp",
     "tôi cần làm gì",
     "tôi phải làm gì",
     "tư vấn",
@@ -578,6 +570,20 @@ def _is_case_assessment_query(query: str) -> bool:
         or detect_legal_domain(query) != "general"
         or _contains_legal_signal(query)
     )
+    has_concrete_time_reference = bool(
+        re.search(
+            r"(?<!\w)(?:hôm|ngày)\s*(?:qua|nay|mai|\d{1,2})(?!\w)|"
+            r"(?<!\w)(?:tuần|tháng|năm)\s+(?:trước|qua|ngoái|tới|sau)(?!\w)",
+            raw_q,
+        )
+    )
+    if (
+        has_own_context
+        and has_legal_topic
+        and has_concrete_time_reference
+        and _contains_any_term(q, PERSONAL_CONFLICT_CUES)
+    ):
+        return True
     if _contains_any_term(q, ("co dung luat khong", "co vi pham khong", "co duoc phep khong", "co hop phap khong", "xu ly the nao", "giai quyet the nao")) and has_legal_topic:
         return True
 
@@ -596,6 +602,9 @@ def _is_case_assessment_query(query: str) -> bool:
         return True
     if _contains_any_term(q, ASSESSMENT_TERMS):
         return True
+    # Entitlement questions ("có quyền", "được bồi thường thế nào") describe
+    # legal rules and do not by themselves establish a concrete personal case.
+    # Keep this signal for explicit requests to act on an individual dispute.
     if _contains_any_term(q, CASE_ACTION_TERMS):
         return True
     # A first-person pronoun alone is not a case fact. Preserve concrete

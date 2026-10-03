@@ -50,6 +50,18 @@ def test_personal_legal_problems_route_to_assessment_across_domains():
     assert all(classify_task(query) == TaskType.CASE_ASSESSMENT for query in queries)
 
 
+def test_hypothetical_entitlement_is_lookup_but_stated_dispute_is_assessment():
+    assert classify_task(
+        "Nếu chủ nhà không trả tiền cọc thì người thuê được yêu cầu gì?"
+    ) is TaskType.LEGAL_LOOKUP
+    assert classify_task(
+        "Chủ nhà giữ tiền cọc của tôi sau khi trả nhà, tôi nên làm gì?"
+    ) is TaskType.CASE_ASSESSMENT
+    assert classify_task(
+        "Công ty cho tôi nghỉ việc ngay từ ngày mai không báo trước thì bồi thường thế nào?"
+    ) is TaskType.CASE_ASSESSMENT
+
+
 def test_request_for_new_official_material_routes_to_web_research():
     query = "Tìm văn bản chính thức mới về thuế thu nhập cá nhân."
     assert research_requested(query)
@@ -73,6 +85,7 @@ def test_general_questions_about_rules_stay_on_legal_lookup_route():
         "Thời gian thử việc tối đa bao lâu?",
         "Công ty cổ phần cần tối thiểu bao nhiêu cổ đông?",
         "Mua hàng online nhận sản phẩm lỗi thì người mua có quyền gì?",
+        "Nếu công ty cho tôi nghỉ trái pháp luật, tôi được bồi thường thế nào?",
         "Khi cha mẹ ly hôn, tòa án căn cứ vào đâu để quyết định người trực tiếp nuôi con?",
     )
     for query in queries:
