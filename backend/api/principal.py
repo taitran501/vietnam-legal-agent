@@ -204,4 +204,8 @@ def principal_from_request_state(request: Any) -> Principal:
     if legacy_id:
         return Principal(id=str(legacy_id), type="legacy_api_key", scopes=frozenset({"chat", "feedback"}))
     # Local disabled-auth mode is intentionally explicit and isolated.
-    return Principal(id="dev-local", type="local", scopes=frozenset({"chat", "feedback"}))
+    return Principal(
+        id="dev-local",
+        type="local",
+        scopes=frozenset({"chat", "feedback", "quality_admin", "ops", "documents:write"}),
+    )

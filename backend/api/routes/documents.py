@@ -10,9 +10,10 @@ import time
 from typing import Annotated, Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel, Field
 
+from backend.api.principal import Principal, principal_from_request_state
 from backend.api.upload_validation import (
     enforce_extracted_text_limit,
     read_bounded_upload,
@@ -37,6 +38,34 @@ from vietnam_legal_agent.tools.legal_calculators import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class RequireDocumentsScope:
+    """Enforce OAuth scope authorization checks (e.g. 'documents:write' or 'ops')."""
+
+    def __init__(self, required_scope: str = "documents:write") -> None:
+        self.required_scope = required_scope
+
+    def __call__(self, request: Request) -> Principal:
+        principal = principal_from_request_state(request)
+        if principal.has_scope(self.required_scope) or principal.has_scope("ops"):
+            return principal
+        raise HTTPException(
+            status_code=403,
+            detail=f"Forbidden: '{self.required_scope}' or 'ops' scope required",
+        )
+
+
+def require_documents_scope(
+    scope_or_request: str | Request = "documents:write",
+    scope: str = "documents:write",
+) -> Any:
+    """FastAPI dependency or direct helper for document scope authorization."""
+    if isinstance(scope_or_request, Request):
+        return RequireDocumentsScope(scope)(scope_or_request)
+    return RequireDocumentsScope(scope_or_request)
+
+
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 class ExportDocxRequest(BaseModel):
@@ -71,13 +100,14 @@ class CalculateLandTaxRequest(BaseModel):
     is_direct_family_transfer: bool = False
 
 
-@router.post("/upload")
+@router.post("/upload", dependencies=[Depends(require_documents_scope("documents:write"))])
 async def upload_document(
     request: Request,
     file: Annotated[UploadFile, File(...)],
     analyze_redline: Annotated[bool, Form()] = True,
 ) -> dict[str, Any]:
     """Upload and parse contract or legal instrument (PDF, DOCX, TXT)."""
+    require_documents_scope(request, "documents:write")
     started_at = time.perf_counter()
     outcome = "internal_error"
     settings = get_settings()
@@ -205,7 +235,7 @@ async def upload_document(
                 logger.warning("Could not release document admission lease")
 
 
-@router.post("/export-docx")
+@router.post("/export-docx", dependencies=[Depends(require_documents_scope("documents:write"))])
 async def export_docx(payload: ExportDocxRequest):
     """Generate and return authentic .docx file adhering to Decree 30/2020/ND-CP."""
     try:
@@ -231,14 +261,14 @@ async def export_docx(payload: ExportDocxRequest):
         raise HTTPException(status_code=500, detail="Không thể xuất file Word. Vui lòng thử lại.") from exc
 
 
-@router.post("/draft/court-petition")
+@router.post("/draft/court-petition", dependencies=[Depends(require_documents_scope("documents:write"))])
 async def draft_court_petition(payload: CourtPetitionPayload):
     """Draft official Court Petition (Mẫu số 23-DS TANDTC)."""
     result = draft_court_petition_form_23(payload)
     return result.model_dump(mode="json")
 
 
-@router.post("/draft/deposit-contract")
+@router.post("/draft/deposit-contract", dependencies=[Depends(require_documents_scope("documents:write"))])
 async def draft_deposit(
     buyer_name: str = "Bên A (Bên mua)",
     seller_name: str = "Bên B (Bên bán)",
@@ -259,7 +289,7 @@ async def draft_deposit(
     return result.model_dump(mode="json")
 
 
-@router.post("/calculate/court-fee")
+@router.post("/calculate/court-fee", dependencies=[Depends(require_documents_scope("documents:write"))])
 async def calc_court_fee(payload: CalculateCourtFeeRequest):
     """Calculate Court Legal Fees under Resolution 326/2016/UBTVQH14."""
     result = calculate_court_fees(
@@ -270,7 +300,7 @@ async def calc_court_fee(payload: CalculateCourtFeeRequest):
     return result.model_dump(mode="json")
 
 
-@router.post("/calculate/severance")
+@router.post("/calculate/severance", dependencies=[Depends(require_documents_scope("documents:write"))])
 async def calc_severance(payload: CalculateSeveranceRequest):
     """Calculate illegal dismissal compensation under Labor Code 2019."""
     result = calculate_illegal_termination_compensation(
@@ -283,7 +313,7 @@ async def calc_severance(payload: CalculateSeveranceRequest):
     return result.model_dump(mode="json")
 
 
-@router.post("/calculate/interest")
+@router.post("/calculate/interest", dependencies=[Depends(require_documents_scope("documents:write"))])
 async def calc_interest(payload: CalculateInterestRequest):
     """Calculate overdue interest with Civil Code 2015 statutory cap."""
     result = calculate_overdue_interest(
@@ -295,7 +325,7 @@ async def calc_interest(payload: CalculateInterestRequest):
     return result.model_dump(mode="json")
 
 
-@router.post("/calculate/land-tax")
+@router.post("/calculate/land-tax", dependencies=[Depends(require_documents_scope("documents:write"))])
 async def calc_land_tax(payload: CalculateLandTaxRequest):
     """Calculate Real Estate Transfer PIT (2%) and Registration Fee (0.5%)."""
     result = calculate_land_transfer_taxes(

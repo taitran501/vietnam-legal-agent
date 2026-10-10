@@ -13,6 +13,7 @@ Performs automated clause-by-clause scrutiny against Vietnamese statutory prohib
 from __future__ import annotations
 
 import json
+import logging
 import re
 from collections.abc import Callable
 from typing import Literal, TypedDict
@@ -20,6 +21,10 @@ from typing import Literal, TypedDict
 from pydantic import BaseModel, Field
 
 from vietnam_legal_agent.tools.document_parser import ParsedClause
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_BATCH_SIZE: int = 10
 
 
 class ClauseReview(BaseModel):
@@ -40,6 +45,15 @@ class ClauseReview(BaseModel):
     )
 
 
+class CoverageMetadata(BaseModel):
+    """Metadata detailing the coverage and completeness of contract clause review."""
+
+    total_clauses: int = Field(default=0, description="Tổng số điều khoản có trong tài liệu")
+    reviewed_count: int = Field(default=0, description="Số điều khoản đã được rà soát thực tế")
+    coverage_ratio: float = Field(default=1.0, description="Tỷ lệ bao phủ rà soát (0.0 đến 1.0)")
+    is_complete: bool = Field(default=True, description="Đánh dấu toàn bộ điều khoản đã được rà soát đầy đủ")
+
+
 class ContractReviewReport(BaseModel):
     """Comprehensive legal risk matrix and redline report for an entire contract."""
 
@@ -53,6 +67,10 @@ class ContractReviewReport(BaseModel):
     executive_summary: str = Field(description="Tóm tắt nhận định của Luật sư rà soát")
     clause_reviews: list[ClauseReview] = Field(default_factory=list, description="Danh sách rà soát chi tiết từng điều")
     negotiation_strategy: list[str] = Field(default_factory=list, description="Chiến lược đàm phán sửa đổi hợp đồng")
+    coverage: CoverageMetadata = Field(
+        default_factory=CoverageMetadata,
+        description="Thông tin độ bao phủ và tính hoàn chỉnh của quá trình rà soát điều khoản",
+    )
 
 
 class HeuristicRule(TypedDict):
@@ -156,17 +174,135 @@ def review_contract_clauses_heuristic(
         "Đảm bảo các phụ lục đính kèm tuân thủ cùng các điều khoản chung.",
     ]
 
+    total_clauses = len(clauses)
+    reviewed_count = len(reviews)
+    coverage_ratio = 1.0 if total_clauses == 0 else round(reviewed_count / total_clauses, 4)
+    is_complete = reviewed_count == total_clauses
+
+    coverage = CoverageMetadata(
+        total_clauses=total_clauses,
+        reviewed_count=reviewed_count,
+        coverage_ratio=coverage_ratio,
+        is_complete=is_complete,
+    )
+
     return ContractReviewReport(
         document_title=document_title,
         contract_type="Hợp đồng pháp lý",
         overall_risk=overall,
-        total_clauses=len(clauses),
+        total_clauses=total_clauses,
         high_risk_count=high_count,
         medium_risk_count=med_count,
         safe_clause_count=safe_count,
         executive_summary=summary,
         clause_reviews=reviews,
         negotiation_strategy=strategy,
+        coverage=coverage,
+    )
+
+
+def _merge_contract_review_reports(
+    batch_reports: list[ContractReviewReport],
+    total_expected_clauses: int,
+    document_title: str,
+    contract_type: str,
+) -> ContractReviewReport:
+    """Merge reviews from multiple clause batches into a single coherent report."""
+    if not batch_reports:
+        return ContractReviewReport(
+            document_title=document_title,
+            contract_type=contract_type,
+            overall_risk="low",
+            total_clauses=0,
+            high_risk_count=0,
+            medium_risk_count=0,
+            safe_clause_count=0,
+            executive_summary=f"Không có điều khoản nào để rà soát trong {document_title}.",
+            clause_reviews=[],
+            negotiation_strategy=[],
+            coverage=CoverageMetadata(
+                total_clauses=total_expected_clauses,
+                reviewed_count=0,
+                coverage_ratio=1.0 if total_expected_clauses == 0 else 0.0,
+                is_complete=total_expected_clauses == 0,
+            ),
+        )
+
+    all_reviews: list[ClauseReview] = []
+    for br in batch_reports:
+        all_reviews.extend(br.clause_reviews)
+
+    high_count = sum(1 for cr in all_reviews if cr.risk_level == "high")
+    med_count = sum(1 for cr in all_reviews if cr.risk_level == "medium")
+    safe_count = sum(1 for cr in all_reviews if cr.risk_level in ("safe", "low"))
+
+    if high_count > 0:
+        overall: Literal["high", "medium", "low"] = "high"
+    elif med_count > 0:
+        overall = "medium"
+    else:
+        overall = "low"
+
+    # Merge negotiation strategies preserving unique items in order
+    seen_strategies: set[str] = set()
+    merged_strategies: list[str] = []
+    for br in batch_reports:
+        for item in br.negotiation_strategy:
+            item_clean = item.strip() if isinstance(item, str) else str(item)
+            if item_clean and item_clean not in seen_strategies:
+                seen_strategies.add(item_clean)
+                merged_strategies.append(item_clean)
+
+    if not merged_strategies:
+        merged_strategies = [
+            "Đề nghị đối tác áp dụng các câu chữ sửa đổi (Redline) đối với các điều khoản rủi ro cao.",
+            "Làm rõ định nghĩa và cơ chế phạt vi phạm / lãi suất để tránh tranh chấp khi thanh lý hợp đồng.",
+            "Đảm bảo các phụ lục đính kèm tuân thủ cùng các điều khoản chung.",
+        ]
+
+    if len(batch_reports) == 1 and batch_reports[0].executive_summary:
+        summary = batch_reports[0].executive_summary
+    else:
+        if high_count > 0:
+            summary = (
+                f"Đã rà soát toàn bộ {len(all_reviews)}/{total_expected_clauses} điều khoản của {document_title}. "
+                f"Phát hiện {high_count} điều khoản rủi ro cao (vi phạm điều cấm luật định) "
+                f"và {med_count} điều khoản rủi ro trung bình cần sửa đổi, hoàn thiện."
+            )
+        elif med_count > 0:
+            summary = (
+                f"Đã rà soát toàn bộ {len(all_reviews)}/{total_expected_clauses} điều khoản của {document_title}. "
+                f"Phát hiện {med_count} điều khoản rủi ro trung bình cần lưu ý làm rõ."
+            )
+        else:
+            summary = (
+                f"Đã rà soát toàn bộ {len(all_reviews)}/{total_expected_clauses} điều khoản của {document_title}. "
+                f"Hợp đồng cơ bản tuân thủ quy định pháp luật Việt Nam."
+            )
+
+    reviewed_count = len(all_reviews)
+    coverage_ratio = 1.0 if total_expected_clauses == 0 else round(reviewed_count / total_expected_clauses, 4)
+    is_complete = (reviewed_count == total_expected_clauses) and (total_expected_clauses > 0 or reviewed_count == 0)
+
+    coverage_meta = CoverageMetadata(
+        total_clauses=total_expected_clauses,
+        reviewed_count=reviewed_count,
+        coverage_ratio=coverage_ratio,
+        is_complete=is_complete,
+    )
+
+    return ContractReviewReport(
+        document_title=document_title,
+        contract_type=contract_type,
+        overall_risk=overall,
+        total_clauses=total_expected_clauses,
+        high_risk_count=high_count,
+        medium_risk_count=med_count,
+        safe_clause_count=safe_count,
+        executive_summary=summary,
+        clause_reviews=all_reviews,
+        negotiation_strategy=merged_strategies,
+        coverage=coverage_meta,
     )
 
 
@@ -188,38 +324,79 @@ async def review_contract_with_llm(
     clauses: list[ParsedClause],
     document_title: str = "Hợp đồng",
     contract_type: str = "Hợp đồng dân sự / thương mại",
+    batch_size: int = DEFAULT_BATCH_SIZE,
 ) -> ContractReviewReport:
-    """Analyze contract clauses with structured LLM review and statutory grounding."""
-    from vietnam_legal_agent.infra.llm_instances import get_llm_smart
-
-    # If small or mock environment, fallback to heuristic
+    """Analyze contract clauses with structured LLM review, batching, and statutory grounding."""
     if not clauses:
         return review_contract_clauses_heuristic(clauses, document_title)
 
-    try:
-        model = get_llm_smart().with_structured_output(ContractReviewReport)
-        payload = {
-            "document_title": document_title,
-            "contract_type": contract_type,
-            "clauses_to_review": [
-                {
-                    "clause_id": c.clause_id,
-                    "clause_title": c.clause_title,
-                    "text": c.full_text[:1500],
-                }
-                for c in clauses[:15]
-            ],
-        }
+    effective_batch_size = max(1, batch_size)
+    batches = [
+        clauses[i : i + effective_batch_size]
+        for i in range(0, len(clauses), effective_batch_size)
+    ]
 
-        report = await model.ainvoke(
-            [
-                ("system", _REDLINE_PROMPT),
-                ("human", "Hãy rà soát hợp đồng sau:\n" + json.dumps(payload, ensure_ascii=False)),
-            ]
+    try:
+        from vietnam_legal_agent.infra.llm_instances import get_llm_smart
+
+        model = get_llm_smart().with_structured_output(ContractReviewReport)
+    except Exception as exc:  # noqa: BLE001 - unavailable LLMs use the deterministic heuristic review
+        logger.warning(
+            "Failed to initialize smart LLM model for contract review: %s. Falling back to heuristic review.",
+            exc,
         )
-        if not isinstance(report, ContractReviewReport):
-            report = ContractReviewReport.model_validate(report)
-        return report
-    except Exception:  # noqa: BLE001 - unavailable LLMs use the deterministic heuristic review
-        # Graceful fallback to heuristic
         return review_contract_clauses_heuristic(clauses, document_title)
+
+    batch_reports: list[ContractReviewReport] = []
+    for idx, batch_clauses in enumerate(batches):
+        try:
+            payload = {
+                "document_title": document_title,
+                "contract_type": contract_type,
+                "batch_index": idx + 1,
+                "total_batches": len(batches),
+                "clauses_to_review": [
+                    {
+                        "clause_id": c.clause_id,
+                        "clause_title": c.clause_title,
+                        "text": c.full_text[:1500],
+                    }
+                    for c in batch_clauses
+                ],
+            }
+
+            batch_report = await model.ainvoke(
+                [
+                    ("system", _REDLINE_PROMPT),
+                    ("human", "Hãy rà soát hợp đồng sau:\n" + json.dumps(payload, ensure_ascii=False)),
+                ]
+            )
+            if not isinstance(batch_report, ContractReviewReport):
+                batch_report = ContractReviewReport.model_validate(batch_report)
+
+            if not batch_report.clause_reviews:
+                logger.warning(
+                    "LLM returned no clause_reviews for batch %d/%d; falling back to heuristic for this batch",
+                    idx + 1,
+                    len(batches),
+                )
+                batch_report = review_contract_clauses_heuristic(batch_clauses, document_title)
+
+            batch_reports.append(batch_report)
+        except Exception as exc:  # noqa: BLE001 - per-batch fallback to heuristic
+            logger.warning(
+                "LLM review failed for batch %d/%d (%d clauses): %s; falling back to heuristic for this batch",
+                idx + 1,
+                len(batches),
+                len(batch_clauses),
+                exc,
+            )
+            batch_report = review_contract_clauses_heuristic(batch_clauses, document_title)
+            batch_reports.append(batch_report)
+
+    return _merge_contract_review_reports(
+        batch_reports=batch_reports,
+        total_expected_clauses=len(clauses),
+        document_title=document_title,
+        contract_type=contract_type,
+    )

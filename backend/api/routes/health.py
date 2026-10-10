@@ -47,7 +47,8 @@ async def chat_admission_readiness() -> tuple[dict[str, Any], str]:
         schema_capability = {"status": "blocked", "reason": reason}
         infrastructure_reason = reason
 
-    if not settings.openai_api_key:
+    has_llm = bool(settings.openai_api_key or settings.gemini_api_key or settings.gemini_api_keys)
+    if not has_llm:
         dependencies["openai"] = "error"
         infrastructure_reason = infrastructure_reason or "provider_unavailable"
 
@@ -150,7 +151,7 @@ async def readiness_payload() -> tuple[dict[str, Any], bool]:
         await (await get_redis()).ping()
     except Exception:  # noqa: BLE001 - readiness must not expose dependency errors
         dependencies["redis"] = "error"
-    if not settings.openai_api_key:
+    if not (settings.openai_api_key or settings.gemini_api_key or settings.gemini_api_keys):
         dependencies["openai"] = "error"
 
     technical_ready = (

@@ -95,19 +95,27 @@ class EvidenceEvaluator:
             documents,
             task_type,
         )
-        if _CURRENT_LAW_QUERY_RE.search(query or "") and any(
-            not _has_verified_current_law_status(document) for document in documents
-        ):
-            temporal_warnings.append(
-                "The retrieved source does not verify current legal status or later amendments."
-            )
+        if any(not _has_verified_current_law_status(document) for document in documents) and not source_version_only:
+            if _is_current_status_query(query) and str(getattr(task_type, "value", task_type)) == TaskType.LEGAL_LOOKUP.value:
+                temporal_warnings.append(
+                    "The retrieved source does not verify current legal status or later amendments."
+                )
+                return EvidenceAssessment(
+                    False,
+                    "current_law_status_unverified",
+                    len(documents),
+                    total_chars,
+                    has_metadata,
+                    has_superseded_sources=has_superseded,
+                    temporal_warnings=temporal_warnings,
+                )
             return EvidenceAssessment(
                 False,
-                "current_law_status_unverified",
+                "superseded_or_unresolved_source",
                 len(documents),
                 total_chars,
                 has_metadata,
-                has_superseded_sources=has_superseded,
+                has_superseded_sources=True,
                 temporal_warnings=temporal_warnings,
             )
 
@@ -142,7 +150,6 @@ class EvidenceEvaluator:
                 and (anchor.article or anchor.appendix)
                 for anchor in addressed_anchors
             )
-            and not _CURRENT_LAW_QUERY_RE.search(query or "")
         )
         if self.relevance_checker is not None and not exact_source_address:
             try:
@@ -257,14 +264,24 @@ _YEAR_DISCOVERY_RE = re.compile(
     re.IGNORECASE,
 )
 _INSTRUMENT_RE = re.compile(r"\b\d{1,5}/\d{4}/[A-ZĐ0-9][A-ZĐ0-9-]*\b", re.IGNORECASE)
-_CURRENT_LAW_QUERY_RE = re.compile(
-    r"\b(?:hiện\s+hành|hiện\s+nay|còn\s+hiệu\s+lực|"
-    r"đang\s+có\s+hiệu\s+lực|còn\s+được\s+áp\s+dụng|mới\s+nhất|"
-    r"sau\s+(?:khi\s+)?sửa\s+đổi|đã\s+sửa\s+đổi|tính\s+đến|"
-    r"hiện\s+tại.{0,24}(?:còn\s+hiệu\s+lực|đang\s+áp\s+dụng)|"
-    r"(?:còn\s+hiệu\s+lực|đang\s+áp\s+dụng).{0,24}hiện\s+tại)\b",
-    re.IGNORECASE,
-)
+
+
+
+def _is_current_status_query(query: str) -> bool:
+    """Evaluate whether query specifically seeks current status, validity, or amendments."""
+    lowered = (query or "").casefold()
+    indicators = (
+        "hiện hành",
+        "hiện nay",
+        "hiệu lực",
+        "còn hiệu lực",
+        "đang hiệu lực",
+        "mới nhất",
+        "sửa đổi",
+        "còn áp dụng",
+        "đang áp dụng",
+    )
+    return any(ind in lowered for ind in indicators)
 
 
 def _as_explicit_match(value: Any) -> bool:
@@ -274,38 +291,68 @@ def _as_explicit_match(value: Any) -> bool:
 
 
 def _has_verified_current_law_status(document: DocumentRecord) -> bool:
-    """Require explicit instrument-status verification, not a chunk flag.
+    """Evaluate whether document is verified as current valid law.
 
-    ``Current_Law_Support`` only says whether an indexed provision is covered
-    by the corpus's amendment map. It does not independently establish that
-    the complete instrument is currently in force.
+    Active codified legislation from the national legal corpus (universal_legal.db /
+    source_kind in {"legal_corpus", "legal"}) is valid and in force by default
+    unless explicitly marked superseded (is_document_superseded) or explicitly
+    marked unresolved (Current_Law_Support is False).
     """
+    if is_document_superseded(document) or is_unresolved_current_law_source(document):
+        return False
 
     metadata = document.metadata or {}
     verified = metadata.get(
         "Current_Law_Status_Verified",
         metadata.get("current_law_status_verified"),
     )
-    status = str(
-        document.effective_status
-        or metadata.get("Effective_Status")
-        or metadata.get("effective_status")
-        or ""
-    ).strip().casefold()
-    known_statuses = {
-        "active",
-        "in_force",
-        "in force",
-        "superseded",
-        "expired",
-        "invalid",
-        "repealed",
-        "partially_repealed",
-        "het_hieu_luc",
-        "bi_bai_bo",
-        "het_hieu_luc_mot_phan",
-    }
-    return _as_explicit_match(verified) and status in known_statuses
+    if verified is not None:
+        if not _as_explicit_match(verified):
+            return False
+        status = str(
+            document.effective_status
+            or metadata.get("Effective_Status")
+            or metadata.get("effective_status")
+            or ""
+        ).strip().casefold()
+        return status not in {
+            "superseded",
+            "expired",
+            "invalid",
+            "repealed",
+            "het_hieu_luc",
+            "bi_bai_bo",
+            "het_hieu_luc_mot_phan",
+        }
+
+    source_kind = str(metadata.get("source_kind") or "").strip().casefold()
+    corpus_source = str(metadata.get("corpus_source") or "").strip().casefold()
+    source = str(document.source or "").strip().casefold()
+
+    is_national_corpus = (
+        source in {"legal", "legal_corpus"}
+        or source_kind in {"legal_corpus", "legal"}
+        or corpus_source == "universal_legal"
+    )
+
+    if is_national_corpus:
+        status = str(
+            document.effective_status
+            or metadata.get("Effective_Status")
+            or metadata.get("effective_status")
+            or ""
+        ).strip().casefold()
+        return status not in {
+            "superseded",
+            "expired",
+            "invalid",
+            "repealed",
+            "het_hieu_luc",
+            "bi_bai_bo",
+            "het_hieu_luc_mot_phan",
+        }
+
+    return source == "web" and (source_kind == "official_web" or metadata.get("authority") == "official")
 
 
 def _relevance_tokens(value: Any) -> set[str]:
@@ -536,7 +583,7 @@ def is_explicit_source_version_lookup(
 
     if str(getattr(task_type, "value", task_type)) != TaskType.LEGAL_LOOKUP.value:
         return False
-    if _CURRENT_LAW_QUERY_RE.search(query or ""):
+    if _is_current_status_query(query):
         return False
 
     requested = {

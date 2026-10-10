@@ -96,3 +96,12 @@ data/*.sqlite3.backup-*
 # Environment
 .env.local
 .env.*.local
+
+# Cache
+data/cache/
+
+# Executables & local utilities
+*.exe
+tools/
+.agents/
+agent/

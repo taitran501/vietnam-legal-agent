@@ -13,7 +13,9 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from backend.api.middleware import RateLimiter, RateLimitMiddleware
+from backend.api.principal import Principal
 from fastapi import FastAPI
+from starlette.datastructures import Headers
 from starlette.testclient import TestClient
 
 
@@ -179,12 +181,96 @@ class TestRateLimitMiddleware:
 class TestClientIDExtraction:
     """Test client ID extraction for rate limiting."""
 
-    def test_client_id_from_api_key(self):
-        """Should use API key as client ID when present."""
+    def test_client_id_from_credentials(self):
+        """Should use hashed credential when API key or service token is provided."""
+        import hashlib
 
-        # This is tested via the middleware, so we test the logic indirectly
-        assert True  # Covered in middleware tests
+        class RequestWithHeader:
+            headers = Headers({"X-API-Key": "my-secret-key"})
+            state = type("State", (), {})()
+            client = None
 
-    def test_client_id_from_ip(self):
-        """Should fall back to IP when no API key."""
-        assert True  # Covered in middleware tests
+        client_id = RateLimitMiddleware._get_client_id(RequestWithHeader())
+        expected_hash = hashlib.sha256(b"my-secret-key").hexdigest()
+        assert client_id == f"credential:{expected_hash}"
+
+    def test_client_id_from_principal(self):
+        """Should use principal id when authenticated."""
+        principal = Principal(id="oidc:user-123", type="oidc")
+
+        class RequestWithPrincipal:
+            headers = Headers({})
+            state = type("State", (), {"principal": principal})()
+            client = None
+
+        client_id = RateLimitMiddleware._get_client_id(RequestWithPrincipal())
+        assert client_id == "principal:oidc:user-123"
+
+    def test_client_id_from_direct_ip(self):
+        """Should fall back to remote client IP when no credential is provided."""
+        class FakeClient:
+            host = "203.0.113.195"
+
+        class RequestWithIP:
+            headers = Headers({})
+            state = type("State", (), {})()
+            client = FakeClient()
+
+        client_id = RateLimitMiddleware._get_client_id(RequestWithIP())
+        assert client_id == "ip:203.0.113.195"
+
+    def test_client_id_from_trusted_cidr_proxy(self):
+        """Should extract forwarded client IP when request arrives from trusted CIDR proxy."""
+        class FakeProxyClient:
+            host = "172.18.0.2"  # inside 172.16.0.0/12
+
+        class RequestFromProxy:
+            headers = Headers({"X-Forwarded-For": "203.0.113.50, 172.18.0.2"})
+            state = type("State", (), {})()
+            client = FakeProxyClient()
+
+        with patch("backend.api.auth.get_settings") as mock_settings:
+            mock_settings.return_value.trusted_proxy_ips = "172.16.0.0/12"
+            client_id = RateLimitMiddleware._get_client_id(RequestFromProxy())
+            assert client_id == "ip:203.0.113.50"
+
+    def test_client_id_spoof_prevention_untrusted_client(self):
+        """Should ignore X-Forwarded-For if caller is not in trusted CIDR proxy list."""
+        class FakeUntrustedClient:
+            host = "198.51.100.99"
+
+        class RequestWithSpoofedHeader:
+            headers = Headers({"X-Forwarded-For": "10.0.0.1"})
+            state = type("State", (), {})()
+            client = FakeUntrustedClient()
+
+        with patch("backend.api.auth.get_settings") as mock_settings:
+            mock_settings.return_value.trusted_proxy_ips = "172.16.0.0/12"
+            client_id = RateLimitMiddleware._get_client_id(RequestWithSpoofedHeader())
+            # Must remain the untrusted client's remote host
+            assert client_id == "ip:198.51.100.99"
+
+    def test_rate_limiter_distinct_buckets_for_users_behind_same_proxy(self):
+        """Users behind the same containerized reverse proxy get distinct rate limit buckets."""
+        class ProxyClient:
+            host = "172.18.0.2"
+
+        class UserARequest:
+            headers = Headers({"X-Forwarded-For": "203.0.113.1"})
+            state = type("State", (), {})()
+            client = ProxyClient()
+
+        class UserBRequest:
+            headers = Headers({"X-Forwarded-For": "203.0.113.2"})
+            state = type("State", (), {})()
+            client = ProxyClient()
+
+        with patch("backend.api.auth.get_settings") as mock_settings:
+            mock_settings.return_value.trusted_proxy_ips = "172.16.0.0/12"
+            id_a = RateLimitMiddleware._get_client_id(UserARequest())
+            id_b = RateLimitMiddleware._get_client_id(UserBRequest())
+
+            assert id_a == "ip:203.0.113.1"
+            assert id_b == "ip:203.0.113.2"
+            assert id_a != id_b
+

@@ -433,7 +433,7 @@ class UniversalLegalRetrievalGateway:
         # Reciprocal-rank fusion compares order rather than incompatible
         # vector, reranker, and BM25 score scales.
         fused: dict[str, tuple[DocumentRecord, float, list[str]]] = {}
-        for source_name, ranked_records in (("qdrant_supplement", records), ("universal_corpus", universal_records)):
+        for source_name, ranked_records in (("universal_corpus", universal_records), ("qdrant_supplement", records)):
             for rank, record in enumerate(ranked_records, start=1):
                 digest = hashlib.sha256(record.content.strip().encode("utf-8")).hexdigest()
                 key = str(record.metadata.get("source_document_id") or record.document_id or digest)

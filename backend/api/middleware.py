@@ -19,7 +19,7 @@ from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from vietnam_legal_agent.config import get_settings
+from backend.api.auth import extract_client_ip
 from vietnam_legal_agent.infra.session_store import get_redis
 
 logger = logging.getLogger(__name__)
@@ -164,15 +164,5 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if credential:
             return f"credential:{hashlib.sha256(credential.encode('utf-8')).hexdigest()}"
 
-        settings = get_settings()
-        client_host = request.client.host if request.client else "unknown"
-        trusted = {
-            value.strip()
-            for value in str(getattr(settings, "trusted_proxy_ips", "") or "").split(",")
-            if value.strip()
-        }
-        if client_host in trusted:
-            forwarded = request.headers.get("X-Forwarded-For", "")
-            if forwarded:
-                return f"ip:{forwarded.split(',')[0].strip()}"
-        return f"ip:{client_host}"
+        client_ip = extract_client_ip(request)
+        return f"ip:{client_ip}"

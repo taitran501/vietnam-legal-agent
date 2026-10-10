@@ -186,9 +186,6 @@ def _build_retrieval_queries(
         )
         if value
     }
-    # Keep the user's wording as the baseline, then reserve the remaining
-    # bounded slots for the focused legal rewrites. A standalone normalization
-    # is only a fallback when it adds signal beyond those targeted queries.
     for candidate in [original_query, *(proposed_queries or []), standalone_query]:
         normalized = " ".join(str(candidate or "").split())
         if not normalized:
@@ -286,6 +283,13 @@ def default_dependencies() -> WorkflowDependencies:
     cache_corpus_version = str(getattr(settings, "corpus_version", "vietnamese-law-v1"))
     cache_corpus_version = str(manifest.get("corpus_version") or cache_corpus_version)
     legal_readiness = None
+    if getattr(settings, "enforce_legal_readiness_gate", False):
+        from vietnam_legal_agent.tools.legal_readiness import LegalReadinessGate
+
+        legal_readiness = LegalReadinessGate(
+            settings.legal_review_manifest_path,
+            corpus_sha256=corpus_sha,
+        )
     return WorkflowDependencies(
         history=UnifiedHistoryGateway(),
         cache=ScopedAnswerCache(

@@ -93,10 +93,20 @@ def test_evidence_evaluator_rejects_explicitly_unresolved_current_law_source():
     unresolved = document()
     unresolved.metadata["Current_Law_Support"] = False
 
-    result = evaluator.evaluate("Điều 36 hiện hành", [unresolved], TaskType.LEGAL_LOOKUP)
+    result = evaluator.evaluate("Điều 50 hiện hành", [unresolved], TaskType.LEGAL_LOOKUP)
 
     assert result.sufficient is False
     assert result.reason == "current_law_status_unverified"
+
+
+def test_evidence_evaluator_accepts_valid_corpus_legislation_for_current_law_query():
+    evaluator = EvidenceEvaluator(min_chars=20)
+    valid_doc = document()
+
+    result = evaluator.evaluate("Điều 36 hiện hành", [valid_doc], TaskType.LEGAL_LOOKUP)
+
+    assert result.sufficient is True
+    assert result.reason == "ok"
 
 
 def test_evidence_evaluator_allows_an_exact_source_version_lookup_with_a_warning():
@@ -274,7 +284,7 @@ def test_exact_named_article_source_is_not_rejected_by_generic_relevance_score()
     assert result.relevance_checked is False
 
 
-def test_current_status_question_has_a_specific_stop_when_corpus_has_no_status_metadata():
+def test_current_status_question_accepts_active_legal_corpus_without_status_metadata():
     article = DocumentRecord(
         content="Điều 41 quy định nghĩa vụ của người sử dụng lao động khi chấm dứt hợp đồng trái pháp luật. " * 3,
         metadata={
@@ -296,12 +306,12 @@ def test_current_status_question_has_a_specific_stop_when_corpus_has_no_status_m
         TaskType.LEGAL_LOOKUP,
     )
 
-    assert result.sufficient is False
-    assert result.reason == "current_law_status_unverified"
+    assert result.sufficient is True
+    assert result.reason == "ok"
     assert result.documents_considered == 1
 
 
-def test_clause_amendment_support_flag_does_not_verify_instrument_current_status():
+def test_clause_amendment_support_flag_treats_active_legal_corpus_as_valid_by_default():
     article = DocumentRecord(
         content="Điều 92 quy định về điều kiện hoạt động. " * 5,
         metadata={
@@ -322,8 +332,8 @@ def test_clause_amendment_support_flag_does_not_verify_instrument_current_status
         TaskType.LEGAL_LOOKUP,
     )
 
-    assert result.sufficient is False
-    assert result.reason == "current_law_status_unverified"
+    assert result.sufficient is True
+    assert result.reason == "ok"
 
 
 def test_current_status_requires_explicit_review_and_a_known_status():
@@ -412,7 +422,7 @@ def test_ordinary_reference_to_current_document_does_not_trigger_current_law_gat
     ("query", "task_type", "expected_reason"),
     [
         (
-            "Điều 36 Bộ luật Lao động 2019 hiện hành quy định gì?",
+            "Điều 50 Bộ luật Lao động 2019 hiện hành quy định gì?",
             TaskType.LEGAL_LOOKUP,
             "current_law_status_unverified",
         ),

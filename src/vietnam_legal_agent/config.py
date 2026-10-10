@@ -54,6 +54,60 @@ class Settings(BaseSettings):
     # authoritative gate and blocks legal capabilities when the key is absent.
     openai_api_key: str = Field(default="", description="OpenAI API key")
 
+    # ── Google Gemini ────────────────────────────────────────────────────────
+    gemini_api_key: str = Field(default="", description="Primary Google Gemini API key")
+    gemini_api_keys: str = Field(
+        default="",
+        description="Comma-separated list of working Gemini API keys for pooling/rotation",
+    )
+    llm_provider: str = Field(
+        default="auto",
+        description="LLM provider: 'openai', 'gemini', or 'auto'",
+    )
+    gemini_base_url: str = Field(
+        default="https://generativelanguage.googleapis.com/v1beta/openai/",
+        description="OpenAI-compatible base URL for Gemini API",
+    )
+    gemini_model_smart: str = Field(
+        default="gemini-3.5-flash-lite",
+        description="Smart Gemini model for reasoning, verification, critic, and routing (high RPD/RPM)",
+    )
+    gemini_model_fast: str = Field(
+        default="gemini-3.5-flash-lite",
+        description="Gemini model for fast / streaming turns (30 RPM / 1,500 RPD)",
+    )
+    gemini_smart_models_cascade: str = Field(
+        default="gemini-3.5-flash-lite,gemini-3.5-flash,gemini-3.1-flash-lite,gemini-3.6-flash",
+        description="Priority cascade order of models for smart reasoning and routing",
+    )
+    gemini_fast_models_cascade: str = Field(
+        default="gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-3.5-flash,gemini-3.6-flash",
+        description="Priority cascade order of models for fast streaming turns",
+    )
+    gemini_model_router: str = Field(
+        default="gemini-3.5-flash-lite",
+        description="Deprecated: Router now uses the smart model cascade directly",
+    )
+    gemini_fallback_model: str = Field(
+        default="gemini-3.5-flash",
+        description="Fallback Gemini model if cascade list is not specified",
+    )
+    gemini_min_request_interval_seconds: float = Field(
+        default=1.5,
+        ge=0.0,
+        description="Minimum seconds between requests per key for pacing free-tier RPM limits",
+    )
+    gemini_rate_limit_cooldown_seconds: float = Field(
+        default=60.0,
+        ge=1.0,
+        description="Cooldown duration in seconds when a key hits 429 or 503 before being retried",
+    )
+    gemini_max_key_retries: int = Field(
+        default=5,
+        ge=1,
+        description="Maximum key rotation attempts across pool when encountering rate limits",
+    )
+
     # ── Qdrant ──────────────────────────────────────────────────────────────
     use_qdrant_cloud: bool = Field(default=False)
     enable_qdrant_retrieval: bool = Field(
@@ -103,6 +157,10 @@ class Settings(BaseSettings):
     local_embedding_model: str = Field(
         default="darklethelong/vnlegal-lal",
         description="HuggingFace / SentenceTransformers model ID for local legal embeddings",
+    )
+    embedding_device: str = Field(
+        default="auto",
+        description="Device for local embeddings: auto | cuda | cpu",
     )
     embedding_profile: str = Field(default="openai-text-embedding-3-small-v1")
     embedding_model: str = Field(default="text-embedding-3-small")
@@ -363,6 +421,8 @@ class Settings(BaseSettings):
             os.environ["LANGCHAIN_API_KEY"] = self.langchain_api_key
         if self.tavily_api_key:
             os.environ["TAVILY_API_KEY"] = self.tavily_api_key
+        if self.gemini_api_key:
+            os.environ["GEMINI_API_KEY"] = self.gemini_api_key
         return self
 
 

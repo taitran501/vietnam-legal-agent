@@ -1,3 +1,14 @@
+---
+title: Vn Legal Agent
+emoji: ⚖️
+colorFrom: yellow
+colorTo: amber
+sdk: gradio
+app_file: app.py
+pinned: false
+license: apache-2.0
+---
+
 # Vietnam Legal Agent
 
 [![CI](https://github.com/taitran501/vietnam-legal-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/taitran501/vietnam-legal-agent/actions/workflows/ci.yml)

@@ -18,6 +18,8 @@ from __future__ import annotations
 import copy
 import logging
 import math
+import pickle
+from pathlib import Path
 import random
 import re
 import threading
@@ -244,6 +246,26 @@ def _build_article_index():
     with _article_index_lock:
         if _index_built and _article_index_collection == collection:
             return
+
+        cache_dir = Path("data/cache")
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", collection)
+        cache_file = cache_dir / f"article_index_{safe_name}.pkl"
+        if cache_file.exists():
+            try:
+                with open(cache_file, "rb") as f:
+                    cached = pickle.load(f)
+                    _article_index = cached.get("article_index", {})
+                    _anchor_index = cached.get("anchor_index", {})
+                    _document_article_index = cached.get("document_article_index", {})
+                    _document_anchor_index = cached.get("document_anchor_index", {})
+                    _article_index_collection = collection
+                    _index_built = True
+                    logger.info("Loaded article index from disk cache: %s (%d entries)", cache_file, len(_article_index))
+                    return
+            except Exception as exc:
+                logger.warning("Failed to load article index cache (%s), rebuilding...", exc)
+
         _article_index = {}
         _anchor_index = {}
         _document_article_index = {}
@@ -298,6 +320,16 @@ def _build_article_index():
         _article_index_collection = collection
         _index_built = True
         logger.info("Article index built: %d entries", len(_article_index))
+        try:
+            with open(cache_file, "wb") as f:
+                pickle.dump({
+                    "article_index": _article_index,
+                    "anchor_index": _anchor_index,
+                    "document_article_index": _document_article_index,
+                    "document_anchor_index": _document_anchor_index,
+                }, f, protocol=pickle.HIGHEST_PROTOCOL)
+        except Exception as exc:
+            logger.warning("Failed to write article index cache: %s", exc)
 
 
 def _get_point_ids_for_articles(article_names: list[str]) -> list[Any]:
@@ -388,6 +420,24 @@ def _build_lexical_index() -> None:
     with _lexical_index_lock:
         if _lexical_index_built and _lexical_index_collection == collection:
             return
+
+        cache_dir = Path("data/cache")
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", collection)
+        cache_file = cache_dir / f"lexical_index_{safe_name}.pkl"
+        if cache_file.exists():
+            try:
+                with open(cache_file, "rb") as f:
+                    cached = pickle.load(f)
+                    _lexical_corpus = cached.get("lexical_corpus", [])
+                    _global_idf = cached.get("global_idf", {})
+                    _lexical_index_collection = collection
+                    _lexical_index_built = True
+                    logger.info("Loaded lexical index from disk cache: %s (%d docs)", cache_file, len(_lexical_corpus))
+                    return
+            except Exception as exc:
+                logger.warning("Failed to load lexical index cache (%s), rebuilding...", exc)
+
         _lexical_corpus = []
         _global_idf = {}
         client = _get_qdrant_client()
@@ -462,6 +512,14 @@ def _build_lexical_index() -> None:
         _lexical_index_collection = collection
         _lexical_index_built = True
         logger.info("Lexical index built: %d docs", len(_lexical_corpus))
+        try:
+            with open(cache_file, "wb") as f:
+                pickle.dump({
+                    "lexical_corpus": _lexical_corpus,
+                    "global_idf": _global_idf,
+                }, f, protocol=pickle.HIGHEST_PROTOCOL)
+        except Exception as exc:
+            logger.warning("Failed to write lexical index cache: %s", exc)
 
 
 def warmup_retrieval_indexes() -> None:

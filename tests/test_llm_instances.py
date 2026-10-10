@@ -14,7 +14,9 @@ import pytest
 
 from vietnam_legal_agent.config import Settings, get_settings
 from vietnam_legal_agent.infra.llm_instances import (
+    GeminiPooledChat,
     LocalSentenceTransformerEmbeddings,
+    clear_gemini_key_manager,
     get_embeddings,
     get_llm_fast,
     get_llm_router,
@@ -27,8 +29,11 @@ from vietnam_legal_agent.infra.llm_instances import (
 def deterministic_provider_configuration(monkeypatch: pytest.MonkeyPatch):
     """Construct provider clients without relying on a developer's local .env."""
     monkeypatch.setenv("OPENAI_API_KEY", "ci-unit-test-placeholder")
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
     monkeypatch.setenv("EMBEDDING_PROVIDER", "auto")
     monkeypatch.setenv("EMBEDDING_PROFILE", "openai-text-embedding-3-small-v1")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEYS", raising=False)
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -37,6 +42,7 @@ def deterministic_provider_configuration(monkeypatch: pytest.MonkeyPatch):
     get_llm_router.cache_clear()
     get_llm_smart.cache_clear()
     get_llm_stream.cache_clear()
+    clear_gemini_key_manager()
 
 
 class TestLLMInstances:
@@ -193,3 +199,98 @@ class TestLLMInstances:
         for llm in instances:
             assert hasattr(llm, 'request_timeout'), f"{llm.model_name} missing request_timeout"
             assert llm.request_timeout == 30, f"{llm.model_name} has wrong timeout: {llm.request_timeout}"
+
+    def test_gemini_provider_configuration(self, monkeypatch):
+        """When LLM_PROVIDER=gemini, instances should configure Gemini models."""
+        from vietnam_legal_agent.infra import llm_instances
+
+        monkeypatch.setattr(
+            llm_instances,
+            "get_settings",
+            lambda: SimpleNamespace(
+                llm_provider="gemini",
+                gemini_api_key="test-gemini-key",
+                gemini_api_keys="",
+                gemini_base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                gemini_model_fast="gemini-3.5-flash-lite",
+                gemini_model_smart="gemini-3.8-flash",
+                gemini_smart_models_cascade="gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite",
+                gemini_fast_models_cascade="gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-3.5-flash,gemini-3.6-flash",
+                gemini_min_request_interval_seconds=0.0,
+                gemini_rate_limit_cooldown_seconds=60.0,
+                openai_api_key="",
+            ),
+        )
+        get_llm_fast.cache_clear()
+        get_llm_router.cache_clear()
+        get_llm_smart.cache_clear()
+        get_llm_stream.cache_clear()
+
+        fast = get_llm_fast()
+        assert fast.model_name == "gemini-3.5-flash-lite"
+        assert str(fast.openai_api_base).rstrip("/") == "https://generativelanguage.googleapis.com/v1beta/openai"
+
+        smart = get_llm_smart()
+        assert smart.model_name == "gemini-3.8-flash"
+        assert getattr(smart, "cascade_models", []) == [
+            "gemini-3.8-flash",
+            "gemini-3.7-flash",
+            "gemini-3.6-flash",
+            "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
+        ]
+
+        router = get_llm_router()
+        assert router is smart or router.model_name == "gemini-3.8-flash"
+
+        stream = get_llm_stream()
+        assert stream.model_name == "gemini-3.5-flash-lite"
+        assert stream.streaming is True
+
+    def test_gemini_key_manager_lru_and_cooldown(self):
+        """GeminiKeyManager should pick LRU key and track cooldown per (key, model)."""
+        from vietnam_legal_agent.infra.llm_instances import GeminiKeyManager
+
+        km = GeminiKeyManager(["key1", "key2"], min_interval_per_key=0.0, cooldown_sec=10.0)
+        k_first = km.acquire_key()
+        k_second = km.acquire_key()
+        assert {k_first, k_second} == {"key1", "key2"}
+
+        # Put key1 on cooldown for gemini-3.8-flash only
+        km.mark_rate_limited("key1", model="gemini-3.8-flash", cooldown=60.0)
+        # key1 should not be acquired for gemini-3.8-flash
+        assert km.acquire_key(model="gemini-3.8-flash") == "key2"
+        # but key1 is still available for gemini-3.7-flash!
+        assert "key1" in km.get_available_keys(model="gemini-3.7-flash")
+
+    def test_gemini_model_cascading(self, monkeypatch):
+        """GeminiPooledChat should cascade to next model when primary model hits rate limit."""
+        from vietnam_legal_agent.infra.llm_instances import GeminiKeyManager, GeminiPooledChat
+        import openai
+
+        km = GeminiKeyManager(["k1", "k2"], min_interval_per_key=0.0, cooldown_sec=60.0)
+        chat = GeminiPooledChat(
+            model="gemini-3.8-flash",
+            primary_model="gemini-3.8-flash",
+            cascade_models=["gemini-3.8-flash", "gemini-3.7-flash"],
+            api_key="k1",
+            key_manager=km,
+            max_key_retries=2,
+        )
+
+        calls = []
+
+        def fake_generate(self_inner, messages, stop=None, run_manager=None, **kwargs):
+            calls.append((self_inner.model_name, self_inner.root_client.api_key))
+            if self_inner.model_name == "gemini-3.8-flash":
+                raise Exception("429 ResourceExhausted: Quota exceeded for gemini-3.8-flash")
+            return "success_response"
+
+        monkeypatch.setattr("langchain_openai.ChatOpenAI._generate", fake_generate)
+
+        res = chat._generate([{"role": "user", "content": "hi"}])
+        assert res == "success_response"
+        # Should have tried 3.8-flash on k1 and k2, then cascaded to 3.7-flash
+        assert any(model == "gemini-3.7-flash" for model, _ in calls)
+        assert chat.model_name == "gemini-3.8-flash"  # Reset back to primary
+

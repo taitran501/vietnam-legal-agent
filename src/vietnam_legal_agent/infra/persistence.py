@@ -14,7 +14,7 @@ from typing import Any
 
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, delete, func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, aliased, mapped_column
 
 from vietnam_legal_agent.infra.pii_anonymizer import anonymize_payload
 
@@ -928,8 +928,26 @@ class PersistenceStore:
         """List redacted trace-linked feedback for quality-admin workflows."""
 
         async with self.sessions() as session:
+            user_msg = aliased(MessageRecord)
+            user_query_sub = (
+                select(user_msg.content)
+                .where(
+                    user_msg.conversation_id == QualityFeedbackRecord.conversation_id,
+                    user_msg.role == "user",
+                    user_msg.id < QualityFeedbackRecord.message_id,
+                )
+                .order_by(user_msg.id.desc())
+                .limit(1)
+                .correlate(QualityFeedbackRecord)
+                .scalar_subquery()
+            )
             query = (
-                select(QualityFeedbackRecord, FeedbackRecord, MessageRecord)
+                select(
+                    QualityFeedbackRecord,
+                    FeedbackRecord,
+                    MessageRecord,
+                    user_query_sub.label("user_query"),
+                )
                 .join(FeedbackRecord, FeedbackRecord.id == QualityFeedbackRecord.feedback_id)
                 .join(MessageRecord, MessageRecord.id == QualityFeedbackRecord.message_id)
                 .order_by(QualityFeedbackRecord.created_at.desc())
@@ -942,28 +960,15 @@ class PersistenceStore:
             if quality_id is not None:
                 query = query.where(QualityFeedbackRecord.id == quality_id)
             rows = list((await session.execute(query)).all())
-            payloads: list[dict[str, Any]] = []
-            for quality, feedback, message in rows:
-                user_query_result = await session.execute(
-                    select(MessageRecord.content)
-                    .where(
-                        MessageRecord.conversation_id == quality.conversation_id,
-                        MessageRecord.role == "user",
-                        MessageRecord.id < quality.message_id,
-                    )
-                    .order_by(MessageRecord.id.desc())
-                    .limit(1)
+            return [
+                self._quality_payload(
+                    quality,
+                    feedback,
+                    query=str(user_query or ""),
+                    answer=message.content,
                 )
-                user_query = str(user_query_result.scalar_one_or_none() or "")
-                payloads.append(
-                    self._quality_payload(
-                        quality,
-                        feedback,
-                        query=user_query,
-                        answer=message.content,
-                    )
-                )
-            return payloads
+                for quality, feedback, message, user_query in rows
+            ]
 
     async def update_quality_feedback(
         self,
@@ -1041,17 +1046,30 @@ class PersistenceStore:
                     MessageRecord.conversation_id == conversation_id,
                     MessageRecord.status == "complete",
                     MessageRecord.turn_id.is_(None)
-                    | MessageRecord.turn_id.not_in(
+                    | MessageRecord.turn_id.in_(
                         select(ConversationTurnRecord.id).where(
-                            ConversationTurnRecord.status.in_({"pending", "streaming"})
+                            ConversationTurnRecord.status == "complete"
                         )
                     ),
                 )
                 .order_by(MessageRecord.id.desc())
                 .limit(max(1, max_messages))
             )
-            messages = list(reversed(result.scalars().all()))
-        return [self._message_payload(message) for message in messages]
+            raw_messages = list(reversed(result.scalars().all()))
+
+        # Enforce strictly alternating user/assistant history
+        sanitized: list[MessageRecord] = []
+        for msg in raw_messages:
+            if not sanitized or sanitized[-1].role != msg.role:
+                sanitized.append(msg)
+            else:
+                sanitized[-1] = msg  # Deduplicate consecutive identical roles
+
+        # Trailing user message has no completed assistant response; drop it
+        if sanitized and sanitized[-1].role == "user":
+            sanitized.pop()
+
+        return [self._message_payload(message) for message in sanitized]
 
     async def get_summary(self, user_id: str, conversation_id: str) -> str:
         async with self.sessions() as session:

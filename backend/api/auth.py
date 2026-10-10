@@ -8,8 +8,10 @@ never use a raw credential as an owner or rate-limit identifier.
 from __future__ import annotations
 
 import hmac
+import ipaddress
 import logging
 import time
+from typing import Any
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -34,6 +36,80 @@ PUBLIC_ENDPOINTS = {
 }
 
 
+def _parse_network(item: str) -> ipaddress.IPv4Network | ipaddress.IPv6Network | None:
+    cleaned = item.strip()
+    if not cleaned:
+        return None
+    try:
+        return ipaddress.ip_network(cleaned, strict=False)
+    except ValueError:
+        return None
+
+
+def is_trusted_proxy(client_host: str, trusted_proxies_config: Any = None) -> bool:
+    """Check whether client_host matches any IP or CIDR subnet in trusted_proxies_config."""
+    if not client_host:
+        return False
+    if trusted_proxies_config is None:
+        trusted_proxies_config = getattr(get_settings(), "trusted_proxy_ips", "") or ""
+    if not trusted_proxies_config:
+        return False
+
+    cleaned_host = client_host.strip()
+    if cleaned_host.count(":") == 1:
+        # Strip port from IPv4 host:port
+        cleaned_host = cleaned_host.split(":")[0].strip()
+
+    try:
+        client_ip_obj = ipaddress.ip_address(cleaned_host)
+    except ValueError:
+        return False
+
+    if isinstance(trusted_proxies_config, (list, tuple, set, frozenset)):
+        raw_items = list(trusted_proxies_config)
+    elif isinstance(trusted_proxies_config, str):
+        raw_items = trusted_proxies_config.split(",")
+    else:
+        raw_items = [str(trusted_proxies_config)]
+
+    for raw in raw_items:
+        net = _parse_network(str(raw))
+        if net is not None and client_ip_obj.version == net.version and client_ip_obj in net:
+            return True
+    return False
+
+
+def extract_client_ip(request: Request, settings: Any = None) -> str:
+    """Extract real client IP, honoring X-Forwarded-For or X-Real-IP only if proxy is trusted.
+
+    Prevents IP spoofing when request does not come from a trusted proxy.
+    """
+    if settings is None:
+        settings = get_settings()
+    client_host = request.client.host if request.client else "unknown"
+    if client_host != "unknown" and client_host.count(":") == 1:
+        client_host = client_host.split(":")[0].strip()
+
+    trusted_config = getattr(settings, "trusted_proxy_ips", "") or ""
+
+    if is_trusted_proxy(client_host, trusted_config):
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        if forwarded:
+            first_ip = forwarded.split(",")[0].strip()
+            if first_ip.count(":") == 1:
+                first_ip = first_ip.split(":")[0].strip()
+            if first_ip:
+                return first_ip
+        real_ip = request.headers.get("X-Real-IP", "").strip()
+        if real_ip:
+            if real_ip.count(":") == 1:
+                real_ip = real_ip.split(":")[0].strip()
+            if real_ip:
+                return real_ip
+
+    return client_host
+
+
 class APIKeyMiddleware(BaseHTTPMiddleware):
     """Resolve OIDC, service-token, and legacy test principals."""
 
@@ -48,6 +124,9 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         return any(hmac.compare_digest(api_key, valid_key) for valid_key in self.valid_keys)
 
     async def _check_rate_limit(self, client_ip: str) -> bool:
+        settings = get_settings()
+        if is_trusted_proxy(client_ip, getattr(settings, "trusted_proxy_ips", "")):
+            return True
         try:
             redis_client = await get_redis()
             attempts = await redis_client.get(f"auth:failed:{client_ip}")
@@ -64,6 +143,9 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             return True
 
     async def _record_failed_attempt(self, client_ip: str) -> None:
+        settings = get_settings()
+        if is_trusted_proxy(client_ip, getattr(settings, "trusted_proxy_ips", "")):
+            return
         try:
             redis_client = await get_redis()
             pipe = redis_client.pipeline()
@@ -76,18 +158,8 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             self._failed_attempts[client_ip] = (count + 1 if now - timestamp <= self._ban_window else 1, now)
 
     @staticmethod
-    def _client_ip(request: Request, settings) -> str:
-        client_host = request.client.host if request.client else "unknown"
-        trusted = {
-            value.strip()
-            for value in str(getattr(settings, "trusted_proxy_ips", "") or "").split(",")
-            if value.strip()
-        }
-        if client_host in trusted:
-            forwarded = request.headers.get("X-Forwarded-For", "")
-            if forwarded:
-                return forwarded.split(",")[0].strip()
-        return client_host
+    def _client_ip(request: Request, settings: Any = None) -> str:
+        return extract_client_ip(request, settings)
 
     async def dispatch(self, request: Request, call_next):
         settings = get_settings()
@@ -95,7 +167,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             request.state.principal = Principal(
                 id="dev-local",
                 type="local",
-                scopes=frozenset({"chat", "feedback", "quality_admin", "ops"}),
+                scopes=frozenset({"chat", "feedback", "quality_admin", "ops", "documents:write"}),
             )
             request.state.api_key_hash = "dev-local"
             return await call_next(request)

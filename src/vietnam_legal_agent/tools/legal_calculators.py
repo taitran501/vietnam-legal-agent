@@ -114,8 +114,8 @@ def calculate_court_fees(
             fee = 84000000.0 + (claim - 2000000000.0) * 0.03
             formula_text = f"Từ 2 tỷ đến 4 tỷ: 84.000.000 + 3% phần vượt 2 tỷ = {fee:,.0f} VNĐ."
         else:
-            fee = 144000000.0 + (claim - 4000000000.0) * 0.02
-            formula_text = f"Trên 4 tỷ: 144.000.000 + 2% phần vượt 4 tỷ = {fee:,.0f} VNĐ."
+            fee = 144000000.0 + (claim - 4000000000.0) * 0.001
+            formula_text = f"Trên 4 tỷ: 144.000.000 + 0.1% phần vượt 4 tỷ = {fee:,.0f} VNĐ."
     else:
         # Bảng án phí Dân sự có giá ngạch thông thường (Áp dụng cho Hợp đồng, Đất đai, Đòi nợ, Bồi thường thiệt hại)
         if claim <= 6000000:
@@ -138,13 +138,75 @@ def calculate_court_fees(
             formula_text = f"Trên 4 tỷ VNĐ: 112.000.000 + 0.1% của phần vượt 4 tỷ = {fee:,.0f} VNĐ."
 
     advance = fee * 0.5
+    is_commercial = "kinh doanh" in dispute_type_lower or "thương mại" in dispute_type_lower
+    appellate_fee = 2000000.0 if is_commercial else 300000.0
     return CourtFeeResult(
         dispute_type=dispute_type,
         has_monetary_value=True,
         claim_amount=claim,
         first_instance_fee=round(fee, 2),
         advance_fee=round(advance, 2),
-        appellate_fee=300000.0,
+        appellate_fee=appellate_fee,
+        breakdown_formula=formula_text,
+    )
+
+
+def calculate_qualifying_working_years(months_worked: float) -> float:
+    """Calculate qualifying working years under Article 46 Labor Code 2019 and Article 8 Decree 145/2020/ND-CP.
+
+    - Under Article 46 Clause 1 Labor Code 2019: minimum 12 months service required (otherwise 0.0 years).
+    - Under Article 8 Clause 2 Decree 145/2020/ND-CP:
+      * Odd months 1 to 6 months round to 0.5 qualifying year.
+      * Odd months > 6 months round to 1.0 qualifying year.
+    """
+    months = max(0.0, float(months_worked))
+    if months < 12.0:
+        return 0.0
+    full_years = int(months // 12)
+    odd_months = months % 12
+    if odd_months == 0:
+        return float(full_years)
+    if odd_months <= 6:
+        return full_years + 0.5
+    return full_years + 1.0
+
+
+class SeveranceAllowanceResult(BaseModel):
+    """Result of severance allowance calculation under Article 46 Labor Code 2019."""
+
+    monthly_salary: float = Field(description="Mức tiền lương bình quân 6 tháng liền kề (VNĐ)")
+    months_worked: float = Field(description="Thời gian làm việc tính trợ cấp (tháng)")
+    qualifying_years: float = Field(description="Thời gian làm việc tính trợ cấp sau khi làm tròn (năm)")
+    severance_allowance: float = Field(description="Tiền trợ cấp thôi việc (VNĐ)")
+    legal_basis: str = Field(default="Điều 46 Bộ luật Lao động 2019 & Điều 8 Nghị định 145/2020/NĐ-CP", description="Căn cứ pháp lý")
+    breakdown_formula: str = Field(description="Diễn giải chi tiết công thức tính")
+
+
+def calculate_severance_allowance(
+    monthly_salary: float,
+    months_worked: float = 12.0,
+) -> SeveranceAllowanceResult:
+    """Calculate severance allowance under Article 46 Labor Code 2019 and Decree 145/2020/ND-CP."""
+    salary = max(0.0, float(monthly_salary))
+    months = max(0.0, float(months_worked))
+    qualifying_years = calculate_qualifying_working_years(months)
+    allowance = round(qualifying_years * 0.5 * salary, 2)
+    if qualifying_years == 0.0:
+        formula_text = (
+            f"Thời gian làm việc ({months:.0f} tháng < 12 tháng) chưa đủ điều kiện "
+            f"hưởng trợ cấp thôi việc theo Điều 46 Bộ luật Lao động 2019: 0 VNĐ."
+        )
+    else:
+        formula_text = (
+            f"Thời gian làm việc {months:.0f} tháng làm tròn thành {qualifying_years:.1f} năm tính trợ cấp "
+            f"(Điều 8 Nghị định 145/2020/NĐ-CP): {qualifying_years:.1f} năm × 0.5 tháng lương × {salary:,.0f} đ = {allowance:,.0f} VNĐ."
+        )
+
+    return SeveranceAllowanceResult(
+        monthly_salary=salary,
+        months_worked=months,
+        qualifying_years=qualifying_years,
+        severance_allowance=allowance,
         breakdown_formula=formula_text,
     )
 
@@ -158,7 +220,7 @@ def calculate_illegal_termination_compensation(
 ) -> SeveranceCompensationResult:
     """Calculate illegal dismissal compensation under Article 41 of Vietnam Labor Code 2019."""
     salary = max(0.0, float(monthly_salary))
-    worked_months = max(1.0, float(months_worked))
+    worked_months = max(0.0, float(months_worked))
     daily_rate = salary / 26.0
 
     # 1. Tiền lương vi phạm thời hạn báo trước (Điều 41.2)
@@ -173,8 +235,8 @@ def calculate_illegal_termination_compensation(
     # 4. Trợ cấp thôi việc (nếu có thời gian không tham gia BHTN theo Điều 46)
     severance = 0.0
     if not has_unemployment_insurance:
-        years_worked = worked_months / 12.0
-        severance = round(years_worked * 0.5 * salary, 2)
+        qualifying_years = calculate_qualifying_working_years(worked_months)
+        severance = round(qualifying_years * 0.5 * salary, 2)
 
     total = unnotified_pay + min_comp + unemployed_pay + severance
 
@@ -203,29 +265,39 @@ def calculate_overdue_interest(
     days_overdue: int,
     agreed_annual_rate: float = 10.0,
     is_commercial_contract: bool = False,
+    is_commercial: bool | None = None,
 ) -> InterestCalculationResult:
     """Calculate overdue interest with statutory cap checks under Civil Code 2015 / Commercial Law."""
     principal = max(0.0, float(principal_amount))
     days = max(0, int(days_overdue))
     rate = float(agreed_annual_rate)
 
+    if is_commercial is not None:
+        is_commercial_contract = is_commercial_contract or is_commercial
+
     capped = False
     warning = None
     applied_rate = rate
 
-    # Trần lãi suất theo Điều 468 BLDS là 20%/năm
-    if rate > 20.0:
-        capped = True
-        applied_rate = 20.0
-        warning = f"Lãi suất thỏa thuận ({rate}%) vượt trần luật định 20%/năm theo Điều 468 Bộ luật Dân sự 2015. Phần vượt quá không có hiệu lực."
+    if is_commercial_contract:
+        # Điều 306 Luật Thương mại 2005 & Nghị quyết 01/2019/NQ-HĐTP:
+        # Lãi suất chậm trả trong quan hệ thương mại do các bên thỏa thuận hoặc tính theo lãi suất quá hạn bình quân thị trường,
+        # không bị giới hạn bởi trần 20%/năm của Điều 468 Bộ luật Dân sự 2015.
+        capped = False
+        applied_rate = rate
+        warning = None
+        legal_basis = "Điều 306 Luật Thương mại 2005 & Nghị quyết 01/2019/NQ-HĐTP"
+    else:
+        # Trần lãi suất theo Điều 468 BLDS là 20%/năm
+        if rate > 20.0:
+            capped = True
+            applied_rate = 20.0
+            warning = f"Lãi suất thỏa thuận ({rate}%) vượt trần luật định 20%/năm theo Điều 468 Bộ luật Dân sự 2015. Phần vượt quá không có hiệu lực."
+        legal_basis = "Điều 357 & Điều 468 Bộ luật Dân sự 2015"
 
     # Tính lãi: Tiền gốc × Lãi suất năm / 365 × Số ngày
     interest = (principal * (applied_rate / 100.0) / 365.0) * days
     total = principal + interest
-
-    legal_basis = "Điều 357 & Điều 468 Bộ luật Dân sự 2015"
-    if is_commercial_contract:
-        legal_basis = "Điều 306 Luật Thương mại 2005 & Điều 468 BLDS 2015"
 
     return InterestCalculationResult(
         principal_amount=principal,

@@ -7,8 +7,9 @@ import io
 from unittest.mock import patch
 
 import pytest
+from backend.api.principal import Principal
 from backend.api.routes.documents import router
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from starlette.testclient import TestClient
 
 from vietnam_legal_agent.infra.admission import AdmissionLease
@@ -279,3 +280,105 @@ class TestCalculators:
         body = resp.json()
         # First home should reduce PIT
         assert body["personal_income_tax"] >= 0
+
+
+def make_authed_client(principal: Principal) -> TestClient:
+    test_app = FastAPI()
+    test_app.state.admission_controller = AllowingAdmissionController()
+
+    @test_app.middleware("http")
+    async def inject_principal(request: Request, call_next):
+        request.state.principal = principal
+        return await call_next(request)
+
+    test_app.include_router(router, prefix="/api/v1")
+    return TestClient(test_app)
+
+
+class TestDocumentsAuthorizationScope:
+    """Tests for OAuth scope authorization (documents:write and ops)."""
+
+    def test_upload_forbidden_without_scope(self):
+        client = make_authed_client(Principal(id="u1", type="test", scopes=frozenset({"chat"})))
+        resp = client.post(
+            "/api/v1/documents/upload",
+            files={"file": ("contract.txt", io.BytesIO(b"content"), "text/plain")},
+            data={"analyze_redline": "false"},
+        )
+        assert resp.status_code == 403
+        assert "documents:write" in resp.json()["detail"]
+
+    def test_export_docx_forbidden_without_scope(self):
+        client = make_authed_client(Principal(id="u1", type="test", scopes=frozenset({"chat"})))
+        resp = client.post("/api/v1/documents/export-docx", json={"title": "Doc", "content": "Text"})
+        assert resp.status_code == 403
+        assert "documents:write" in resp.json()["detail"]
+
+    def test_draft_court_petition_forbidden_without_scope(self):
+        client = make_authed_client(Principal(id="u1", type="test", scopes=frozenset({"chat"})))
+        resp = client.post(
+            "/api/v1/documents/draft/court-petition",
+            json={
+                "plaintiff_name": "Nguyen Van A",
+                "defendant_name": "Tran Thi B",
+                "court_name": "TAND Quan 1",
+                "case_summary": "Tranh chap hop dong",
+                "legal_basis_and_violations": "Dieu 127 BLDS",
+                "petition_requests": ["Huy hop dong"],
+            },
+        )
+        assert resp.status_code == 403
+        assert "documents:write" in resp.json()["detail"]
+
+    def test_draft_deposit_contract_forbidden_without_scope(self):
+        client = make_authed_client(Principal(id="u1", type="test", scopes=frozenset({"chat"})))
+        resp = client.post("/api/v1/documents/draft/deposit-contract")
+        assert resp.status_code == 403
+        assert "documents:write" in resp.json()["detail"]
+
+    def test_calculate_court_fee_forbidden_without_scope(self):
+        client = make_authed_client(Principal(id="u1", type="test", scopes=frozenset({"chat"})))
+        resp = client.post("/api/v1/documents/calculate/court-fee", json={"claim_amount": 1000000})
+        assert resp.status_code == 403
+        assert "documents:write" in resp.json()["detail"]
+
+    def test_calculate_severance_forbidden_without_scope(self):
+        client = make_authed_client(Principal(id="u1", type="test", scopes=frozenset({"chat"})))
+        resp = client.post("/api/v1/documents/calculate/severance", json={"monthly_salary": 10000000})
+        assert resp.status_code == 403
+        assert "documents:write" in resp.json()["detail"]
+
+    def test_calculate_interest_forbidden_without_scope(self):
+        client = make_authed_client(Principal(id="u1", type="test", scopes=frozenset({"chat"})))
+        resp = client.post(
+            "/api/v1/documents/calculate/interest",
+            json={"principal_amount": 10000000, "days_overdue": 30},
+        )
+        assert resp.status_code == 403
+        assert "documents:write" in resp.json()["detail"]
+
+    def test_calculate_land_tax_forbidden_without_scope(self):
+        client = make_authed_client(Principal(id="u1", type="test", scopes=frozenset({"chat"})))
+        resp = client.post("/api/v1/documents/calculate/land-tax", json={"property_value": 1000000000})
+        assert resp.status_code == 403
+        assert "documents:write" in resp.json()["detail"]
+
+    def test_endpoints_allowed_with_documents_write_scope(self):
+        client = make_authed_client(Principal(id="u2", type="test", scopes=frozenset({"documents:write"})))
+        resp_calc = client.post("/api/v1/documents/calculate/court-fee", json={"claim_amount": 1000000})
+        assert resp_calc.status_code == 200
+        resp_draft = client.post("/api/v1/documents/draft/deposit-contract")
+        assert resp_draft.status_code == 200
+
+    def test_endpoints_allowed_with_ops_scope(self):
+        client = make_authed_client(Principal(id="ops_user", type="test", scopes=frozenset({"ops"})))
+        resp_calc = client.post("/api/v1/documents/calculate/court-fee", json={"claim_amount": 1000000})
+        assert resp_calc.status_code == 200
+
+    def test_dev_local_fallback_principal_has_documents_write(self):
+        from backend.api.principal import principal_from_request_state
+        dummy_req = Request({"type": "http"})
+        principal = principal_from_request_state(dummy_req)
+        assert principal.id == "dev-local"
+        assert principal.has_scope("documents:write")
+

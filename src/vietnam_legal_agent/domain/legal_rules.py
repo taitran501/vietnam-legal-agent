@@ -361,11 +361,47 @@ def calculate_legal_formula(
             "ok": True,
         }
 
-    # 3. Severance Allowance (Điều 46 BLLĐ 2019)
+    # 3. Severance Allowance (Điều 46 BLLĐ 2019 & Điều 8 Nghị định 145/2020/NĐ-CP)
     if calc_type in ("severance_allowance", "tro_cap_thoi_viec", "severance"):
         salary = float(params.get("monthly_salary_average_6m_vnd", 0) or params.get("monthly_salary_vnd", 0) or 0)
-        years = float(params.get("years_of_service", 0) or params.get("qualifying_working_years", 0) or 0)
+
+        # Trích xuất thời gian làm việc (tháng hoặc năm)
+        months_input = params.get("months_worked") or params.get("worked_months") or params.get("months_of_service") or params.get("working_months") or params.get("months")
+        if months_input is not None:
+            months = float(months_input)
+            if months < 12.0:
+                years = 0.0
+            else:
+                full_years = int(months // 12)
+                odd_months = months % 12
+                if odd_months == 0:
+                    years = float(full_years)
+                elif odd_months <= 6:
+                    years = full_years + 0.5
+                else:
+                    years = full_years + 1.0
+        else:
+            raw_years = float(params.get("years_of_service", 0) or params.get("qualifying_working_years", 0) or params.get("working_years", 0) or params.get("years", 0) or 0)
+            if raw_years < 1.0:
+                years = 0.0
+            else:
+                full_years = int(raw_years)
+                frac = raw_years - full_years
+                if frac == 0:
+                    years = float(full_years)
+                elif round(frac * 12.0, 1) <= 6.0:
+                    years = full_years + 0.5
+                else:
+                    years = full_years + 1.0
+
         total_allowance = salary * years * 0.5
+
+        if years == 0.0:
+            formula = "Thời gian làm việc chưa đủ 12 tháng theo Điều 46 BLLĐ 2019: Trợ cấp thôi việc = 0 đ"
+            summary = "Thời gian làm việc dưới 12 tháng không đủ điều kiện hưởng trợ cấp thôi việc theo luật định: 0 VNĐ"
+        else:
+            formula = f"Trợ cấp thôi việc = {years} năm (Điều 8 Nghị định 145/2020/NĐ-CP) × 0.5 × {salary:,.0f} đ = {total_allowance:,.0f} đ"
+            summary = f"Trợ cấp thôi việc được nhận ({years} năm tính trợ cấp): {total_allowance:,.0f} VNĐ"
 
         return {
             "calculation_type": "severance_allowance",
@@ -373,9 +409,9 @@ def calculate_legal_formula(
             "rate_per_year": "0.5 tháng tiền lương bình quân 6 tháng liền kề",
             "total_severance_vnd": round(total_allowance, 0),
             "calculated_amount_vnd": round(total_allowance, 0),
-            "legal_basis": "Điều 46 Bộ luật Lao động 2019",
-            "formula": f"Trợ cấp thôi việc = {years} năm × 0.5 × {salary:,.0f} đ = {total_allowance:,.0f} đ",
-            "formatted_summary": f"Trợ cấp thôi việc được nhận: {total_allowance:,.0f} VNĐ",
+            "legal_basis": "Điều 46 Bộ luật Lao động 2019 và Nghị định 145/2020/NĐ-CP",
+            "formula": formula,
+            "formatted_summary": summary,
             "ok": True,
         }
 
@@ -564,17 +600,37 @@ def calculate_legal_formula(
             "ok": True,
         }
 
-    # 8. Statutory Interest & Late Payment Cap (Điều 468 Bộ luật Dân sự 2015)
+    # 8. Statutory Interest & Late Payment Cap (Điều 468 BLDS 2015 / Điều 306 Luật Thương mại 2005)
     if calc_type in ("late_payment_interest", "lai_suat_cham_tra", "lai_suat_vay", "interest"):
-        principal = float(params.get("principal_vnd", 0) or 0)
+        principal = float(params.get("principal_vnd", 0) or params.get("principal_amount", 0) or 0)
         overdue_days = float(params.get("days_overdue", 0) or params.get("overdue_days", 0) or 0)
-        agreed_rate_annual = float(params.get("annual_interest_rate_percent", 0) or params.get("agreed_rate_annual_percent", 0) or 0)
+        agreed_rate_annual = float(params.get("annual_interest_rate_percent", 0) or params.get("agreed_rate_annual_percent", 0) or params.get("agreed_annual_rate", 0) or 0)
 
-        max_statutory_rate = 20.0  # 20%/year under Art 468
-        is_usury_violation = agreed_rate_annual > max_statutory_rate
+        is_commercial = bool(params.get("is_commercial_contract") or params.get("is_commercial") or params.get("commercial") or False)
+        if isinstance(params.get("is_commercial_contract"), str):
+            is_commercial = params.get("is_commercial_contract", "").strip().lower() in ("true", "1", "yes")
+        elif isinstance(params.get("is_commercial"), str):
+            is_commercial = params.get("is_commercial", "").strip().lower() in ("true", "1", "yes")
 
-        applicable_annual_rate = min(agreed_rate_annual if agreed_rate_annual > 0 else 10.0, max_statutory_rate)
-        interest_amount = principal * (applicable_annual_rate / 100.0) * (overdue_days / 365.0)
+        if is_commercial:
+            # Điều 306 Luật Thương mại 2005 & Nghị quyết 01/2019/NQ-HĐTP: không áp trần 20%/năm của BLDS
+            applicable_annual_rate = agreed_rate_annual if agreed_rate_annual > 0 else 10.0
+            max_statutory_rate = None
+            is_usury_violation = False
+            was_capped = False
+            legal_basis = "Điều 306 Luật Thương mại 2005 & Nghị quyết 01/2019/NQ-HĐTP"
+            interest_amount = principal * (applicable_annual_rate / 100.0) * (overdue_days / 365.0)
+            formula = f"Tiền lãi chậm trả thương mại = {principal:,.0f} đ × {applicable_annual_rate:.1f}%/năm × ({overdue_days}/365 ngày) = {interest_amount:,.0f} đ"
+            formatted_summary = f"Tiền lãi chậm trả theo hợp đồng thương mại ({applicable_annual_rate:.1f}%/năm): {interest_amount:,.0f} VNĐ"
+        else:
+            max_statutory_rate = 20.0  # 20%/year under Art 468 BLDS 2015
+            is_usury_violation = agreed_rate_annual > max_statutory_rate
+            was_capped = is_usury_violation
+            applicable_annual_rate = min(agreed_rate_annual if agreed_rate_annual > 0 else 10.0, max_statutory_rate)
+            legal_basis = "Điều 468 Bộ luật Dân sự 2015"
+            interest_amount = principal * (applicable_annual_rate / 100.0) * (overdue_days / 365.0)
+            formula = f"Tiền lãi chậm trả = {principal:,.0f} đ × {applicable_annual_rate:.1f}%/năm × ({overdue_days}/365 ngày) = {interest_amount:,.0f} đ"
+            formatted_summary = f"Tiền lãi chậm trả tính theo trần luật định ({applicable_annual_rate}%/năm): {interest_amount:,.0f} VNĐ"
 
         return {
             "calculation_type": "late_payment_interest",
@@ -584,12 +640,13 @@ def calculate_legal_formula(
             "applicable_annual_rate_percent": applicable_annual_rate,
             "applied_annual_rate_percent": applicable_annual_rate,
             "is_usury_violation": is_usury_violation,
-            "was_capped_at_statutory_limit": is_usury_violation,
+            "was_capped_at_statutory_limit": was_capped,
+            "is_commercial_contract": is_commercial,
             "total_interest_vnd": round(interest_amount, 0),
             "interest_amount_vnd": round(interest_amount, 0),
-            "legal_basis": "Điều 468 Bộ luật Dân sự 2015",
-            "formula": f"Tiền lãi chậm trả = {principal:,.0f} đ × {applicable_annual_rate:.1f}%/năm × ({overdue_days}/365 ngày) = {interest_amount:,.0f} đ",
-            "formatted_summary": f"Tiền lãi chậm trả tính theo trần luật định ({applicable_annual_rate}%/năm): {interest_amount:,.0f} VNĐ",
+            "legal_basis": legal_basis,
+            "formula": formula,
+            "formatted_summary": formatted_summary,
             "ok": True,
         }
 

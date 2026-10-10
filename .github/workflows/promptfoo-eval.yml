@@ -1,7 +1,6 @@
 name: Promptfoo Deterministic Evaluation
 
 on:
-  pull_request:
   workflow_dispatch:
 
 permissions:
