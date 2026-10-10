@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from scripts.migrate_legacy_sqlite import migrate
 
-from epr_agent.infra.persistence import DatabaseSchemaMismatch, PersistenceStore, sqlite_database_url
+from vietnam_legal_agent.infra.persistence import DatabaseSchemaMismatch, PersistenceStore, sqlite_database_url
 
 
 def _legacy_database(path: Path, *, metadata: str = '{"source":"legacy"}', orphan: bool = False) -> None:

@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from epr_agent.eval.contracts import (
+from vietnam_legal_agent.eval.contracts import (
     AuthoritativeSource,
     EvalTurn,
     EvaluationCase,
@@ -18,7 +18,7 @@ from epr_agent.eval.contracts import (
     ExpectedClaim,
     ExpectedOutcome,
 )
-from epr_agent.eval.replay import replay_case, write_report
+from vietnam_legal_agent.eval.replay import replay_case, write_report
 
 
 class FakeReplayRuntime:
@@ -99,7 +99,7 @@ async def test_replay_preserves_multi_turn_conversation_and_source_artifacts() -
 
     assert len(runtime.calls) == 2
     assert runtime.calls[0]["conversation_id"] == runtime.calls[1]["conversation_id"] == "conversation-1"
-    assert runtime.calls[1]["operation"] == "continue_case"
+    assert runtime.calls[1]["operation"] == "message"
     assert len(report["turns"]) == 2
     assert report["turns"][0]["tool_trajectory"][0]["tool"] == "search_legal_provisions"
     assert report["result"]["status"] == EvaluationStatus.PASS.value
@@ -141,7 +141,7 @@ async def test_replay_does_not_replace_missing_source_drawer_with_documents() ->
 
 @pytest.mark.asyncio
 async def test_replay_example_case_is_gate_eligible_as_engineering_evidence() -> None:
-    from epr_agent.eval.replay import deterministic_runtime, load_cases
+    from vietnam_legal_agent.eval.replay import deterministic_runtime, load_cases
 
     case = load_cases(Path("data/eval/examples/legal-follow-up.json"))[0]
     report = await replay_case(deterministic_runtime(case), case, mode="deterministic")

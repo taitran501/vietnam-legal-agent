@@ -206,40 +206,16 @@ def test_sessions_ownership_enforced_between_users(client: TestClient):
 
 
 @pytest.mark.integration
-def test_case_workspace_hydrates_updates_and_reopens_collection(client: TestClient):
+def test_legacy_case_workspace_api_is_not_exposed(client: TestClient):
     headers = {"x-test-user": "case-owner"}
     created = client.post(
         "/api/v1/sessions",
         headers=headers,
-        json={"title": "EPR case", "session_id": "conv-case"},
+        json={"title": "Legal conversation", "session_id": "conv-case"},
     )
     assert created.status_code == 200
 
-    empty_case = client.get("/api/v1/sessions/conv-case/case", headers=headers)
-    assert empty_case.status_code == 200
-    assert empty_case.json() is None
-
-    saved = client.patch(
-        "/api/v1/sessions/conv-case/case",
-        headers=headers,
-        json={
-            "task_type": "assess_epr_obligation",
-            "facts": {
-                "business_role": "nhà sản xuất",
-                "product_or_packaging": "bao bì",
-                "material": "nhựa",
-                "activity_scope": "thị trường Việt Nam",
-            },
-        },
-    )
-    assert saved.status_code == 200
-    assert saved.json()["status"] == "ready"
-
-    reopened = client.patch(
-        "/api/v1/sessions/conv-case/case",
-        headers=headers,
-        json={"facts": {"material": ""}},
-    )
-    assert reopened.status_code == 200
-    assert reopened.json()["status"] == "collecting"
-    assert reopened.json()["missing_facts"] == ["material"]
+    get_workspace = client.get("/api/v1/sessions/conv-case/case", headers=headers)
+    patch_workspace = client.patch("/api/v1/sessions/conv-case/case", headers=headers, json={"facts": {}})
+    assert get_workspace.status_code == 404
+    assert patch_workspace.status_code == 404

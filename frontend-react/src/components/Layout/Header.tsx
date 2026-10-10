@@ -2,18 +2,16 @@ import { Icon } from '@/components/UI/Icon';
 import type { MeResponse } from '@/api/me';
 
 interface HeaderProps {
-  hasActiveCase?: boolean;
   me?: MeResponse | null;
   readiness: 'ready' | 'preview' | 'blocked' | 'preparing' | 'offline';
   onLogout?: () => void;
-  onOpenCase?: () => void;
   onOpenMobileNav: () => void;
 }
 
-export function Header({ hasActiveCase = false, me, readiness, onLogout, onOpenCase, onOpenMobileNav }: HeaderProps) {
+export function Header({ me, readiness, onLogout, onOpenMobileNav }: HeaderProps) {
   const status = {
     ready: { label: 'Sẵn sàng', color: 'bg-[#1d8b66]', title: 'Hệ thống đã sẵn sàng' },
-    preview: { label: 'Sẵn sàng', color: 'bg-[#1d8b66]', title: 'Hệ thống đã sẵn sàng' },
+    preview: { label: 'Bản xem trước', color: 'bg-[#d98b22]', title: 'Hệ thống đang chạy ở chế độ xem trước' },
     blocked: { label: 'Tra cứu đang khóa', color: 'bg-[#ba1a1a]', title: 'Khả năng tra cứu pháp luật chưa sẵn sàng' },
     preparing: { label: 'Đang chuẩn bị dữ liệu', color: 'bg-[#d98b22]', title: 'Đang chuẩn bị dữ liệu pháp luật' },
     offline: { label: 'Ngoại tuyến', color: 'bg-[#ba1a1a]', title: 'Không thể kết nối tới máy chủ' },
@@ -41,17 +39,6 @@ export function Header({ hasActiveCase = false, me, readiness, onLogout, onOpenC
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
-        {hasActiveCase && (
-          <button
-            aria-label="Mở thông tin tình huống"
-            className="inline-flex items-center gap-2 rounded-md px-2.5 py-2 text-xs font-semibold text-[#005c55] transition-colors hover:bg-[#e7eceb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] sm:text-sm"
-            onClick={onOpenCase}
-            type="button"
-          >
-            <Icon name="case" size={17} />
-            <span className="hidden sm:inline">Thông tin tình huống</span>
-          </button>
-        )}
         {me && (
           <div className="hidden min-w-0 text-right md:block">
             <p className="max-w-36 truncate text-xs font-semibold text-[#3e4947]">{me.display_name}</p>

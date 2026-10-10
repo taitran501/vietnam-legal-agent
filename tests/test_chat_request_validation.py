@@ -18,8 +18,8 @@ class TestChatRequestValidation:
 
     def test_valid_query(self):
         """Valid query should pass validation."""
-        req = ChatRequest(query="What is EPR?")
-        assert req.query == "What is EPR?"
+        req = ChatRequest(query="What is legal information?")
+        assert req.query == "What is legal information?"
 
     def test_empty_query_rejected(self):
         """Empty query should be rejected."""
@@ -50,20 +50,20 @@ class TestChatRequestValidation:
 
     def test_query_with_special_characters(self):
         """Query with special characters should be allowed."""
-        req = ChatRequest(query="What is EPR? @#$%^&*()")
-        assert req.query == "What is EPR? @#$%^&*()"
+        req = ChatRequest(query="What is legal information? @#$%^&*()")
+        assert req.query == "What is legal information? @#$%^&*()"
 
     def test_query_with_unicode(self):
         """Query with Unicode characters should be allowed."""
-        req = ChatRequest(query="Nghị định 08/2022 là gì?")
-        assert "Nghị định" in req.query
+        req = ChatRequest(query="Bộ luật Lao động 2019 là gì?")
+        assert "Bộ luật Lao động" in req.query
 
     def test_query_with_html_tags(self):
         """Query with HTML tags should be allowed (but sanitized later)."""
-        req = ChatRequest(query="What is <b>EPR</b>?")
-        assert req.query == "What is <b>EPR</b>?"
+        req = ChatRequest(query="What is <b>legal information</b>?")
+        assert req.query == "What is <b>legal information</b>?"
 
     def test_query_with_sql_injection_attempt(self):
         """Query with SQL injection should be allowed (backend handles it)."""
-        req = ChatRequest(query="What is EPR?'; DROP TABLE users;--")
+        req = ChatRequest(query="What is legal information?'; DROP TABLE users;--")
         assert "DROP TABLE" in req.query

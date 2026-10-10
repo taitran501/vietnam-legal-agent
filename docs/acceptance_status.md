@@ -5,6 +5,11 @@
 **Merged delivery:** PR #56 (`22d339c`), live-agent evaluation workflow hardening
 **CI evidence:** [main CI run 32935342399](https://github.com/taitran501/vietnam-legal-agent/actions/runs/32935342399)
 
+> **Product-scope update (2026-09-30):** The assistant now uses one general
+> legal-chat workflow and the multi-domain corpus. The acceptance figures below
+> describe an older checkout and do not validate the current migration or
+> approve the broader corpus for production.
+
 This file records checks against the current checkout. It is not a replacement
 for the commit-scoped historical reports; deployment, provider, and corpus
 freshness checks remain separate operational concerns.
@@ -20,8 +25,8 @@ The following checks were run in the repository acceptance environment
 | `python -m tests.eval.run_eval --suite all` | **exit 0**; deterministic route matrix **60/60**, generated at the evidence commit |
 | `python tests/eval/agent_harness.py --suite all` | **18/18** trajectory cases |
 | `python tests/eval/persona_simulation.py --persona all` | **15/15** persona cases |
-| `ruff check src/epr_agent backend scripts tests promptfoo` | **pass** |
-| `mypy src/epr_agent backend` | **pass** |
+| `ruff check src/vietnam_legal_agent backend scripts tests promptfoo` | **pass** |
+| `mypy src/vietnam_legal_agent backend` | **pass** |
 | `python -m scripts.sync_corpus_metadata --check` | **pass**, no issues |
 | `git diff --check` | **pass** |
 | `docker compose ... config --quiet` | **pass** for the base stack plus deterministic CI smoke overlay |
@@ -47,11 +52,8 @@ interpreting a test result.
 - CI runs on pull requests, all branch pushes, and manual dispatch; it
   also runs `pip check` and a real Docker Compose gateway/backend/dependency
   smoke overlay in preview mode.
-- The product language is **Vietnam Legal Agent**. EPR remains a
-  supported rule-pack and corpus domain rather than the product identity.
-- The compatibility package namespace (`epr_agent`) and EPR corpus/rule-pack
-  identifiers remain stable so existing imports, data manifests, and API
-  clients do not break during the product rename.
+- The product language is **Vietnam Legal Agent**; the package namespace and
+  legacy data formats are compatibility details rather than product defaults.
 - Redis rate limiting is fail-closed by default; an unavailable Redis produces
   a temporary 503 rather than silently disabling request protection.
 - Retrieval relevance and web-result synthesis fail closed when the provider or
@@ -71,17 +73,11 @@ interpreting a test result.
   password and no longer pins services to non-scalable container names.
 - Nginx restricts `/metrics`, forwards the HTTPS signal, and targets the
   authenticated backend metrics route.
-- Appendix XXII corpus identity is stable across LibreOffice outputs: the
-  converter-only `PDF_SHA256` field is excluded from the canonical row hash,
-  while the source hash and extracted row content remain part of identity.
 - Preview Compose promotion now uses the synchronized corpus hash and keeps
   preview mode visibly separate from production mode.
-- The V4 pipeline routes cases through `detect_legal_domain()` to the
-  appropriate rule engine: EPR uses the deterministic `CaseFormResolver`;
-  all other domains (labor, civil, corporate, marriage, land, traffic)
-  use `UniversalCaseFormResolver` and `evaluate_universal_case()`.
-- The autonomous agent path (`pipeline-agent`) shares the same tool registry
-  and supports all legal domains via `evaluate_legal_case`.
+- V4 and the autonomous agent use shared retrieval, evidence, and citation
+  checks across legal topics. No domain-specific form or rule engine makes
+  legal decisions.
 - The evaluation control plane now records multi-turn replay events,
   trace/source payloads, claim-level verification, and redacted feedback triage.
   Fixtures are engineering evidence and do not require a legal reviewer.
@@ -90,7 +86,7 @@ interpreting a test result.
 
 These are deliberate release gates, not claims that local tests can satisfy:
 
-- a production deployment has healthy PostgreSQL/Qdrant/Redis/OpenAI/OIDC
+- a production deployment has healthy PostgreSQL/Redis/OpenAI/OIDC
   integrations, real authentication, monitoring, backups, and measured p95
   latency;
 - a production deployment has not been approved or measured; the current

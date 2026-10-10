@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { CaseState, SessionInfo, SessionDetail } from '@/types';
+import type { SessionInfo, SessionDetail } from '@/types';
 
 const SESSIONS_ENDPOINT = '/api/v1/sessions';
 
@@ -51,28 +51,6 @@ export async function updateSession(
   return response.data;
 }
 
-export async function getCaseState(sessionId: string, signal?: AbortSignal): Promise<CaseState | null> {
-  const response = await apiClient.get<CaseState | null>(`${SESSIONS_ENDPOINT}/${sessionId}/case`, { signal });
-  return response.data;
-}
-
 export async function cancelTurn(sessionId: string, turnId: string): Promise<void> {
   await apiClient.put(`/api/v1/conversations/${sessionId}/turns/${turnId}/cancel`);
-}
-
-export async function updateCaseState(
-  sessionId: string,
-  facts: Record<string, string>,
-  taskType?: CaseState['task_type'],
-  confirmationStatuses: Record<string, 'user_confirmed' | 'document_verified' | 'unknown'> = {}
-): Promise<CaseState> {
-  const response = await apiClient.patch<CaseState>(`${SESSIONS_ENDPOINT}/${sessionId}/case`, {
-    facts,
-    fact_updates: Object.fromEntries(Object.entries(facts).map(([key, value]) => [key, {
-      value,
-      confirmation_status: confirmationStatuses[key] || 'user_confirmed',
-    }])),
-    task_type: taskType,
-  });
-  return response.data;
 }

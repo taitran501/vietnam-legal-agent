@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import pytest
 
-from epr_agent.domain.routes import RouteType
-from epr_agent.domain.tasks import classify_route, detect_legal_domain
+from vietnam_legal_agent.domain.routes import RouteType
+from vietnam_legal_agent.domain.tasks import classify_route, detect_legal_domain
 
 LAYMAN_CASES = [
     {

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from epr_agent.agent.tool_registry import calculate_statutory_amounts
-from epr_agent.domain.legal_rules import calculate_legal_formula
+from vietnam_legal_agent.agent.tool_registry import calculate_statutory_amounts
+from vietnam_legal_agent.domain.legal_rules import calculate_legal_formula
 
 
 def test_overtime_salary_calculation() -> None:
@@ -163,3 +163,118 @@ def test_traffic_accident_damage_compensation() -> None:
     assert res["ok"] is True
     assert res["total_compensation_vnd"] == 70_000_000
     assert "Điều 584, Điều 585, Điều 589 và Điều 590 Bộ luật Dân sự 2015" in res["legal_basis"]
+
+
+def test_severance_allowance_minimum_tenure_under_12_months() -> None:
+    """Article 46 Labor Code 2019: service < 12 months (or < 1 year) yields 0 VND."""
+    # 6 months worked
+    res_6m = calculate_legal_formula(
+        calculation_type="severance_allowance",
+        parameters={"monthly_salary_vnd": 10_000_000, "months_worked": 6},
+    )
+    assert res_6m["ok"] is True
+    assert res_6m["total_severance_vnd"] == 0
+    assert res_6m["qualifying_working_years"] == 0.0
+
+    # 11 months worked
+    res_11m = calculate_legal_formula(
+        calculation_type="severance_allowance",
+        parameters={"monthly_salary_vnd": 10_000_000, "months_worked": 11},
+    )
+    assert res_11m["ok"] is True
+    assert res_11m["total_severance_vnd"] == 0
+    assert res_11m["qualifying_working_years"] == 0.0
+
+    # 0.5 year passed via years_of_service
+    res_half_yr = calculate_legal_formula(
+        calculation_type="severance_allowance",
+        parameters={"monthly_salary_vnd": 10_000_000, "years_of_service": 0.5},
+    )
+    assert res_half_yr["ok"] is True
+    assert res_half_yr["total_severance_vnd"] == 0
+    assert res_half_yr["qualifying_working_years"] == 0.0
+
+
+def test_severance_allowance_decree_145_month_rounding() -> None:
+    """Decree 145/2020/ND-CP Article 8: 1-6 odd months round to 0.5 year; > 6 odd months round to 1.0 year."""
+    # 14 months worked (1 year + 2 months): 2 <= 6 -> 1.5 qualifying years -> 7.5M VND
+    res_14m = calculate_legal_formula(
+        calculation_type="severance_allowance",
+        parameters={"monthly_salary_vnd": 10_000_000, "months_worked": 14},
+    )
+    assert res_14m["ok"] is True
+    assert res_14m["qualifying_working_years"] == 1.5
+    assert res_14m["total_severance_vnd"] == 7_500_000
+    assert "Nghị định 145/2020/NĐ-CP" in res_14m["legal_basis"]
+
+    # 18 months worked (1 year + 6 months): 6 <= 6 -> 1.5 qualifying years -> 7.5M VND
+    res_18m = calculate_legal_formula(
+        calculation_type="severance_allowance",
+        parameters={"monthly_salary_vnd": 10_000_000, "months_worked": 18},
+    )
+    assert res_18m["ok"] is True
+    assert res_18m["qualifying_working_years"] == 1.5
+    assert res_18m["total_severance_vnd"] == 7_500_000
+
+    # 19 months worked (1 year + 7 months): 7 > 6 -> 2.0 qualifying years -> 10.0M VND
+    res_19m = calculate_legal_formula(
+        calculation_type="severance_allowance",
+        parameters={"monthly_salary_vnd": 10_000_000, "months_worked": 19},
+    )
+    assert res_19m["ok"] is True
+    assert res_19m["qualifying_working_years"] == 2.0
+    assert res_19m["total_severance_vnd"] == 10_000_000
+
+
+def test_commercial_overdue_interest_uncapped() -> None:
+    """Article 306 Commercial Law 2005 & Resolution 01/2019/NQ-HDTP: commercial contracts not subject to 20% cap."""
+    # Commercial rate 25% (> 20%)
+    res_25 = calculate_legal_formula(
+        calculation_type="late_payment_interest",
+        parameters={
+            "principal_vnd": 100_000_000,
+            "days_overdue": 365,
+            "annual_interest_rate_percent": 25.0,
+            "is_commercial_contract": True,
+        },
+    )
+    assert res_25["ok"] is True
+    assert res_25["applied_annual_rate_percent"] == 25.0
+    assert res_25["was_capped_at_statutory_limit"] is False
+    assert res_25["is_usury_violation"] is False
+    assert res_25["interest_amount_vnd"] == 25_000_000
+    assert "Điều 306 Luật Thương mại 2005" in res_25["legal_basis"]
+    assert "Nghị quyết 01/2019/NQ-HĐTP" in res_25["legal_basis"]
+
+    # Commercial rate 30% via is_commercial
+    res_30 = calculate_legal_formula(
+        calculation_type="late_payment_interest",
+        parameters={
+            "principal_vnd": 100_000_000,
+            "days_overdue": 365,
+            "annual_interest_rate_percent": 30.0,
+            "is_commercial": True,
+        },
+    )
+    assert res_30["ok"] is True
+    assert res_30["applied_annual_rate_percent"] == 30.0
+    assert res_30["was_capped_at_statutory_limit"] is False
+    assert res_30["interest_amount_vnd"] == 30_000_000
+
+
+@pytest.mark.asyncio
+async def test_statutory_amounts_commercial_interest_tool_integration() -> None:
+    """Test calculate_statutory_amounts integration with uncapped commercial interest."""
+    tool_res = await calculate_statutory_amounts(
+        calculation_type="late_payment_interest",
+        parameters={
+            "principal_vnd": 100_000_000,
+            "days_overdue": 365,
+            "annual_interest_rate_percent": 25.0,
+            "is_commercial_contract": True,
+        },
+    )
+    assert tool_res["ok"] is True
+    assert tool_res["applied_annual_rate_percent"] == 25.0
+    assert tool_res["was_capped_at_statutory_limit"] is False
+    assert tool_res["interest_amount_vnd"] == 25_000_000

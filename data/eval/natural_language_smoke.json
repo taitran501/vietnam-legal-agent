@@ -14,11 +14,11 @@
             "termination_reason": "answer_complete",
             "source_nonempty": true,
             "retrieval_count_min": 1,
-            "source_id_contains": ["corp-law-111"],
+            "source_id_contains": ["browser-corporate-59-2020-qh14-111"],
             "anchor_contains": "Điều 111",
             "instrument_contains": "59/2020/QH14",
             "answer_contains": ["03", "cổ đông"],
-            "answer_not_contains": ["EPR", "tái chế"]
+            "answer_not_contains": ["Luật Khiếu nại", "đặt cọc"]
           }
         }
       ]
@@ -32,7 +32,7 @@
           "expect": {
             "route": "legal_lookup",
             "termination_reason": "insufficient_evidence",
-            "safe_stop_reason": "source_relevance_mismatch",
+            "safe_stop_reason": "missing_provision",
             "source_empty": true,
             "retrieval_count_min": 1
           }
@@ -40,33 +40,37 @@
       ]
     },
     {
-      "id": "article_77_lookup",
-      "conversation_id": "smoke-article-77",
+      "id": "article_25_lookup",
+      "conversation_id": "smoke-article-25",
       "turns": [
         {
-          "query": "Điều 77 Nghị định 08/2022/NĐ-CP quy định gì về trách nhiệm tái chế?",
+          "query": "Điều 25 Bộ luật Lao động 2019 quy định thời gian thử việc tối đa bao lâu?",
           "expect": {
             "route": "legal_lookup",
             "termination_reason": "answer_complete",
             "source_nonempty": true,
-            "anchor_contains": "Điều 77",
-            "instrument_contains": "08/2022/NĐ-CP",
+            "anchor_contains": "Điều 25",
+            "instrument_contains": "45/2019/QH14",
+            "answer_contains": ["60 ngày"],
             "retrieval_count_min": 1
           }
         }
       ]
     },
     {
-      "id": "epr_case_assessment",
-      "conversation_id": "smoke-epr-case",
+      "id": "labor_unlawful_termination_lookup",
+      "conversation_id": "smoke-labor-termination",
       "turns": [
         {
-          "query": "Doanh nghiệp nhập khẩu bao bì nhựa tại Việt Nam có phải thực hiện EPR không?",
+          "query": "Theo Điều 41 Bộ luật Lao động 2019, nếu công ty chấm dứt hợp đồng trái pháp luật thì phải bồi thường thế nào?",
           "expect": {
-            "route": "case_assessment",
-            "termination_reason": "awaiting_user_input",
-            "context_loaded": true,
-            "retrieval_count_exact": 0
+            "route": "legal_lookup",
+            "termination_reason": "answer_complete",
+            "source_nonempty": true,
+            "anchor_contains": "Điều 41",
+            "instrument_contains": "45/2019/QH14",
+            "answer_contains": ["Điều 41"],
+            "retrieval_count_min": 1
           }
         }
       ]
@@ -82,22 +86,21 @@
             "termination_reason": "insufficient_evidence",
             "safe_stop_reason": "missing_provision",
             "source_empty": true,
-            "retrieval_count_min": 1,
-            "answer_not_contains": ["Nghị định 08/2022", "EPR", "tái chế"]
+            "retrieval_count_min": 1
           }
         },
         {
           "query": "còn gì nữa?",
           "expect": {
             "route": "legal_lookup",
-            "termination_reason": "insufficient_evidence",
-            "safe_stop_reason": "missing_provision",
+            "termination_reason": "awaiting_user_input",
             "context_loaded": true,
             "is_follow_up": true,
             "history_messages": 2,
             "standalone_contains": ["2026", "còn gì nữa"],
+            "answer_contains": ["chưa xác định rõ nội dung cần tra cứu"],
             "source_empty": true,
-            "answer_not_contains": ["Nghị định 08/2022", "EPR", "tái chế"]
+            "retrieval_count_exact": 0
           }
         }
       ]
@@ -155,7 +158,7 @@
       "conversation_id": "smoke-unknown-article",
       "turns": [
         {
-          "query": "Điều 999 Nghị định 08/2022/NĐ-CP quy định gì?",
+          "query": "Điều 999 Bộ luật Dân sự 91/2015/QH13 quy định gì?",
           "expect": {
             "route": "legal_lookup",
             "termination_reason": "insufficient_evidence",
@@ -175,7 +178,7 @@
           "expect": {
             "route": "legal_lookup",
             "termination_reason": "insufficient_evidence",
-            "safe_stop_reason": "source_relevance_mismatch",
+            "safe_stop_reason": "missing_provision",
             "source_empty": true,
             "retrieval_count_min": 1
           }

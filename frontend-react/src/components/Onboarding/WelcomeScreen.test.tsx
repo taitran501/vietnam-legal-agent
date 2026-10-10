@@ -1,114 +1,60 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { WelcomeScreen } from './WelcomeScreen';
 
-describe('WelcomeScreen legal goal buttons & dynamic suggestions', () => {
-  it('renders the 4 core legal goal buttons', () => {
-    render(
-      <WelcomeScreen
-        draftText=""
-        isStreaming={false}
-        onClearIntent={vi.fn()}
-        onDraftChange={vi.fn()}
-        onPrefillPrompt={vi.fn()}
-        onSendPrompt={vi.fn()}
-        onStop={vi.fn()}
-      />,
-    );
+function renderWelcome(
+  overrides: {
+    disabled?: boolean;
+    draftText?: string;
+  } = {},
+) {
+  const onSelectIntent = vi.fn();
+  render(<WelcomeScreen draftText="" isStreaming={false} onClearIntent={vi.fn()} onDraftChange={vi.fn()} onSelectIntent={onSelectIntent} onSendPrompt={vi.fn()} onStop={vi.fn()} {...overrides} />);
+  return { onSelectIntent };
+}
 
-    expect(screen.getByRole('button', { name: /tra cứu quy định pháp luật/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /kiểm tra tính hợp pháp & nghĩa vụ/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /giải thích & so sánh quy định/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /hướng dẫn hồ sơ & thủ tục/i })).toBeInTheDocument();
+describe('WelcomeScreen task categories', () => {
+  it('describes the configured legal corpus without claiming an unavailable corpus size', () => {
+    renderWelcome();
+
+    expect(screen.getByText(/theo kho văn bản đang được cấu hình/i)).toBeInTheDocument();
+    expect(screen.getByText(/báo rõ khi chưa tìm thấy nguồn phù hợp/i)).toBeInTheDocument();
+    expect(screen.queryByText(/84\.900/i)).not.toBeInTheDocument();
   });
 
-  it('prefills template and switches suggestions dynamically when a goal button is clicked', () => {
-    const onPrefillPrompt = vi.fn();
-    render(
-      <WelcomeScreen
-        draftText=""
-        isStreaming={false}
-        onClearIntent={vi.fn()}
-        onDraftChange={vi.fn()}
-        onPrefillPrompt={onPrefillPrompt}
-        onSendPrompt={vi.fn()}
-        onStop={vi.fn()}
-      />,
-    );
+  it('shows exactly three categories and no sample-question section', () => {
+    renderWelcome();
 
-    // Initially default suggestions
-    expect(screen.getByText(/gợi ý tình huống pháp lý phổ biến/i)).toBeInTheDocument();
-
-    // Click Goal 1: Legal lookup -> prefills lookup template
-    fireEvent.click(screen.getByRole('button', { name: /tra cứu quy định pháp luật/i }));
-    expect(onPrefillPrompt).toHaveBeenCalledWith(
-      expect.stringContaining('Tôi muốn tra cứu quy định pháp luật về'),
-      'legal_lookup',
-    );
-    expect(screen.getByText(/tình huống mẫu: tra cứu quy định pháp luật/i)).toBeInTheDocument();
-    expect(screen.getByText(/phạt xe máy vượt đèn đỏ/i)).toBeInTheDocument();
-
-    // Click a suggestion from Goal 1
-    fireEvent.click(screen.getByText(/phạt xe máy vượt đèn đỏ/i));
-    expect(onPrefillPrompt).toHaveBeenCalledWith(
-      expect.stringContaining('vượt đèn đỏ'),
-      'legal_lookup',
-    );
-
-    // Click Goal 2: Case assessment
-    fireEvent.click(screen.getByRole('button', { name: /kiểm tra tính hợp pháp & nghĩa vụ/i }));
-    expect(onPrefillPrompt).toHaveBeenCalledWith(
-      expect.stringContaining('Tình huống của tôi là:'),
-      'case_assessment',
-    );
-    expect(screen.getByText(/tình huống mẫu: kiểm tra tính hợp pháp & nghĩa vụ/i)).toBeInTheDocument();
-    expect(screen.getByText(/chủ nhà đòi tăng giá thuê 30%/i)).toBeInTheDocument();
-
-    // Click reset "Xem tất cả chủ đề"
-    fireEvent.click(screen.getByRole('button', { name: /xem tất cả chủ đề/i }));
-    expect(screen.getByText(/gợi ý tình huống pháp lý phổ biến/i)).toBeInTheDocument();
+    const categories = screen.getByRole('group', { name: 'Mục tiêu pháp lý' });
+    expect(within(categories).getAllByRole('button')).toHaveLength(3);
+    expect(screen.getByRole('button', { name: 'Tra cứu quy định pháp luật' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tư vấn tình huống' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hồ sơ & thủ tục' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: /câu hỏi mẫu/i })).not.toBeInTheDocument();
   });
 
-  it('toggles active goal off when clicked again', () => {
-    render(
-      <WelcomeScreen
-        draftText=""
-        isStreaming={false}
-        onClearIntent={vi.fn()}
-        onDraftChange={vi.fn()}
-        onPrefillPrompt={vi.fn()}
-        onSendPrompt={vi.fn()}
-        onStop={vi.fn()}
-      />,
-    );
+  it('sets an intent without inserting a sample question and toggles it off', () => {
+    const { onSelectIntent } = renderWelcome();
+    const input = screen.getByLabelText('Câu hỏi pháp lý');
 
-    const goalBtn = screen.getByRole('button', { name: /hướng dẫn hồ sơ & thủ tục/i });
-    fireEvent.click(goalBtn);
-    expect(screen.getByText(/tình huống mẫu: hướng dẫn hồ sơ & thủ tục/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Tư vấn tình huống' }));
+    expect(onSelectIntent).toHaveBeenLastCalledWith('case_assessment');
+    expect(input).toHaveValue('');
+    expect(input).toHaveAttribute('placeholder', 'Mô tả ngắn gọn tình huống pháp lý…');
 
-    // Click again to toggle off
-    fireEvent.click(goalBtn);
-    expect(screen.getByText(/gợi ý tình huống pháp lý phổ biến/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Tư vấn tình huống' }));
+    expect(onSelectIntent).toHaveBeenLastCalledWith('auto');
+    expect(input).toHaveValue('');
   });
 
-  it('disables goal buttons and inputs when isStreaming or disabled is true', () => {
-    render(
-      <WelcomeScreen
-        disabled
-        draftText=""
-        isStreaming={false}
-        onClearIntent={vi.fn()}
-        onDraftChange={vi.fn()}
-        onPrefillPrompt={vi.fn()}
-        onSendPrompt={vi.fn()}
-        onStop={vi.fn()}
-      />,
-    );
+  it('preserves a draft when changing its task category', () => {
+    const draftText = 'Điều 25 Bộ luật Lao động quy định gì?';
+    const { onSelectIntent } = renderWelcome({ draftText });
+    const input = screen.getByLabelText('Câu hỏi pháp lý');
 
-    expect(screen.getByRole('button', { name: /tra cứu quy định pháp luật/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /kiểm tra tính hợp pháp & nghĩa vụ/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /giải thích & so sánh quy định/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /hướng dẫn hồ sơ & thủ tục/i })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Tra cứu quy định pháp luật' }));
+    expect(onSelectIntent).toHaveBeenCalledWith('legal_lookup');
+    expect(input).toHaveValue(draftText);
   });
+
 });
-

@@ -1,4 +1,7 @@
-# ADR 0001: Inline Guided Form instead of Drawer-First
+# Historical ADR 0001: Inline Guided Form instead of Drawer-First
+
+> Superseded by the ordinary-chat product scope in the current guided user
+> flows. Kept for design history.
 
 - **Status:** accepted
 - **Context:** Non-technical users had to open the drawer repeatedly to fill in individual fields, even though the backend already knew the list of missing information.

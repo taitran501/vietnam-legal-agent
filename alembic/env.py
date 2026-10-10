@@ -12,7 +12,7 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from epr_agent.infra.persistence import Base, normalise_database_url, sqlite_database_url
+from vietnam_legal_agent.infra.persistence import Base, normalise_database_url, sqlite_database_url
 
 config = context.config
 if config.config_file_name is not None:

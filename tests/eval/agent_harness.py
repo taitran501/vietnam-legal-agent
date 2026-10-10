@@ -27,17 +27,16 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-from epr_agent.agent.agent_loop import AgentRunConfig, EprAgentRunner
-from epr_agent.agent.runtime import AgentWorkflowRuntime, WorkflowDependencies
-from epr_agent.agent.tool_registry import ToolDependencies, set_tool_dependencies
-from epr_agent.domain.epr_rules import CaseFormResolver
-from epr_agent.domain.models import DocumentRecord
-from epr_agent.tools.cache import CachedAnswer
-from epr_agent.tools.evidence import EvidenceEvaluator
-from epr_agent.tools.history import ContextSnapshot, HistoryGateway
-from epr_agent.tools.legal_readiness import SyntheticReadyLegalReadinessGate
-from epr_agent.tools.retrieval import StaticRetrievalGateway
 from tests.eval.agent_manifest import AGENT_MANIFEST, AgentTestCase
+from vietnam_legal_agent.agent.agent_loop import AgentRunConfig, VietnameseLegalAgentRunner
+from vietnam_legal_agent.agent.runtime import AgentWorkflowRuntime, WorkflowDependencies
+from vietnam_legal_agent.agent.tool_registry import ToolDependencies, set_tool_dependencies
+from vietnam_legal_agent.domain.models import DocumentRecord
+from vietnam_legal_agent.tools.cache import CachedAnswer
+from vietnam_legal_agent.tools.evidence import EvidenceEvaluator
+from vietnam_legal_agent.tools.history import ContextSnapshot, HistoryGateway
+from vietnam_legal_agent.tools.legal_readiness import SyntheticReadyLegalReadinessGate
+from vietnam_legal_agent.tools.retrieval import StaticRetrievalGateway
 
 logger = logging.getLogger(__name__)
 
@@ -62,15 +61,16 @@ class HarnessHistory(HistoryGateway):
 
 class HarnessGeneration:
     async def chitchat(self, query: str, history: list) -> str:
-        return "Xin chào! Tôi là trợ lý pháp luật EPR. Tôi có thể hỗ trợ gì cho bạn?"
+        return "Xin chào! Tôi có thể giúp bạn tra cứu quy định pháp luật Việt Nam."
 
     async def answer(self, task_type: str, query: str, documents: list, facts: dict) -> str:
-        return "Theo quy định pháp luật EPR [1], nghĩa vụ được thực hiện theo tỷ lệ quy định."
+        return "Theo căn cứ pháp luật được tìm thấy [1], vấn đề này cần được đối chiếu với nội dung và thời điểm áp dụng của văn bản."
 
     async def web(self, query: str) -> tuple[str, list[DocumentRecord]]:
         return "Kết quả tìm kiếm web", []
 
-    async def repair(self, answer: str, documents: list, task_type: str) -> str:
+    async def repair(self, answer: str, documents: list, task_type: str, *, query: str = "") -> str:
+        _ = query
         return answer
 
 
@@ -81,9 +81,9 @@ class HarnessCache:
     async def lookup(self, task_type, query: str, route: str = "legal_lookup"):
         if self.cached_hit:
             cached = CachedAnswer(
-                answer="Điều 77 Luật BVMT quy định trách nhiệm tái chế sản phẩm, bao bì [1].",
-                evidence=[{"content": "Điều 77 quy định...", "document_id": "doc-1", "metadata": {"legal_anchor": "Điều 77", "source": "Luật BVMT"}}],
-                citations=[{"index": 1, "document_id": "doc-1", "label": "Điều 77"}],
+                answer="Căn cứ pháp luật được lưu trong câu trả lời trước [1].",
+                evidence=[{"content": "Căn cứ pháp luật liên quan đến câu hỏi đã được lưu.", "document_id": "doc-1", "metadata": {"source": "Kho văn bản pháp luật Việt Nam"}}],
+                citations=[{"index": 1, "document_id": "doc-1", "label": "Nguồn pháp luật"}],
                 source="cache",
             )
             return cached, "cache-key"
@@ -106,9 +106,7 @@ def _build_mock_llm_for_case(case: AgentTestCase) -> Any:
                     "id": "call_1",
                 }],
             ),
-            AIMessage(
-                content="Quy định về trách nhiệm tái chế bạn hỏi tại Điều 77 [1] với tỷ lệ và ngưỡng 30 tỷ theo quy định doanh thu ngày 20 tháng 4.",
-            ),
+            AIMessage(content="Căn cứ pháp luật liên quan đến câu hỏi của bạn được trích dẫn tại [1]."),
         ]
     elif case.category == "multi_hop":
         responses = [
@@ -118,43 +116,23 @@ def _build_mock_llm_for_case(case: AgentTestCase) -> Any:
             ),
             AIMessage(
                 content="",
-                tool_calls=[{"name": "search_legal_provisions", "args": {"query": "Nghị định 08 Phụ lục XXII"}, "id": "call_2"}],
+                tool_calls=[{"name": "search_legal_provisions", "args": {"query": f"{case.query} căn cứ và thủ tục"}, "id": "call_2"}],
             ),
-            AIMessage(
-                content=(
-                    "Theo Điều 77 và Điều 78 Luật BVMT 2020 kết hợp Phụ lục XXII [1], bao bì nhựa PET có tỷ lệ tái chế cụ thể [1]."
-                    if "PET" in case.query
-                    else "Trách nhiệm tái chế sản phẩm bao bì và trách nhiệm xử lý chất thải theo Luật BVMT 2020 được quy định tại Điều 77 và Điều 78 [1]."
-                ),
-            ),
+            AIMessage(content="Các căn cứ liên quan đã được đối chiếu tại nguồn pháp luật [1]."),
         ]
     elif case.category in {"assessment_complete", "assessment_exempt"}:
         responses = [
             AIMessage(
                 content="",
-                tool_calls=[{"name": "get_case_form_fields", "args": {"task_type": "assess_epr_obligation", "known_facts": case.mock_facts}, "id": "call_1"}],
+                tool_calls=[{"name": "search_legal_provisions", "args": {"query": case.query}, "id": "call_1"}],
             ),
-            AIMessage(
-                content="",
-                tool_calls=[{"name": "evaluate_legal_case", "args": {"facts": case.mock_facts}, "id": "call_2"}],
-            ),
-            AIMessage(
-                content="",
-                tool_calls=[{"name": "search_legal_provisions", "args": {"query": "Điều 77 Luật BVMT"}, "id": "call_3"}],
-            ),
-            AIMessage(
-                content="Dựa trên đánh giá, trường hợp của doanh nghiệp thuộc diện thực hiện trách nhiệm EPR (hoặc miễn trừ nếu dưới 30 tỷ) theo Điều 77 [1].",
-            ),
+            AIMessage(content="Từ thông tin bạn nêu, căn cứ pháp luật liên quan cần được xem xét như nguồn [1]."),
         ]
     elif case.category == "assessment_missing_facts":
         responses = [
             AIMessage(
                 content="",
-                tool_calls=[{"name": "get_case_form_fields", "args": {"task_type": "assess_epr_obligation", "known_facts": case.mock_facts}, "id": "call_1"}],
-            ),
-            AIMessage(
-                content="",
-                tool_calls=[{"name": "ask_user_for_clarification", "args": {"question": "Vui lòng cung cấp thêm thông tin về vật liệu và doanh thu?", "missing_fields": ["material", "annual_revenue_vnd"]}, "id": "call_2"}],
+                tool_calls=[{"name": "ask_user_for_clarification", "args": {"question": "Bạn có thể cho biết nội dung hợp đồng hoặc thỏa thuận liên quan không?"}, "id": "call_1"}],
             ),
         ]
     elif case.category == "checklist":
@@ -164,7 +142,7 @@ def _build_mock_llm_for_case(case: AgentTestCase) -> Any:
                 tool_calls=[{"name": "search_legal_provisions", "args": {"query": case.query}, "id": "call_1"}],
             ),
             AIMessage(
-                content="Checklist tuân thủ quy định EPR cho ắc quy:\n- Trách nhiệm đăng ký kế hoạch tái chế định kỳ hàng năm [1].\n- Kê khai số lượng sản phẩm ắc quy đưa ra thị trường theo quy định [1].",
+                content="Căn cứ pháp luật được tìm thấy giúp xác định hồ sơ và thủ tục phù hợp [1].",
             ),
         ]
     elif case.category == "fault_tolerance":
@@ -178,7 +156,7 @@ def _build_mock_llm_for_case(case: AgentTestCase) -> Any:
                 tool_calls=[{"name": "search_legal_provisions", "args": {"query": "Nghị định 45/2022 xử phạt môi trường"}, "id": "call_2"}],
             ),
             AIMessage(
-                content="Quy định xử phạt hành chính về EPR được quy định tại Nghị định 45/2022/NĐ-CP [1].",
+                content="Nguồn pháp luật liên quan đến thủ tục khiếu nại được tìm thấy [1].",
             ),
         ]
     elif case.category == "budget_enforcement":
@@ -194,50 +172,36 @@ def _build_mock_llm_for_case(case: AgentTestCase) -> Any:
                 tool_calls=[{"name": "lookup_answer_cache", "args": {"query": case.query}, "id": "call_1"}],
             ),
             AIMessage(
-                content="Điều 77 Luật BVMT quy định trách nhiệm tái chế sản phẩm, bao bì [1].",
+                content="Điều 25 Bộ luật Lao động quy định thời gian thử việc tối đa theo từng nhóm công việc [1].",
             ),
         ]
     elif case.category == "chitchat":
         responses = [AIMessage(content="Xin chào! Tôi có thể giúp gì cho bạn?")]
     elif case.category == "out_of_scope":
-        responses = [AIMessage(content="Câu hỏi hiện nằm ngoài phạm vi tra cứu EPR của hệ thống.")]
+        responses = [AIMessage(content="Câu hỏi này nằm ngoài phạm vi trợ lý pháp luật.")]
     elif case.category == "layman_vague":
         responses = [
             AIMessage(
                 content="",
-                tool_calls=[{"name": "search_legal_provisions", "args": {"query": "EPR trách nhiệm mở rộng nhà sản xuất Điều 77"}, "id": "call_1"}],
+                tool_calls=[{"name": "search_legal_provisions", "args": {"query": case.query}, "id": "call_1"}],
             ),
-            AIMessage(
-                content="EPR là quy định về trách nhiệm tái chế đối với nhà sản xuất và nhập khẩu theo Điều 77 Luật BVMT [1].",
-            ),
+            AIMessage(content="Căn cứ pháp luật liên quan đến câu hỏi của bạn được trích dẫn tại [1]."),
         ]
     elif case.category == "layman_misconception":
         responses = [
             AIMessage(
                 content="",
-                tool_calls=[{"name": "search_legal_provisions", "args": {"query": "đối tượng chịu trách nhiệm EPR Điều 77"}, "id": "call_1"}],
+                tool_calls=[{"name": "search_legal_provisions", "args": {"query": case.query}, "id": "call_1"}],
             ),
-            AIMessage(
-                content="Chào bạn, bạn là cơ sở bán lẻ sử dụng cốc chứ không phải là nhà sản xuất theo Điều 77 [1], nên bạn không phải nộp phí [1].",
-            ),
+            AIMessage(content="Căn cứ pháp luật liên quan đến tình huống của bạn được trích dẫn tại [1]."),
         ]
     elif case.category == "layman_workshop":
         responses = [
             AIMessage(
                 content="",
-                tool_calls=[{"name": "get_case_form_fields", "args": {"task_type": "assess_epr_obligation", "known_facts": case.mock_facts}, "id": "call_1"}],
+                tool_calls=[{"name": "search_legal_provisions", "args": {"query": case.query}, "id": "call_1"}],
             ),
-            AIMessage(
-                content="",
-                tool_calls=[{"name": "evaluate_legal_case", "args": {"facts": case.mock_facts}, "id": "call_2"}],
-            ),
-            AIMessage(
-                content="",
-                tool_calls=[{"name": "search_legal_provisions", "args": {"query": "ngưỡng miễn trừ 30 tỷ Điều 54"}, "id": "call_3"}],
-            ),
-            AIMessage(
-                content="Xưởng của bạn có doanh thu 12 tỷ (dưới 30 tỷ/năm) nên thuộc diện được miễn trừ trách nhiệm tái chế theo quy định tại Điều 77 [1].",
-            ),
+            AIMessage(content="Căn cứ pháp luật liên quan đến tình huống bạn kể được trích dẫn tại [1]."),
         ]
 
     class ProgrammedLLM:
@@ -277,11 +241,11 @@ class AgentHarness:
 
     async def run_case(self, case: AgentTestCase) -> CaseResult:
         sample_doc = DocumentRecord(
-            content=f"Căn cứ pháp luật về EPR: {case.query}. Điều 77 và Điều 78 quy định trách nhiệm tái chế 30 tỷ doanh thu và hạn 20 tháng 4 cho bao bì nhựa PET và ắc quy.",
+            content=f"Căn cứ pháp luật liên quan đến câu hỏi: {case.query}. Nội dung nguồn được lưu trong kho văn bản pháp luật Việt Nam để đối chiếu.",
             document_id="doc-1",
             score=0.95,
             source="legal",
-            metadata={"legal_anchor": "Điều 77 — Điều 78", "Dieu": "77, 78", "source": "Luật BVMT 2020"},
+            metadata={"source": "Kho văn bản pháp luật Việt Nam", "source_title": "Văn bản pháp luật Việt Nam"},
         )
         legal_docs = [] if case.mock_all_search_empty else [sample_doc]
 
@@ -291,7 +255,6 @@ class AgentHarness:
             generation=HarnessGeneration(),
             cache=HarnessCache(cached_hit=case.category == "cache_hit"),
             history=HarnessHistory(active_case=case.active_case),
-            case_resolver=CaseFormResolver(),
         )
         set_tool_dependencies(tool_deps)
 
@@ -306,7 +269,7 @@ class AgentHarness:
         )
 
         mock_llm = _build_mock_llm_for_case(case)
-        runner = EprAgentRunner(
+        runner = VietnameseLegalAgentRunner(
             config=AgentRunConfig(max_steps=case.max_steps_allowed),
             llm=mock_llm,
         )

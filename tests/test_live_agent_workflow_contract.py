@@ -22,8 +22,9 @@ def test_live_agent_workflow_declares_runtime_and_corpus_contract() -> None:
 
     assert "image: redis:7.4-alpine" in workflow
     assert "REDIS_URL: redis://127.0.0.1:6379/0" in workflow
-    assert "QDRANT_CLOUD_URL: ${{ secrets.QDRANT_CLOUD_URL }}" in workflow
-    assert "QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}" in workflow
-    assert "LAW_COLLECTION: ${{ vars.PILOT_LAW_COLLECTION }}" in workflow
-    assert "python -m scripts.sync_corpus_metadata --check" in workflow
+    assert 'ENABLE_UNIVERSAL_RETRIEVAL: "true"' in workflow
+    assert 'ENABLE_QDRANT_RETRIEVAL: "false"' in workflow
+    assert "python -m scripts.build_universal_index --download --rebuild" in workflow
+    assert "QDRANT_CLOUD_URL" not in workflow
+    assert "PILOT_LAW_COLLECTION" not in workflow
     assert "--benchmark data/eval/golden_legal_benchmark.json" in workflow

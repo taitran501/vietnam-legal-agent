@@ -3,6 +3,7 @@ import type { ReactNode, SVGProps } from 'react';
 export type IconName =
   | 'alert'
   | 'book'
+  | 'brain'
   | 'building'
   | 'calculator'
   | 'case'
@@ -10,6 +11,7 @@ export type IconName =
   | 'checklist'
   | 'chevronDown'
   | 'chevronRight'
+  | 'chevronUp'
   | 'clock'
   | 'close'
   | 'collapse'
@@ -20,6 +22,7 @@ export type IconName =
   | 'externalLink'
   | 'fileCheck'
   | 'fileText'
+  | 'globe'
   | 'help'
   | 'history'
   | 'info'
@@ -34,6 +37,7 @@ export type IconName =
   | 'send'
   | 'shield'
   | 'source'
+  | 'sparkles'
   | 'stop'
   | 'thumbDown'
   | 'thumbUp'
@@ -52,6 +56,13 @@ const paths: Record<IconName, ReactNode> = {
     <>
       <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
       <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" />
+    </>
+  ),
+  brain: (
+    <>
+      <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+      <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
+      <path d="M12 5v14" />
     </>
   ),
   building: (
@@ -97,6 +108,7 @@ const paths: Record<IconName, ReactNode> = {
   ),
   chevronDown: <path d="m6 9 6 6 6-6" />,
   chevronRight: <path d="m9 18 6-6-6-6" />,
+  chevronUp: <path d="m18 15-6-6-6 6" />,
   clock: (
     <>
       <circle cx="12" cy="12" r="10" />
@@ -150,6 +162,13 @@ const paths: Record<IconName, ReactNode> = {
       <polyline points="14 2 14 8 20 8" />
       <path d="M8 13h8" />
       <path d="M8 17h8" />
+    </>
+  ),
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+      <path d="M2 12h20" />
     </>
   ),
   help: (
@@ -242,6 +261,11 @@ const paths: Record<IconName, ReactNode> = {
       <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" />
       <path d="M8 7h8" />
       <path d="M8 11h6" />
+    </>
+  ),
+  sparkles: (
+    <>
+      <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
     </>
   ),
   stop: <rect width="10" height="10" x="7" y="7" rx="1" />,

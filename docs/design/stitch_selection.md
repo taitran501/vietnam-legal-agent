@@ -22,7 +22,7 @@ The product shell is intentionally generic ("Vietnam Legal Agent"), while the in
 
 ## Adapted Rather Than Copied
 
-- The permanent EPR case panel was replaced by a contextual drawer. It appears only for assessment or checklist flows that have an active case.
+- The domain-specific case panel and drawer were removed. Users describe questions and situations in the ordinary chat composer; the three welcome suggestions cover different legal topics.
 - The source drawer does not open while retrieval is running. It opens only after evidence exists and the user selects the source action.
 - Unsupported attachment, voice, model selection, sharing, saved-document, and settings controls were not added.
 - Domain-specific examples remain in the welcome suggestions because they match the current corpora, but the navigation and component model are domain-neutral.
@@ -55,5 +55,5 @@ The product shell is intentionally generic ("Vietnam Legal Agent"), while the in
 - Desktop: 1280 px and 1600 px widths.
 - Tablet: 900 × 1024 with the icon rail.
 - Mobile: 390 × 844 with no horizontal overflow.
-- Source and case drawers: at least 390 px wide on desktop and full-width up to 420 px on small screens.
+- Source drawer: at least 390 px wide on desktop and full-width up to 420 px on small screens.
 - Motion: 180–220 ms for overlays and drawers, disabled under `prefers-reduced-motion`.

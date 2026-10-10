@@ -1,17 +1,17 @@
-"""Deterministic end-to-end trajectories for the bounded compliance workflow."""
+"""Deterministic user journeys across ordinary Vietnamese legal topics."""
 
 from __future__ import annotations
 
 import pytest
 
-from epr_agent.agent.graph import WorkflowDependencies, run_workflow
-from epr_agent.agent.planner import BoundedPlanner
-from epr_agent.domain.models import DocumentRecord, TaskType
-from epr_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
-from epr_agent.tools.evidence import EvidenceEvaluator
-from epr_agent.tools.generation import StaticGenerationGateway
-from epr_agent.tools.history import ContextSnapshot
-from epr_agent.tools.retrieval import StaticRetrievalGateway
+from vietnam_legal_agent.agent.graph import WorkflowDependencies, run_workflow
+from vietnam_legal_agent.agent.planner import BoundedPlanner
+from vietnam_legal_agent.domain.models import DocumentRecord, TaskType
+from vietnam_legal_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
+from vietnam_legal_agent.tools.evidence import EvidenceEvaluator
+from vietnam_legal_agent.tools.generation import StaticGenerationGateway
+from vietnam_legal_agent.tools.history import ContextSnapshot
+from vietnam_legal_agent.tools.retrieval import StaticRetrievalGateway
 
 
 class TrajectoryHistory:
@@ -31,29 +31,33 @@ class NoWebGeneration(StaticGenerationGateway):
         return "", []
 
 
-def legal_document() -> DocumentRecord:
+def legal_document(content: str, article: str, source: str) -> DocumentRecord:
     return DocumentRecord(
-        content="Nội dung Điều 77 về trách nhiệm tái chế và thực hiện nghĩa vụ EPR. " * 8,
+        content=content * 5,
         metadata={
-            "Dieu": "Điều 77",
-            "source": "Nghị định 08/2022/NĐ-CP",
-            "source_file": "data/08_2022_ND-CP_479457.doc",
-            "Corpus_Version": "epr-law-structure-v2",
+            "Dieu": article,
+            "source": source,
+            "Corpus_Version": "general-law-test-v1",
             "Corpus_SHA256": "a" * 64,
             "Embedding_Profile": "openai-text-embedding-3-small-v1",
-            "legal_anchor": "Điều 77",
+            "legal_anchor": article,
         },
-        document_id="law-77",
+        document_id=f"law-{article}",
         source="legal",
         score=0.94,
     )
 
 
-def dependencies(*, history: TrajectoryHistory | None = None, legal: bool = True, generation=None) -> WorkflowDependencies:
+def dependencies(
+    *,
+    history: TrajectoryHistory | None = None,
+    documents: list[DocumentRecord] | None = None,
+    generation=None,
+) -> WorkflowDependencies:
     return WorkflowDependencies(
         history=history or TrajectoryHistory(),
         cache=ScopedAnswerCache(InMemoryAnswerCache()),
-        retrieval=StaticRetrievalGateway(legal_documents=[legal_document()] if legal else []),
+        retrieval=StaticRetrievalGateway(legal_documents=documents or []),
         evidence=EvidenceEvaluator(min_chars=20),
         generation=generation or StaticGenerationGateway(),
         planner=BoundedPlanner(max_retrieval_actions=3, max_repairs=1, max_iterations=12),
@@ -62,102 +66,138 @@ def dependencies(*, history: TrajectoryHistory | None = None, legal: bool = True
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "query",
+    ("query", "document", "task"),
     [
-        "Tôi là nhà sản xuất bao bì nhựa tại Việt Nam, có phải thực hiện EPR không?",
-        "Công ty tôi là nhà nhập khẩu chai thủy tinh tại Việt Nam, cần đánh giá nghĩa vụ EPR.",
-        "Doanh nghiệp sản xuất pin kim loại cho thị trường Việt Nam có phải thực hiện EPR không?",
+        (
+            "Tôi bị công ty chậm trả lương hai tháng, tôi có quyền gì?",
+            legal_document(
+                "Người sử dụng lao động phải trả lương trực tiếp, đầy đủ, đúng hạn cho người lao động.",
+                "Điều 94",
+                "Bộ luật Lao động 2019",
+            ),
+            TaskType.CASE_ASSESSMENT.value,
+        ),
+        (
+            "Chủ nhà không trả tiền đặt cọc sau khi tôi bàn giao nhà, có đúng không?",
+            legal_document(
+                "Tiền đặt cọc được xử lý theo thỏa thuận và quy định của pháp luật dân sự về đặt cọc.",
+                "Điều 328",
+                "Bộ luật Dân sự 2015",
+            ),
+            TaskType.LEGAL_LOOKUP.value,
+        ),
+        (
+            "Người ngồi sau xe máy không đội mũ bảo hiểm thì bị xử lý thế nào?",
+            legal_document(
+                "Người điều khiển và người ngồi trên xe mô tô, xe gắn máy phải đội mũ bảo hiểm.",
+                "Điều 30",
+                "Luật Giao thông đường bộ",
+            ),
+            TaskType.LEGAL_LOOKUP.value,
+        ),
     ],
 )
-async def test_assessment_with_complete_facts_is_evidence_linked(query: str):
-    state = await run_workflow(query, user_id="trajectory", conversation_id="assessment", deps=dependencies())
+async def test_basic_legal_case_uses_evidence_without_fixed_intake(
+    query: str,
+    document: DocumentRecord,
+    task: str,
+) -> None:
+    state = await run_workflow(
+        query,
+        user_id="trajectory",
+        conversation_id="general-case",
+        deps=dependencies(documents=[document]),
+    )
 
-    assert state["task_type"] == TaskType.CASE_ASSESSMENT.value
+    assert state["task_type"] == task
     assert state["termination_reason"] == "answer_complete"
     assert state["missing_facts"] == []
-    assert state["assessment"]["status"] == "preliminary"
     assert state["citations"]
+    assert "retrieve_legal" in state["action_sequence"]
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("query", "expected_missing"),
-    [
-        (
-            "Tôi là nhà sản xuất, có phải thực hiện EPR không?",
-            {"product_or_packaging", "material", "activity_scope"},
+async def test_short_case_description_is_not_blocked_by_mandatory_fields() -> None:
+    state = await run_workflow(
+        "Tôi bị công ty chậm lương, tôi có quyền gì?",
+        user_id="trajectory",
+        conversation_id="short-case",
+        deps=dependencies(
+            documents=[
+                legal_document(
+                    "Người sử dụng lao động phải trả lương đầy đủ, đúng hạn và bảo đảm quyền lợi của người lao động.",
+                    "Điều 94",
+                    "Bộ luật Lao động 2019",
+                )
+            ]
         ),
-        (
-            "Công ty tôi sản xuất bao bì tại Việt Nam, cần đánh giá nghĩa vụ EPR.",
-            {"material"},
-        ),
-        (
-            "Tôi là nhà nhập khẩu bao bì nhựa, có phải thực hiện EPR không?",
-            {"activity_scope"},
-        ),
-    ],
-)
-async def test_assessment_with_missing_facts_stops_for_exact_follow_up(query: str, expected_missing: set[str]):
-    state = await run_workflow(query, user_id="trajectory", conversation_id="missing", deps=dependencies())
+    )
 
-    assert state["termination_reason"] == "awaiting_user_input"
-    assert set(state["missing_facts"]) == expected_missing
-    assert "retrieve_legal" not in state["action_sequence"]
-    assert state["case_state"]["status"] == "collecting"
+    assert state["termination_reason"] == "answer_complete"
+    assert state["missing_facts"] == []
+    assert state["case_state"] is None or "required_count" not in state["case_state"]
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("task_type", [TaskType.CASE_ASSESSMENT, TaskType.BUILD_COMPLIANCE_CHECKLIST])
-async def test_follow_up_resumes_active_case(task_type: TaskType):
+async def test_follow_up_keeps_user_context_without_requesting_a_form() -> None:
     history = TrajectoryHistory(
         {
-            "task_type": task_type.value,
-            "facts": {
-                "business_role": "nhà sản xuất",
-                "product_or_packaging": "bao bì",
-                "activity_scope": "thị trường Việt Nam",
-            },
-            "status": "collecting",
+            "task_type": TaskType.CASE_ASSESSMENT.value,
+            "facts": {"employment_issue": "chậm trả lương", "duration": "hai tháng"},
+            "status": "ready",
         }
     )
     state = await run_workflow(
-        "Vật liệu là nhựa",
+        "Tôi đã nhắc công ty hai lần rồi.",
         user_id="trajectory",
-        conversation_id=f"resume-{task_type.value}",
-        deps=dependencies(history=history),
+        conversation_id="case-follow-up",
+        deps=dependencies(
+            history=history,
+            documents=[
+                legal_document(
+                    "Người sử dụng lao động phải trả lương đầy đủ và đúng hạn cho người lao động.",
+                    "Điều 94",
+                    "Bộ luật Lao động 2019",
+                )
+            ],
+        ),
     )
 
-    assert state["task_type"] == task_type.value
-    assert state["missing_facts"] == []
-    assert state["facts"]["material"] == "nhựa"
     assert state["termination_reason"] == "answer_complete"
+    assert state["missing_facts"] == []
+    assert state["facts"]["duration"] == "hai tháng"
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "query",
-    [
-        "Lập checklist EPR cho nhà sản xuất bao bì nhựa tại Việt Nam.",
-        "Lập checklist tuân thủ cho nhà nhập khẩu chai thủy tinh tại Việt Nam.",
-    ],
-)
-async def test_checklist_has_evidence_and_assumptions(query: str):
-    state = await run_workflow(query, user_id="trajectory", conversation_id="checklist", deps=dependencies())
+async def test_checklist_route_is_available_for_a_general_legal_task() -> None:
+    state = await run_workflow(
+        "Lập checklist giấy tờ cần chuẩn bị khi nghỉ việc.",
+        user_id="trajectory",
+        conversation_id="labor-checklist",
+        deps=dependencies(
+            documents=[
+                legal_document(
+                    "Khi chấm dứt hợp đồng lao động, các bên thực hiện trách nhiệm thanh toán và bàn giao theo quy định.",
+                    "Điều 48",
+                    "Bộ luật Lao động 2019",
+                )
+            ]
+        ),
+    )
 
     assert state["task_type"] == TaskType.BUILD_COMPLIANCE_CHECKLIST.value
     assert state["termination_reason"] == "answer_complete"
-    assert state["checklist"]
+    assert state["answer"]
     assert state["citations"]
-    assert all(item["assumption"] for item in state["checklist"])
 
 
 @pytest.mark.asyncio
-async def test_out_of_scope_question_stops_without_web_search():
+async def test_out_of_scope_question_stops_without_web_search() -> None:
     state = await run_workflow(
         "Hướng dẫn cách nấu phở bò Nam Định?",
         user_id="trajectory",
         conversation_id="out-of-scope",
-        deps=dependencies(legal=False),
+        deps=dependencies(),
     )
 
     assert state["termination_reason"] == "out_of_scope"
@@ -165,12 +205,12 @@ async def test_out_of_scope_question_stops_without_web_search():
 
 
 @pytest.mark.asyncio
-async def test_epr_corpus_miss_without_web_evidence_stops_safely():
+async def test_missing_legal_evidence_stops_without_fabricated_answer() -> None:
     state = await run_workflow(
-        "Nghĩa vụ EPR cho bao bì hiện nay là gì?",
+        "Quy định hiện hành cho tình huống pháp lý rất cụ thể này là gì?",
         user_id="trajectory",
         conversation_id="no-evidence",
-        deps=dependencies(legal=False, generation=NoWebGeneration()),
+        deps=dependencies(generation=NoWebGeneration()),
     )
 
     assert state["termination_reason"] == "insufficient_evidence"

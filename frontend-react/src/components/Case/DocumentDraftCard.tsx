@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Icon } from '@/components/UI/Icon';
+import { apiFetch } from '@/api/client';
 
 export interface DocumentDraftData {
   draft_id: string;
@@ -21,7 +22,7 @@ export function DocumentDraftCard({ draft }: DocumentDraftCardProps) {
   const handleDownloadDocx = async () => {
     setDownloading(true);
     try {
-      const response = await fetch('/api/v1/documents/export-docx', {
+      const response = await apiFetch('/api/v1/documents/export-docx', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -1,252 +1,170 @@
-"""Behavior and trajectory coverage for the Pipeline V4 contracts."""
+"""Cross-domain checks for generic routing, evidence, and case persistence."""
 
 from __future__ import annotations
 
 import pytest
-from tests.agent.v4_test_support import MemoryHistory, NoEvidenceRetrieval, runtime
-from tests.eval.pipeline_v4_manifest import (
-    ASSESSMENT_COMPLETE_CASES,
-    ASSESSMENT_MISSING_CASES,
-    CHECKLIST_CASES,
-    E2E_TRAJECTORIES,
-    EXEMPTION_CASES,
-    INSUFFICIENT_EVIDENCE_CASES,
-    QUERY_UNDERSTANDING_CASES,
+from tests.agent.v4_test_support import NoEvidenceRetrieval, runtime
+
+from vietnam_legal_agent.agent.v4 import _fact_values, _hydrate_persisted_case
+from vietnam_legal_agent.domain.models import TaskType
+from vietnam_legal_agent.domain.routes import RouteType
+from vietnam_legal_agent.domain.tasks import (
+    ExtractedFacts,
+    TaskUnderstanding,
+    classify_route,
+    detect_legal_domain,
+    preserve_explicit_anchors,
 )
 
-from epr_agent.agent.v4 import _fact_values
-from epr_agent.domain.epr_rules import extract_explicit_epr_facts
-from epr_agent.domain.tasks import classify_route, preserve_explicit_anchors
-from epr_agent.domain.v4 import FactSource
+
+@pytest.mark.parametrize(
+    ("query", "route"),
+    [
+        ("Xin chào, bạn hỗ trợ được gì?", RouteType.CHITCHAT),
+        ("Công ty cổ phần cần tối thiểu bao nhiêu cổ đông?", RouteType.LEGAL_LOOKUP),
+        ("Tôi bị công ty chậm trả lương hai tháng, tôi có quyền gì?", RouteType.CASE_ASSESSMENT),
+        ("Chủ nhà giữ tiền cọc sau khi tôi trả nhà, tôi nên làm gì?", RouteType.CASE_ASSESSMENT),
+        ("Không đội mũ bảo hiểm khi ngồi sau xe máy bị phạt thế nào?", RouteType.LEGAL_LOOKUP),
+        ("Điều 1 Luật số 82/2015/QH13 điều chỉnh những vấn đề nào về môi trường biển?", RouteType.LEGAL_LOOKUP),
+        ("Hướng dẫn cách nấu phở bò Nam Định?", RouteType.OUT_OF_SCOPE),
+    ],
+)
+def test_route_matrix_is_balanced_across_ordinary_legal_topics(query: str, route: RouteType) -> None:
+    assert classify_route(query, [], None) is route
 
 
-def test_v4_manifest_has_the_complete_contract_counts() -> None:
-    assert len(QUERY_UNDERSTANDING_CASES) == 60
-    assert len(E2E_TRAJECTORIES) == 40
-    assert len(ASSESSMENT_COMPLETE_CASES) == 11
-    assert len(ASSESSMENT_MISSING_CASES) == 12
-    assert len(EXEMPTION_CASES) == 8
-    assert len(INSUFFICIENT_EVIDENCE_CASES) == 5
-    assert len(CHECKLIST_CASES) == 4
+def test_environmental_topic_is_a_normal_legal_domain_without_intake_slots() -> None:
+    query = "Điều 1 Luật số 82/2015/QH13 điều chỉnh những vấn đề nào về môi trường biển?"
 
-
-@pytest.mark.unit
-@pytest.mark.parametrize("case", QUERY_UNDERSTANDING_CASES, ids=lambda case: case["id"])
-def test_v4_query_understanding_routes_are_deterministic(case: dict[str, object]) -> None:
-    expected = str(case["expected_route"])
-    history = [{"role": "user", "content": "Điều 77 quy định trách nhiệm tái chế EPR."}] if case.get("is_follow_up") else []
-    actual = classify_route(str(case["query"]), history, None).value
-    if case.get("expected_behavior") == "clarify_or_safe_stop":
-        assert actual in {"out_of_scope", "legal_lookup"}
-    else:
-        assert actual == expected
-
-
-@pytest.mark.unit
-def test_v4_preserves_all_explicit_legal_anchors_during_follow_up_rewrite() -> None:
-    cases = [case for case in QUERY_UNDERSTANDING_CASES if case.get("is_follow_up")]
-    for case in cases:
-        original = str(case["query"])
-        rewritten = preserve_explicit_anchors(original, "Câu hỏi độc lập đã được tạo lại.")
-        assert "Điều 78" in rewritten if "Điều 78" in original else True
-
-
-@pytest.mark.unit
-def test_v4_fact_extraction_keeps_user_provenance_and_does_not_infer_commercial_purpose() -> None:
-    facts = extract_explicit_epr_facts(
-        "Tôi là nhà sản xuất bao bì nhựa tại Việt Nam, có phải thực hiện EPR không?"
+    assert detect_legal_domain(query) == "environmental"
+    understanding = TaskUnderstanding(
+        task_type="legal_lookup",
+        route=RouteType.LEGAL_LOOKUP,
+        standalone_query=query,
+        missing_facts=["product_group", "material"],
     )
-    assert facts["business_role"].source == FactSource.USER_TURN
-    assert facts["business_role"].evidence_span == "nhà sản xuất"
-    assert "activity_purpose" not in facts
-    assert "market_placement" not in facts
+    assert understanding.missing_facts == []
 
 
-@pytest.mark.unit
-def test_v4_packaging_other_category_is_explicitly_extractable() -> None:
-    facts = extract_explicit_epr_facts("bao bì nhựa dùng cho hàng hóa khác")
-    assert facts["packaged_goods_category"].value == "other"
+def test_structured_understanding_keeps_user_facts_as_generic_values() -> None:
+    result = TaskUnderstanding(
+        task_type="case_assessment",
+        route=RouteType.CASE_ASSESSMENT,
+        standalone_query="Tôi bị chậm trả lương.",
+        facts=ExtractedFacts(values={"employment_issue": "chậm trả lương", "duration": "hai tháng"}),
+        missing_facts=["contract_date"],
+    )
+
+    assert result.task_type is TaskType.CASE_ASSESSMENT
+    assert result.facts.values == {"employment_issue": "chậm trả lương", "duration": "hai tháng"}
+    assert result.missing_facts == []
 
 
-@pytest.mark.unit
-def test_v4_migrates_legacy_case_fields_as_unverified_facts() -> None:
+def test_legacy_facts_are_preserved_without_domain_specific_reinterpretation() -> None:
     facts = _fact_values(
         {
-            "business_role": "nhà sản xuất",
-            "product_or_packaging": "bao bì",
-            "material": "nhựa",
-            "activity_scope": "thị trường Việt Nam",
+            "employment_issue": "chậm trả lương",
+            "duration": "hai tháng",
+            "user_note": "đã gửi yêu cầu qua email",
         }
     )
 
-    assert facts["business_role"].value == "nhà sản xuất"
-    assert facts["object_kind"].value == "packaging"
-    assert facts["product_group"].value == "bao_bi"
-    assert facts["market_placement"].value == "vietnam_market"
-    assert facts["object_kind"].verified is False
-    assert facts["object_kind"].source_turn == "legacy-v3-migration"
+    assert set(facts) == {"employment_issue", "duration", "user_note"}
+    assert all(fact.verified is False for fact in facts.values())
+    assert facts["duration"].source_turn == "legacy-v3-migration"
+
+
+def test_unknown_legacy_task_is_normalized_to_generic_case_state() -> None:
+    case = _hydrate_persisted_case(
+        {
+            "task_type": "retired_specialized_workflow",
+            "facts": {"employment_issue": "chậm trả lương"},
+            "fields": [{"key": "retired-field"}],
+            "missing_facts": ["retired-field"],
+        }
+    )
+
+    assert case is not None
+    assert case["task_type"] == TaskType.CASE_ASSESSMENT.value
+    assert "legal_domain" not in case
+    assert case["facts"] == {"employment_issue": "chậm trả lương"}
+    assert "fields" not in case
+    assert "form_version" not in case
+    assert "required_count" not in case
+
+
+def test_explicit_legal_anchors_survive_follow_up_rewrite() -> None:
+    original = "Điều 94 Bộ luật Lao động quy định gì?"
+
+    rewritten = preserve_explicit_anchors(original, "Quy định về trả lương là gì?")
+
+    assert "Điều 94" in rewritten
 
 
 @pytest.mark.asyncio
-async def test_v4_resume_migrates_legacy_case_before_collecting_new_facts() -> None:
-    legacy = {
-        "task_type": "assess_epr_obligation",
-        "status": "collecting",
-        "facts": {
-            "business_role": "nhà sản xuất",
-            "product_or_packaging": "bao bì",
-            "material": "nhựa",
-            "activity_scope": "thị trường Việt Nam",
-        },
-        "missing_facts": ["material"],
-    }
-    app, _, _ = runtime(history=MemoryHistory(legacy))
+async def test_short_labor_case_retrieves_without_collecting_a_fixed_form() -> None:
+    app, history, retrieval = runtime()
     state = await app.run(
-        query="Dùng cho thực phẩm, kinh doanh thương mại, doanh thu 40 tỷ đồng, không thu hồi để tái sử dụng.",
-        user_id="migration-user",
-        conversation_id="migration-case",
-        operation="continue_case",
-        intent_hint="case_assessment",
+        query="Tôi bị công ty chậm trả lương, tôi có quyền gì?",
+        user_id="general-user",
+        conversation_id="labor-short-case",
     )
 
     assert state["outcome"] == "completed", state
-    migrated = state["case_state"]["facts"]
-    assert migrated["object_kind"]["verified"] is False
-    assert migrated["market_placement"]["verified"] is False
+    assert state["route"] == RouteType.LEGAL_LOOKUP.value
+    assert state["termination_reason"] == "answer_complete"
+    assert state["missing_facts"] == []
+    assert state["case_state"] is None or "required_count" not in state["case_state"]
+    assert retrieval.requests
+    assert history.runs
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("case", ASSESSMENT_COMPLETE_CASES, ids=lambda case: case["id"])
-async def test_v4_complete_assessments_cover_all_required_issues(case: dict[str, object]) -> None:
-    app, history, retrieval = runtime()
+async def test_environmental_question_uses_the_same_evidence_workflow() -> None:
+    app, _, retrieval = runtime()
     state = await app.run(
-        query=str(case["query"]),
-        user_id="matrix-user",
-        conversation_id=str(case["id"]),
-        intent_hint="case_assessment",
-        interaction_source="composer",
+        query="Điều 1 Luật số 82/2015/QH13 điều chỉnh những vấn đề nào về môi trường biển?",
+        user_id="general-user",
+        conversation_id="environmental-lookup",
+        intent_hint="auto",
     )
-    assert state["route"] == "case_assessment"
-    assert state["outcome"] == case["expected_outcome"], state
-    assert state["result_type"] == case["expected_result_type"]
+
+    assert state["outcome"] == "completed", state
+    assert state["route"] == RouteType.LEGAL_LOOKUP.value
+    assert state["case_state"] is None
     assert state["missing_facts"] == []
-    assert set(state["required_issues"]) == set(state["covered_issues"])
-    assert state["assessment"]["status"] == case["expected_assessment_status"]
-    assert state["citations"]
-    assert history.runs
-    assert len(history.runs) == 1
     assert retrieval.requests
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("case", ASSESSMENT_MISSING_CASES, ids=lambda case: case["id"])
-async def test_v4_missing_facts_stop_before_retrieval(case: dict[str, object]) -> None:
-    app, history, retrieval = runtime()
-    state = await app.run(
-        query=str(case["query"]),
-        user_id="matrix-user",
-        conversation_id=str(case["id"]),
-        intent_hint="case_assessment",
-        operation="message",
-    )
-    assert state["outcome"] == "needs_information", state
-    assert state["result_type"] == "none"
-    assert set(case["expected_missing_facts"]).issubset(set(state["missing_facts"]))
-    assert "retrieve_legal" not in state["action_sequence"]
-    assert not retrieval.requests
-    assert state["case_state"]["status"] == "collecting"
-    assert history.saved_cases
-
-
-@pytest.mark.asyncio
-async def test_v4_case_state_keeps_presentation_schema_after_persistence() -> None:
-    app, history, _ = runtime()
-    state = await app.run(
-        query="Tôi là nhà sản xuất bao bì nhựa tại Việt Nam, có phải thực hiện EPR không?",
-        user_id="ui-schema-user",
-        conversation_id="ui-schema-case",
-        intent_hint="case_assessment",
-    )
-
-    fields = state["case_state"]["fields"]
-    by_key = {field["key"]: field for field in fields}
-    assert {"business_role", "object_kind", "product_group", "material"}.issubset(by_key)
-    assert {"market_placement", "activity_purpose", "packaged_goods_category"}.issubset(by_key)
-    assert by_key["business_role"]["label"] == "Vai trò doanh nghiệp"
-    assert by_key["business_role"]["value"] == "manufacturer"
-    assert by_key["business_role"]["options"][0]["label"] == "Nhà sản xuất"
-    assert by_key["material"]["options"]
-    assert by_key["market_placement"]["missing"] is True
-    assert history.saved_cases[0]["fields"]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("case", EXEMPTION_CASES[:4], ids=lambda case: case["id"])
-async def test_v4_exemptions_are_deterministic_assessment_results(case: dict[str, object]) -> None:
-    app, _, _ = runtime()
-    state = await app.run(
-        query=str(case["query"]),
-        user_id="matrix-user",
-        conversation_id=str(case["id"]),
-        intent_hint="case_assessment",
-    )
-    assert state["outcome"] == "completed", state
-    assert state["result_type"] == "assessment"
-    assert state["assessment"]["status"] == case["expected_assessment_status"]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("case", EXEMPTION_CASES[4:], ids=lambda case: case["id"])
-async def test_v4_out_of_scope_stops_without_retrieval(case: dict[str, object]) -> None:
-    expected_outcome = str(case["expected_outcome"])
-    app, _, retrieval = runtime(retrieval=NoEvidenceRetrieval() if expected_outcome == "insufficient_evidence" else None)
-    state = await app.run(
-        query=str(case["query"]),
-        user_id="matrix-user",
-        conversation_id=str(case["id"]),
-        intent_hint="auto",
-    )
-    assert state["outcome"] == expected_outcome, state
-    assert state["result_type"] == "none"
-    if expected_outcome == "out_of_scope":
-        assert not retrieval.requests
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("case", INSUFFICIENT_EVIDENCE_CASES, ids=lambda case: case["id"])
-async def test_v4_insufficient_evidence_never_completes(case: dict[str, object]) -> None:
+async def test_unavailable_corpus_stops_without_generating_unsupported_legal_answer() -> None:
     app, _, retrieval = runtime(retrieval=NoEvidenceRetrieval())
     state = await app.run(
-        query=str(case["query"]),
-        user_id="matrix-user",
-        conversation_id=str(case["id"]),
-        intent_hint=str(case["expected_route"]),
+        query="Công ty cổ phần cần tối thiểu bao nhiêu cổ đông?",
+        user_id="general-user",
+        conversation_id="no-evidence",
+        intent_hint="legal_lookup",
     )
-    assert state["outcome"] == "insufficient_evidence", state
-    assert state["result_type"] == "none"
+
+    assert state["outcome"] == "insufficient_evidence"
     assert state["termination_reason"] == "insufficient_evidence"
-    assert state["outcome"] != "completed"
-    assert not any("faq" in str(request).casefold() for request in retrieval.requests)
+    assert state["result_type"] == "none"
+    assert retrieval.requests
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("case", CHECKLIST_CASES, ids=lambda case: case["id"])
-async def test_v4_checklist_contract_has_facts_or_stops(case: dict[str, object]) -> None:
+async def test_checklist_is_generic_and_evidence_linked() -> None:
     app, _, retrieval = runtime()
     state = await app.run(
-        query=str(case["query"]),
-        user_id="matrix-user",
-        conversation_id=str(case["id"]),
+        query="Lập checklist giấy tờ cần bàn giao khi nghỉ việc.",
+        user_id="general-user",
+        conversation_id="general-checklist",
         intent_hint="compliance_checklist",
     )
-    assert state["outcome"] == case["expected_outcome"], state
-    assert state["result_type"] == case["expected_result_type"]
-    if state["outcome"] == "completed":
-        assert state["checklist"]
-        assert set(state["required_issues"]) == set(state["covered_issues"])
-        assert all(item["evidence_indices"] for item in state["checklist"])
-        assert state["answer"].startswith("Dưới đây là danh sách việc cần làm")
-        assert state["assessment"]["conclusion"] not in state["answer"]
-    else:
-        assert state["missing_facts"]
-        assert not retrieval.requests
+
+    assert state["outcome"] == "completed", state
+    assert state["route"] == RouteType.LEGAL_LOOKUP.value
+    assert state["task_type"] == TaskType.LEGAL_LOOKUP.value
+    assert state["checklist"] == []
+    assert state["citations"]
+    assert retrieval.requests

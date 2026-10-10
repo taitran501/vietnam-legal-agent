@@ -3,34 +3,19 @@ import { describe, expect, it, vi } from 'vitest';
 import { WorkflowResultCard } from './WorkflowResultCard';
 
 describe('WorkflowResultCard', () => {
-  it('makes a missing-facts stop visible instead of implying a conclusion', () => {
-    render(
-      <WorkflowResultCard
-        workflow={{
-          task_type: 'assess_epr_obligation',
-          missing_facts: ['material'],
-          termination_reason: 'awaiting_user_input',
-        }}
-      />
-    );
-
-    expect(screen.getByText('Cần thêm thông tin để tiếp tục')).toBeInTheDocument();
-    expect(screen.getByText(/vật liệu hoặc quy cách/i)).toBeInTheDocument();
-  });
-
   it('shows a structured checklist without duplicating the source drawer', () => {
     render(
       <WorkflowResultCard
         workflow={{
-          checklist: [{ item: 'Đối chiếu Điều 77' }],
-          citations: [{ index: 1, label: 'Điều 77' }],
+          checklist: [{ item: 'Đối chiếu Điều 36 Bộ luật Lao động' }],
+          citations: [{ index: 1, label: 'Điều 36 Bộ luật Lao động' }],
         }}
       />
     );
 
     expect(screen.getByText('Danh sách việc cần làm')).toBeInTheDocument();
-    expect(screen.getByText('Đối chiếu Điều 77')).toBeInTheDocument();
-    expect(screen.queryByText('[1] Điều 77')).not.toBeInTheDocument();
+    expect(screen.getByText('Đối chiếu Điều 36 Bộ luật Lao động')).toBeInTheDocument();
+    expect(screen.queryByText('[1] Điều 36 Bộ luật Lao động')).not.toBeInTheDocument();
   });
 
   it('focuses the first cited source from a checklist action', () => {
@@ -39,7 +24,7 @@ describe('WorkflowResultCard', () => {
       <WorkflowResultCard
         onOpenSources={onOpenSources}
         workflow={{
-          checklist: [{ item: 'Đối chiếu Điều 77', evidence_indices: [2, 4] }],
+          checklist: [{ item: 'Đối chiếu Điều 36 Bộ luật Lao động', evidence_indices: [2, 4] }],
         }}
       />,
     );
@@ -53,6 +38,22 @@ describe('WorkflowResultCard', () => {
     expect(screen.getByText('Chưa đủ căn cứ để trả lời chắc chắn')).toBeInTheDocument();
   });
 
+  it('explains when an article was found but its current status is unverified', () => {
+    render(
+      <WorkflowResultCard
+        workflow={{
+          safe_stop_reason: 'current_law_status_unverified',
+          available_actions: ['research_web'],
+        }}
+        onResearch={vi.fn()}
+        webResearchReady
+      />,
+    );
+
+    expect(screen.getByText('Chưa xác minh được hiệu lực hiện hành')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tìm nguồn công khai' })).toBeInTheDocument();
+  });
+
   it('renders an assessment only for a completed decision', () => {
     render(
       <WorkflowResultCard
@@ -60,7 +61,7 @@ describe('WorkflowResultCard', () => {
           outcome: 'completed',
           result_type: 'assessment',
           assessment: { status: 'likely_in_scope' },
-          citations: [{ index: 1, label: 'Điều 77' }],
+          citations: [{ index: 1, label: 'Điều 36 Bộ luật Lao động' }],
         }}
       />,
     );
@@ -70,10 +71,9 @@ describe('WorkflowResultCard', () => {
   it('does not present a conclusion while the agent is waiting for facts', () => {
     render(
       <WorkflowResultCard
-        workflow={{ outcome: 'needs_information', result_type: 'none', missing_facts: ['market_placement'], assessment: { status: 'needs_information' } }}
+        workflow={{ outcome: 'needs_information', result_type: 'none', assessment: { status: 'needs_information' } }}
       />,
     );
-    expect(screen.getByText('Cần thêm thông tin để tiếp tục')).toBeInTheDocument();
     expect(screen.queryByText('Đánh giá sơ bộ')).not.toBeInTheDocument();
   });
 
@@ -114,7 +114,7 @@ describe('WorkflowResultCard', () => {
         workflow={{
           outcome: 'completed',
           result_type: 'assessment',
-          assessment: { status: 'likely_in_scope', conclusion: 'Có khả năng thuộc phạm vi EPR' },
+          assessment: { status: 'likely_in_scope', conclusion: 'Có căn cứ ban đầu cho đánh giá' },
         }}
       />,
     );

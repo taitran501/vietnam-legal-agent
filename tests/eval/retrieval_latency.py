@@ -18,13 +18,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from epr_agent.retrieval.retrieval import retrieve_legal
+from vietnam_legal_agent.retrieval.retrieval import retrieve_legal
 
 DEFAULT_QUERIES = [
     "giờ tui nhập khẩu hàng hóa có chứa chất ô nhiễm khó phân hủy thì có cần làm thủ tục gì trước khi bán ra thị trường k",
-    "Điều 77 quy định gì về trách nhiệm tái chế?",
-    "Tỷ lệ tái chế bắt buộc đối với sản phẩm bao bì được quy định ở đâu?",
-    "Công ty tôi nhập khẩu pin lithium từ nước ngoài, chúng tôi phải thực hiện nghĩa vụ gì?",
+    "Điều 25 Bộ luật Lao động quy định thời gian thử việc tối đa bao lâu?",
+    "Mức trần lãi suất vay theo Điều 468 Bộ luật Dân sự là bao nhiêu?",
+    "Công ty cổ phần cần tối thiểu bao nhiêu cổ đông theo Điều 111?",
 ]
 
 

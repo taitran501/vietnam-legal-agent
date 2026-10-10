@@ -4,8 +4,8 @@ from collections import defaultdict
 
 import pytest
 
-from epr_agent.infra import admission as admission_module
-from epr_agent.infra.admission import (
+from vietnam_legal_agent.infra import admission as admission_module
+from vietnam_legal_agent.infra.admission import (
     AdmissionLease,
     AdmissionUnavailable,
     RedisAdmissionController,

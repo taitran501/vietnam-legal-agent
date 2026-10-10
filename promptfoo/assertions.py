@@ -10,8 +10,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from epr_agent.eval.contracts import EvaluationCase, FailureCode
-from epr_agent.eval.replay import load_cases
+from vietnam_legal_agent.eval.contracts import EvaluationCase, FailureCode
+from vietnam_legal_agent.eval.replay import load_cases
 
 _ALLOWED_FAILURE_CODES = {code.value for code in FailureCode}
 _TERMINAL_TYPES = {"response_complete", "response_stopped", "error"}

@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 from scripts.run_live_agent_eval import _load_benchmark_cases, _promotion_ready, _run_case
 
-from epr_agent.eval.contracts import EvalTurn, EvaluationCase, EvidenceStatus, ExpectedOutcome
+from vietnam_legal_agent.eval.contracts import EvalTurn, EvaluationCase, EvidenceStatus, ExpectedOutcome
 
 
 def _case(

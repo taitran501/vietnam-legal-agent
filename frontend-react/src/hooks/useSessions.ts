@@ -104,10 +104,7 @@ export function useSessions({ autoLoad = true }: { autoLoad?: boolean } = {}) {
     const sequence = ++detailSequence;
     beginSessionLoad(sessionId);
     try {
-      const [detail, caseState] = await Promise.all([
-        sessionsApi.getSession(sessionId, controller.signal),
-        sessionsApi.getCaseState(sessionId, controller.signal),
-      ]);
+      const detail = await sessionsApi.getSession(sessionId, controller.signal);
       if (sequence !== detailSequence || useChatStore.getState().activeSessionId !== sessionId) return 'stale';
       const existingSession = useSessionStore.getState().sessions.some((session) => session.id === sessionId);
       const sessionInfo = {
@@ -134,7 +131,7 @@ export function useSessions({ autoLoad = true }: { autoLoad?: boolean } = {}) {
         documents: sourceDocuments(message.metadata as Record<string, unknown> | undefined),
         workflow: (message.metadata || undefined) as ChatMessage['workflow'],
         }));
-      finishSessionLoad(sessionId, messages, caseState);
+      finishSessionLoad(sessionId, messages);
       return 'loaded';
     } catch (error) {
       if (isCancelled(error) || sequence !== detailSequence) return 'stale';

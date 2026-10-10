@@ -1,5 +1,5 @@
 import type { SSEEvent } from '@/types';
-import { authorizationHeader, handleUnauthorized } from '@/auth/oidc';
+import { apiFetch } from '@/api/client';
 import type { StreamError, TurnOperation } from '@/types';
 
 export class ChatStreamError extends Error implements StreamError {
@@ -23,9 +23,7 @@ export class ChatStreamError extends Error implements StreamError {
 export interface StreamTurnOptions {
   operation?: TurnOperation;
   intentHint?: 'auto' | 'legal_lookup' | 'legal_explain_compare' | 'case_assessment' | 'compliance_checklist';
-  interactionSource?: 'composer' | 'quick_action' | 'case_panel' | 'guided_form';
-  casePatch?: Record<string, string>;
-  factUpdates?: Record<string, { value: string; confirmation_status?: 'user_confirmed' | 'document_verified' | 'unknown' }>;
+  interactionSource?: 'composer' | 'quick_action';
   replayMetadata?: Record<string, unknown>;
   turnId?: string;
   targetAssistantMessageId?: number;
@@ -81,17 +79,12 @@ export async function* streamChat(
   mode: 'auto' | 'research_web' = 'auto',
   options: StreamTurnOptions = {},
 ): AsyncGenerator<SSEEvent> {
-  // Use relative URL for Vite proxy, or full URL if needed
-  const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
-  const url = baseUrl ? `${baseUrl}/api/v1/chat` : '/api/v1/chat';
-  
-  const response = await fetch(url, {
+  const response = await apiFetch('/api/v1/chat', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
       'Cache-Control': 'no-cache',
-      ...authorizationHeader(),
     },
     body: JSON.stringify({
       query,
@@ -102,14 +95,11 @@ export async function* streamChat(
       target_assistant_message_id: options.targetAssistantMessageId,
       intent_hint: options.intentHint || 'auto',
       interaction_source: options.interactionSource || 'composer',
-      case_patch: options.casePatch || {},
-      fact_updates: options.factUpdates || {},
       replay_metadata: options.replayMetadata || {
         query_mode: mode,
         intent: options.intentHint || 'auto',
         operation: options.operation || 'message',
         interaction_source: options.interactionSource || 'composer',
-        case_patch: options.casePatch || {},
       },
     }),
     signal,
@@ -118,7 +108,6 @@ export async function* streamChat(
   if (!response.ok) {
     const payload = await response.text();
     const event = parseSSEEvent(payload);
-    if (response.status === 401) handleUnauthorized();
     if (event?.type === 'error') throw streamErrorFromEvent(event);
     throw new ChatStreamError({
       code: response.status === 401 ? 'authentication_required' : `http_${response.status}`,

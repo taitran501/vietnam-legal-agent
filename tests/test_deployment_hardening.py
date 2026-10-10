@@ -30,3 +30,27 @@ def test_compose_requires_database_secret_and_uses_unprivileged_gateway() -> Non
     assert "nginxinc/nginx-unprivileged" in compose
     assert '"80:8080"' in compose
     assert "container_name:" not in compose
+
+
+def test_compose_liveness_does_not_depend_on_corpus_readiness() -> None:
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    smoke_overlay = (ROOT / "docker-compose.ci-smoke.yml").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "curl -fsS http://localhost:8000/api/v1/health" in compose
+    assert "curl -fsS http://localhost:8000/api/v1/health" in smoke_overlay
+    assert "ready_status=$(curl" in workflow
+    assert 'test "$ready_status" = "503"' in workflow
+    assert "payload['capabilities']['legal_chat']['status'] == 'blocked'" in workflow
+
+
+def test_universal_preview_overlay_mounts_the_optional_corpus_read_only() -> None:
+    overlay = (ROOT / "docker-compose.universal-preview.yml").read_text(encoding="utf-8")
+    example_env = (ROOT / ".env.example").read_text(encoding="utf-8")
+
+    assert 'ENABLE_UNIVERSAL_RETRIEVAL: "true"' in overlay
+    assert "UNIVERSAL_CORPUS_DB_PATH: /app/data/corpus/universal_legal/universal_legal.db" in overlay
+    assert "target: /app/data/corpus/universal_legal/universal_legal.db" in overlay
+    assert "read_only: true" in overlay
+    assert "create_host_path: false" in overlay
+    assert "UNIVERSAL_CORPUS_HOST_PATH=./data/corpus/universal_legal/universal_legal.db" in example_env

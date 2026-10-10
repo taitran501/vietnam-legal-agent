@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from epr_agent.infra import metrics
+from vietnam_legal_agent.infra import metrics
 
 
 def test_release_user_journey_metrics_are_exported_with_bounded_labels() -> None:

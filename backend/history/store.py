@@ -11,8 +11,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from epr_agent.config import get_settings
-from epr_agent.infra.persistence import get_persistence_store, sqlite_database_url
+from vietnam_legal_agent.config import get_settings
+from vietnam_legal_agent.infra.persistence import get_persistence_store, sqlite_database_url
 
 
 def _db_path() -> Path:
@@ -115,7 +115,7 @@ async def get_conversation_summary(user_id: str, conversation_id: str) -> str:
 
 
 async def get_case_state(user_id: str, conversation_id: str) -> dict[str, Any] | None:
-    """Return the case workspace state, including a completed case for UI display."""
+    """Return conversation facts used to understand natural-language follow-ups."""
 
     return await (await _store()).get_case(user_id, conversation_id)
 

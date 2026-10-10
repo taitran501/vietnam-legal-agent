@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from epr_agent.retrieval.retrieval import retrieve_legal
+from vietnam_legal_agent.retrieval.retrieval import retrieve_legal
 
 
 @dataclass
@@ -28,24 +28,29 @@ class RetrievalCase:
 
 CASES = [
     RetrievalCase(
-        case_id="pollutant_procedure_001",
-        query="giờ tui nhập khẩu hàng hóa có chứa chất ô nhiễm khó phân hủy thì có cần làm thủ tục gì trước khi bán ra thị trường k",
-        expected_top_1="Điều 40",
+        case_id="labor_probation_001",
+        query="Quy định thời gian thử việc tối đa là bao lâu theo Bộ luật Lao động?",
+        expected_top_1="Điều 25",
     ),
     RetrievalCase(
-        case_id="article_77_001",
-        query="Điều 77 quy định gì về trách nhiệm tái chế?",
-        expected_top_1="Điều 77",
+        case_id="civil_interest_001",
+        query="Mức trần lãi suất vay theo Điều 468 Bộ luật Dân sự là bao nhiêu?",
+        expected_top_1="Điều 468",
     ),
     RetrievalCase(
-        case_id="recycling_rate_001",
-        query="Tỷ lệ tái chế bắt buộc đối với sản phẩm bao bì được quy định ở đâu?",
-        expected_top_1="Điều 78",
+        case_id="corporate_shareholders_001",
+        query="Công ty cổ phần cần tối thiểu bao nhiêu cổ đông theo Điều 111?",
+        expected_top_1="Điều 111",
     ),
     RetrievalCase(
-        case_id="battery_import_001",
-        query="Công ty tôi nhập khẩu pin lithium từ nước ngoài, chúng tôi phải thực hiện nghĩa vụ gì?",
-        expected_top_1="Phụ lục XXII",
+        case_id="family_child_custody_001",
+        query="Điều 81 Luật Hôn nhân và Gia đình quy định thế nào về người trực tiếp nuôi con?",
+        expected_top_1="Điều 81",
+    ),
+    RetrievalCase(
+        case_id="environmental_scope_001",
+        query="Điều 1 Luật số 82/2015/QH13 điều chỉnh những vấn đề nào về tài nguyên và môi trường biển?",
+        expected_top_1="Điều 1",
     ),
 ]
 

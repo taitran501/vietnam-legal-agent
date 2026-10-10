@@ -4,29 +4,39 @@ from __future__ import annotations
 
 from datetime import date
 
-from epr_agent.domain.models import DocumentRecord
-from epr_agent.tools.evidence import EvidenceEvaluator
-from epr_agent.tools.temporal_guard import (
+from vietnam_legal_agent.domain.models import DocumentRecord
+from vietnam_legal_agent.tools.evidence import EvidenceEvaluator
+from vietnam_legal_agent.tools.temporal_guard import (
     filter_and_rank_by_validity,
     get_temporal_warning,
+    is_current_law_support_unresolved,
     is_document_superseded,
 )
 
 
-def test_is_document_superseded_by_flag() -> None:
-    # Explicit False flag
+def test_unresolved_current_law_support_is_not_instrument_supersession() -> None:
+    # False records a provision-level coverage gap, not instrument repeal.
     doc_false = DocumentRecord(
         content="Điều 1 Luật cũ",
         current_law_support=False,
     )
-    assert is_document_superseded(doc_false) is True
+    assert is_document_superseded(doc_false) is False
+    assert is_current_law_support_unresolved(doc_false) is True
 
     # Metadata flag
     doc_meta = DocumentRecord(
         content="Điều 2 Luật cũ",
         metadata={"Current_Law_Support": "false"},
     )
-    assert is_document_superseded(doc_meta) is True
+    assert is_document_superseded(doc_meta) is False
+    assert is_current_law_support_unresolved(doc_meta) is True
+
+    doc_meta_boolean = DocumentRecord(
+        content="Điều 2 Luật cũ",
+        metadata={"Current_Law_Support": False},
+    )
+    assert is_document_superseded(doc_meta_boolean) is False
+    assert is_current_law_support_unresolved(doc_meta_boolean) is True
 
     # Active doc
     doc_active = DocumentRecord(
@@ -34,11 +44,12 @@ def test_is_document_superseded_by_flag() -> None:
         current_law_support=True,
     )
     assert is_document_superseded(doc_active) is False
+    assert is_current_law_support_unresolved(doc_active) is False
 
 
 def test_is_document_superseded_by_status() -> None:
     doc_superseded = DocumentRecord(
-        content="Điều 77 NĐ 08/2022",
+        content="Điều 25 Bộ luật Lao động 2019",
         effective_status="superseded",
     )
     assert is_document_superseded(doc_superseded) is True
@@ -77,14 +88,35 @@ def test_is_document_superseded_by_date() -> None:
 
 def test_get_temporal_warning_amendments() -> None:
     doc = DocumentRecord(
-        content="Nghị định 08/2022/NĐ-CP",
-        document_id="nd-08-2022",
+        content="Bộ luật Lao động 2019",
+        document_id="labor-code-2019",
         effective_status="superseded",
-        amendment_relationship=["nd-05-2025-nd-cp"],
+        amendment_relationship=["labor-amendment-2025"],
     )
     warning = get_temporal_warning(doc)
     assert warning is not None
-    assert "nd-05-2025-nd-cp" in warning
+    assert "labor-amendment-2025" in warning
+
+
+def test_get_temporal_warning_describes_unresolved_provision_coverage_precisely() -> None:
+    doc = DocumentRecord(
+        content="Điều 25 Bộ luật Lao động 2019",
+        document_id="labor-code-2019",
+        source="legal",
+        metadata={
+            "source_title": "Bộ luật Lao động 2019",
+            "Current_Law_Support": False,
+            "Amendment_Resolution_Status": "technically_mapped",
+            "Amendment_Relationship": ["labor-amendment-2025"],
+        },
+    )
+
+    warning = get_temporal_warning(doc)
+
+    assert warning is not None
+    assert "chưa xác nhận nội dung hiện hành" in warning
+    assert "labor-amendment-2025" in warning
+    assert "đã bị sửa đổi" not in warning
 
 
 def test_filter_and_rank_by_validity() -> None:
@@ -96,6 +128,21 @@ def test_filter_and_rank_by_validity() -> None:
     assert ranked[0].document_id == "active-1"
     assert ranked[1].document_id == "old-1"
     assert len(warnings) > 0
+
+
+def test_filter_without_superseded_falls_back_to_unresolved_when_no_verified_source_exists() -> None:
+    unresolved = DocumentRecord(
+        content="Điều 25 Bộ luật Lao động 2019",
+        document_id="labor-code-2019",
+        source="legal",
+        current_law_support=False,
+        amendment_relationship=["labor-amendment-2025"],
+    )
+
+    ranked, warnings = filter_and_rank_by_validity([unresolved], allow_superseded=False)
+
+    assert [doc.document_id for doc in ranked] == ["labor-code-2019"]
+    assert warnings and "chưa xác nhận nội dung hiện hành" in warnings[0]
 
 
 def test_evidence_evaluator_catches_superseded() -> None:

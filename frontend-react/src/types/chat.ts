@@ -19,7 +19,7 @@ export interface ChatMessage {
 
 export type MessageStatus = 'pending' | 'streaming' | 'complete' | 'stopped' | 'failed' | 'superseded';
 
-export type TurnOperation = 'message' | 'continue_case' | 'retry' | 'regenerate';
+export type TurnOperation = 'message' | 'retry' | 'regenerate';
 
 export interface StreamError {
   code: string;
@@ -71,11 +71,9 @@ export interface WorkflowMetadata {
   embedding_profile?: string;
   evidence_status?: string;
   available_actions?: string[];
-  case_state?: CaseState | null;
   assessment?: Record<string, unknown> | null;
   checklist?: Array<Record<string, unknown>>;
   assumptions?: string[];
-  missing_facts?: string[];
   citations?: Array<Record<string, unknown>>;
   evidence_assessment?: EvidenceAssessment;
   trace_id?: string;
@@ -87,15 +85,10 @@ export interface WorkflowMetadata {
   required_issues?: string[];
   covered_issues?: string[];
   rule_id?: string;
-  rule_pack_version?: string;
   effective_dates?: Record<string, string>;
   corpus_as_of_date?: string;
   sources?: SourceSnapshot[];
   replay_metadata?: Record<string, unknown>;
-  validation_errors?: Record<string, string>;
-  form_version?: string;
-  completed_count?: number;
-  required_count?: number;
   citation_error?: string;
   safe_stop_reason?: string;
   preview?: boolean;
@@ -132,64 +125,6 @@ export interface SourceSnapshot {
   authority?: string;
 }
 
-export type CaseFacts = Record<string, string | FactValue>;
-
-export interface FactValue {
-  value: string;
-  source: 'user_turn' | 'case_panel' | 'system_default';
-  source_turn?: string;
-  evidence_span?: string;
-  confidence?: number;
-  verified?: boolean;
-  confirmation_status?: 'user_confirmed' | 'document_verified' | 'unknown';
-}
-
-export interface CaseField {
-  key: string;
-  label: string;
-  group?: string;
-  display_order?: number;
-  kind: 'text' | 'select' | 'number' | 'boolean';
-  options: Array<{ value: string; label: string }>;
-  required: boolean;
-  importance?: 'required' | 'conditional' | 'informational';
-  missing: boolean;
-  value: string;
-  help_text?: string;
-}
-
-export interface CaseState {
-  task_type: 'assess_epr_obligation' | 'build_compliance_checklist';
-  status: 'collecting' | 'ready' | 'completed';
-  facts: CaseFacts;
-  missing_facts: string[];
-  last_query?: string;
-  updated_at?: number;
-  schema_version?: string;
-  decision_status?: string | null;
-  issue_states?: Record<string, unknown>;
-  as_of_date?: string;
-  fields?: CaseField[];
-  form_version?: string;
-  completed_count?: number;
-  required_count?: number;
-  validation_errors?: Record<string, string>;
-  submission_blocked_reason?: string;
-}
-
-export interface CaseFormState {
-  form_version: string;
-  task_type: CaseState['task_type'];
-  status: 'collecting' | 'ready';
-  facts: CaseFacts;
-  fields: CaseField[];
-  missing_facts: string[];
-  validation_errors: Record<string, string>;
-  submission_blocked_reason?: string;
-  completed_count: number;
-  required_count: number;
-}
-
 export interface EvidenceAssessment {
   sufficient?: boolean;
   reason?: string;
@@ -207,6 +142,8 @@ export interface WorkflowStep {
   pipeline_version?: string;
   sequence?: number;
   details?: unknown;
+  latency_ms?: number;
+  args?: Record<string, unknown>;
 }
 
 export interface Conversation {

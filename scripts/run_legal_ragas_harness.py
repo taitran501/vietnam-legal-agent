@@ -28,8 +28,8 @@ _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT))
 sys.path.insert(0, str(_ROOT / "src"))
 
-from epr_agent.agent.agent_loop import EprAgentRunner
-from epr_agent.eval.ragas_evaluator import (
+from vietnam_legal_agent.agent.agent_loop import VietnameseLegalAgentRunner
+from vietnam_legal_agent.eval.ragas_evaluator import (
     RagasSampleResult,
     evaluate_ragas_sample,
     unavailable_ragas_result,
@@ -56,7 +56,7 @@ async def run_benchmark(
         cases = cases[:limit]
 
     logger.info("Starting RAGAS Legal Benchmark with %d cases...", len(cases))
-    runner = EprAgentRunner()
+    runner = VietnameseLegalAgentRunner()
 
     results: list[RagasSampleResult] = []
     start_time = time.time()

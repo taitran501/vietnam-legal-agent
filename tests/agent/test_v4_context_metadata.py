@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import pytest
 
-from epr_agent.agent.graph import WorkflowDependencies
-from epr_agent.agent.planner import BoundedPlanner
-from epr_agent.agent.v4 import V4WorkflowRuntime
-from epr_agent.domain.models import DocumentRecord
-from epr_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
-from epr_agent.tools.evidence import EvidenceEvaluator
-from epr_agent.tools.generation import StaticGenerationGateway
-from epr_agent.tools.history import ContextSnapshot
-from epr_agent.tools.retrieval import StaticRetrievalGateway
+from vietnam_legal_agent.agent.graph import WorkflowDependencies
+from vietnam_legal_agent.agent.planner import BoundedPlanner
+from vietnam_legal_agent.agent.v4 import V4WorkflowRuntime
+from vietnam_legal_agent.domain.models import DocumentRecord
+from vietnam_legal_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
+from vietnam_legal_agent.tools.evidence import EvidenceEvaluator
+from vietnam_legal_agent.tools.generation import StaticGenerationGateway
+from vietnam_legal_agent.tools.history import ContextSnapshot
+from vietnam_legal_agent.tools.retrieval import StaticRetrievalGateway
 
 
 class CaseHistory:
@@ -56,15 +56,15 @@ class CaseHistory:
 
 def _dependencies(history: CaseHistory) -> WorkflowDependencies:
     document = DocumentRecord(
-        content="Điều 77 quy định trách nhiệm tái chế bao bì của nhà sản xuất, nhập khẩu. " * 4,
-        document_id="law-77",
+        content="Điều 41 Bộ luật Lao động quy định nghĩa vụ khi người sử dụng lao động chấm dứt hợp đồng trái pháp luật. " * 4,
+        document_id="labor-41",
         score=0.95,
         source="legal",
         metadata={
-            "legal_anchor": "Điều 77",
-            "Dieu": "Điều 77",
-            "Document_Number": "08/2022/NĐ-CP",
-            "source": "Nghị định 08/2022/NĐ-CP",
+            "legal_anchor": "Điều 41",
+            "Dieu": "Điều 41",
+            "Document_Number": "45/2019/QH14",
+            "source": "Bộ luật Lao động 2019",
         },
     )
     return WorkflowDependencies(
@@ -82,14 +82,14 @@ async def test_v4_case_follow_up_preserves_context_metadata_and_topic() -> None:
     history = CaseHistory()
     runtime = V4WorkflowRuntime(_dependencies(history), answer_chunk_delay_s=0)
     first = await runtime.run(
-        query="Tôi là nhà sản xuất bao bì nhựa tại Việt Nam, có phải thực hiện EPR không?",
+        query="Công ty chấm dứt hợp đồng lao động của tôi trái pháp luật và không báo trước, tôi nên làm gì?",
         user_id="u1",
         conversation_id="case-context",
     )
-    assert first["termination_reason"] == "awaiting_user_input"
+    assert first["termination_reason"] == "answer_complete"
 
     second = await runtime.run(
-        query="Doanh thu 12 tỷ",
+        query="Còn khoản bồi thường thì sao?",
         user_id="u1",
         conversation_id="case-context",
     )
@@ -97,8 +97,8 @@ async def test_v4_case_follow_up_preserves_context_metadata_and_topic() -> None:
     assert second["context_loaded"] is True
     assert second["history_messages"] == 2
     assert second["is_follow_up"] is True
-    assert "nhà sản xuất bao bì nhựa" in second["standalone_query"].lower()
-    assert "Doanh thu 12 tỷ" in second["standalone_query"]
+    assert "chấm dứt hợp đồng" in second["standalone_query"].lower()
+    assert "bồi thường" in second["standalone_query"]
 
 
 @pytest.mark.asyncio

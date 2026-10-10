@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from backend.api.routes.health import readiness_payload
+from backend.api.routes.health import chat_admission_readiness, readiness_payload
 
 
 class _Store:
@@ -18,152 +19,136 @@ class _Redis:
         raise ConnectionError("offline")
 
 
-class _Qdrant:
-    def get_collection(self, _name: str):
-        return SimpleNamespace(points_count=1)
-
-    def scroll(self, _name: str, **_kwargs):
-        return ([SimpleNamespace(payload={
-            "Corpus_ID": "epr",
-            "Corpus_Version": "v-test",
-            "Corpus_SHA256": "sha-test",
-            "Index_Schema_Version": "schema-test",
-            "Embedding_Profile": "embedding-test",
-            "Embedding_Dimensions": 8,
-        })], None)
-
-
-def _settings(mode: str):
+def _settings(mode: str, tmp_path: Path):
+    manifest = tmp_path / "universal-manifest.json"
+    manifest.write_text('{"corpus_version":"test"}', encoding="utf-8")
     return SimpleNamespace(
-        corpus_id="epr",
-        corpus_version="v-test",
+        corpus_id="vietnamese_law",
+        corpus_version="test",
         corpus_runtime_mode=mode,
-        index_schema_version="schema-test",
-        embedding_profile="embedding-test",
-        embedding_dimensions=8,
-        law_collection="law-test",
-        corpus_manifest_path=Path("manifest.json"),
-        rule_pack_path=Path("rules.json"),
-        amendment_map_path=Path("amendments.json"),
-        appendix_xxii_data_path=Path("missing.jsonl"),
-        law_data_path=Path("law.json"),
+        universal_corpus_manifest_path=manifest,
+        index_schema_version="legal-structure-v2",
+        embedding_profile="openai-text-embedding-3-small-v1",
+        embedding_dimensions=1536,
+        legal_review_manifest_path=tmp_path / "legal-review.json",
         openai_api_key="configured",
         tavily_api_key="configured",
-        enforce_legal_readiness_gate=False,
+        enforce_legal_readiness_gate=(mode == "production"),
+    )
+
+
+def _install_health_adapters(monkeypatch: pytest.MonkeyPatch, settings, *, source_available: bool = True):
+    import backend.history.store
+
+    import vietnam_legal_agent.config
+    import vietnam_legal_agent.infra.session_store
+    import vietnam_legal_agent.retrieval.universal_retriever
+
+    monkeypatch.setattr(vietnam_legal_agent.config, "get_settings", lambda: settings)
+    monkeypatch.setattr(backend.history.store, "_store", _async_value(_Store()))
+    monkeypatch.setattr(vietnam_legal_agent.infra.session_store, "get_redis", _async_value(_Redis()))
+    monkeypatch.setattr(
+        vietnam_legal_agent.retrieval.universal_retriever,
+        "universal_retriever",
+        SimpleNamespace(is_available=source_available, corpus_id="universal-vietnamese-legal", corpus_version="test"),
     )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("mode", "expected"), [("preview", "ready"), ("production", "ready")])
-async def test_readiness_uses_technical_corpus_gate_and_reports_redis(
-    monkeypatch: pytest.MonkeyPatch, mode: str, expected: str
+async def test_preview_readiness_uses_universal_corpus_only_and_reports_redis(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    import backend.history.store
-    import scripts.canonical_corpus
-
-    import epr_agent.config
-    import epr_agent.infra.session_store
-    import epr_agent.retrieval.retrieval
-
-    monkeypatch.setattr(epr_agent.config, "get_settings", lambda: _settings(mode))
-    monkeypatch.setattr(backend.history.store, "_store", _async_value(_Store()))
-    monkeypatch.setattr(epr_agent.infra.session_store, "get_redis", _async_value(_Redis()))
-    monkeypatch.setattr(epr_agent.retrieval.retrieval, "_get_qdrant_client", lambda: _Qdrant())
-    monkeypatch.setattr(scripts.canonical_corpus, "corpus_sha256", lambda **_kwargs: "sha-test")
-    monkeypatch.setattr(scripts.canonical_corpus, "corpus_readiness_audit", lambda **_kwargs: {
-        "source_errors": [],
-        "amendment_errors": [],
-        "rule_pack_errors": [],
-        "ready_for_promotion": True,
-        "technical_ready": True,
-        "source_snapshot_status": "technical",
-        "amendment_map_sha256": "amendment-sha",
-        "rule_pack_sha256": "rule-sha",
-    })
+    settings = _settings("preview", tmp_path)
+    _install_health_adapters(monkeypatch, settings)
 
     payload, ready = await readiness_payload()
 
     assert payload["dependencies"]["redis"] == "error"
-    assert payload["capabilities"]["history"]["status"] == "ready"
-    assert payload["capabilities"]["legal_chat"]["status"] == expected
-    assert ready is (expected == "ready")
+    assert payload["dependencies"]["database"] == "ok"
+    assert payload["retrieval_sources"]["universal_legal"]["status"] == "ready"
+    assert payload["retrieval_sources"]["qdrant_legal"]["status"] == "disabled"
+    assert payload["corpus"]["status"] == "preview_ready"
+    assert payload["capabilities"]["legal_chat"]["status"] == "ready"
+    assert ready is True
 
 
 @pytest.mark.asyncio
-async def test_readiness_reports_degraded_when_legal_review_is_pending(
+async def test_missing_universal_corpus_blocks_legal_readiness(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    import backend.history.store
-    import scripts.canonical_corpus
-
-    import epr_agent.config
-    import epr_agent.infra.session_store
-    import epr_agent.retrieval.retrieval
-    from epr_agent.tools.legal_readiness import EPR_SCOPE_ANCHORS, EPR_SCOPE_APPENDICES
-
-    settings = _settings("preview")
-    settings.enforce_legal_readiness_gate = True
-    settings.legal_readiness_manifest_path = tmp_path / "legal-readiness.json"
-    subjects = {
-        "corpus_sha256": "sha-test",
-        "amendment_map_sha256": "amendment-sha",
-        "rule_pack_sha256": "rule-sha",
-    }
-    entries = [
-        {
-            "anchor": anchor,
-            "status": "pending_legal_review",
-            "legally_ready": False,
-            "reviewer_id": None,
-            "reviewed_at": None,
-            "review_record_id": None,
-            "reviewed_intervals": [],
-            "source_hashes": [],
-            "review_notes": "pending",
-        }
-        for anchor in [*EPR_SCOPE_ANCHORS, *EPR_SCOPE_APPENDICES]
-    ]
-    settings.legal_readiness_manifest_path.write_text(
-        json.dumps(
-            {
-                "schema_version": "legal-readiness-v1",
-                "corpus_id": "epr",
-                "corpus_version": "test",
-                "subject_hashes": subjects,
-                "scope": {"anchors": EPR_SCOPE_ANCHORS, "appendices": EPR_SCOPE_APPENDICES},
-                "aggregate_status": "blocked",
-                "entries": entries,
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-
-    monkeypatch.setattr(epr_agent.config, "get_settings", lambda: settings)
-    monkeypatch.setattr(backend.history.store, "_store", _async_value(_Store()))
-    monkeypatch.setattr(epr_agent.infra.session_store, "get_redis", _async_value(_Redis()))
-    monkeypatch.setattr(epr_agent.retrieval.retrieval, "_get_qdrant_client", lambda: _Qdrant())
-    monkeypatch.setattr(scripts.canonical_corpus, "corpus_sha256", lambda **_kwargs: "sha-test")
-    monkeypatch.setattr(scripts.canonical_corpus, "corpus_readiness_audit", lambda **_kwargs: {
-        "source_errors": [],
-        "amendment_errors": [],
-        "rule_pack_errors": [],
-        "ready_for_promotion": True,
-        "technical_ready": True,
-        "source_snapshot_status": "technical",
-        "amendment_map_sha256": "amendment-sha",
-        "rule_pack_sha256": "rule-sha",
-    })
+    settings = _settings("preview", tmp_path)
+    _install_health_adapters(monkeypatch, settings, source_available=False)
 
     payload, ready = await readiness_payload()
 
-    assert ready is True
-    assert payload["status"] == "degraded"
-    assert payload["legal_readiness"]["status"] == "pending"
+    assert payload["retrieval_sources"]["universal_legal"]["status"] == "unavailable"
     assert payload["capabilities"]["legal_chat"] == {
         "status": "blocked",
-        "reason": "legal_review_pending",
+        "reason": "universal_corpus_unavailable",
     }
+    assert payload["status"] == "not_ready"
+    assert ready is False
+
+
+@pytest.mark.asyncio
+async def test_production_review_must_match_the_complete_corpus_hash(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    settings = _settings("production", tmp_path)
+    corpus_hash = hashlib.sha256(settings.universal_corpus_manifest_path.read_bytes()).hexdigest()
+    settings.legal_review_manifest_path.write_text(
+        json.dumps({
+            "schema_version": "legal-corpus-review-v1",
+            "status": "ready",
+            "corpus_sha256": corpus_hash,
+            "reviewer_id": "reviewer-1",
+            "reviewed_at": "2026-09-30T12:00:00Z",
+        }),
+        encoding="utf-8",
+    )
+    _install_health_adapters(monkeypatch, settings)
+
+    payload, ready = await readiness_payload()
+
+    assert payload["legal_readiness"]["status"] == "ready"
+    assert payload["corpus"]["legally_ready"] is True
+    assert payload["capabilities"]["legal_chat"]["status"] == "ready"
+    assert ready is True
+
+
+@pytest.mark.asyncio
+async def test_missing_production_review_degrades_legal_capability(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    settings = _settings("production", tmp_path)
+    _install_health_adapters(monkeypatch, settings)
+
+    payload, ready = await readiness_payload()
+
+    assert payload["legal_readiness"]["status"] == "pending"
+    assert payload["capabilities"]["legal_chat"] == {"status": "blocked", "reason": "legal_review_pending"}
+    assert payload["status"] == "degraded"
+    assert ready is True
+
+
+@pytest.mark.asyncio
+async def test_chat_admission_checks_database_and_provider_without_full_readiness(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import backend.history.store
+
+    import vietnam_legal_agent.config
+
+    settings = _settings("preview", tmp_path)
+    monkeypatch.setattr(vietnam_legal_agent.config, "get_settings", lambda: settings)
+    monkeypatch.setattr(backend.history.store, "_store", _async_value(_Store()))
+
+    payload, reason = await chat_admission_readiness()
+
+    assert reason == ""
+    assert payload["preview"] is True
+    assert payload["capabilities"]["history"] == {"status": "ready", "reason": "ok"}
+    assert payload["dependencies"] == {"database": "ok", "openai": "ok"}
 
 
 def _async_value(value):

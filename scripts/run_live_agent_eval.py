@@ -9,11 +9,11 @@ import time
 from pathlib import Path
 from typing import Any
 
-from epr_agent.agent.graph import default_dependencies
-from epr_agent.agent.runtime import AgentWorkflowRuntime
-from epr_agent.eval.contracts import EvalTurn, EvaluationCase, EvidenceStatus, ExpectedOutcome
-from epr_agent.eval.ragas_evaluator import evaluate_ragas_sample, unavailable_ragas_result
-from epr_agent.eval.replay import replay_case
+from vietnam_legal_agent.agent.graph import default_dependencies
+from vietnam_legal_agent.agent.runtime import AgentWorkflowRuntime
+from vietnam_legal_agent.eval.contracts import EvalTurn, EvaluationCase, EvidenceStatus, ExpectedOutcome
+from vietnam_legal_agent.eval.ragas_evaluator import evaluate_ragas_sample, unavailable_ragas_result
+from vietnam_legal_agent.eval.replay import replay_case
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BENCHMARK = ROOT / "data" / "eval" / "golden_legal_benchmark.json"

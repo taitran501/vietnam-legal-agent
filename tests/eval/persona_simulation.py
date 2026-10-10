@@ -31,14 +31,13 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-from epr_agent.agent.agent_loop import AgentRunConfig, EprAgentRunner
-from epr_agent.agent.runtime import AgentWorkflowRuntime, WorkflowDependencies
-from epr_agent.agent.tool_registry import ToolDependencies, set_tool_dependencies
-from epr_agent.domain.epr_rules import CaseFormResolver
-from epr_agent.domain.models import DocumentRecord
-from epr_agent.tools.evidence import EvidenceEvaluator
-from epr_agent.tools.history import ContextSnapshot, HistoryGateway
-from epr_agent.tools.legal_readiness import SyntheticReadyLegalReadinessGate
+from vietnam_legal_agent.agent.agent_loop import AgentRunConfig, VietnameseLegalAgentRunner
+from vietnam_legal_agent.agent.runtime import AgentWorkflowRuntime, WorkflowDependencies
+from vietnam_legal_agent.agent.tool_registry import ToolDependencies, set_tool_dependencies
+from vietnam_legal_agent.domain.models import DocumentRecord
+from vietnam_legal_agent.tools.evidence import EvidenceEvaluator
+from vietnam_legal_agent.tools.history import ContextSnapshot, HistoryGateway
+from vietnam_legal_agent.tools.legal_readiness import SyntheticReadyLegalReadinessGate
 
 # ══════════════════════════════════════════════════════════════════════════════
 # COMPREHENSIVE NATIONAL LEGAL CORPUS (COVERING ALL MAJOR VIETNAMESE LAWS)
@@ -217,9 +216,9 @@ PERSONA_TEST_CASES: list[UniversalPersonaTestCase] = [
         query="toi muon nho tu van kien doi lai tien",
         description="Extremely vague money dispute query triggering friendly clarification prompt.",
         expected_termination="awaiting_user_input",
-        expected_tools=["get_case_form_fields", "ask_user_for_clarification"],
+        expected_tools=["ask_user_for_clarification"],
         max_steps_allowed=2,
-        expected_answer_contains=["thông tin"],
+        expected_answer_contains=["khoản tiền"],
     ),
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -371,8 +370,7 @@ def _build_universal_mock_llm(case: UniversalPersonaTestCase) -> Any:
         ]
     elif case.id == "LAYMAN-VAGUE":
         responses = [
-            AIMessage(content="", tool_calls=[{"name": "get_case_form_fields", "args": {"task_type": "assess_epr_obligation", "known_facts": {}}, "id": "c1"}]),
-            AIMessage(content="", tool_calls=[{"name": "ask_user_for_clarification", "args": {"question": "Chào bạn, để trợ lý pháp luật có thể tư vấn chính xác, bạn vui lòng cung cấp thêm thông tin:\n1. Khoản tiền cần đòi phát sinh từ quan hệ gì (cho vay mượn, hợp đồng mua bán, hay tiền lương)?\n2. Bạn có giấy tờ, bằng chứng chuyển khoản hoặc thỏa thuận ký kết không?", "missing_fields": ["dispute_type", "evidence_documents"]}, "id": "c2"}]),
+            AIMessage(content="", tool_calls=[{"name": "ask_user_for_clarification", "args": {"question": "Khoản tiền bạn muốn đòi lại phát sinh từ việc gì?"}, "id": "c1"}]),
         ]
     elif case.id == "LEGAL-ENTERPRISE":
         responses = [
@@ -503,7 +501,6 @@ class UniversalMultiPersonaSimulator:
             generation=MockSimulationGeneration(),
             cache=MockSimulationCache(),
             history=MockSimulationHistory(),
-            case_resolver=CaseFormResolver(),
         )
         set_tool_dependencies(tool_deps)
 
@@ -518,7 +515,7 @@ class UniversalMultiPersonaSimulator:
         )
 
         mock_llm = _build_universal_mock_llm(case)
-        runner = EprAgentRunner(
+        runner = VietnameseLegalAgentRunner(
             config=AgentRunConfig(max_steps=case.max_steps_allowed),
             llm=mock_llm,
         )

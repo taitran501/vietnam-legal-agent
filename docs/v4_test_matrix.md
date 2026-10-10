@@ -10,8 +10,8 @@ Run from the repository root with the acceptance environment:
 
 ```powershell
 .venv_acceptance\Scripts\python.exe -m pytest -q
-.venv_acceptance\Scripts\ruff.exe check src/epr_agent backend scripts tests
-.venv_acceptance\Scripts\mypy.exe src/epr_agent backend
+.venv_acceptance\Scripts\ruff.exe check src/vietnam_legal_agent backend scripts tests
+.venv_acceptance\Scripts\mypy.exe src/vietnam_legal_agent backend
 python -m tests.eval.run_eval --suite all --output data/eval/v4-deterministic.json
 ```
 
@@ -37,11 +37,11 @@ npm.cmd run build
 npm.cmd run test:e2e -- --grep-invert "real FastAPI|real multi-turn"
 ```
 
-The mocked browser suite covers legal-lookup prefill, inline guided assessment
-and checklist forms, conditional fields, case facts, every V4 outcome, source
-drawer, history title, cancellation, sidebar collapse, and mobile layout. A
-guided action must create no chat turn until the user explicitly submits the
-form; field resolution is limited to the side-effect-free form endpoint.
+The browser suite covers free-text legal questions, optional intent shortcuts,
+multi-turn conversations, every workflow outcome, source display, history,
+feedback, retries, cancellation, and mobile layout. Each user turn is an
+ordinary chat message; the previous assessment does not determine the route of
+a new, unrelated question.
 
 ## Real local services
 
@@ -62,14 +62,14 @@ the matching versioned collection without requesting embeddings.
 Run service-backed integration tests explicitly:
 
 ```powershell
-$env:EPR_RUN_INTEGRATION="1"
-$env:EPR_API_BASE_URL="http://127.0.0.1"
+$env:RUN_STACK_INTEGRATION="1"
+$env:LEGAL_AGENT_API_BASE_URL="http://127.0.0.1"
 .venv_acceptance\Scripts\python.exe -m pytest -q tests/integration
 ```
 
-> **Note:** The `EPR_RUN_INTEGRATION` and `EPR_API_BASE_URL` environment
+> **Note:** The `RUN_STACK_INTEGRATION` and `LEGAL_AGENT_API_BASE_URL` environment
 > variable names are preserved for backward compatibility. The integration
-> tests now cover all legal domains, not only EPR.
+> the regression matrix now covers a broad set of Vietnamese legal domains.
 
 This checks readiness failure behavior, real SSE ordering, citation-bearing
 legal lookup, trace persistence when the debug API is enabled, and the local

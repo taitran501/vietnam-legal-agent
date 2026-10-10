@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from epr_agent.infra.session_store import (
+from vietnam_legal_agent.infra.session_store import (
     _auto_title,
     _key,
     _meta_key,
@@ -34,7 +34,7 @@ class TestInputSanitization:
 
     def test_normal_input_unchanged(self):
         """Normal input should pass through unchanged."""
-        text = "What is EPR?"
+        text = "What is legal information?"
         result = _sanitize_user_input(text)
         assert result == text
 
@@ -183,8 +183,8 @@ class TestSessionPersistence:
         pipe.execute = AsyncMock(return_value=[1, 1, 1])
         mock_redis.pipeline.return_value = pipe
 
-        with patch("epr_agent.infra.session_store.get_redis", AsyncMock(return_value=mock_redis)):
-            with patch("epr_agent.infra.session_store.get_settings") as mock_settings:
+        with patch("vietnam_legal_agent.infra.session_store.get_redis", AsyncMock(return_value=mock_redis)):
+            with patch("vietnam_legal_agent.infra.session_store.get_settings") as mock_settings:
                 mock_settings.return_value = MagicMock(cache_ttl_seconds=3600)
                 result = await get_history("s1")
 
@@ -203,15 +203,15 @@ class TestSessionPersistence:
         pipe.execute = AsyncMock(return_value=[1, 1, 1])
         mock_redis.pipeline.return_value = pipe
 
-        with patch("epr_agent.infra.session_store.get_redis", AsyncMock(return_value=mock_redis)):
-            with patch("epr_agent.infra.session_store.get_settings") as mock_settings:
+        with patch("vietnam_legal_agent.infra.session_store.get_redis", AsyncMock(return_value=mock_redis)):
+            with patch("vietnam_legal_agent.infra.session_store.get_settings") as mock_settings:
                 mock_settings.return_value = MagicMock(
                     max_chat_history_exchanges=3,
                     cache_ttl_seconds=3600,
                 )
-                with patch("epr_agent.infra.session_store._auto_title", AsyncMock()):
-                    with patch("epr_agent.infra.session_store._update_meta", AsyncMock()):
-                        with patch("epr_agent.infra.session_store._register_session", AsyncMock()):
+                with patch("vietnam_legal_agent.infra.session_store._auto_title", AsyncMock()):
+                    with patch("vietnam_legal_agent.infra.session_store._update_meta", AsyncMock()):
+                        with patch("vietnam_legal_agent.infra.session_store._register_session", AsyncMock()):
                             await append_exchange("s2", "Hello", "Hi")
 
         # max_chat_history_exchanges=3 -> keep 6 messages
@@ -225,9 +225,9 @@ class TestSessionMetadataHelpers:
 
     @pytest.mark.asyncio
     async def test_auto_title_sets_title_when_missing(self):
-        with patch("epr_agent.infra.session_store.get_session_meta", AsyncMock(return_value={})):
-            with patch("epr_agent.infra.session_store.set_session_meta", AsyncMock()) as mock_set:
-                await _auto_title("s3", "Tôi muốn hỏi về lộ trình EPR", "...")
+        with patch("vietnam_legal_agent.infra.session_store.get_session_meta", AsyncMock(return_value={})):
+            with patch("vietnam_legal_agent.infra.session_store.set_session_meta", AsyncMock()) as mock_set:
+                await _auto_title("s3", "Tôi muốn hỏi về tiền lương làm thêm giờ", "...")
 
         assert mock_set.called
         call_args = mock_set.call_args[0]
@@ -240,8 +240,8 @@ class TestSessionMetadataHelpers:
             {"role": "user", "content": "Q"},
             {"role": "assistant", "content": "A"},
         ]
-        with patch("epr_agent.infra.session_store.get_history", AsyncMock(return_value=messages)):
-            with patch("epr_agent.infra.session_store.set_session_meta", AsyncMock()) as mock_set:
+        with patch("vietnam_legal_agent.infra.session_store.get_history", AsyncMock(return_value=messages)):
+            with patch("vietnam_legal_agent.infra.session_store.set_session_meta", AsyncMock()) as mock_set:
                 await _update_meta("s4")
 
         assert mock_set.called

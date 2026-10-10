@@ -25,7 +25,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine
 
-from epr_agent.infra.persistence import _EXPECTED_SCHEMA_COLUMNS, Base
+from vietnam_legal_agent.infra.persistence import _EXPECTED_SCHEMA_COLUMNS, Base
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -239,7 +239,7 @@ def _mapped_rows(source: sqlite3.Connection) -> dict[str, list[dict[str, Any]]]:
     mapped["case_states"] = [
         {
             "conversation_id": row["conversation_id"], "user_id": row["user_id"],
-            "task_type": _pick(row, "task_type", "assess_epr_obligation"),
+            "task_type": _pick(row, "task_type", "case_assessment"),
             "status": _pick(row, "status", "collecting"), "facts": _json_text(_pick(row, "facts", {}), {}),
             "missing_facts": _json_text(_pick(row, "missing_facts", []), []), "last_query": _pick(row, "last_query", ""),
             "schema_version": _pick(row, "schema_version", "legacy-v3"), "decision_status": row.get("decision_status"),

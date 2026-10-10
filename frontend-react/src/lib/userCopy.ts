@@ -1,32 +1,8 @@
-import type { CaseField, CaseState, StreamError } from '@/types';
+import type { StreamError } from '@/types';
 
-export const eprPlainName = 'trách nhiệm mở rộng của nhà sản xuất và nhập khẩu';
-export const previewNotice = '';
 export const authSignedOutCopy = 'Đăng nhập để tra cứu pháp luật và lưu lại các cuộc trò chuyện.';
 export const authSessionExpiredCopy = 'Phiên đăng nhập đã hết hạn. Đăng nhập lại để tiếp tục tại cuộc trò chuyện này. Vị trí cuộc trò chuyện sẽ được giữ nguyên.';
 export const authFailureCopy = 'Đăng nhập chưa hoàn tất. Vui lòng thử lại để tiếp tục.';
-
-export type UserTaskCopy = {
-  title: string;
-  action: string;
-  description: string;
-  turnPrompt: string;
-};
-
-export const taskCopy: Record<CaseState['task_type'], UserTaskCopy> = {
-  assess_epr_obligation: {
-    title: 'Kiểm tra trường hợp của doanh nghiệp',
-    action: 'Kiểm tra trường hợp',
-    description: 'Điền các thông tin liên quan. Trợ lý sẽ đối chiếu căn cứ và nêu kết luận sơ bộ.',
-    turnPrompt: 'Hãy kiểm tra trường hợp của doanh nghiệp dựa trên thông tin tôi đã cung cấp.',
-  },
-  build_compliance_checklist: {
-    title: 'Tạo danh sách việc cần làm',
-    action: 'Tạo danh sách việc cần làm',
-    description: 'Cho biết phạm vi hoạt động để nhận danh sách việc cần chuẩn bị và căn cứ đối chiếu.',
-    turnPrompt: 'Hãy tạo danh sách việc cần làm cho doanh nghiệp dựa trên thông tin tôi đã cung cấp.',
-  },
-};
 
 export function capabilityUnavailableCopy(reason = '', offline = false): string {
   if (offline) return 'Không thể kết nối tới máy chủ. Bạn có thể thử lại sau ít phút.';
@@ -42,107 +18,11 @@ export function capabilityUnavailableCopy(reason = '', offline = false): string 
   return messages[reason] || 'Chức năng này hiện chưa sẵn sàng. Hãy thử lại sau ít phút.';
 }
 
-export const factLabels: Record<string, string> = {
-  business_role: 'vai trò doanh nghiệp',
-  product_or_packaging: 'sản phẩm hoặc bao bì',
-  material: 'vật liệu chính',
-  activity_scope: 'phạm vi hoạt động',
-  object_kind: 'loại đối tượng',
-  product_group: 'nhóm sản phẩm/bao bì',
-  packaged_goods_category: 'nhóm hàng hóa được đóng gói',
-  market_placement: 'phạm vi đưa ra thị trường',
-  activity_purpose: 'mục đích hoạt động',
-  annual_revenue_vnd: 'doanh thu liên quan',
-  reused_by_producer: 'việc thu hồi và tái sử dụng',
-  recovery_rate: 'tỷ lệ thu hồi và tái sử dụng',
-};
-
-const fieldOptions: Record<string, Array<{ value: string; label: string }>> = {
-  business_role: [{ value: 'manufacturer', label: 'Nhà sản xuất' }, { value: 'importer', label: 'Nhà nhập khẩu' }],
-  object_kind: [{ value: 'product', label: 'Sản phẩm' }, { value: 'commercial_packaging', label: 'Bao bì thương phẩm' }, { value: 'raw_material', label: 'Nguyên liệu' }, { value: 'production_waste', label: 'Chất thải sản xuất' }],
-  product_group: [{ value: 'bao_bi', label: 'Bao bì' }, { value: 'ac_quy', label: 'Ắc quy' }, { value: 'pin', label: 'Pin' }, { value: 'dau_nhot', label: 'Dầu nhớt' }, { value: 'sam_lop', label: 'Săm lốp' }, { value: 'dien_tu', label: 'Điện - điện tử' }, { value: 'phuong_tien', label: 'Phương tiện' }],
-  packaged_goods_category: [{ value: 'thuc_pham', label: 'Thực phẩm' }, { value: 'my_pham', label: 'Mỹ phẩm' }, { value: 'thuoc', label: 'Thuốc' }, { value: 'phan_bon_thuc_an_thu_y', label: 'Phân bón/thức ăn chăn nuôi/thuốc thú y' }, { value: 'che_pham_tay_rua', label: 'Chế phẩm tẩy rửa' }, { value: 'xi_mang', label: 'Xi măng' }, { value: 'other', label: 'Khác' }],
-  material: [{ value: 'plastic', label: 'Nhựa' }, { value: 'pet', label: 'Nhựa PET' }, { value: 'pe_pp', label: 'Nhựa PE/PP' }, { value: 'paper', label: 'Giấy' }, { value: 'glass', label: 'Thủy tinh' }, { value: 'metal', label: 'Kim loại' }, { value: 'rubber', label: 'Cao su' }],
-  market_placement: [{ value: 'vietnam_market', label: 'Đưa ra thị trường Việt Nam' }, { value: 'export_only', label: 'Chỉ xuất khẩu' }, { value: 'temporary_import_reexport', label: 'Tạm nhập - tái xuất' }],
-  activity_purpose: [{ value: 'commercial', label: 'Kinh doanh thương mại' }, { value: 'research_study_test', label: 'Nghiên cứu/học tập/thử nghiệm' }],
-  reused_by_producer: [{ value: 'yes', label: 'Có' }, { value: 'no', label: 'Không' }],
-};
-
-const fieldDisplayLabels: Record<string, string> = {
-  business_role: 'Vai trò doanh nghiệp',
-  object_kind: 'Loại đối tượng',
-  product_group: 'Nhóm sản phẩm/bao bì',
-  packaged_goods_category: 'Nhóm hàng hóa được đóng gói',
-  material: 'Vật liệu hoặc quy cách',
-  market_placement: 'Phạm vi đưa ra thị trường',
-  activity_purpose: 'Mục đích sản xuất hoặc nhập khẩu',
-  annual_revenue_vnd: 'Doanh thu bán sản phẩm liên quan mỗi năm',
-  reused_by_producer: 'Bao bì có được doanh nghiệp thu hồi để tái sử dụng không',
-  recovery_rate: 'Tỷ lệ thu hồi và tái sử dụng',
-};
-
-export function fieldLabelForKey(key: string, label = ''): string {
-  return label && !label.includes('_') ? label : fieldDisplayLabels[key] || factLabels[key] || 'Thông tin bổ sung';
-}
-
-export function fieldOptionsForKey(key: string, options: Array<{ value: string; label: string }> = []): Array<{ value: string; label: string }> {
-  const fallback = fieldOptions[key] || [];
-  const labels = new Map(fallback.map((item) => [item.value, item.label]));
-  return (options.length ? options : fallback).map((item) => ({
-    ...item,
-    label: labels.get(item.value) || (item.label.includes('_') ? item.value : item.label),
-  }));
-}
-
-export function displayFactLabel(key: string, fields: CaseField[] = []): string {
-  const field = fields.find((item) => item.key === key);
-  return fieldLabelForKey(key, field?.label);
-}
-
-export function displayFactValue(key: string, value: string, fields: CaseField[] = []): string {
-  if (key === 'annual_revenue_vnd' && /^\d+$/.test(value)) {
-    return `${new Intl.NumberFormat('vi-VN').format(Number(value))} VNĐ`;
-  }
-  if (key === 'recovery_rate' && value) return `${value}%`;
-  const field = fields.find((item) => item.key === key);
-  const option = field?.options.find((item) => item.value === value);
-  return option?.label || value.split('_').join(' ');
-}
-
-const SAFE_CASE_ERROR_PREFIXES = [
-  'Câu trả lời bị gián đoạn.',
-  'Dịch vụ tạm thời không khả dụng.',
-];
-
-/** Convert transport/library failures into copy that is safe to show beside the form. */
-export function caseFormErrorMessage(error: unknown): string {
-  const candidate = error instanceof Error ? error.message.trim() : '';
-  const responseStatus = typeof error === 'object' && error !== null
-    ? Number((error as { response?: { status?: unknown } }).response?.status || 0)
-    : 0;
-  const errorCode = typeof error === 'object' && error !== null
-    ? String((error as { code?: unknown }).code || '')
-    : '';
-
-  if (responseStatus === 422) {
-    return 'Một số thông tin chưa hợp lệ. Hãy kiểm tra các mục được đánh dấu.';
-  }
-  if (responseStatus === 401 || responseStatus === 403) {
-    return 'Phiên làm việc đã hết hạn. Hãy đăng nhập lại rồi thử lại.';
-  }
-  if (responseStatus >= 500 || errorCode === 'ERR_NETWORK' || errorCode === 'ECONNABORTED') {
-    return 'Không thể cập nhật biểu mẫu lúc này. Thông tin bạn đã nhập vẫn được giữ lại. Hãy thử lại.';
-  }
-  if (SAFE_CASE_ERROR_PREFIXES.some((prefix) => candidate.startsWith(prefix))) {
-    return candidate;
-  }
-  return 'Không thể cập nhật biểu mẫu. Thông tin bạn đã nhập vẫn được giữ lại. Hãy thử lại.';
-}
-
 export const safeStopCopy: Record<string, { title: string; message: string }> = {
   out_of_scope: { title: 'Ngoài phạm vi hỗ trợ', message: 'Yêu cầu này không thuộc phạm vi pháp luật mà trợ lý đang hỗ trợ.' },
-  insufficient_evidence: { title: 'Chưa đủ căn cứ để trả lời chắc chắn', message: 'Chưa tìm thấy căn cứ phù hợp đang có hiệu lực cho một hoặc nhiều vấn đề cần kiểm tra.' },
+  insufficient_evidence: { title: 'Chưa đủ căn cứ để trả lời chắc chắn', message: 'Nguồn đã truy xuất chưa trả lời đủ nội dung bạn hỏi.' },
   missing_provision: { title: 'Chưa tìm thấy điều khoản phù hợp', message: 'Chưa tìm thấy điều khoản phù hợp đang có hiệu lực trong các văn bản hiện có.' },
+  current_law_status_unverified: { title: 'Chưa xác minh được hiệu lực hiện hành', message: 'Đã tìm thấy điều khoản, nhưng kho dữ liệu chưa xác nhận tình trạng hiệu lực hoặc các sửa đổi về sau.' },
   incomplete_issue_coverage: { title: 'Chưa đủ căn cứ cho toàn bộ vấn đề', message: 'Chưa tìm thấy căn cứ phù hợp đang có hiệu lực cho một hoặc nhiều vấn đề cần kiểm tra.' },
   failed_citation_verification: { title: 'Chưa kiểm tra được căn cứ', message: 'Trợ lý đã dừng để không trả lời khi chưa kiểm tra được nguồn phù hợp.' },
   stale_corpus: { title: 'Văn bản cần được cập nhật', message: 'Thông tin hiện tại chưa được xác nhận là mới nhất cho các quy định liên quan.' },

@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from epr_agent.domain.legal_rules import (
+from vietnam_legal_agent.domain.legal_rules import (
     LegalDomain,
-    UniversalCaseFormResolver,
     calculate_legal_formula,
     evaluate_universal_case,
 )
@@ -126,25 +125,3 @@ def test_statutory_calculations() -> None:
     )
     assert sev_res["ok"] is True
     assert sev_res["total_severance_vnd"] == 24_000_000  # 12M * 4 * 0.5
-
-
-def test_universal_form_resolver() -> None:
-    """Test dynamic slot resolution for labor and civil domains."""
-    resolver = UniversalCaseFormResolver()
-
-    # Incomplete labor form
-    form_labor = resolver.resolve_form_state(
-        legal_domain="labor",
-        known_facts={"monthly_salary_vnd": "10000000"},
-    )
-    assert form_labor["status"] == "incomplete"
-    assert "dispute_type" in form_labor["missing_facts"]
-    assert "Để trợ lý pháp luật có thể tư vấn" in form_labor["suggested_follow_up"]
-
-    # Complete labor form
-    form_labor_complete = resolver.resolve_form_state(
-        legal_domain="labor",
-        known_facts={"dispute_type": "đơn phương sa thải"},
-    )
-    assert form_labor_complete["status"] == "complete"
-    assert len(form_labor_complete["missing_facts"]) == 0

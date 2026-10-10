@@ -2,17 +2,17 @@ from __future__ import annotations
 
 import pytest
 
-from epr_agent.agent.agent_loop import AgentRunResult
-from epr_agent.agent.graph import WorkflowDependencies, run_workflow
-from epr_agent.agent.planner import BoundedPlanner
-from epr_agent.agent.runtime import AgentWorkflowRuntime
-from epr_agent.domain.models import DocumentRecord, TerminationReason
-from epr_agent.domain.tasks import deterministic_task_understanding, rewrite_follow_up
-from epr_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
-from epr_agent.tools.evidence import EvidenceEvaluator
-from epr_agent.tools.generation import StaticGenerationGateway
-from epr_agent.tools.history import ContextSnapshot
-from epr_agent.tools.retrieval import StaticRetrievalGateway
+from vietnam_legal_agent.agent.agent_loop import AgentRunResult
+from vietnam_legal_agent.agent.graph import WorkflowDependencies, run_workflow
+from vietnam_legal_agent.agent.planner import BoundedPlanner
+from vietnam_legal_agent.agent.runtime import AgentWorkflowRuntime
+from vietnam_legal_agent.domain.models import DocumentRecord, TerminationReason
+from vietnam_legal_agent.domain.tasks import deterministic_task_understanding, rewrite_follow_up
+from vietnam_legal_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
+from vietnam_legal_agent.tools.evidence import EvidenceEvaluator
+from vietnam_legal_agent.tools.generation import StaticGenerationGateway
+from vietnam_legal_agent.tools.history import ContextSnapshot
+from vietnam_legal_agent.tools.retrieval import StaticRetrievalGateway
 
 
 class MemoryHistory:
@@ -69,11 +69,11 @@ def _deps(history: MemoryHistory, retrieval: StaticRetrievalGateway | None = Non
 
 def _document() -> DocumentRecord:
     return DocumentRecord(
-        content="Điều 77 quy định trách nhiệm tái chế bao bì của nhà sản xuất, nhập khẩu. " * 4,
+        content="Điều 25 quy định thời gian thử việc tối đa của người lao động. " * 4,
         document_id="law-77",
         source="legal",
         score=0.9,
-        metadata={"legal_anchor": "Điều 77", "source": "Nghị định 08/2022/NĐ-CP"},
+        metadata={"legal_anchor": "Điều 25", "source": "Bộ luật Lao động 2019"},
     )
 
 
@@ -157,7 +157,7 @@ async def test_agent_runtime_rewrites_existing_follow_up_before_runner() -> None
         history_data
     )
     result = AgentRunResult(
-        answer="Điều 77 quy định trách nhiệm tái chế [1].",
+        answer="Điều 25 quy định thời gian thử việc tối đa [1].",
         termination_reason=TerminationReason.ANSWER_COMPLETE.value,
         trajectory=[],
         evidence=[_document().to_dict()],

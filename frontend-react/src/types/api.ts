@@ -2,7 +2,7 @@
  * API request/response type definitions
  */
 
-import type { CaseState, EvidenceAssessment, SourceDocument, WorkflowMetadata } from './chat';
+import type { EvidenceAssessment, SourceDocument, WorkflowMetadata } from './chat';
 
 export interface ChatRequest {
   query: string;
@@ -10,17 +10,15 @@ export interface ChatRequest {
   session_id?: string;
   turn_id?: string;
   mode?: 'auto' | 'research_web';
-  operation?: 'message' | 'continue_case' | 'retry' | 'regenerate';
+  operation?: 'message' | 'retry' | 'regenerate';
   target_assistant_message_id?: number;
   intent_hint?: 'auto' | 'legal_lookup' | 'legal_explain_compare' | 'case_assessment' | 'compliance_checklist';
-  interaction_source?: 'composer' | 'quick_action' | 'case_panel' | 'guided_form';
-  case_patch?: Record<string, string>;
-  fact_updates?: Record<string, { value: string; confirmation_status?: 'user_confirmed' | 'document_verified' | 'unknown' }>;
+  interaction_source?: 'composer' | 'quick_action';
   replay_metadata?: Record<string, unknown>;
 }
 
 export interface SSEEvent {
-  type: 'status' | 'workflow_step' | 'response_chunk' | 'response_complete' | 'response_stopped' | 'case_update' | 'input_required' | 'error';
+  type: 'status' | 'workflow_step' | 'response_chunk' | 'response_complete' | 'response_stopped' | 'input_required' | 'error';
   message?: string;
   chunk?: string;
   chunk_index?: number;
@@ -34,6 +32,9 @@ export interface SSEEvent {
   label?: string;
   status?: string;
   sequence?: number;
+  latency_ms?: number;
+  args?: Record<string, unknown>;
+  details?: unknown;
   trace_id?: string;
   task_type?: string;
   route?: string;
@@ -44,10 +45,9 @@ export interface SSEEvent {
   evidence_status?: string;
   available_actions?: string[];
   assessment?: Record<string, unknown> | null;
-  case_state?: CaseState | null;
   checklist?: Array<Record<string, unknown>>;
   assumptions?: string[];
-  missing_facts?: string[];
+  question?: string;
   citations?: Array<Record<string, unknown>>;
   evidence_assessment?: EvidenceAssessment;
   termination_reason?: string;
@@ -58,7 +58,6 @@ export interface SSEEvent {
   required_issues?: string[];
   covered_issues?: string[];
   rule_id?: string;
-  rule_pack_version?: string;
   effective_dates?: Record<string, string>;
   metadata?: WorkflowMetadata;
   code?: string;
@@ -75,10 +74,6 @@ export interface SSEEvent {
   corpus_as_of_date?: string;
   sources?: import('./chat').SourceSnapshot[];
   replay_metadata?: Record<string, unknown>;
-  validation_errors?: Record<string, string>;
-  form_version?: string;
-  completed_count?: number;
-  required_count?: number;
   citation_error?: string;
   safe_stop_reason?: string;
   preview?: boolean;
@@ -142,7 +137,7 @@ export interface ReadinessResponse {
   runtime_mode: 'production' | 'preview';
   preview: boolean;
   capabilities: Record<
-    'history' | 'legal_chat' | 'case_workflow' | 'feedback' | 'web_research',
+    'history' | 'legal_chat' | 'feedback' | 'web_research',
     { status: 'ready' | 'blocked' | 'degraded'; reason: string }
   >;
   corpus: {

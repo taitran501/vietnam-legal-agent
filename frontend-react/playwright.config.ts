@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { delimiter, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
 
@@ -8,6 +9,9 @@ const acceptancePython = fileURLToPath(
 const frontendRoot = fileURLToPath(new URL('.', import.meta.url));
 const python = process.env.E2E_PYTHON || (existsSync(acceptancePython) ? `"${acceptancePython}"` : 'python');
 const reuseLocalServer = process.env.CI !== 'true';
+const pythonPath = [resolve(frontendRoot, '../src'), process.env.PYTHONPATH]
+  .filter(Boolean)
+  .join(delimiter);
 
 export default defineConfig({
   testDir: './e2e',
@@ -29,7 +33,7 @@ export default defineConfig({
       cwd: '..',
       // Deterministic browser acceptance must not upload traces or depend on
       // a developer's optional LangSmith credentials.
-      env: { LANGCHAIN_TRACING_V2: 'false' },
+      env: { LANGCHAIN_TRACING_V2: 'false', PYTHONPATH: pythonPath },
       url: 'http://127.0.0.1:8010/api/v1/health',
       reuseExistingServer: reuseLocalServer,
     },

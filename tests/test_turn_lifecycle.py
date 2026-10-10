@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from epr_agent.infra.persistence import PersistenceStore, sqlite_database_url
-from epr_agent.tools.history import UnifiedHistoryGateway
 from tests.agent.v4_test_support import runtime
+from vietnam_legal_agent.infra.persistence import PersistenceStore, sqlite_database_url
+from vietnam_legal_agent.tools.history import UnifiedHistoryGateway
 
 
 @pytest.mark.asyncio
@@ -67,13 +67,7 @@ async def test_replay_uses_server_descriptor_and_only_supersedes_after_success(t
             "intent": "legal_lookup",
             "operation": "message",
             "interaction_source": "quick_action",
-            "case_patch": {"market_placement": "vietnam_market"},
-            "fact_updates": {
-                "market_placement": {
-                    "value": "vietnam_market",
-                    "confirmation_status": "user_confirmed",
-                }
-            },
+            "source_note": "ordinary chat request",
         }
         original = await store.begin_turn(
             "owner",
@@ -170,7 +164,7 @@ async def test_v4_stream_emits_ids_and_persists_a_stopped_partial(tmp_path) -> N
     cancelled = False
     try:
         async for event in workflow.stream(
-            query="Điều 77 quy định gì về EPR?",
+            query="Điều 25 Bộ luật Lao động quy định gì về thời gian thử việc?",
             user_id="owner-stream",
             conversation_id="conversation-stream",
             turn_id="turn-stream",
@@ -178,8 +172,6 @@ async def test_v4_stream_emits_ids_and_persists_a_stopped_partial(tmp_path) -> N
             operation="message",
             intent_hint="legal_lookup",
             interaction_source="composer",
-            case_patch={},
-            fact_updates={},
             replay_metadata={},
         ):
             events.append(event)
@@ -222,7 +214,7 @@ async def test_v4_completed_stream_reuses_placeholder_message_id(tmp_path) -> No
         events = [
             event
             async for event in workflow.stream(
-                query="Điều 77 quy định gì về EPR?",
+                query="Điều 25 Bộ luật Lao động quy định gì về thời gian thử việc?",
                 user_id="owner-complete",
                 conversation_id="conversation-complete",
                 turn_id="turn-complete",
@@ -230,8 +222,6 @@ async def test_v4_completed_stream_reuses_placeholder_message_id(tmp_path) -> No
                 operation="message",
                 intent_hint="legal_lookup",
                 interaction_source="composer",
-                case_patch={},
-                fact_updates={},
                 replay_metadata={},
             )
         ]

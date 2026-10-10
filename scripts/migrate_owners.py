@@ -25,8 +25,8 @@ from backend.api.principal import oidc_user_id
 from backend.history.store import _database_url
 from sqlalchemy import select, update
 
-from epr_agent.config import get_settings
-from epr_agent.infra.persistence import (
+from vietnam_legal_agent.config import get_settings
+from vietnam_legal_agent.infra.persistence import (
     AgentRunRecord,
     CaseStateRecord,
     ConversationRecord,

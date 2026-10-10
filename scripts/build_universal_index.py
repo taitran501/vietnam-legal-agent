@@ -4,14 +4,25 @@ import json
 import os
 import re
 import sqlite3
+import time
 import urllib.request
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK_PATH = ROOT / "data" / "universal_corpus_manifest.json"
 LOCK = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
 CORPUS_DIR = ROOT / "data" / "corpus" / "universal_legal"
 DB_PATH = CORPUS_DIR / "universal_legal.db"
+ARTICLE_SPLIT_PATTERN = re.compile(r"(?m)(?=^(?:###?\s*)?Điều\s+\d+[\w\.]*\.?\s*)")
+
+
+def _split_legal_articles(content: str) -> list[str]:
+    """Split one law at each article heading while preserving the heading."""
+
+    return ARTICLE_SPLIT_PATTERN.split(content)
 
 
 def _sha256(path: Path) -> str:
@@ -26,14 +37,51 @@ def _verify_input(spec: dict[str, object]) -> Path:
     path = ROOT / str(spec["path"])
     if not path.is_file():
         raise FileNotFoundError(
-            f"Missing universal corpus input: {path}. "
-            "Run `python -m scripts.build_universal_index --download`."
+            f"Missing universal corpus input: {path}. Run `python -m scripts.build_universal_index --download`."
         )
     if path.stat().st_size != int(spec["size_bytes"]):
         raise RuntimeError(f"universal_corpus_size_mismatch:{spec['path']}")
     if _sha256(path) != str(spec["sha256"]).lower():
         raise RuntimeError(f"universal_corpus_sha256_mismatch:{spec['path']}")
     return path
+
+
+def _download_with_retries(uri: str, destination: Path, *, max_attempts: int = 5) -> None:
+    """Retry transient transport and rate-limit failures without accepting bad data."""
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            urllib.request.urlretrieve(uri, destination)
+            return
+        except HTTPError as exc:
+            retryable = exc.code == 429 or 500 <= exc.code < 600
+            if not retryable or attempt == max_attempts:
+                raise
+            retry_after = exc.headers.get("Retry-After") if exc.headers else None
+            delay = _retry_delay(retry_after, attempt)
+        except URLError:
+            if attempt == max_attempts:
+                raise
+            delay = min(60.0, 2.0**attempt)
+
+        destination.unlink(missing_ok=True)
+        print(f"Temporary corpus download failure; retrying in {delay:g}s ({attempt}/{max_attempts - 1})")
+        time.sleep(delay)
+
+
+def _retry_delay(retry_after: str | None, attempt: int) -> float:
+    if retry_after:
+        try:
+            return min(120.0, max(0.0, float(retry_after)))
+        except ValueError:
+            try:
+                retry_at = parsedate_to_datetime(retry_after)
+                if retry_at.tzinfo is None:
+                    retry_at = retry_at.replace(tzinfo=UTC)
+                return min(120.0, max(0.0, (retry_at - datetime.now(UTC)).total_seconds()))
+            except (TypeError, ValueError, OverflowError):
+                pass
+    return min(60.0, 2.0**attempt)
 
 
 def _ensure_inputs(download: bool) -> list[Path]:
@@ -49,7 +97,7 @@ def _ensure_inputs(download: bool) -> list[Path]:
             temporary = path.with_name(path.name + ".download")
             try:
                 print(f"Downloading {path.name}...")
-                urllib.request.urlretrieve(uri, temporary)
+                _download_with_retries(uri, temporary)
                 temporary.replace(path)
             finally:
                 temporary.unlink(missing_ok=True)
@@ -62,10 +110,7 @@ def _verify_database() -> int:
         raise FileNotFoundError(f"Missing universal corpus database: {DB_PATH}")
     connection = sqlite3.connect(f"file:{DB_PATH.resolve().as_posix()}?mode=ro", uri=True)
     try:
-        tables = {
-            str(row[0])
-            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
-        }
+        tables = {str(row[0]) for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         expected_tables = set(LOCK["output"]["expected_tables"])
         if not expected_tables.issubset(tables):
             raise RuntimeError("universal_corpus_database_schema_mismatch")
@@ -156,19 +201,18 @@ def _build_database(input_paths: list[Path]) -> int:
                 )
                 fts_rows.append((rec_id, topic, subject, art_title, chap_title, src_note, content))
 
-            cursor.executemany("INSERT OR REPLACE INTO legal_articles VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);", rows_to_insert)
+            cursor.executemany(
+                "INSERT OR REPLACE INTO legal_articles VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);", rows_to_insert
+            )
             cursor.executemany("INSERT INTO legal_articles_fts VALUES (?, ?, ?, ?, ?, ?, ?);", fts_rows)
             total_inserted += num_rows
             print(f"Indexed {num_rows} articles from {os.path.basename(ppath)} (Total: {total_inserted:,})")
 
-        # Also index UTS_VLC full laws.
+        # Also index the corrected, content-locked UTS_VLC in-force snapshot.
         uts_parquet = str(input_paths[-1])
-        print("\n=== STEP 3: INDEXING UTS_VLC NATIONAL CODES (318 LAWS) ===")
+        print("\n=== STEP 3: INDEXING UTS_VLC NATIONAL LAWS AND CODES ===")
         vlc_table = pq.read_table(uts_parquet)
         vlc_dict = vlc_table.to_pydict()
-        art_split_pattern = re.compile(
-            r"(?=(?:^|\n)(?:###?\s*)?Điều\s+\d+[\w\.]*\.?\s*)", re.MULTILINE
-        )
         uts_rows = []
         uts_fts = []
 
@@ -176,7 +220,7 @@ def _build_database(input_paths: list[Path]) -> int:
             law_id = vlc_dict["id"][i]
             law_title = vlc_dict["title"][i]
             content = vlc_dict["content"][i]
-            articles = art_split_pattern.split(content)
+            articles = _split_legal_articles(content)
             for idx, art in enumerate(articles[1:], 1):
                 art_clean = art.strip()
                 if not art_clean:
@@ -203,7 +247,7 @@ def _build_database(input_paths: list[Path]) -> int:
         cursor.executemany("INSERT OR REPLACE INTO legal_articles VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);", uts_rows)
         cursor.executemany("INSERT INTO legal_articles_fts VALUES (?, ?, ?, ?, ?, ?, ?);", uts_fts)
         conn.commit()
-        print(f"Indexed {len(uts_rows):,} additional articles from 318 National Laws.")
+        print(f"Indexed {len(uts_rows):,} additional articles from {vlc_table.num_rows} National Laws and Codes.")
 
         final_count = int(cursor.execute("SELECT COUNT(*) FROM legal_articles;").fetchone()[0])
         expected_count = int(LOCK["output"]["expected_rows"])

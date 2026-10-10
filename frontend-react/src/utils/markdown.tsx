@@ -3,6 +3,8 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { Components } from 'react-markdown';
+import type { SourceDocument } from '@/types';
+import { CitationLink } from '@/components/Chat/CitationLink';
 
 type MarkdownNode = {
   type: string;
@@ -25,13 +27,22 @@ function remarkCitationLinks() {
         }
         const parts: MarkdownNode[] = [];
         let cursor = 0;
-        for (const match of child.value.matchAll(/\[(\d+)\]/g)) {
-          const start = match.index ?? 0;
+        // Supports [1], [^1], [citation: 1], and comma-separated lists like [1, 2]
+        const regex = /\[(?:citation:\s*)?\^?(\d+(?:\s*,\s*\d+)*)\]/gi;
+        let match: RegExpExecArray | null;
+        while ((match = regex.exec(child.value)) !== null) {
+          const start = match.index;
           if (start > cursor) parts.push({ type: 'text', value: child.value.slice(cursor, start) });
-          parts.push({
-            type: 'link',
-            url: `#source-${match[1]}`,
-            children: [{ type: 'text', value: match[0] }],
+
+          const rawNumbers = match[1];
+          const indices = rawNumbers.split(',').map((s) => s.trim()).filter(Boolean);
+          indices.forEach((idx, i) => {
+            if (i > 0) parts.push({ type: 'text', value: ' ' });
+            parts.push({
+              type: 'link',
+              url: `#source-${idx}`,
+              children: [{ type: 'text', value: `[${idx}]` }],
+            });
           });
           cursor = start + match[0].length;
         }
@@ -44,7 +55,16 @@ function remarkCitationLinks() {
   };
 }
 
-const markdownComponents = (onCitationClick?: (index: number) => void): Components => ({
+interface MarkdownComponentsOptions {
+  onCitationClick?: (index: number) => void;
+  documents?: SourceDocument[];
+  citations?: Array<Record<string, unknown>>;
+}
+
+const markdownComponents = (options: MarkdownComponentsOptions = {}): Components => {
+  const { onCitationClick, documents = [], citations = [] } = options;
+
+  return {
     // Code blocks with syntax highlighting
     code({ className, children }) {
       const match = /language-(\w+)/.exec(className || '');
@@ -98,17 +118,27 @@ const markdownComponents = (onCitationClick?: (index: number) => void): Componen
       const citation = href?.match(/^#source-(\d+)$/);
       if (citation) {
         const index = Number(citation[1]);
+        const matchedDoc =
+          documents.find((doc, idx) => {
+            const docIdx = Number(doc.metadata?.citation_index) || idx + 1;
+            return docIdx === index;
+          }) || documents[index - 1];
+
+        const matchedCitation =
+          citations.find((c, idx) => {
+            const cIdx = Number(c.citation_index) || idx + 1;
+            return cIdx === index;
+          }) || citations[index - 1];
+
         return (
-          <a
-            className="font-semibold text-[#006a63] underline underline-offset-2"
-            href={href}
-            onClick={(event) => {
-              event.preventDefault();
-              onCitationClick?.(index);
-            }}
+          <CitationLink
+            index={index}
+            document={matchedDoc}
+            citation={matchedCitation}
+            onClick={onCitationClick}
           >
             {children}
-          </a>
+          </CitationLink>
         );
       }
       return (
@@ -151,14 +181,30 @@ const markdownComponents = (onCitationClick?: (index: number) => void): Componen
     p({ children }) {
       return <p className="mb-2 leading-relaxed">{children}</p>;
     },
-});
+  };
+};
+
+export interface MarkdownRendererProps {
+  content: string;
+  onCitationClick?: (index: number) => void;
+  documents?: SourceDocument[];
+  citations?: Array<Record<string, unknown>>;
+}
 
 /**
- * Simple MarkdownRenderer component
+ * Enhanced MarkdownRenderer component with interactive Deer-Flow citation links
  */
-export function MarkdownRenderer({ content, onCitationClick }: { content: string; onCitationClick?: (index: number) => void }) {
+export function MarkdownRenderer({
+  content,
+  onCitationClick,
+  documents,
+  citations,
+}: MarkdownRendererProps) {
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationLinks]} components={markdownComponents(onCitationClick)}>
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkCitationLinks]}
+      components={markdownComponents({ onCitationClick, documents, citations })}
+    >
       {content}
     </ReactMarkdown>
   );

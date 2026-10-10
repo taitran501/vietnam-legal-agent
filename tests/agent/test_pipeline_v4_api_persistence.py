@@ -1,21 +1,23 @@
 from __future__ import annotations
 
+import hashlib
+import json
+
 import pytest
 from backend.api.schemas import ChatRequest
 from pydantic import ValidationError
 
-from epr_agent.agent.graph import default_dependencies
-from epr_agent.config import get_settings
-from epr_agent.infra.persistence import PersistenceStore, sqlite_database_url
+from vietnam_legal_agent.agent.graph import default_dependencies
+from vietnam_legal_agent.config import get_settings
+from vietnam_legal_agent.infra.persistence import PersistenceStore, sqlite_database_url
 
 
-def test_turn_request_keeps_legacy_message_contract_and_allows_continue_case():
-    legacy = ChatRequest(query="Điều 77 quy định gì?")
+def test_turn_request_keeps_ordinary_message_and_replay_contract():
+    legacy = ChatRequest(query="Điều 36 Bộ luật Lao động quy định gì?")
     assert legacy.operation == "message"
     assert legacy.intent_hint == "auto"
-    continued = ChatRequest(operation="continue_case", conversation_id="case-1", case_patch={"market_placement": "vietnam_market"})
-    assert continued.query == ""
-    assert continued.case_patch["market_placement"] == "vietnam_market"
+    with pytest.raises(ValidationError):
+        ChatRequest(operation="continue_case", conversation_id="case-1")
     with pytest.raises(ValidationError):
         ChatRequest(query="", operation="message")
     replay = ChatRequest(operation="regenerate", target_assistant_message_id=42)
@@ -23,27 +25,21 @@ def test_turn_request_keeps_legacy_message_contract_and_allows_continue_case():
     with pytest.raises(ValidationError):
         ChatRequest(operation="retry")
     with pytest.raises(ValidationError):
-        ChatRequest(query="Điều 77", target_assistant_message_id=42)
+        ChatRequest(query="Điều 36", target_assistant_message_id=42)
 
 
-def test_v4_dependency_scope_includes_the_audited_appendix_in_corpus_identity(monkeypatch):
-    """A V4 answer must not carry V3's corpus digest in its metadata."""
-
-    from scripts import canonical_corpus
-
-    captured: dict[str, object] = {}
-
-    def capture_digest(**kwargs):
-        captured.update(kwargs)
-        return "v4-corpus-digest"
-
+def test_v4_dependency_scope_uses_the_locked_multi_domain_corpus_hash(monkeypatch, tmp_path):
+    manifest_path = tmp_path / "universal-corpus.json"
+    manifest_path.write_text(json.dumps({"corpus_id": "vietnamese_law", "corpus_version": "test-v1"}), encoding="utf-8")
+    expected_digest = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    monkeypatch.setenv("UNIVERSAL_CORPUS_MANIFEST_PATH", str(manifest_path))
     monkeypatch.setenv("AGENT_PIPELINE_VERSION", "pipeline-v4")
-    monkeypatch.setattr(canonical_corpus, "corpus_sha256", capture_digest)
+    monkeypatch.setenv("ENABLE_UNIVERSAL_RETRIEVAL", "true")
     get_settings.cache_clear()
     try:
         deps = default_dependencies()
-        assert captured["appendix_path"] == get_settings().appendix_xxii_data_path
-        assert deps.corpus and deps.corpus.corpus_sha == "v4-corpus-digest"
+        assert deps.corpus and deps.corpus.corpus_id == "vietnamese_law"
+        assert deps.corpus.corpus_sha == expected_digest
     finally:
         get_settings.cache_clear()
 
@@ -59,7 +55,7 @@ async def test_v4_case_payload_and_first_turn_title_are_durable(tmp_path):
             "conversation-v4",
             {
                 "schema_version": "v4",
-                "task_type": "assess_epr_obligation",
+                "task_type": "case_assessment",
                 "status": "collecting",
                 "facts": {"business_role": {"value": "manufacturer", "source": "user_turn"}},
                 "missing_facts": ["market_placement"],

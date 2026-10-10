@@ -8,34 +8,40 @@ Only tool adapters are deterministic doubles.
 from __future__ import annotations
 
 import asyncio
+import json
+import re
+import sqlite3
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from backend.api.routes import chat as chat_routes
 from backend.api.routes.chat import router as chat_router
 from fastapi import FastAPI, HTTPException
 
-from epr_agent.agent.graph import WorkflowDependencies
-from epr_agent.agent.planner import BoundedPlanner
-from epr_agent.agent.v4 import V4WorkflowRuntime
-from epr_agent.domain.epr_rules import CaseFormResolver
-from epr_agent.domain.legal import explicit_anchors
-from epr_agent.domain.models import AgentState, DocumentRecord
-from epr_agent.domain.v4 import CaseStateV4, FactSource, FactValue
-from epr_agent.infra.admission import AdmissionLease
-from epr_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
-from epr_agent.tools.evidence import EvidenceEvaluator, legal_relevance_checker
-from epr_agent.tools.generation import EvidenceGenerationGateway
-from epr_agent.tools.history import ContextSnapshot
-from epr_agent.tools.retrieval import StaticRetrievalGateway
+from vietnam_legal_agent.agent.graph import WorkflowDependencies
+from vietnam_legal_agent.agent.planner import BoundedPlanner
+from vietnam_legal_agent.agent.v4 import V4WorkflowRuntime
+from vietnam_legal_agent.domain.legal import EMBEDDING_PROFILE, explicit_anchors, parse_required_anchors
+from vietnam_legal_agent.domain.models import AgentState, DocumentRecord
+from vietnam_legal_agent.infra.admission import AdmissionLease
+from vietnam_legal_agent.tools.cache import InMemoryAnswerCache, ScopedAnswerCache
+from vietnam_legal_agent.tools.evidence import (
+    EvidenceEvaluator,
+    document_matches_anchor,
+    filter_universal_retrieval_neighbors,
+    legal_relevance_checker,
+)
+from vietnam_legal_agent.tools.generation import EvidenceGenerationGateway
+from vietnam_legal_agent.tools.history import ContextSnapshot
+from vietnam_legal_agent.tools.retrieval import StaticRetrievalGateway
 
 
-async def _deterministic_ready() -> tuple[dict[str, object], bool]:
+async def _deterministic_ready() -> tuple[dict[str, object], str]:
     """Keep browser acceptance isolated from Docker/Qdrant readiness.
 
-    The production router correctly checks the versioned corpus before every
-    chat request.  This dedicated browser host exercises the same SSE route
-    with deterministic adapters, so it supplies the ready contract without
+    This dedicated browser host exercises the same SSE route with deterministic
+    adapters, so it supplies the fast chat-admission contract without
     requiring the real local stack during UI tests.
     """
 
@@ -48,17 +54,16 @@ async def _deterministic_ready() -> tuple[dict[str, object], bool]:
             "capabilities": {
                 "history": {"status": "ready", "reason": "ok"},
                 "legal_chat": {"status": "ready", "reason": "preview_snapshot"},
-                "case_workflow": {"status": "ready", "reason": "preview_snapshot"},
                 "feedback": {"status": "ready", "reason": "ok"},
                 "web_research": {"status": "degraded", "reason": "provider_not_configured"},
             },
             "corpus": {"status": "preview_ready"},
         },
-        True,
+        "",
     )
 
 
-chat_routes.readiness_payload = _deterministic_ready
+chat_routes.chat_admission_readiness = _deterministic_ready
 
 
 class BrowserHistoryGateway:
@@ -304,7 +309,7 @@ class BrowserHistoryGateway:
     ) -> dict[str, Any]:
         saved = {
             **state,
-            "status": "collecting" if state.get("missing_facts") or state.get("submission_blocked_reason") else "ready",
+            "status": "collecting" if state.get("missing_facts") else "ready",
         }
         self.cases[(user_id, conversation_id)] = saved
         return saved
@@ -313,9 +318,6 @@ class BrowserHistoryGateway:
         case = self.cases.get((user_id, conversation_id))
         if case:
             case.update({"status": "completed", "missing_facts": []})
-
-    async def get_case(self, user_id: str, conversation_id: str) -> dict[str, Any] | None:
-        return self.cases.get((user_id, conversation_id))
 
     async def record_run(self, state: AgentState, started_at: float, ended_at: float) -> None:
         self.runs.append(dict(state))
@@ -346,7 +348,7 @@ class DeterministicGenerationGateway(EvidenceGenerationGateway):
         acceptance path into a provider-backed test.
         """
 
-        if task_type in {"assess_epr_obligation", "build_compliance_checklist"}:
+        if task_type in {"case_assessment", "build_compliance_checklist"}:
             return await super().answer(task_type, query, documents, facts)
         return self._compose_legal_route_answer(documents)
 
@@ -355,90 +357,150 @@ history = BrowserHistoryGateway()
 chat_routes.cancel_turn_persistent = history.cancel_turn
 
 
-def _legal_document(anchor: str) -> DocumentRecord:
-    title = "Phụ lục XXII - Tỷ lệ và quy cách tái chế" if anchor == "Phụ lục XXII" else "Nghị định 08/2022/NĐ-CP"
-    content = (
-        f"{anchor} quy định đối tượng, lộ trình và trách nhiệm tái chế đối với nhà sản xuất, "
-        "nhập khẩu sản phẩm hoặc bao bì đưa ra thị trường Việt Nam. "
-    ) * 4
-    return DocumentRecord(
-        content=content,
-        metadata={
-            "Dieu": anchor if anchor.startswith("Điều") else "",
-            "Parent_Dieu": anchor if anchor.startswith("Điều") else "",
-            "legal_anchor": anchor,
-            "Document_Number": "08/2022/NĐ-CP",
-            "source": title,
-            "source_title": title,
-            "source_file": "data/08_2022_ND-CP_479457.doc",
-            "Corpus_Version": "browser-e2e-v4",
-            "Corpus_SHA256": "browser-e2e-corpus-v4",
-            "Embedding_Profile": "openai-text-embedding-3-small-v1",
-            "official_url": "https://vanban.chinhphu.vn/?docid=205092&pageid=27160",
-            "effective_status": "active",
-            "corpus_as_of_date": "2026-08-14",
-        },
-        document_id=f"law-{anchor.replace(' ', '-')}",
-        score=0.94,
-        source="legal",
-    )
+def _canonical_legal_documents() -> list[DocumentRecord]:
+    """Load source-grounded, multi-domain legal fixtures for browser tests."""
 
-
-def _corporate_document() -> DocumentRecord:
-    """Small canonical fixture for the factual corporate smoke case."""
-
-    content = (
-        "Điều 111. Công ty cổ phần\n"
-        "1. Công ty cổ phần là doanh nghiệp, trong đó:\n"
-        "b) Cổ đông có thể là tổ chức, cá nhân; số lượng cổ đông tối thiểu là 03 "
-        "và không hạn chế số lượng tối đa.\n"
-        "c) Cổ đông chỉ chịu trách nhiệm về các khoản nợ và nghĩa vụ tài sản khác "
-        "của doanh nghiệp trong phạm vi số vốn đã góp vào doanh nghiệp.\n"
-    )
-    return DocumentRecord(
-        content=content,
-        metadata={
-            "Dieu": "Điều 111",
-            "Parent_Dieu": "Điều 111",
-            "legal_anchor": "59/2020/QH14 | Điều 111",
-            "Document_Number": "59/2020/QH14",
-            "source": "Luật Doanh nghiệp 2020",
-            "source_title": "Luật Doanh nghiệp 2020",
-            "source_file": "data/corpus/universal_legal/universal_legal.db",
-            "Corpus_Version": "browser-e2e-v4",
-            "Corpus_SHA256": "browser-e2e-corpus-v4",
-            "Embedding_Profile": "openai-text-embedding-3-small-v1",
-            "official_url": "http://vbpl.vn/TW/Pages/vbpq-toanvan.aspx?ItemID=142881#Chuong_V_Dieu_111",
-            "effective_status": "active",
-            "effective_from": "2021-01-01",
-            "corpus_as_of_date": "2026-08-14",
-            "legal_domain": "corporate",
-        },
-        document_id="corp-law-111",
-        score=0.97,
-        source="legal",
-    )
+    fixture_path = Path(__file__).parent / "fixtures" / "multi_domain_legal_sources.json"
+    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+    documents: list[DocumentRecord] = []
+    for row in fixture.get("sources", []):
+        number = str(row["document_number"])
+        official_title = str(row["document_title"])
+        article_anchor = f"Điều {int(row['article'])}"
+        source_uri = str(row.get("official_url") or "")
+        effective_status = str(row.get("effective_status") or "unknown")
+        current_law_support = row.get("current_law_support")
+        metadata = {
+            "Dieu": article_anchor,
+            "Parent_Dieu": article_anchor,
+            "legal_anchor": str(row["legal_anchor"]),
+            "Document_Number": number,
+            "source": official_title,
+            "source_title": official_title,
+            "Source_Title": official_title,
+            "source_file": "tests/fixtures/multi_domain_legal_sources.json",
+            "Source_File": "tests/fixtures/multi_domain_legal_sources.json",
+            "source_uri": source_uri,
+            "Source_URI": source_uri,
+            "Corpus_Version": "multi-domain-browser-sources-v1",
+            "Corpus_SHA256": "browser-multi-domain-fixtures-v1",
+            "Embedding_Profile": EMBEDDING_PROFILE,
+            "Effective_From": "",
+            "Effective_Status": effective_status,
+            "Amendment_Relationship": [],
+            "Amendment_Resolution_Status": "",
+            "Amendment_Operations": [],
+            "Current_Law_Support": current_law_support,
+            "official_url": source_uri,
+            "legal_domain": str(row["domain"]),
+            "corpus_source": "universal_legal",
+        }
+        documents.append(
+            DocumentRecord(
+                content=str(row["content"]),
+                metadata=metadata,
+                document_id=str(row["document_id"]),
+                score=None,
+                source="legal",
+                effective_status=effective_status,
+                current_law_support=current_law_support,
+            )
+        )
+    return documents
 
 
 class PreviewRetrievalGateway(StaticRetrievalGateway):
-    """Deterministic adapter that refuses cross-domain fixture leakage."""
+    """Deterministic preview retrieval over real corpus text.
+
+    Exact legal addresses use the same structural anchor matcher as production.
+    Natural queries use SQLite FTS5 BM25 over the loaded source text; this keeps
+    browser acceptance repeatable without pretending that it is a production
+    embedding or cross-encoder evaluation.
+    """
 
     _checker = staticmethod(legal_relevance_checker(min_rerank_score=0.40))
+
+    def __init__(self, *, legal_documents: list[DocumentRecord]) -> None:
+        super().__init__(legal_documents=legal_documents)
+        self._fts = sqlite3.connect(":memory:")
+        self._fts.execute(
+            "CREATE VIRTUAL TABLE preview_legal_fts USING fts5(document_id UNINDEXED, body)"
+        )
+        self._fts.executemany(
+            "INSERT INTO preview_legal_fts(document_id, body) VALUES (?, ?)",
+            [
+                (
+                    document.document_id,
+                    " ".join(
+                        (
+                            str(document.metadata.get("legal_anchor") or ""),
+                            str(document.metadata.get("source_title") or ""),
+                            document.content,
+                        )
+                    ),
+                )
+                for document in legal_documents
+            ],
+        )
+        self._documents_by_id = {
+            document.document_id: document for document in legal_documents
+        }
 
     async def legal(self, query):
         documents = await super().legal(query)
         query_text = query.query if hasattr(query, "query") else str(query)
-        if getattr(query, "required_anchors", None) or explicit_anchors(query_text):
-            # Let the graph's explicit instrument/article evaluator report a
-            # precise mismatch rather than hiding all candidates here.
-            return documents
-        return [document for document in documents if self._checker(query_text, [document])]
+        required_anchors = list(getattr(query, "required_anchors", []) or [])
+        if required_anchors:
+            anchors, _invalid = parse_required_anchors(required_anchors)
+        else:
+            anchors = explicit_anchors(query_text)
+        if anchors:
+            exact = [
+                document
+                for document in documents
+                if any(document_matches_anchor(document, anchor) for anchor in anchors)
+            ]
+            return exact
+
+        terms = list(
+            dict.fromkeys(
+                token
+                for token in re.findall(r"[\wÀ-ỹĐđ]+", query_text.casefold())
+                if len(token) >= 3 and not token.isdigit()
+            )
+        )
+        if not terms:
+            return []
+        match_query = " OR ".join(f'"{term}"' for term in terms)
+        try:
+            ranked = self._fts.execute(
+                """
+                SELECT document_id, bm25(preview_legal_fts) AS rank
+                FROM preview_legal_fts
+                WHERE preview_legal_fts MATCH ?
+                ORDER BY rank ASC
+                LIMIT 20
+                """,
+                (match_query,),
+            ).fetchall()
+        except sqlite3.Error:
+            return []
+
+        selected: list[DocumentRecord] = []
+        for document_id, _rank in ranked:
+            document = self._documents_by_id.get(str(document_id))
+            if document is None:
+                continue
+            candidate = DocumentRecord.from_dict(document.to_dict())
+            candidate.score = None
+            candidate.metadata["bm25_rank"] = float(_rank)
+            if self._checker(query_text, [candidate]):
+                selected.append(candidate)
+        return filter_universal_retrieval_neighbors(query_text, selected)
 
 
 legal_documents = [
-    *[_legal_document(f"Điều {article}") for article in range(77, 93)],
-    _legal_document("Phụ lục XXII"),
-    _corporate_document(),
+    *_canonical_legal_documents(),
 ]
 dependencies = WorkflowDependencies(
     history=history,
@@ -451,9 +513,6 @@ dependencies = WorkflowDependencies(
     generation=DeterministicGenerationGateway(),
     planner=BoundedPlanner(max_retrieval_actions=3, max_repairs=1, max_iterations=12),
 )
-case_form_resolver = CaseFormResolver()
-
-
 class DeterministicAdmissionController:
     async def acquire(self, scope: str, **_kwargs: object) -> AdmissionLease:
         return AdmissionLease(scope=scope, token="browser-e2e", ttl_seconds=300)
@@ -501,54 +560,6 @@ async def ready() -> dict[str, object]:
 
     payload, _ = await _deterministic_ready()
     return payload
-
-
-@app.post("/api/v1/case-form/resolve")
-async def resolve_case_form(body: dict[str, Any]) -> dict[str, Any]:
-    state = case_form_resolver.resolve(
-        str(body.get("task_type") or "assess_epr_obligation"),
-        fact_updates=dict(body.get("fact_updates") or {}),
-    )
-    return state.model_dump(mode="json")
-
-
-@app.get("/api/v1/sessions/{session_id}/case")
-async def get_case(session_id: str) -> dict[str, Any] | None:
-    if ("dev-local", session_id) not in history.messages:
-        raise HTTPException(status_code=404, detail="Session not found")
-    return await history.get_case("dev-local", session_id)
-
-
-@app.patch("/api/v1/sessions/{session_id}/case")
-async def update_case(session_id: str, body: dict[str, Any]) -> dict[str, Any]:
-    """Deterministic case-panel adapter used by the real browser suite."""
-
-    if ("dev-local", session_id) not in history.messages:
-        raise HTTPException(status_code=404, detail="Session not found")
-    existing = await history.get_case("dev-local", session_id) or {}
-    task_type = str(body.get("task_type") or existing.get("task_type") or "assess_epr_obligation")
-    raw_facts = dict(body.get("facts") or {})
-    facts = {
-        key: FactValue(value=str(value), source=FactSource.CASE_PANEL, verified=True)
-        for key, value in raw_facts.items()
-        if str(value).strip()
-    }
-    resolved = case_form_resolver.resolve(task_type, facts)
-    case = CaseStateV4(
-        task_type=task_type,
-        status=resolved.status,
-        facts=resolved.facts,
-        missing_facts=resolved.missing_facts,
-        last_query=str(existing.get("last_query") or ""),
-        fields=resolved.fields,
-        form_version=resolved.form_version,
-        validation_errors=resolved.validation_errors,
-        submission_blocked_reason=resolved.submission_blocked_reason,
-        completed_count=resolved.completed_count,
-        required_count=resolved.required_count,
-    )
-    payload = case.model_dump(mode="json")
-    return await history.save_case("dev-local", session_id, payload)
 
 
 @app.get("/api/v1/sessions")

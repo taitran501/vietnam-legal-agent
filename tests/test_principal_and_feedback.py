@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from backend.api.principal import credential_hash, oidc_user_id, principal_from_service_token
 
-from epr_agent.infra.persistence import PersistenceStore, sqlite_database_url
+from vietnam_legal_agent.infra.persistence import PersistenceStore, sqlite_database_url
 
 
 def test_oidc_owner_id_is_stable_but_issuer_and_subject_scoped() -> None:

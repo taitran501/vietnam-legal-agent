@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
 import { cn } from '@/lib/cn';
 import { Icon } from '@/components/UI/Icon';
+import { apiFetch } from '@/api/client';
 
 interface AttachedFile {
   file: File;
@@ -92,7 +93,7 @@ export function ChatInput({
       formData.append('file', file);
       formData.append('analyze_redline', 'true');
 
-      const res = await fetch('/api/v1/documents/upload', {
+      const res = await apiFetch('/api/v1/documents/upload', {
         method: 'POST',
         body: formData,
       });

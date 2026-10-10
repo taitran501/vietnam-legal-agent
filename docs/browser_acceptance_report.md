@@ -67,3 +67,7 @@ recorded separately before production promotion:
   services;
 - two-user OIDC isolation journey;
 - accepted p95 latency comparison against the production baseline.
+# Historical browser acceptance report
+
+This report records the retired guided-form interface. It does not describe
+the current product contract, which uses natural-language legal chat.
