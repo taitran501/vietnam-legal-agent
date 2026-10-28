@@ -110,13 +110,29 @@ jobs:
           fi
 
   e2e:
-    # Each suite gets an isolated deterministic API and Vite server, so the suites can run concurrently.
+    # Each shard gets an isolated deterministic API and Vite server, so browser tests can run concurrently.
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    name: e2e (${{ matrix.spec }} ${{ matrix.shard }}/${{ matrix.shards }})
     strategy:
       fail-fast: false
       matrix:
-        spec: [agent-workflow, live-agent]
+        include:
+          - spec: agent-workflow
+            shard: 1
+            shards: 2
+          - spec: agent-workflow
+            shard: 2
+            shards: 2
+          - spec: live-agent
+            shard: 1
+            shards: 3
+          - spec: live-agent
+            shard: 2
+            shards: 3
+          - spec: live-agent
+            shard: 3
+            shards: 3
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -143,7 +159,7 @@ jobs:
           fi
       - run: npx playwright install chromium
         working-directory: frontend-react
-      - run: npm run test:e2e -- "e2e/${{ matrix.spec }}.spec.ts" --reporter=line
+      - run: npm run test:e2e -- "e2e/${{ matrix.spec }}.spec.ts" --shard=${{ matrix.shard }}/${{ matrix.shards }} --reporter=line
         working-directory: frontend-react
 
   natural-smoke:

@@ -16,10 +16,11 @@ const pythonPath = [resolve(frontendRoot, '../src'), process.env.PYTHONPATH]
 export default defineConfig({
   testDir: './e2e',
   timeout: 30_000,
-  // The deterministic backend is one shared in-memory process; parallel workers
-  // would make independent browser tests mutate each other's conversations.
+  // Keep one worker in each job because the deterministic backend is shared
+  // process state. CI shards run in separate jobs with isolated backend servers.
   workers: 1,
-  fullyParallel: false,
+  // Allow CI to distribute tests from the same file across isolated shards.
+  fullyParallel: true,
   reporter: 'list',
   use: {
     baseURL: 'http://127.0.0.1:4175',
