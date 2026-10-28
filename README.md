@@ -189,8 +189,9 @@ npm run build
 ### Browser tests
 
 The Playwright configuration starts a deterministic FastAPI adapter and a
-Vite server. It does not require production credentials or a live Qdrant
-service:
+Vite server. In CI, `agent-workflow` and `live-agent` run on separate workers,
+each with its own backend and frontend processes. It does not require
+production credentials or a live Qdrant service:
 
 ```bash
 cd frontend-react
@@ -216,7 +217,7 @@ pushes to `main`, and manual `workflow_dispatch`:
 | `backend` | Corpus metadata sync, pytest, deterministic route evaluation, and persona simulation. |
 | `frontend` | `npm ci`, ESLint, Vitest, and the production TypeScript/Vite build. |
 | `pilot-load` | Redis-backed two-worker SSE contract: 50 concurrent turns, saturation, and lease cleanup. |
-| `e2e` | Playwright tests with their own deterministic API and Vite servers; runs independently of the other jobs. |
+| `e2e (agent-workflow, live-agent)` | Two Playwright suites run concurrently, each with isolated deterministic API and Vite servers; the job runs independently of the other checks. |
 | `compose-smoke` | Builds the preview topology and checks gateway/backend/dependency readiness. |
 | `Promptfoo Deterministic Evaluation` | PR/main-push/manual replay matrix backed by the internal claim/source verifier; no real provider. |
 | `Live Agent Evaluation` | Manual `workflow_dispatch` only; real provider/corpus checks in the protected `pilot` environment. |
