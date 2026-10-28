@@ -2,6 +2,18 @@
 # Exercise the gateway, backend, PostgreSQL, and Redis in preview mode without
 # requiring an external corpus build or OpenAI request.
 services:
+  postgres:
+    healthcheck:
+      interval: 1s
+      timeout: 2s
+      retries: 30
+
+  redis:
+    healthcheck:
+      interval: 1s
+      timeout: 2s
+      retries: 30
+
   backend:
     image: ci-vietnam-legal-agent-backend
     environment:
@@ -12,10 +24,10 @@ services:
       ENABLE_TRACE_DEBUG_API: "false"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/v1/health || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 30s
+      interval: 1s
+      timeout: 2s
+      retries: 30
+      start_period: 10s
 
   frontend:
     image: ci-vietnam-legal-agent-frontend
