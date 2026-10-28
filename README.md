@@ -216,7 +216,7 @@ pushes to `main`, and manual `workflow_dispatch`:
 | `backend` | Corpus metadata sync, pytest, deterministic route evaluation, and persona simulation. |
 | `frontend` | `npm ci`, ESLint, Vitest, and the production TypeScript/Vite build. |
 | `pilot-load` | Redis-backed two-worker SSE contract: 50 concurrent turns, saturation, and lease cleanup. |
-| `e2e` | Playwright browser tests after the backend and frontend jobs pass. |
+| `e2e` | Playwright tests with their own deterministic API and Vite servers; runs independently of the other jobs. |
 | `compose-smoke` | Builds the preview topology and checks gateway/backend/dependency readiness. |
 | `Promptfoo Deterministic Evaluation` | PR/main-push/manual replay matrix backed by the internal claim/source verifier; no real provider. |
 | `Live Agent Evaluation` | Manual `workflow_dispatch` only; real provider/corpus checks in the protected `pilot` environment. |

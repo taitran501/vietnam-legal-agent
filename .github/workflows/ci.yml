@@ -110,7 +110,7 @@ jobs:
           fi
 
   e2e:
-    needs: [backend, backend-quality, frontend]
+    # Playwright starts its own deterministic API and Vite servers; overlap this job with the other checks.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
