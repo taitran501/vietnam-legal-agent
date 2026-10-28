@@ -10,3 +10,16 @@
 | Staged change set at scan time | `git --staged` | 0 |
 
 The scanner ran with full redaction. No credential material was recorded in this report. This is a tool-detection result for the listed history and staged change set, not a guarantee that every possible secret format is detectable.
+
+## Agent-ready branch follow-up
+
+**Date:** 2026-10-28  
+**Head:** `2ddb823e16b6f661f825dc0a1a378a4c0d2741d5`  
+**Scanner:** Gitleaks 8.30.1; official Windows release asset SHA-256: `d29144deff3a68aa93ced33dddf84b7fdc26070add4aa0f4513094c8332afc4e`.  
+**History boundary:** 224 commits reachable from the local refs (`--all`) at the scan head.
+
+| Scope | Command scope | Findings |
+| --- | --- | ---: |
+| Reachable Git history | `gitleaks git --redact=100 --log-opts=--all` | 0 |
+
+The follow-up scan used full redaction. Only the finding count and scan metadata were retained.
