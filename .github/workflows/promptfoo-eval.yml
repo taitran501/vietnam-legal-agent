@@ -27,6 +27,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22.22.x"
+          cache: npm
+          cache-dependency-path: .github/workflows/promptfoo-eval.yml
       - name: Install Python and Promptfoo dependencies in parallel
         run: |
           set +e
