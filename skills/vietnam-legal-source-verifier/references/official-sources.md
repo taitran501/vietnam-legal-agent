@@ -13,11 +13,13 @@ The portal list is not exhaustive. Confirm the domain, authority, document ident
 ## Search and verification steps
 
 - Search by exact instrument number and title, then open the result and inspect its official record.
+- On `vanban.chinhphu.vn`, verify the record metadata (instrument number, title, issuing body, promulgation date, and effective date). Some records also render the complete instrument text; when they do, inspect the requested provision on that official page. If a record shows metadata only, open its attached original text hosted by the official government file domain. Cite the official page that contains the text you inspected, and use the record page for identity/status as needed.
+- If an official PDF has no text layer, render the relevant page and use an available Vietnamese OCR tool. Compare the OCR result with the page image when visual inspection is available. Otherwise use an independent OCR engine or a second OCR pass with a different layout mode, and compare the article number, dates, negation, exceptions, cross-references, and surrounding text. Do not quote uncertain OCR. If the checks disagree or no cross-check is available, say the provision could not be inspected and stop short of a legal conclusion.
 - Confirm issuer, document type, promulgation/publication date, and effective date against the text.
 - Follow explicit amendment, replacement, repeal, and implementation references. Inspect commencement and transitional provisions, not just the amended article.
 - For a historical question, establish which version was effective on the requested date. For a current question, state the date through which the status was checked.
 - Preserve direct source URLs. Record access date when the source may change or be unavailable later.
-- If the official portal is unavailable, say that primary-source verification could not be completed. Do not silently substitute a search snippet or a mirror.
+- If the official portal or attachment is unavailable, say that primary-source verification could not be completed. Do not silently substitute a search snippet or a mirror. A PDF filename or metadata page alone does not establish the wording of a provision.
 
 ## Source conflicts
 

@@ -11,7 +11,7 @@ This skill produces preliminary legal research, not a legal opinion or a predict
 ## Stop or narrow the answer when
 
 - the primary source cannot be located or inspected;
-- the exact text, current version, amendment, or commencement date is uncertain;
+- the exact text, current version, amendment, or commencement date is uncertain, including when scanned text is unreadable or OCR checks disagree;
 - official materials conflict and the conflict affects the result;
 - the user's facts are too incomplete for a meaningful application; or
 - the user requests a guaranteed outcome, evasion, or a definitive individualized opinion unsupported by the available record.
