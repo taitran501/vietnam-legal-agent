@@ -23,3 +23,16 @@ The scanner ran with full redaction. No credential material was recorded in this
 | Reachable Git history | `gitleaks git --redact=100 --log-opts=--all` | 0 |
 
 The follow-up scan used full redaction. Only the finding count and scan metadata were retained.
+
+## Agent-ready final head follow-up
+
+- Date: 2026-10-28
+- Head: `0fd66c752254687e1994dd799ebc13f5fdb5d862`
+- Scanner: Gitleaks 8.30.1; official Windows x64 release archive SHA-256: `d29144deff3a68aa93ced33dddf84b7fdc26070add4aa0f4513094c8332afc4e`.
+- History boundary: 227 commits reachable from the local refs (`--all`) at the scan head.
+
+| Scope | Command scope | Findings |
+| --- | --- | ---: |
+| Reachable Git history | `gitleaks git --redact=100 --log-opts=--all --report-format=json --report-path=<outside repository>` | 0 |
+
+The scan ran at the final agent-ready code head with full redaction. The output and JSON report were kept outside the repository; only the finding count, history boundary, scanner version, checksum, and scanned head are recorded here.
