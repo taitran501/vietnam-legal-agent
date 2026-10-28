@@ -8,10 +8,11 @@ evidence assessment, generation, and citation verification path.
 
 ## Runtime and corpus
 
-The content-locked Ministry of Justice corpus is the only default source for
-legal chat. Qdrant retrieval is disabled by default and cannot silently
-replace the multi-domain corpus. If the corpus database is missing or invalid,
-the service reports it unavailable.
+The content-locked selected-source corpus is the only default source for legal
+chat. Qdrant retrieval is disabled by default and cannot silently replace it.
+If the corpus database is missing or invalid, the service reports it
+unavailable. Relevant provisions may also be absent because the corpus is not
+complete coverage of Vietnamese law.
 
 Preview mode supports technical and user-flow validation; it does not grant
 legal approval. Production currently rejects the generated universal corpus
@@ -43,8 +44,10 @@ the current sources and facts without waiting for a full form.
 
 Domain labels are retrieval hints, not separate assessment engines. The query
 and conversation context select relevant sources; a single keyword must not
-force a domain classification. Every legal topic uses the same multi-domain
-retrieval, evidence assessment, generation, and citation verification path.
+force a domain classification. Requests across topics represented in the
+selected corpus use the same retrieval, evidence assessment, generation, and
+citation verification path. This shared path does not imply complete coverage
+of every legal topic.
 
 ## Evidence and answer delivery
 

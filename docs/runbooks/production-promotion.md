@@ -1,10 +1,20 @@
 # Production Promotion
 
-Production legal chat uses the content-locked, multi-domain Vietnamese legal corpus. Runtime evidence and technical corpus integrity are release gates. Human legal review and deployment approval remain separate decisions.
+The production target is legal chat grounded in a content-locked corpus of
+selected Vietnamese legal sources. Production remains blocked until runtime
+evidence, technical corpus integrity, human legal review, and deployment
+approval are in place. The selected corpus does not imply complete coverage of
+Vietnamese law.
 
 ## Autonomous-agent pilot gate
 
-The `pipeline-agent` workflow runs the checked-in 50-case benchmark against the real model provider and the pinned multi-domain corpus. Promotion requires a pass rate of at least 70%, statutory-anchor accuracy of at least 80%, context recall of at least 75%, and successful provider/evaluator status for every case. Each case must also produce a terminal event, source payload, and passing replay.
+The `pipeline-agent` workflow runs the checked-in 50-case benchmark against the
+real model provider and the pinned corpus of selected legal sources. Promotion
+requires a pass rate of at least 70%, statutory-anchor accuracy of at least 80%,
+context recall of at least 75%, and successful provider/evaluator status for
+every case. Each case must also produce a terminal event, source payload, and
+passing replay. These benchmark thresholds do not establish complete legal
+coverage or legal approval.
 
 See the [Live Agent Evaluation runbook](live-agent-eval.md) for the OpenAI secret, dispatch procedure, and artifact contract.
 

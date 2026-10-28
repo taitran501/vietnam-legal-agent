@@ -3,13 +3,14 @@
 [![CI](https://github.com/taitran501/vietnam-legal-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/taitran501/vietnam-legal-agent/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Vietnamese-first software for preliminary legal research across legal domains.
+Vietnam Legal Agent is a Vietnamese-language application for preliminary legal
+lookup and case-oriented chat. It retrieves from selected sources in its current
+corpus; that corpus is incomplete and does not cover every law or legal topic.
 
-Vietnam Legal Agent lets a user ask ordinary questions, describe a legal
-situation, or request procedural steps in chat. It is deliberately bounded: answers
-are checked against the active repository-managed corpus, user-provided facts
-remain labelled as unverified, and the workflow can stop when evidence or a
-required dependency is missing.
+Users can ask questions, describe a legal situation, or request supported
+procedural steps. Answers are checked against the active repository-managed
+corpus; user-provided facts remain unverified, and the workflow may stop when
+evidence or a required dependency is missing.
 
 > **Important:** This project provides preliminary information. It is not
 > legal advice, a formal legal opinion, or a substitute for the official
@@ -28,7 +29,7 @@ required dependency is missing.
 - Production legal capability remains subject to technical corpus integrity,
   versioned effective-date metadata, deployment configuration, and a review
   record tied to the complete selected corpus hash. The current repository does
-  not contain an approval record for production use of the multi-domain corpus.
+  not contain an approval record for production use of the selected corpus.
 
 ## What it does
 
@@ -41,9 +42,9 @@ required dependency is missing.
 | Follow-up and recovery | Continue an active case, stop a turn, retry a failed turn, or regenerate a persisted answer. |
 | Explicit web research | Search configured official domains only when the user selects the research workflow. |
 
-The UI is Vietnamese-first. It also supports conversation persistence,
-feedback, source-aware preliminary `.txt` report export, and readiness
-messages that explain why a capability is unavailable.
+The interface text is primarily in Vietnamese. The application also supports
+conversation persistence, feedback, source-aware preliminary `.txt` report
+export, and readiness messages that explain why a capability is unavailable.
 
 ## Trust boundaries
 
@@ -62,12 +63,14 @@ confident-looking answer:
 
 ## Scope and limitations
 
-The multi-domain preview uses the content-locked Ministry of Justice corpus
-for legal chat across topics. An optional Qdrant collection is disabled by
-default. The production image does not include the generated multi-domain
-index until it passes the release and legal-review gates. The current corpus
-does not provide complete coverage of every law or every legal domain. The
-application does not currently provide:
+The local preview searches a content-locked corpus built from the Ministry of
+Justice codified-law snapshot and the tracked UTS_VLC input. These selected
+sources span several topics; they are not a complete or authoritative
+collection of Vietnamese law. See [corpus attribution](docs/retrieval/corpus-attribution.md)
+for source details and terms. Optional Qdrant retrieval is disabled by default.
+The production image does not include the generated corpus index until it
+passes the release and legal-review gates. The application does not currently
+provide:
 
 - document upload or OCR in the browser UI;
 - historical-law date selection;
@@ -79,7 +82,7 @@ application does not currently provide:
 ## Quick start: Docker Compose
 
 This is the recommended path for the local stack: React, FastAPI, PostgreSQL,
-Redis, and the multi-domain corpus. Qdrant is an optional retrieval adapter
+Redis, and the selected legal corpus. Qdrant is an optional retrieval adapter
 and stays disabled by default.
 
 ### Prerequisites
@@ -95,7 +98,7 @@ cd vietnam-legal-agent
 cp .env.example .env
 ```
 
-Build and verify the multi-domain corpus before starting Compose:
+Build and verify the selected corpus before starting Compose:
 
 ```bash
 python -m pip install -e ".[universal]"
@@ -150,7 +153,7 @@ The Compose services are:
 | `backend` | FastAPI API, bounded workflow, persistence, and readiness checks. |
 | `postgres` | Durable conversation, case, feedback, and run storage. |
 | `redis` | Cache, short-lived context, and rate limiting. |
-| Local legal corpus | Content-locked multi-domain SQLite corpus mounted read-only by the backend. |
+| Local legal corpus | Content-locked SQLite corpus of selected legal sources, mounted read-only by the backend. |
 
 For the complete preview procedure and promotion boundary, see
 [the local-preview runbook](docs/runbooks/local-preview.md).
@@ -242,10 +245,10 @@ Important settings include:
 | `AGENT_PIPELINE_VERSION` | `pipeline-v4` for deterministic bounded workflow; `pipeline-agent` for autonomous ReAct agent loop. |
 | `DATABASE_URL` | PostgreSQL connection; local development may use `HISTORY_DB_PATH` when unset. |
 | `POSTGRES_PASSWORD` | Required by Compose; there is no insecure default. |
-| `QDRANT_URL` / `USE_QDRANT_CLOUD` | Optional vector retrieval adapter for a general legal corpus. |
+| `QDRANT_URL` / `USE_QDRANT_CLOUD` | Optional vector retrieval adapter for selected corpus-backed sources. |
 | `REDIS_URL` | Cache and request-protection backend. |
 | `ENFORCE_LEGAL_SAFETY_CIRCUIT_BREAKER` | Production safety contract; verifier/critic outages fail closed. Must remain `true` in production. |
-| `ENFORCE_LEGAL_READINESS_GATE` / `LEGAL_READINESS_MANIFEST_PATH` | The current review manifest covers only a legacy narrow source. Production is blocked until the multi-domain corpus has a domain-neutral legal review. |
+| `ENFORCE_LEGAL_READINESS_GATE` / `LEGAL_READINESS_MANIFEST_PATH` | The current review manifest covers only a legacy narrow source. Production is blocked until the selected corpus has a domain-neutral legal review. |
 | `ENABLE_OFFICIAL_DELTA_RETRIEVAL` / `OFFICIAL_DELTA_MANIFEST_PATH` | Preview-only exact-instrument lookup for the small official-law delta; disabled by default. |
 | `AGENT_MAX_IN_FLIGHT_TURNS` / `AGENT_ADMISSION_WAIT_SECONDS` | Deployment-wide agent-turn admission (`50` / `2s` by default). |
 | `AGENT_LEASE_TTL_SECONDS` / `AGENT_LEASE_HEARTBEAT_SECONDS` | Redis lease lifetime and heartbeat for long-running turns (`300s` / `30s`). |
@@ -297,7 +300,7 @@ backend/          FastAPI routes, authentication, configuration, and adapters
 src/vietnam_legal_agent/    Domain models, workflow, autonomous agent, retrieval, evidence, and persistence
 frontend-react/   React UI, SSE client, ordinary chat, and browser tests
 scripts/          Corpus synchronization, audit, and indexing utilities
-data/             Multi-domain corpus manifest and versioned evaluation fixtures
+data/             Selected legal-source manifest and versioned evaluation fixtures
 docs/             Architecture, behavior contracts, runbooks, and acceptance notes
 tests/            Unit, contract, integration, evaluation harness, and API tests
 ```
@@ -321,9 +324,10 @@ The standalone Agent Skills package at [`skills/vietnam-legal-source-verifier/`]
 
 ## Evaluation
 
-The deterministic evaluation fixtures cover legal chat across several
-ordinary domains and verify workflow, source, and citation contracts. They are
-engineering checks, not legal ground truth or a claim of production quality.
+The deterministic evaluation fixtures include examples from several topics
+represented in the selected corpus and verify workflow, source, and citation
+contracts. They do not measure complete legal coverage or establish legal
+accuracy or production quality.
 A provider-backed evaluation with reviewed examples is still required before
 making quality or production-readiness claims.
 

@@ -1,8 +1,9 @@
 # Vietnamese Legal Agent Architecture
 
-The product is a general Vietnamese legal assistant. Users describe a legal
-question in ordinary language; they do not need to select a legal domain or
-complete a preset case form.
+The application provides Vietnamese-language legal chat grounded in sources
+included in its active corpus. Users can describe a question in ordinary
+language; they do not need to select a legal domain or complete a preset case
+form. The shared workflow does not imply complete coverage of Vietnamese law.
 
 ## Request flow
 
@@ -12,7 +13,7 @@ flowchart TD
     Input --> Understand[Intent and context understanding]
     Understand --> Route{Route}
     Route -->|Chitchat| Direct[Short direct response]
-    Route -->|Legal question| Retrieve[Multi-domain legal retrieval]
+    Route -->|Legal question| Retrieve[Selected legal-source retrieval]
     Retrieve --> Verify[Evidence and citation checks]
     Verify -->|Supported| Answer[Compose and stream answer]
     Verify -->|Not supported| Stop[Explain what could not be verified]

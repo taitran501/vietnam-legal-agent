@@ -1,6 +1,8 @@
 # Local and Staging Preview
 
-Preview mode exercises legal chat against a content-locked, multi-domain corpus. It does not approve the corpus for production.
+Preview mode exercises legal chat against a content-locked corpus of selected
+Vietnamese legal sources spanning several topics. The corpus is not complete
+coverage of Vietnamese law, and preview mode does not approve it for production.
 
 ## Start a Preview
 

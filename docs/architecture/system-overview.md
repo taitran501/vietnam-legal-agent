@@ -2,10 +2,12 @@
 
 ## Purpose and scope
 
-The application is an ordinary Vietnamese legal-chat assistant. Users ask
-questions, explain a situation, or request procedural steps in their own
-words. The assistant retrieves legal text, checks citations, and persists the
-conversation. No legal topic selects a special default route or corpus.
+The application provides Vietnamese-language legal chat grounded in selected
+sources from its active corpus. Users ask questions, explain a situation, or
+request supported procedural steps in their own words. The assistant retrieves
+available legal text, checks citations, and persists the conversation. The
+corpus does not cover every law or legal topic; no topic label selects a separate
+default route or corpus.
 
 ## Context diagram
 
@@ -16,7 +18,7 @@ flowchart LR
     F --> API[FastAPI]
     API --> W[Legal workflow or ReAct runtime]
     API --> P[Conversation persistence]
-    W --> R[Multi-domain legal retrieval]
+    W --> R[Selected legal-source retrieval]
     R --> V[Evidence and citation checks]
     V --> A[Answer or explain verification gap]
     A --> P
@@ -24,9 +26,10 @@ flowchart LR
     SSE --> F
 ```
 
-The local preview uses a content-locked multi-domain SQLite corpus. Optional
-retrieval adapters are disabled by default. Production remains blocked pending
-legal review and a release artifact for the selected corpus.
+The local preview uses a content-locked SQLite corpus of selected legal
+sources from several topics; it is not complete coverage of Vietnamese law.
+Optional retrieval adapters are disabled by default. Production remains
+blocked pending legal review and a release artifact for the selected corpus.
 
 ## Runtime boundaries
 

@@ -16,7 +16,7 @@ flowchart TB
 | Area | Behavior contract | Primary tests | Owner |
 | --- | --- | --- | --- |
 | Intent understanding | route and task match user intent across legal topics | Python unit / API | domain |
-| Multi-domain retrieval | corpus selection, query retrieval, source provenance | Python unit / API | retrieval |
+| Selected-corpus retrieval | corpus selection, query retrieval, source provenance | Python unit / API | retrieval |
 | Evidence verification | supported claims, effective status, and citation correctness | Python unit / integration | safety |
 | Conversation persistence | turn order, ownership, reload, and legacy state normalization | integration | platform |
 | Agent trajectory | step budget, tool selection, loop detection, budget controller | Python unit + eval harness | agent |

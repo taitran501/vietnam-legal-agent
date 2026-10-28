@@ -2,11 +2,13 @@
 
 ## Request flow
 
-Every legal topic follows the same chat path:
+Requests across topics represented in the selected corpus follow the same chat
+path. A shared path does not mean every topic has relevant or complete source
+coverage:
 
 1. Understand the user question and recent conversation.
 2. Preserve named laws, article numbers, dates, and other explicit anchors.
-3. Search the content-locked multi-domain corpus.
+3. Search the content-locked corpus of selected legal sources.
 4. Check source identity, topical relevance, effective-status metadata, and
    whether the retrieved provisions support the requested claim.
 5. Generate a concise answer with citations to retrieved sources.

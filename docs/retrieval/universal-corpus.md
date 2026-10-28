@@ -1,7 +1,8 @@
-# Universal corpus build
+# Selected legal corpus build
 
-The multi-domain legal retriever is the primary source for ordinary local
-preview chat. Its generated SQLite artifact is not committed to Git because
+The legal retriever searches the selected sources used by local preview chat.
+Those sources span multiple topics but do not form a complete collection of
+Vietnamese law. Its generated SQLite artifact is not committed to Git because
 the current snapshot is approximately 583 MB.
 Every input is content-locked in `data/universal_corpus_manifest.json`.
 
@@ -57,5 +58,7 @@ preview uses it by default, while production configuration remains blocked
 until a domain-neutral legal-review approval and release artifact exist. The
 content lock establishes reproducibility, not legal approval.
 
-The universal retriever serves all legal topics. The older Qdrant snapshot is
-an optional supplement only when a query explicitly matches its narrow scope.
+The universal retriever is shared across queries, but it can return evidence
+only when relevant sources exist in the selected corpus. The older Qdrant
+snapshot is an optional supplement only when a query explicitly matches its
+narrow scope.
