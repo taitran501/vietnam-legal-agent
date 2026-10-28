@@ -219,6 +219,10 @@ jobs:
         run: docker compose -f docker-compose.yml -f docker-compose.ci-smoke.yml config --quiet
       - name: Validate opt-in universal preview configuration
         run: docker compose -f docker-compose.yml -f docker-compose.universal-preview.yml config --quiet
+      - name: Pull runtime images and start data services
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.ci-smoke.yml pull postgres redis nginx
+          docker compose -f docker-compose.yml -f docker-compose.ci-smoke.yml up -d postgres redis
       - name: Build backend and frontend images concurrently
         uses: docker/bake-action@v7
         with:
