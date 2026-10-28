@@ -54,7 +54,9 @@ or formal legal advice.
 
 ### Acceptance & Quality
 
-- [Current Acceptance Status](acceptance_status.md) — verification for the current branch and commit
+- [Portable legal-source verifier skill](../skills/vietnam-legal-source-verifier/SKILL.md) — standalone official-source verification workflow
+- [Corpus attribution and licenses](retrieval/corpus-attribution.md) — license and source terms for each included corpus input
+- [Historical Acceptance Snapshot](acceptance_status.md) — commit-scoped evidence; current workflow triggers are listed separately
 - [Replay and Quality Triage](evaluation/replay-and-triage.md) — engineering replay, provenance, and feedback contracts; not legal ground truth
 - [Guided User Experience Acceptance](browser_acceptance_report_guided_user_experience.md) — latest committed guided-UX snapshot
 
