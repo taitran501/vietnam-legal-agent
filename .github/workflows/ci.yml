@@ -110,26 +110,40 @@ jobs:
           fi
 
   e2e:
-    # Playwright starts its own deterministic API and Vite servers; overlap this job with the other checks.
+    # Each suite gets an isolated deterministic API and Vite server, so the suites can run concurrently.
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        spec: [agent-workflow, live-agent]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-      - run: python -m pip install -e ".[dev]"
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
           cache-dependency-path: frontend-react/package-lock.json
-      - run: npm ci
+      - name: Install Python and Node dependencies in parallel
+        run: |
+          set +e
+          python -m pip install -e ".[dev]" &
+          pip_pid=$!
+          npm --prefix frontend-react ci
+          npm_status=$?
+          wait "$pip_pid"
+          pip_status=$?
+          if [ "$pip_status" -ne 0 ] || [ "$npm_status" -ne 0 ]; then
+            echo "Dependency setup failed (pip=$pip_status, npm=$npm_status)."
+            exit 1
+          fi
+      - run: npx playwright install chromium
         working-directory: frontend-react
-      - run: npx playwright install --with-deps chromium
-        working-directory: frontend-react
-      - run: npm run test:e2e -- --reporter=line
+      - run: npm run test:e2e -- "e2e/${{ matrix.spec }}.spec.ts" --reporter=line
         working-directory: frontend-react
 
   natural-smoke:
