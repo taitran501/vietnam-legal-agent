@@ -100,8 +100,13 @@ data/*.sqlite3.backup-*
 # Cache
 data/cache/
 
-# Executables & local utilities
+# Executables and root-level local utilities
 *.exe
-tools/
-.agents/
-agent/
+/tools/
+/agent/
+
+# Keep local agent scratch private while tracking reusable repo skills
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/**

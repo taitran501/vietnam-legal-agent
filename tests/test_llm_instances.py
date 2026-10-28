@@ -265,8 +265,8 @@ class TestLLMInstances:
 
     def test_gemini_model_cascading(self, monkeypatch):
         """GeminiPooledChat should cascade to next model when primary model hits rate limit."""
-        from vietnam_legal_agent.infra.llm_instances import GeminiKeyManager, GeminiPooledChat
-        import openai
+
+        from vietnam_legal_agent.infra.llm_instances import GeminiKeyManager
 
         km = GeminiKeyManager(["k1", "k2"], min_interval_per_key=0.0, cooldown_sec=60.0)
         chat = GeminiPooledChat(
@@ -283,7 +283,7 @@ class TestLLMInstances:
         def fake_generate(self_inner, messages, stop=None, run_manager=None, **kwargs):
             calls.append((self_inner.model_name, self_inner.root_client.api_key))
             if self_inner.model_name == "gemini-3.8-flash":
-                raise Exception("429 ResourceExhausted: Quota exceeded for gemini-3.8-flash")
+                raise RuntimeError("429 ResourceExhausted: Quota exceeded for gemini-3.8-flash")
             return "success_response"
 
         monkeypatch.setattr("langchain_openai.ChatOpenAI._generate", fake_generate)

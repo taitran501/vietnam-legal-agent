@@ -16,20 +16,21 @@ Models:
 import importlib
 import logging
 import threading
+from collections.abc import AsyncIterator, Iterator
 from functools import lru_cache
 from typing import Any
 
 from langchain_core.embeddings import Embeddings
+from langchain_core.outputs import ChatGenerationChunk
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from pydantic import Field
 
 from vietnam_legal_agent.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 
-import asyncio
 import time
-from collections.abc import AsyncIterator, Iterator
 
 import openai
 
@@ -213,7 +214,7 @@ class GeminiPooledChat(ChatOpenAI):
     key_manager: Any = None
     max_key_retries: int = 2
     fallback_model: str | None = None
-    cascade_models: list[str] = []
+    cascade_models: list[str] = Field(default_factory=list)
     primary_model: str = ""
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
@@ -303,9 +304,14 @@ class GeminiPooledChat(ChatOpenAI):
         self.model_name = self.primary_model
         return res
 
-    def _stream(self, messages, stop=None, run_manager=None, **kwargs):
+    def _stream(
+        self,
+        *args: Any,
+        stream_usage: bool | None = None,
+        **kwargs: Any,
+    ) -> Iterator[ChatGenerationChunk]:
         if not self.key_manager:
-            yield from super()._stream(messages, stop=stop, run_manager=run_manager, **kwargs)
+            yield from super()._stream(*args, stream_usage=stream_usage, **kwargs)
             return
         last_exc: Exception | None = None
         models_to_try = self.cascade_models or ([self.model_name, self.fallback_model] if self.fallback_model else [self.model_name])
@@ -320,7 +326,7 @@ class GeminiPooledChat(ChatOpenAI):
                     with _global_gemini_sync_lock:
                         self.model_name = model
                         self.root_client.api_key = key
-                        yield from super()._stream(messages, stop=stop, run_manager=run_manager, **kwargs)
+                        yield from super()._stream(*args, stream_usage=stream_usage, **kwargs)
                     return
                 except Exception as exc:
                     if _is_retryable_gemini_error(exc):
@@ -338,12 +344,17 @@ class GeminiPooledChat(ChatOpenAI):
         with _global_gemini_sync_lock:
             self.model_name = fallback_m
             self.root_client.api_key = key
-            yield from super()._stream(messages, stop=stop, run_manager=run_manager, **kwargs)
+            yield from super()._stream(*args, stream_usage=stream_usage, **kwargs)
             self.model_name = self.primary_model
 
-    async def _astream(self, messages, stop=None, run_manager=None, **kwargs):
+    async def _astream(
+        self,
+        *args: Any,
+        stream_usage: bool | None = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatGenerationChunk]:
         if not self.key_manager:
-            async for chunk in super()._astream(messages, stop=stop, run_manager=run_manager, **kwargs):
+            async for chunk in super()._astream(*args, stream_usage=stream_usage, **kwargs):
                 yield chunk
             return
         last_exc: Exception | None = None
@@ -358,7 +369,7 @@ class GeminiPooledChat(ChatOpenAI):
                 try:
                     self.model_name = model
                     self.root_async_client.api_key = key
-                    async for chunk in super()._astream(messages, stop=stop, run_manager=run_manager, **kwargs):
+                    async for chunk in super()._astream(*args, stream_usage=stream_usage, **kwargs):
                         yield chunk
                     return
                 except Exception as exc:
@@ -376,7 +387,7 @@ class GeminiPooledChat(ChatOpenAI):
         key = self.key_manager.acquire_key(model=fallback_m)
         self.model_name = fallback_m
         self.root_async_client.api_key = key
-        async for chunk in super()._astream(messages, stop=stop, run_manager=run_manager, **kwargs):
+        async for chunk in super()._astream(*args, stream_usage=stream_usage, **kwargs):
             yield chunk
         self.model_name = self.primary_model
 
@@ -499,7 +510,7 @@ class LocalSentenceTransformerEmbeddings(Embeddings):
             try:
                 torch: Any = importlib.import_module("torch")
                 self.device = "cuda" if torch.cuda.is_available() else "cpu"
-            except Exception:
+            except (ImportError, OSError, RuntimeError, AttributeError):
                 self.device = "cpu"
         else:
             self.device = req_dev
@@ -511,8 +522,8 @@ class LocalSentenceTransformerEmbeddings(Embeddings):
                 # Throttling CPU threads avoids pegging all 16 cores and freezing OS desktop
                 max_threads = max(1, min(4, (os.cpu_count() or 4) // 2))
                 torch.set_num_threads(max_threads)
-            except Exception:
-                pass
+            except (ImportError, OSError, RuntimeError, AttributeError) as exc:
+                logger.debug("Unable to limit Torch CPU threads: %s", exc)
 
     def _get_model(self):
         with _st_lock:
@@ -523,7 +534,7 @@ class LocalSentenceTransformerEmbeddings(Embeddings):
                     from sentence_transformers import SentenceTransformer
                     try:
                         model = SentenceTransformer(self.model_name, device=self.device, local_files_only=True)
-                    except Exception:
+                    except OSError:
                         try:
                             model = SentenceTransformer(self.model_name, device=self.device)
                         except Exception as dev_err:

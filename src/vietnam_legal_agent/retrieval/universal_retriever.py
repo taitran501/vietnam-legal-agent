@@ -387,6 +387,16 @@ class UniversalLegalRetriever:
             for anchor in anchors
         )
 
+        laws, phrases, _words = self._extract_components(clean_query)
+        has_named_instrument = any(
+            re.match(
+                r"^\s*(?:bộ\s+luật|luật|nghị\s+định|thông\s+tư|nghị\s+quyết|quyết\s+định|pháp\s+lệnh)\s+\S+",
+                law,
+                re.IGNORECASE,
+            )
+            for law in laws
+        )
+
         selected_scope = topic_filter
         scope_sql = ""
         scope_params: tuple[str, ...] = ()
@@ -395,14 +405,18 @@ class UniversalLegalRetriever:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
 
-            if not selected_scope:
+            # A named instrument is a stronger scope than an inferred domain.
+            # In the corpus, national laws are indexed under "Luật Quốc gia",
+            # while their subject can be a specific domain. Applying a domain
+            # filter here can exclude the very law the user named and return a
+            # same-topic article from a different instrument.
+            if not selected_scope and not has_named_instrument:
                 selected_scope = self._detect_corpus_topic(clean_query, cursor)
             if selected_scope:
                 scope = selected_scope.casefold()
                 scope_sql = " AND lower(a.topic) = ?"
                 scope_params = (scope,)
 
-            laws, phrases, _words = self._extract_components(clean_query)
             terms = self._extract_search_terms(clean_query, cursor)
             if not terms:
                 terms = re.findall(r"\b[\w\.]+\b", clean_query)[:4]

@@ -1,14 +1,3 @@
----
-title: Vn Legal Agent
-emoji: ⚖️
-colorFrom: yellow
-colorTo: amber
-sdk: gradio
-app_file: app.py
-pinned: false
-license: apache-2.0
----
-
 # Vietnam Legal Agent
 
 [![CI](https://github.com/taitran501/vietnam-legal-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/taitran501/vietnam-legal-agent/actions/workflows/ci.yml)
@@ -31,9 +20,10 @@ required dependency is missing.
 - The repository supports a local Docker preview and a deterministic browser
   test environment.
 - GitHub Actions validates the backend, frontend, browser, pilot-capacity,
-  Compose-smoke, and deterministic evaluation contracts.
-- The provider-backed `Live Agent Evaluation` is manual-only and runs against
-  the protected `pilot` environment; it is not implied by pull-request CI.
+  Compose-smoke, and deterministic evaluation contracts. CI and Promptfoo run
+  for pull requests targeting `main`, pushes to `main`, and manual dispatch.
+- The provider-backed `Live Agent Evaluation` remains manual-only and runs
+  against the protected `pilot` environment; it is not implied by pull-request CI.
 - There is no hosted public demo in this repository.
 - Production legal capability remains subject to technical corpus integrity,
   versioned effective-date metadata, deployment configuration, and a review
@@ -213,8 +203,9 @@ approval is available.
 
 ## Continuous integration contract
 
-The workflow in `.github/workflows/ci.yml` runs on pull requests and pushes to
-`main`:
+The workflows in `.github/workflows/ci.yml` and
+`.github/workflows/promptfoo-eval.yml` run for pull requests targeting `main`,
+pushes to `main`, and manual `workflow_dispatch`:
 
 | Job | Checks |
 | --- | --- |
@@ -224,7 +215,7 @@ The workflow in `.github/workflows/ci.yml` runs on pull requests and pushes to
 | `pilot-load` | Redis-backed two-worker SSE contract: 50 concurrent turns, saturation, and lease cleanup. |
 | `e2e` | Playwright browser tests after the backend and frontend jobs pass. |
 | `compose-smoke` | Builds the preview topology and checks gateway/backend/dependency readiness. |
-| `Promptfoo Deterministic Evaluation` | Pull-request replay matrix backed by the internal claim/source verifier; no real provider. |
+| `Promptfoo Deterministic Evaluation` | PR/main-push/manual replay matrix backed by the internal claim/source verifier; no real provider. |
 | `Live Agent Evaluation` | Manual `workflow_dispatch` only; real provider/corpus checks in the protected `pilot` environment. |
 
 The CI badge above reports the repository workflow. It does not claim legal
@@ -324,6 +315,10 @@ replay checks event ordering, trace/context continuity, source payloads, and
 failure artifacts. Fixtures are engineering inputs and never require a legal
 reviewer or become legal ground truth.
 
+## Portable legal-source verifier skill
+
+The standalone Agent Skills package at [`skills/vietnam-legal-source-verifier/`](skills/vietnam-legal-source-verifier/SKILL.md) guides an agent through official-source discovery, current-effect checks, precise citations, fact/evidence separation, and safe stops when evidence is insufficient. It can be packaged independently; it contains no application backend, corpus, or application dependencies. The package includes 24 review cases and its own MIT license.
+
 ## Evaluation
 
 The deterministic evaluation fixtures cover legal chat across several
@@ -351,4 +346,4 @@ See [external release gates](docs/runbooks/external-release-gates.md),
 
 ## License
 
-[MIT](LICENSE)
+Application code is licensed under [MIT](LICENSE). Corpus terms are source-specific and are not replaced by the repository license: the pinned Pháp điển dataset is marked CC BY 4.0, UTS_VLC is marked MIT, and the official-law delta manifest requires source attribution and its official URL. See [corpus attribution and licenses](docs/retrieval/corpus-attribution.md) and the manifests under `data/`. The portable skill package has its own MIT license.

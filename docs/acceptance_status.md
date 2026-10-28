@@ -1,4 +1,4 @@
-# Current acceptance status
+# Historical acceptance snapshot
 
 **Checked:** 2026-08-26
 **Evidence commit:** `22d339c` (`main` in `vietnam-legal-agent`)
@@ -10,9 +10,7 @@
 > describe an older checkout and do not validate the current migration or
 > approve the broader corpus for production.
 
-This file records checks against the current checkout. It is not a replacement
-for the commit-scoped historical reports; deployment, provider, and corpus
-freshness checks remain separate operational concerns.
+The measurements below are a historical snapshot for the named evidence commit and environment. They do not describe this branch or establish current product quality. Deployment, provider, and corpus freshness checks remain separate operational concerns.
 
 ## Local checks
 
@@ -44,14 +42,13 @@ acceptance environment: it cannot import the declared `sse-starlette`
 dependency. Use the repository environment or install `.[dev]` before
 interpreting a test result.
 
-## What this validates
+## What the historical snapshot validated
 
 - The backend CI path now runs corpus synchronization, unit/integration tests,
   deterministic evaluation, Ruff, and the complete backend mypy boundary.
 - CI also installs Chromium and runs the browser journey suite.
-- CI runs on pull requests, all branch pushes, and manual dispatch; it
-  also runs `pip check` and a real Docker Compose gateway/backend/dependency
-  smoke overlay in preview mode.
+- The historical evidence included `pip check` and a Docker Compose
+  gateway/backend/dependency smoke overlay in preview mode.
 - The product language is **Vietnam Legal Agent**; the package namespace and
   legacy data formats are compatibility details rather than product defaults.
 - Redis rate limiting is fail-closed by default; an unavailable Redis produces
@@ -102,9 +99,9 @@ These are deliberate release gates, not claims that local tests can satisfy:
   current production quality. The live provider-backed evaluation has not been
   run in this checkout because it is a manual `workflow_dispatch` gate and the
   protected GitHub `pilot` environment currently returns HTTP 404.
-- GitHub repository metadata is still incomplete: the current authenticated
-  record has an empty description, homepage, and topic list. This is an
-  administrator-owned release hygiene task, not a code or legal-review gate.
+- At the 2026-08-26 snapshot date, GitHub repository metadata was empty. It
+  was configured on 2026-10-28; see the external release-gates runbook for the
+  checked description, topics, license, and intentionally blank homepage.
 - Legal-domain ground truth authoring is outside this framework/tracing
   acceptance scope; runtime safety still depends on source hashes, provenance,
   effective-date metadata, and fail-closed claim checks.
@@ -112,3 +109,7 @@ These are deliberate release gates, not claims that local tests can satisfy:
 The historical V4 acceptance report remains valid only for the commit and
 environment named inside that report. Its live local-stack result is useful
 historical evidence, but it is not current production approval.
+
+## Workflow trigger contract in this branch
+
+The application CI and deterministic Promptfoo workflows are configured for pull requests targeting `main`, pushes to `main`, and manual `workflow_dispatch`. The provider-backed Live Agent Evaluation remains manual-only. Workflow triggers do not imply that a run has passed; use the PR head's Actions checks for current evidence.
