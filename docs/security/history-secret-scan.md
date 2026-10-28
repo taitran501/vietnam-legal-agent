@@ -36,3 +36,17 @@ The follow-up scan used full redaction. Only the finding count and scan metadata
 | Reachable Git history | `gitleaks git --redact=100 --log-opts=--all --report-format=json --report-path=<outside repository>` | 0 |
 
 The scan ran at the final agent-ready code head with full redaction. The output and JSON report were kept outside the repository; only the finding count, history boundary, scanner version, checksum, and scanned head are recorded here.
+
+## Full remote-ref audit
+
+- Date: 2026-10-28
+- Head at scan time: `1d5a7218ab67740f40e8b88edd3ac607a52dc6bc`
+- Scanner: Gitleaks 8.30.1; official Windows x64 release archive SHA-256: `d29144deff3a68aa93ced33dddf84b7fdc26070add4aa0f4513094c8332afc4e`.
+- Ref scope: all local refs after fetching the remote branches `main`, `chore/agent-ready-repo`, `fix/backend-runtime-contracts`, and `fix/browser-auth-regressions`.
+- History boundary: 228 reachable commits.
+
+| Scope | Command scope | Findings |
+| --- | --- | ---: |
+| Reachable Git history across fetched refs | `gitleaks git --redact=100 --log-opts=--all --report-format=json --report-path=<outside repository>` | 0 |
+
+After the scan, the two old `fix/*` refs were removed from GitHub after confirming that neither had an associated pull request and that their changes were obsolete or superseded in `main`. Their commit SHAs remain available in local backup branches. The current GitHub remote has only `main` and `chore/agent-ready-repo`.
