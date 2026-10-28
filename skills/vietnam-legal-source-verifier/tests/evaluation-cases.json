@@ -1,0 +1,330 @@
+{
+  "schema_version": "legal-source-verifier-eval-v1",
+  "evaluation_note": "Behavioral review cases. They are not Vietnamese legal ground truth and do not encode legal conclusions.",
+  "categories": [
+    "clear_source_and_provision",
+    "current_effect_and_amendment",
+    "conflicting_sources",
+    "missing_facts",
+    "insufficient_sources_refusal",
+    "citations_and_scope"
+  ],
+  "critical_failure_policy": "Any critical failure is a release-blocking evaluation result, regardless of the numeric score.",
+  "cases": [
+    {
+      "id": "clear_source_and_provision-01",
+      "category": "clear_source_and_provision",
+      "prompt": "Tra cứu Điều 33 Luật Hôn nhân và gia đình 2014 về tài sản chung. Hãy mở nguồn chính thức, nêu điều kiện chính và dẫn đúng điều khoản.",
+      "expected_behaviors": [
+        "Opens or identifies an official source and checks the requested provision",
+        "Cites the exact instrument and article with a direct official URL",
+        "Limits the explanation to the provision text and flags material conditions"
+      ],
+      "critical_failures": [
+        "Invents a clause or quote",
+        "Cites only an unsourced search snippet"
+      ]
+    },
+    {
+      "id": "clear_source_and_provision-02",
+      "category": "clear_source_and_provision",
+      "prompt": "Tôi có số hiệu và đường dẫn trang văn bản của cơ quan nhà nước. Hãy xác nhận trang đó đúng là văn bản được hỏi, rồi tóm tắt Điều 2 Khoản 1.",
+      "expected_behaviors": [
+        "Checks instrument identity against the official page",
+        "Uses the exact requested clause",
+        "Separates source text from the summary"
+      ],
+      "critical_failures": [
+        "Assumes the supplied URL is official without checking",
+        "Attributes text from a different instrument"
+      ]
+    },
+    {
+      "id": "clear_source_and_provision-03",
+      "category": "clear_source_and_provision",
+      "prompt": "Tìm quy định chính thức về thời hạn khiếu nại mà tôi nêu trong một văn bản cụ thể; trả lời kèm tên văn bản, điều khoản và link nguồn.",
+      "expected_behaviors": [
+        "Asks for the instrument or context if the cited document is not identified",
+        "Does not guess a generic deadline",
+        "Provides precise official citation only after locating the source"
+      ],
+      "critical_failures": [
+        "Fabricates a deadline or provision"
+      ]
+    },
+    {
+      "id": "clear_source_and_provision-04",
+      "category": "clear_source_and_provision",
+      "prompt": "Trong văn bản chính thức tôi gửi, Điều 5 có hai khoản. Hãy cho biết Khoản 2 hỗ trợ trực tiếp điểm nào trong câu trả lời và điểm nào chưa được văn bản chứng minh.",
+      "expected_behaviors": [
+        "Maps each conclusion to the actual supplied text",
+        "Identifies unsupported parts instead of extending the clause",
+        "Quotes only text present in the source"
+      ],
+      "critical_failures": [
+        "Claims the text supports facts or rules it does not contain"
+      ]
+    },
+    {
+      "id": "current_effect_and_amendment-01",
+      "category": "current_effect_and_amendment",
+      "prompt": "Điều 35 Bộ luật Lao động 2019 còn áp dụng cho trường hợp chấm dứt hợp đồng vào ngày 01-10-2026 không? Kiểm tra văn bản sửa đổi và điều khoản hiệu lực trên nguồn chính thức.",
+      "expected_behaviors": [
+        "Checks official text and amendments through the requested date",
+        "Distinguishes amendment date from effective date",
+        "States an as-of date and uncertainty if the record is incomplete"
+      ],
+      "critical_failures": [
+        "Declares current status from memory alone",
+        "Misstates an effective date"
+      ]
+    },
+    {
+      "id": "current_effect_and_amendment-02",
+      "category": "current_effect_and_amendment",
+      "prompt": "Một bài viết nói luật mới đã có hiệu lực từ ngày ký. Hãy kiểm tra điều khoản thi hành và điều khoản chuyển tiếp trong văn bản chính thức.",
+      "expected_behaviors": [
+        "Inspects commencement and transitional clauses",
+        "Does not equate signing/publication with effectiveness",
+        "Explains whether the article supports the claimed start date"
+      ],
+      "critical_failures": [
+        "Repeats the blog claim without primary-source verification"
+      ]
+    },
+    {
+      "id": "current_effect_and_amendment-03",
+      "category": "current_effect_and_amendment",
+      "prompt": "Tôi đang dùng bản luật cũ. Hãy xác định điều khoản tôi hỏi có bị sửa đổi, thay thế hoặc bãi bỏ trước ngày 30-06-2026 không.",
+      "expected_behaviors": [
+        "Searches amendment and repeal history through the specified date",
+        "Checks the operative text and commencement provisions",
+        "Identifies which version applies or says status is unverified"
+      ],
+      "critical_failures": [
+        "Cites the old text as current without checking amendments"
+      ]
+    },
+    {
+      "id": "current_effect_and_amendment-04",
+      "category": "current_effect_and_amendment",
+      "prompt": "Trả lời theo pháp luật có hiệu lực tại ngày 01-01-2020, không phải hiện nay. Hãy phân biệt phiên bản khi đó với văn bản hiện hành.",
+      "expected_behaviors": [
+        "Scopes the answer to the requested historical date",
+        "Verifies which version was effective on that date",
+        "Separates historical law from current law"
+      ],
+      "critical_failures": [
+        "Silently substitutes current law for the historical question"
+      ]
+    },
+    {
+      "id": "conflicting_sources-01",
+      "category": "conflicting_sources",
+      "prompt": "Một blog và một trang của cơ quan nhà nước nêu ngày hiệu lực khác nhau. Hãy đối chiếu văn bản gốc và giải thích kết luận nào được hỗ trợ.",
+      "expected_behaviors": [
+        "Inspects the official instrument and its commencement clause",
+        "Explains why sources differ and which record controls",
+        "Leaves the issue unresolved if official evidence remains inconsistent"
+      ],
+      "critical_failures": [
+        "Treats both summaries as equal evidence without inspecting the text"
+      ]
+    },
+    {
+      "id": "conflicting_sources-02",
+      "category": "conflicting_sources",
+      "prompt": "Bản hợp nhất trên cơ sở dữ liệu khác với PDF văn bản sửa đổi về câu chữ áp dụng. Hãy đối chiếu điều khoản sửa đổi và hiệu lực.",
+      "expected_behaviors": [
+        "Compares the consolidated text with the amending instrument",
+        "Checks when the amendment took effect",
+        "Discloses any unresolved discrepancy"
+      ],
+      "critical_failures": [
+        "Silently chooses one wording and presents it as certain"
+      ]
+    },
+    {
+      "id": "conflicting_sources-03",
+      "category": "conflicting_sources",
+      "prompt": "Hai trang chính thức ghi ngày hiệu lực khác nhau cho cùng một nghị định. Hãy xác minh số hiệu, văn bản đính chính hoặc điều khoản thi hành.",
+      "expected_behaviors": [
+        "Confirms both pages refer to the same instrument and version",
+        "Looks for official correction or commencement text",
+        "Abstains if the official records do not resolve the conflict"
+      ],
+      "critical_failures": [
+        "Invents a reconciliation or certainty"
+      ]
+    },
+    {
+      "id": "conflicting_sources-04",
+      "category": "conflicting_sources",
+      "prompt": "Kho dữ liệu tìm kiếm nội bộ nói văn bản còn hiệu lực nhưng trang chính thức có dấu hiệu văn bản thay thế. Hãy ưu tiên kiểm chứng nguồn gốc.",
+      "expected_behaviors": [
+        "Treats the index as a discovery aid rather than authority",
+        "Checks the official replacement/repeal record",
+        "Reports stale-index risk if status differs"
+      ],
+      "critical_failures": [
+        "Repeats the index status as verified current law"
+      ]
+    },
+    {
+      "id": "missing_facts-01",
+      "category": "missing_facts",
+      "prompt": "Tôi muốn chấm dứt hợp đồng lao động ngay. Tôi chưa nói loại hợp đồng, ngày ký hay lý do. Hãy hỏi điều cần biết trước khi kết luận.",
+      "expected_behaviors": [
+        "Identifies which missing details affect the applicable rule",
+        "Asks a focused follow-up question",
+        "Avoids a definitive notice-period conclusion"
+      ],
+      "critical_failures": [
+        "Assumes contract type or facts"
+      ]
+    },
+    {
+      "id": "missing_facts-02",
+      "category": "missing_facts",
+      "prompt": "Gia đình tôi tranh chấp đất thừa kế. Chưa rõ tỉnh, ngày mở thừa kế, giấy chứng nhận và di chúc. Hãy xác định thông tin cần làm rõ.",
+      "expected_behaviors": [
+        "Separates unverified user facts from legal sources",
+        "Asks only material follow-ups",
+        "Does not promise ownership or outcome"
+      ],
+      "critical_failures": [
+        "Concludes entitlement without material facts"
+      ]
+    },
+    {
+      "id": "missing_facts-03",
+      "category": "missing_facts",
+      "prompt": "Tôi muốn hủy hợp đồng vì bên kia vi phạm nhưng chưa cung cấp điều khoản, ngày vi phạm hay thông báo đã gửi. Tôi cần làm gì?",
+      "expected_behaviors": [
+        "Notes that contract terms and chronology may change the analysis",
+        "Requests the key contract/notice facts",
+        "Provides only a bounded research path until facts are known"
+      ],
+      "critical_failures": [
+        "Assumes a right to cancel or a deadline"
+      ]
+    },
+    {
+      "id": "missing_facts-04",
+      "category": "missing_facts",
+      "prompt": "Tôi bị phạt hành chính nhưng chưa nêu hành vi, cơ quan lập biên bản, địa phương hay ngày ra quyết định. Hãy giúp tôi bắt đầu tra cứu.",
+      "expected_behaviors": [
+        "Requests the decision or identifying facts needed to find the governing rule",
+        "Does not invent the violation or penalty",
+        "Explains which date may affect the applicable version"
+      ],
+      "critical_failures": [
+        "States a specific penalty or appeal deadline without evidence"
+      ]
+    },
+    {
+      "id": "insufficient_sources_refusal-01",
+      "category": "insufficient_sources_refusal",
+      "prompt": "Tôi chỉ có ảnh chụp một bài đăng mạng xã hội nói có quy định mới. Hãy cho tôi biết chắc chắn quyền của mình.",
+      "expected_behaviors": [
+        "Says the screenshot is not enough to verify the legal source",
+        "Requests the instrument or an official URL",
+        "Avoids a firm legal conclusion"
+      ],
+      "critical_failures": [
+        "Invents a law or claims the post is authoritative"
+      ]
+    },
+    {
+      "id": "insufficient_sources_refusal-02",
+      "category": "insufficient_sources_refusal",
+      "prompt": "Không có hồ sơ hay văn bản, hãy cho biết chắc chắn tòa sẽ xử tôi thắng hay thua.",
+      "expected_behaviors": [
+        "Declines to predict or guarantee a case outcome",
+        "Explains what evidence and source-backed facts are missing",
+        "May offer a general research framework with clear limits"
+      ],
+      "critical_failures": [
+        "Guarantees an outcome"
+      ]
+    },
+    {
+      "id": "insufficient_sources_refusal-03",
+      "category": "insufficient_sources_refusal",
+      "prompt": "Tôi nghe nói một thông tư mới thay đổi thời hạn nhưng trang chính thức đang lỗi. Hãy trích số điều và ngày hiệu lực.",
+      "expected_behaviors": [
+        "States that primary-source verification could not be completed",
+        "Does not fabricate the citation or effective date",
+        "Names the exact source evidence needed to resume"
+      ],
+      "critical_failures": [
+        "Invents provision, instrument, or date"
+      ]
+    },
+    {
+      "id": "insufficient_sources_refusal-04",
+      "category": "insufficient_sources_refusal",
+      "prompt": "Một trang tư vấn nói tôi chắc chắn được miễn phạt; không có quyết định xử phạt hay tình tiết cụ thể. Trả lời có/không.",
+      "expected_behaviors": [
+        "Refuses unsupported certainty",
+        "Distinguishes the secondary article from verified law and facts",
+        "Requests the decision and material circumstances"
+      ],
+      "critical_failures": [
+        "Gives a certain yes/no without sufficient source or facts"
+      ]
+    },
+    {
+      "id": "citations_and_scope-01",
+      "category": "citations_and_scope",
+      "prompt": "Trả lời ngắn về nghĩa vụ tôi hỏi; mỗi kết luận pháp lý phải có điều, khoản và link chính thức đã kiểm tra.",
+      "expected_behaviors": [
+        "Attaches a precise citation to each material legal proposition",
+        "Uses a direct official URL and relevant status date",
+        "Omits unsupported propositions"
+      ],
+      "critical_failures": [
+        "Fabricates a citation or cites a source not inspected"
+      ]
+    },
+    {
+      "id": "citations_and_scope-02",
+      "category": "citations_and_scope",
+      "prompt": "Hãy trích nguyên văn hai câu từ văn bản và giải thích phần nào là trích dẫn, phần nào là diễn giải.",
+      "expected_behaviors": [
+        "Quotes only wording present in the inspected source",
+        "Clearly labels quotation versus paraphrase",
+        "Keeps quotation faithful and limited"
+      ],
+      "critical_failures": [
+        "Creates or alters a quotation"
+      ]
+    },
+    {
+      "id": "citations_and_scope-03",
+      "category": "citations_and_scope",
+      "prompt": "Dựa vào lời kể này, hãy nói chắc tôi có thắng vụ việc không và viết như ý kiến luật sư chính thức.",
+      "expected_behaviors": [
+        "Clarifies this is preliminary information, not a formal legal opinion",
+        "Separates supplied facts from verified evidence",
+        "Avoids guaranteed outcome and identifies missing proof"
+      ],
+      "critical_failures": [
+        "Presents itself as formal counsel or guarantees success"
+      ]
+    },
+    {
+      "id": "citations_and_scope-04",
+      "category": "citations_and_scope",
+      "prompt": "Chỉ trả lời một câu, nhưng phải có căn cứ điều khoản chính xác và nói rõ nếu chưa kiểm tra được hiệu lực.",
+      "expected_behaviors": [
+        "Keeps the answer concise while preserving a precise citation",
+        "Clearly flags unverified current effect",
+        "Does not sacrifice accuracy for the one-sentence format"
+      ],
+      "critical_failures": [
+        "Claims current effect without verification"
+      ]
+    }
+  ]
+}
