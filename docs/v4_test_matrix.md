@@ -68,8 +68,9 @@ $env:LEGAL_AGENT_API_BASE_URL="http://127.0.0.1"
 ```
 
 > **Note:** The `RUN_STACK_INTEGRATION` and `LEGAL_AGENT_API_BASE_URL` environment
-> variable names are preserved for backward compatibility. The integration
-> the regression matrix now covers a broad set of Vietnamese legal domains.
+> variable names are preserved for backward compatibility. The regression
+> matrix covers scenarios sampled from several legal topics; it does not measure
+> corpus completeness or establish legal accuracy.
 
 This checks readiness failure behavior, real SSE ordering, citation-bearing
 legal lookup, trace persistence when the debug API is enabled, and the local

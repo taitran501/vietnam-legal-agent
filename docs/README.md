@@ -1,12 +1,12 @@
 # Architecture and Operational Documentation
 
-This is the documentation index for Vietnam Legal Agent. The agent uses one
-ordinary legal-chat workflow across legal topics. Its content-locked Ministry
-of Justice corpus is the primary source for the multi-domain preview; optional
-retrieval adapters are disabled by default. The generated corpus is not yet
-included in the production release. A supported route does not imply complete
-source coverage. This documentation does not constitute official legal text
-or formal legal advice.
+This is the documentation index for Vietnam Legal Agent. The application uses
+one legal-chat workflow for questions about topics represented in its selected
+sources. The local preview corpus is content-locked and based on a Ministry of
+Justice snapshot and the tracked UTS_VLC input; it does not cover Vietnamese law
+in full. Optional retrieval adapters are disabled by default, and the generated
+corpus is not included in the production release. This documentation is not
+official legal text or formal legal advice.
 
 ## Sources of Truth
 

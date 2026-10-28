@@ -4,7 +4,7 @@
 
 1. The user opens a conversation and types a question in their own words.
 2. The assistant uses conversation context to understand the request and
-   searches the multi-domain legal corpus.
+   searches the selected legal corpus for relevant sources.
 3. It answers with supporting sources and citations, or says which point could
    not be verified.
 4. The user can ask a follow-up in the same conversation.

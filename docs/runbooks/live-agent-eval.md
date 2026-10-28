@@ -1,6 +1,11 @@
 # Live Agent Evaluation Runbook
 
-The `Live Agent Evaluation` workflow runs the autonomous `pipeline-agent` with the pinned multi-domain legal corpus and a real OpenAI provider. It is `workflow_dispatch`-only and uses the protected GitHub environment named `pilot`. Deterministic pull-request checks do not replace this provider-backed measurement.
+The `Live Agent Evaluation` workflow runs the autonomous `pipeline-agent` with
+the pinned corpus of selected legal sources and a real OpenAI provider. The
+corpus spans several topics but is not a complete collection of Vietnamese law.
+The workflow is `workflow_dispatch`-only and uses the protected GitHub
+environment named `pilot`. Deterministic pull-request checks do not replace
+this provider-backed measurement.
 
 ## What the gate proves
 

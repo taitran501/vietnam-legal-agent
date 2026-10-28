@@ -54,10 +54,11 @@ that workflow.
 
 ## Source and verification boundaries
 
-- The multi-domain corpus is the default legal retrieval source in preview.
-- Optional retrieval adapters must use a reviewed multi-domain corpus before
-  they can be enabled alongside the default corpus.
+- The selected legal corpus is the default retrieval source in preview; it
+  contains sources for several topics but does not cover Vietnamese law in full.
+- Optional retrieval adapters can be enabled alongside the default corpus only
+  after their source set has been explicitly scoped and reviewed.
 - Retrieved material supplies evidence; it does not itself certify that every
   instrument is current or legally reviewed.
 - Production requires a domain-neutral review and promotion gate. The legacy
-  review manifest does not approve the full multi-domain corpus.
+  review manifest does not approve the selected corpus as a whole.
