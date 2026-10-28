@@ -19,7 +19,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.5"
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
       - uses: actions/setup-node@v4
         with:
           node-version: "22.22.x"
@@ -28,7 +32,7 @@ jobs:
           set +e
           npx --yes promptfoo@0.122.0 --version &
           promptfoo_pid=$!
-          python -m pip install -e ".[dev]" &
+          uv pip install --system -e ".[dev]" &
           pip_pid=$!
 
           wait "$promptfoo_pid"
