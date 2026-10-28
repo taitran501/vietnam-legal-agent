@@ -219,24 +219,13 @@ jobs:
         run: docker compose -f docker-compose.yml -f docker-compose.ci-smoke.yml config --quiet
       - name: Validate opt-in universal preview configuration
         run: docker compose -f docker-compose.yml -f docker-compose.universal-preview.yml config --quiet
-      - name: Build backend image with GitHub Actions cache
-        uses: docker/build-push-action@v6
+      - name: Build backend and frontend images concurrently
+        uses: docker/bake-action@v7
         with:
-          context: .
-          file: Dockerfile.backend
-          tags: ci-vietnam-legal-agent-backend
+          source: .
+          files: docker-bake.ci.hcl
+          targets: backend,frontend
           load: true
-          cache-from: type=gha,scope=compose-backend
-          cache-to: type=gha,scope=compose-backend,mode=max,ignore-error=true
-      - name: Build frontend image with GitHub Actions cache
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.frontend
-          tags: ci-vietnam-legal-agent-frontend
-          load: true
-          cache-from: type=gha,scope=compose-frontend
-          cache-to: type=gha,scope=compose-frontend,mode=max,ignore-error=true
       - name: Start the Compose topology from the built images
         run: docker compose -f docker-compose.yml -f docker-compose.ci-smoke.yml up -d --no-build
       - name: Verify gateway liveness and safe-degraded preview readiness
