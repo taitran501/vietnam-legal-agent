@@ -19,7 +19,6 @@ import copy
 import logging
 import math
 import pickle
-from pathlib import Path
 import random
 import re
 import threading
@@ -30,6 +29,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from functools import lru_cache
+from pathlib import Path
 from typing import Any, TypeAlias, TypeVar
 from uuid import UUID
 
@@ -253,8 +253,8 @@ def _build_article_index():
         cache_file = cache_dir / f"article_index_{safe_name}.pkl"
         if cache_file.exists():
             try:
-                with open(cache_file, "rb") as f:
-                    cached = pickle.load(f)
+                with open(cache_file, "rb") as cache_reader:
+                    cached = pickle.load(cache_reader)
                     _article_index = cached.get("article_index", {})
                     _anchor_index = cached.get("anchor_index", {})
                     _document_article_index = cached.get("document_article_index", {})
@@ -263,7 +263,17 @@ def _build_article_index():
                     _index_built = True
                     logger.info("Loaded article index from disk cache: %s (%d entries)", cache_file, len(_article_index))
                     return
-            except Exception as exc:
+            except (
+                OSError,
+                EOFError,
+                pickle.PickleError,
+                AttributeError,
+                ImportError,
+                IndexError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ) as exc:
                 logger.warning("Failed to load article index cache (%s), rebuilding...", exc)
 
         _article_index = {}
@@ -321,14 +331,14 @@ def _build_article_index():
         _index_built = True
         logger.info("Article index built: %d entries", len(_article_index))
         try:
-            with open(cache_file, "wb") as f:
+            with open(cache_file, "wb") as cache_writer:
                 pickle.dump({
                     "article_index": _article_index,
                     "anchor_index": _anchor_index,
                     "document_article_index": _document_article_index,
                     "document_anchor_index": _document_anchor_index,
-                }, f, protocol=pickle.HIGHEST_PROTOCOL)
-        except Exception as exc:
+                }, cache_writer, protocol=pickle.HIGHEST_PROTOCOL)
+        except (OSError, pickle.PickleError, AttributeError, TypeError, ValueError) as exc:
             logger.warning("Failed to write article index cache: %s", exc)
 
 
@@ -427,15 +437,25 @@ def _build_lexical_index() -> None:
         cache_file = cache_dir / f"lexical_index_{safe_name}.pkl"
         if cache_file.exists():
             try:
-                with open(cache_file, "rb") as f:
-                    cached = pickle.load(f)
+                with open(cache_file, "rb") as cache_reader:
+                    cached = pickle.load(cache_reader)
                     _lexical_corpus = cached.get("lexical_corpus", [])
                     _global_idf = cached.get("global_idf", {})
                     _lexical_index_collection = collection
                     _lexical_index_built = True
                     logger.info("Loaded lexical index from disk cache: %s (%d docs)", cache_file, len(_lexical_corpus))
                     return
-            except Exception as exc:
+            except (
+                OSError,
+                EOFError,
+                pickle.PickleError,
+                AttributeError,
+                ImportError,
+                IndexError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ) as exc:
                 logger.warning("Failed to load lexical index cache (%s), rebuilding...", exc)
 
         _lexical_corpus = []
@@ -513,12 +533,12 @@ def _build_lexical_index() -> None:
         _lexical_index_built = True
         logger.info("Lexical index built: %d docs", len(_lexical_corpus))
         try:
-            with open(cache_file, "wb") as f:
+            with open(cache_file, "wb") as cache_writer:
                 pickle.dump({
                     "lexical_corpus": _lexical_corpus,
                     "global_idf": _global_idf,
-                }, f, protocol=pickle.HIGHEST_PROTOCOL)
-        except Exception as exc:
+                }, cache_writer, protocol=pickle.HIGHEST_PROTOCOL)
+        except (OSError, pickle.PickleError, AttributeError, TypeError, ValueError) as exc:
             logger.warning("Failed to write lexical index cache: %s", exc)
 
 
