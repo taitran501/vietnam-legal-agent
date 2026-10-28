@@ -3,6 +3,7 @@
 # requiring an external corpus build or OpenAI request.
 services:
   backend:
+    image: ci-vietnam-legal-agent-backend
     environment:
       CORPUS_RUNTIME_MODE: preview
       OPENAI_API_KEY: ci-smoke-placeholder
@@ -15,3 +16,6 @@ services:
       timeout: 5s
       retries: 20
       start_period: 30s
+
+  frontend:
+    image: ci-vietnam-legal-agent-frontend

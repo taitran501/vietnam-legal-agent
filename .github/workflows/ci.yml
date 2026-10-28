@@ -189,6 +189,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
       - name: Create isolated Compose environment
         run: |
           cp .env.example .env
@@ -202,8 +203,26 @@ jobs:
         run: docker compose -f docker-compose.yml -f docker-compose.ci-smoke.yml config --quiet
       - name: Validate opt-in universal preview configuration
         run: docker compose -f docker-compose.yml -f docker-compose.universal-preview.yml config --quiet
-      - name: Build and start the Compose topology
-        run: docker compose -f docker-compose.yml -f docker-compose.ci-smoke.yml up -d --build
+      - name: Build backend image with GitHub Actions cache
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.backend
+          tags: ci-vietnam-legal-agent-backend
+          load: true
+          cache-from: type=gha,scope=compose-backend
+          cache-to: type=gha,scope=compose-backend,mode=max,ignore-error=true
+      - name: Build frontend image with GitHub Actions cache
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.frontend
+          tags: ci-vietnam-legal-agent-frontend
+          load: true
+          cache-from: type=gha,scope=compose-frontend
+          cache-to: type=gha,scope=compose-frontend,mode=max,ignore-error=true
+      - name: Start the Compose topology from the built images
+        run: docker compose -f docker-compose.yml -f docker-compose.ci-smoke.yml up -d --no-build
       - name: Verify gateway liveness and safe-degraded preview readiness
         run: |
           set -euo pipefail
