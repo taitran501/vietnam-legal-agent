@@ -99,9 +99,9 @@ These are deliberate release gates, not claims that local tests can satisfy:
   current production quality. The live provider-backed evaluation has not been
   run in this checkout because it is a manual `workflow_dispatch` gate and the
   protected GitHub `pilot` environment currently returns HTTP 404.
-- GitHub repository metadata is still incomplete: the current authenticated
-  record has an empty description, homepage, and topic list. This is an
-  administrator-owned release hygiene task, not a code or legal-review gate.
+- At the 2026-08-26 snapshot date, GitHub repository metadata was empty. It
+  was configured on 2026-10-28; see the external release-gates runbook for the
+  checked description, topics, license, and intentionally blank homepage.
 - Legal-domain ground truth authoring is outside this framework/tracing
   acceptance scope; runtime safety still depends on source hashes, provenance,
   effective-date metadata, and fail-closed claim checks.

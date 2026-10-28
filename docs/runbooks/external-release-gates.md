@@ -29,9 +29,9 @@ steps and boundaries.
 
 ## GitHub Repository Metadata
 
-The repository is private and the connected read-only inspection confirmed
-that description, homepage, topics, and license metadata are not configured in
-the returned repository record. The local `LICENSE` file is now present, but
-that does not update GitHub's settings. An authenticated repository admin must
-set the desired visibility/description/homepage/topics and verify them on
-GitHub. No local code change can truthfully claim this gate is complete.
+Checked on 2026-10-28: the repository is public, GitHub reports the MIT license,
+and the description is `Vietnamese legal research app with source-grounded
+retrieval and preliminary case workflows`. Topics are `vietnam`, `legal-tech`,
+`legal-research`, `ai-agent`, and `retrieval-augmented-generation`. The homepage
+is intentionally blank because there is no public demo to link. These metadata
+settings do not establish production readiness or legal approval.
