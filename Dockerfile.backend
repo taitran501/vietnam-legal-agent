@@ -1,15 +1,23 @@
-FROM python:3.11-slim
+FROM python:3.11-slim AS python-deps
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential curl && rm -rf /var/lib/apt/lists/*
-RUN groupadd --system app && useradd --system --gid app --home-dir /app --no-create-home app
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
 
 # pyproject.toml is the dependency source of truth. This step installs the
 # bounded workflow package so imports from src/vietnam_legal_agent work in containers.
 COPY pyproject.toml ./
 COPY src/ ./src/
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir --prefix=/install .
+
+FROM python:3.11-slim AS runtime
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl libstdc++6 && rm -rf /var/lib/apt/lists/*
+RUN groupadd --system app && useradd --system --gid app --home-dir /app --no-create-home app
+
+COPY --from=python-deps /install/ /usr/local/
 
 COPY --chown=app:app backend/ ./backend/
 COPY --chown=app:app data/ ./data/
