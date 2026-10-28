@@ -63,7 +63,13 @@ def require_documents_scope(
     """FastAPI dependency or direct helper for document scope authorization."""
     if isinstance(scope_or_request, Request):
         return RequireDocumentsScope(scope)(scope_or_request)
-    return RequireDocumentsScope(scope_or_request)
+
+    required_scope = scope_or_request
+
+    def dependency(request: Request) -> Principal:
+        return RequireDocumentsScope(required_scope)(request)
+
+    return dependency
 
 
 router = APIRouter(prefix="/documents", tags=["documents"])
